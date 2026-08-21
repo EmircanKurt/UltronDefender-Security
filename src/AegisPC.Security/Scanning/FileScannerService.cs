@@ -29,14 +29,36 @@ namespace AegisPC.Security.Scanning
         private readonly ArchiveSafetyScanner _archiveScanner;
         private readonly ILogger<FileScannerService>? _logger;
         private readonly ConcurrentDictionary<string, (long FileSize, DateTime LastWriteTimeUtc, SecurityFinding? Finding)> _scanCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ManualResetEventSlim _pauseEvent = new(true);
+
+        public bool IsPaused => !_pauseEvent.IsSet;
+
+        public void PauseScan()
+        {
+            _pauseEvent.Reset();
+        }
+
+        public void ResumeScan()
+        {
+            _pauseEvent.Set();
+        }
 
         private static readonly HashSet<string> KnownCandidateExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
-            ".exe", ".dll", ".sys", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".hta",
-            ".jar", ".wsf", ".cpl", ".msi", ".zip", ".nupkg", ".iso", ".img", ".vbe", ".jse",
-            ".ws", ".wsh", ".msc", ".reg", ".lnk", ".bin", ".dat", ".tmp", ".7z", ".rar",
-            ".tar", ".gz", ".cab", ".com", ".pif", ".drv", ".ocx", ".efi",
-            ".txt", ".log", ".ini", ".cfg", ".xml", ".json", ".csv", ".md", ".inf", ".htm", ".html", ".lua", ".yml", ".yaml"
+            ".exe", ".dll", ".sys", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".vbe", ".js", ".jse",
+            ".hta", ".jar", ".wsf", ".ws", ".wsh", ".cpl", ".msi", ".msc", ".reg", ".com", ".pif",
+            ".drv", ".ocx", ".efi", ".zip", ".7z", ".rar", ".iso", ".img", ".tar", ".gz", ".cab",
+            ".nupkg", ".apk", ".bin", ".dat", ".tmp", ".txt", ".log", ".ini", ".cfg", ".xml", ".json",
+            ".csv", ".md", ".inf", ".htm", ".html", ".lua", ".yml", ".yaml"
+        };
+
+        private static readonly HashSet<string> SafeMediaExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tiff",
+            ".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a",
+            ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm",
+            ".pdf", ".docx", ".xlsx", ".pptx", ".odt", ".ods",
+            ".ttf", ".otf", ".woff", ".woff2"
         };
 
         public FileScannerService(
@@ -61,6 +83,7 @@ namespace AegisPC.Security.Scanning
 
         /// <summary>
         /// Content-Over-Extension: Dosyanın uzantısına veya ilk baytlarındaki PE/Arşiv sihirli baytlarına ("MZ", "PK", vb.) bakarak incelenebilirliğini doğrular.
+        /// Güvenli medya ve belge dosyalarını atlayarak gereksiz CPU/Disk harcamasını önler.
         /// </summary>
         public static bool IsInspectableCandidate(string filePath)
         {
@@ -71,13 +94,15 @@ namespace AegisPC.Security.Scanning
                 if (!File.Exists(filePath)) return false;
 
                 string ext = Path.GetExtension(filePath);
-                if (!string.IsNullOrEmpty(ext) && KnownCandidateExtensions.Contains(ext))
+                
+                // 1. Bilinen güvenli medya ve ofis uzantılarını doğrudan atla (Hızlı taramayı yavaşlatmaz)
+                if (!string.IsNullOrEmpty(ext) && SafeMediaExtensions.Contains(ext))
                 {
-                    return true;
+                    return false;
                 }
 
-                // Masaüstü, İndirilenler, Geçici Dizinler veya Başlangıç klasörlerindeki tüm dosyalar daima adaydır
-                if (PathHelper.IsDropZoneOrDesktop(filePath))
+                // 2. Yürütülebilir veya komut dosyası uzantısı ise doğrudan adaydır
+                if (!string.IsNullOrEmpty(ext) && KnownCandidateExtensions.Contains(ext))
                 {
                     return true;
                 }
@@ -88,7 +113,7 @@ namespace AegisPC.Security.Scanning
                     return false;
                 }
 
-                // Sihirli Bayt (Magic Byte) Denetimi: PE ("MZ"), ZIP ("PK"), 7z, RAR, Shebang ("#!")
+                // 3. Sihirli Bayt (Magic Byte) Denetimi: PE ("MZ"), ZIP ("PK"), 7z, RAR, Shebang ("#!")
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 16);
                 byte[] header = new byte[4];
                 int read = fs.Read(header, 0, 4);
@@ -116,8 +141,7 @@ namespace AegisPC.Security.Scanning
             }
             catch
             {
-                // Okuma hatası durumunda dosya güvenli tarafta kalmak için taranmaya gönderilir
-                return true;
+                return false;
             }
 
             return false;
@@ -392,6 +416,7 @@ namespace AegisPC.Security.Scanning
 
                     while (dirQueue.Count > 0 && !cancellationToken.IsCancellationRequested)
                     {
+                        _pauseEvent.Wait(cancellationToken);
                         string currentDir = dirQueue.Dequeue();
 
                         try
@@ -400,6 +425,7 @@ namespace AegisPC.Security.Scanning
                             foreach (var file in Directory.EnumerateFiles(currentDir))
                             {
                                 if (cancellationToken.IsCancellationRequested) break;
+                                _pauseEvent.Wait(cancellationToken);
                                 await TryQueueFileAsync(file);
                             }
 
@@ -429,21 +455,15 @@ namespace AegisPC.Security.Scanning
 
                 try
                 {
-                    if (scanType == ScanType.Full || scanType == ScanType.Quick)
+                    if (scanType == ScanType.Full)
                     {
                         // ───────────────────────────────────────────────────────
-                        // ÖNCELİKLİ AŞAMA: MASAÜSTÜ & YÜKSEK RİSKLİ KULLANICI DÜŞME ALANLARI
-                        // Tam veya Hızlı taramada Desktop/Downloads dosyaları İLK SANİYEDE indekslenir!
+                        // TAM DİSK TARAMASI: TÜM SABİT SÜRÜCÜLER VE KULLANICI DİZİNLERİ
                         // ───────────────────────────────────────────────────────
-                        ReportProgress("Öncelikli Kullanıcı Alanları (Masaüstü, İndirilenler, Başlangıç) indeksleniyor...");
-
+                        ReportProgress("Öncelikli Kullanıcı Alanları indeksleniyor...");
                         var highPriorityDirs = new List<string>
                         {
                             Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-                            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                            Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
-                            Path.Combine(KnownPaths.UserProfile, "Desktop"),
-                            Path.Combine(KnownPaths.UserProfile, "OneDrive", "Desktop"),
                             KnownPaths.Downloads,
                             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
                             KnownPaths.UserStartup,
@@ -457,13 +477,7 @@ namespace AegisPC.Security.Scanning
                             if (cancellationToken.IsCancellationRequested) break;
                             await EnumerateDirectorySafelyAsync(hpDir, recursive: true);
                         }
-                    }
 
-                    if (scanType == ScanType.Full)
-                    {
-                        // ───────────────────────────────────────────────────────
-                        // TAM DİSK TARAMASI: TÜM SABİT SÜRÜCÜLER (C:\, D:\ vb.)
-                        // ───────────────────────────────────────────────────────
                         var allDrives = DriveInfo.GetDrives()
                             .Where(d => d.IsReady && d.DriveType == DriveType.Fixed)
                             .Select(d => d.RootDirectory.FullName)
@@ -479,9 +493,10 @@ namespace AegisPC.Security.Scanning
                     else if (scanType == ScanType.Quick)
                     {
                         // ───────────────────────────────────────────────────────
-                        // HIZLI TARAMA: BELLEK MODÜLLERİ, SİSTEM32 VE TARAYICILAR
+                        // HIZLI TARAMA: AKTİF BELLEK SÜREÇLERİ, BAŞLANGIÇ & KRİTİK SİSTEM DİZİNLERİ
+                        // (Kullanıcı medya dosyalarını taramadan yıldırım hızında tamamlanır)
                         // ───────────────────────────────────────────────────────
-                        ReportProgress("Hızlı Tarama: Aktif Süreçler ve Sistem Dizinleri indeksleniyor...");
+                        ReportProgress("Hızlı Tarama: Aktif Bellek Süreçleri ve Modülleri taranıyor...");
                         try
                         {
                             var activeProcesses = Process.GetProcesses();
@@ -511,6 +526,20 @@ namespace AegisPC.Security.Scanning
                         }
                         catch { }
 
+                        // Başlangıç ve Otomatik Çalıştırma Klasörleri
+                        ReportProgress("Başlangıç ve Otomatik Çalıştırma Dizinleri taranıyor...");
+                        await EnumerateDirectorySafelyAsync(KnownPaths.UserStartup, true);
+                        await EnumerateDirectorySafelyAsync(KnownPaths.CommonStartup, true);
+
+                        // Geçici Dizinler (Yürütülebilir dosyalar)
+                        await EnumerateDirectorySafelyAsync(KnownPaths.Temp, false);
+                        await EnumerateDirectorySafelyAsync(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp"), false);
+
+                        // Masaüstü (Yalnızca kök seviye dosyalar)
+                        await EnumerateDirectorySafelyAsync(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), false);
+
+                        // Sistem Sürücüleri ve System32
+                        ReportProgress("Kritik Sistem Sürücüleri taranıyor...");
                         await EnumerateDirectorySafelyAsync(Path.Combine(KnownPaths.System32, "drivers"), true);
                         await EnumerateDirectorySafelyAsync(KnownPaths.System32, false);
 
@@ -546,6 +575,7 @@ namespace AegisPC.Security.Scanning
                         {
                             try
                             {
+                                _pauseEvent.Wait(cancellationToken);
                                 var finding = await ScanFileAsync(filePath, cancellationToken);
                                 if (finding != null)
                                 {

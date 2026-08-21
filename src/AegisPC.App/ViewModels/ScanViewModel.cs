@@ -64,6 +64,8 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty]
         private bool isPaused;
 
+        public string PauseButtonText => IsPaused ? "Devam Et" : "Duraklat";
+
         [ObservableProperty]
         private int progressPercentage;
 
@@ -326,12 +328,12 @@ namespace AegisPC.App.ViewModels
                 TotalCount = p.TotalFiles;
                 FindingsCount = p.FindingsCount;
                 DetectionsCount = FindingsCount;
-                ScanStatusText = $"{p.ScanType} taraması işleniyor...";
+                if (!IsPaused)
+                {
+                    ScanStatusText = $"{p.ScanType} taraması işleniyor...";
+                }
 
                 UpdateChecklistSteps(ProgressPercentage);
-
-                // Auto-show scan window if scan was triggered externally or running
-                Views.ActiveScanWindow.ShowScanWindow(this);
             });
         }
 
@@ -350,8 +352,10 @@ namespace AegisPC.App.ViewModels
             {
                 IsScanning = false;
                 IsNotScanning = true;
+                IsPaused = false;
                 _stopwatch.Stop();
                 _timer?.Stop();
+                OnPropertyChanged(nameof(PauseButtonText));
 
                 var elapsed = _stopwatch.Elapsed;
                 ScanDurationFormatted = $"{elapsed.Minutes}d {elapsed.Seconds:D2}s";
@@ -468,19 +472,25 @@ namespace AegisPC.App.ViewModels
         [RelayCommand]
         public void TogglePauseResume()
         {
-            IsPaused = !IsPaused;
+            if (_scanCoordinator == null || !IsScanning) return;
+
             if (IsPaused)
             {
-                _stopwatch.Stop();
-                _timer?.Stop();
-                ScanStatusText = "Tarama duraklatıldı.";
-            }
-            else
-            {
+                _scanCoordinator.ResumeScan();
+                IsPaused = false;
                 _stopwatch.Start();
                 _timer?.Start();
                 ScanStatusText = "Tarama devam ediyor...";
             }
+            else
+            {
+                _scanCoordinator.PauseScan();
+                IsPaused = true;
+                _stopwatch.Stop();
+                _timer?.Stop();
+                ScanStatusText = "Tarama duraklatıldı.";
+            }
+            OnPropertyChanged(nameof(PauseButtonText));
         }
 
         [RelayCommand]
@@ -493,8 +503,10 @@ namespace AegisPC.App.ViewModels
                 _timer?.Stop();
                 IsScanning = false;
                 IsNotScanning = true;
+                IsPaused = false;
                 IsScanFinishedView = false;
                 ScanStatusText = "Tarama iptal edildi.";
+                OnPropertyChanged(nameof(PauseButtonText));
             }
         }
 

@@ -198,7 +198,7 @@
 
                     <!-- Control Buttons (Duraklat & İptal) -->
                     <StackPanel Orientation="Horizontal">
-                        <Button Content="Duraklat" Width="100" Height="32" Margin="0,0,12,0" Style="{StaticResource SecondaryActionButtonStyle}"
+                        <Button Content="{Binding PauseButtonText}" Width="100" Height="32" Margin="0,0,12,0" Style="{StaticResource SecondaryActionButtonStyle}"
                                 Command="{Binding TogglePauseResumeCommand}"/>
                         <Button Content="İptal" Width="100" Height="32" Style="{StaticResource SecondaryActionButtonStyle}"
                                 Command="{Binding CancelScanCommand}"/>

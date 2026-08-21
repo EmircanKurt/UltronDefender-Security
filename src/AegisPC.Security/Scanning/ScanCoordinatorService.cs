@@ -147,6 +147,28 @@ namespace AegisPC.Security.Scanning
             return result;
         }
 
+        public bool IsPaused => _fileScanner.IsPaused;
+
+        public void PauseScan()
+        {
+            lock (_lock)
+            {
+                if (!IsScanning) return;
+                _fileScanner.PauseScan();
+                StatusText = "Tarama duraklatıldı.";
+            }
+        }
+
+        public void ResumeScan()
+        {
+            lock (_lock)
+            {
+                if (!IsScanning) return;
+                _fileScanner.ResumeScan();
+                StatusText = $"{CurrentScanType} taraması çalışıyor...";
+            }
+        }
+
         public void CancelScan()
         {
             lock (_lock)
@@ -154,6 +176,10 @@ namespace AegisPC.Security.Scanning
                 if (!IsScanning || _scanCts == null) return;
                 try
                 {
+                    if (IsPaused)
+                    {
+                        _fileScanner.ResumeScan(); // Ensure workers unblock to process cancellation
+                    }
                     _scanCts.Cancel();
                     StatusText = "Tarama iptal ediliyor...";
                 }

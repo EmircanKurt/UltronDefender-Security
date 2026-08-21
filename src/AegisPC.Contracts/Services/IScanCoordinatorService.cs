@@ -17,11 +17,14 @@ namespace AegisPC.Contracts.Services
         int FindingsCount { get; }
         string StatusText { get; }
         IReadOnlyList<SecurityFinding> CurrentFindings { get; }
+        bool IsPaused { get; }
 
         event Action<ScanProgress>? ProgressChanged;
         event Action<ScanResult>? ScanCompleted;
 
         Task<ScanResult?> StartScanAsync(ScanType scanType, string customPath = "");
+        void PauseScan();
+        void ResumeScan();
         void CancelScan();
     }
 }
