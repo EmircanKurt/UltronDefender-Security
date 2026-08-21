@@ -28,6 +28,7 @@ namespace AegisPC.Security.Scanning
         private readonly IDetectionHub _detectionHub;
         private readonly ArchiveSafetyScanner _archiveScanner;
         private readonly ILogger<FileScannerService>? _logger;
+        private readonly ConcurrentDictionary<string, (long FileSize, DateTime LastWriteTimeUtc, SecurityFinding? Finding)> _scanCache = new(StringComparer.OrdinalIgnoreCase);
 
         private static readonly HashSet<string> KnownCandidateExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -129,6 +130,16 @@ namespace AegisPC.Security.Scanning
             try
             {
                 var fileInfo = new FileInfo(path);
+
+                // Multi-Tier Caching: Skip deep 13-detector re-scan if clean and unchanged
+                if (_scanCache.TryGetValue(path, out var cached))
+                {
+                    if (cached.FileSize == fileInfo.Length && cached.LastWriteTimeUtc == fileInfo.LastWriteTimeUtc)
+                    {
+                        return cached.Finding;
+                    }
+                }
+
                 var ext = fileInfo.Extension.ToLowerInvariant();
 
                 // 1. Arşiv Dosyası Güvenlik Taraması (Zip bomb, path traversal, nested payload)
@@ -139,6 +150,7 @@ namespace AegisPC.Security.Scanning
                     {
                         var topFinding = archiveResult.Findings.OrderByDescending(f => f.RiskScore).First();
                         await _findingService.AddFindingAsync(topFinding, cancellationToken);
+                        _scanCache[path] = (fileInfo.Length, fileInfo.LastWriteTimeUtc, topFinding);
                         return topFinding;
                     }
                 }
@@ -228,9 +240,11 @@ namespace AegisPC.Security.Scanning
                     };
 
                     await _findingService.AddFindingAsync(finding, cancellationToken);
+                    _scanCache[path] = (fileInfo.Length, fileInfo.LastWriteTimeUtc, finding);
                     return finding;
                 }
 
+                _scanCache[path] = (fileInfo.Length, fileInfo.LastWriteTimeUtc, null);
                 return null;
             }
             catch (Exception ex)
