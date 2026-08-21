@@ -64,6 +64,11 @@ namespace AegisPC.App.Startup
             services.AddSingleton<ISignatureVerifier, SignatureVerifier>();
             services.AddSingleton<IRiskScoringEngine, RiskScoringEngine>();
 
+            // Behavior & Lineage Services (P0 Foundation)
+            services.AddSingleton<AegisPC.Contracts.Behavior.IProcessLineageTracker, AegisPC.Security.Behavior.ProcessLineageTracker>();
+            services.AddSingleton<AegisPC.Contracts.Behavior.IAttackChainCorrelator, AegisPC.Security.Behavior.AttackChainCorrelator>();
+            services.AddSingleton<AegisPC.Contracts.Behavior.IProcessInjectionDetector, AegisPC.Security.Behavior.ProcessInjectionDetector>();
+
             // DetectionHub & Modular Detector Plugins (Phase 1-2)
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.HashSignatureDetector>();
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.PeStaticDetector>();

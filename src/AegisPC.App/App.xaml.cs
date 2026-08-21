@@ -166,6 +166,8 @@ namespace AegisPC.App
                         var etwMonitor = ServiceProvider.GetService<AegisPC.Contracts.Services.IEtwProcessMonitorService>();
                         if (etwMonitor != null)
                         {
+                            var lineageTracker = ServiceProvider.GetService<AegisPC.Contracts.Behavior.IProcessLineageTracker>();
+
                             etwMonitor.ThreatDetected += (alert) =>
                             {
                                 toastService?.ShowToast(
@@ -173,6 +175,52 @@ namespace AegisPC.App
                                     $"Zararlı komut çalıştıran süreç durduruldu (PID: {alert.ProcessId})\nKomut: {alert.CommandLine}",
                                     "Danger");
                             };
+
+                            // P0 Telemetry Pipeline: Wire Process Creation -> DAG Lineage Tree -> Behavior Engine
+                            etwMonitor.ProcessCreated += async (procEvent) =>
+                            {
+                                try
+                                {
+                                    // 1. Register in Process Lineage DAG tree
+                                    lineageTracker?.RegisterProcess(new AegisPC.Contracts.Behavior.ProcessNode
+                                    {
+                                        Pid = procEvent.ProcessId,
+                                        ParentPid = procEvent.ParentProcessId,
+                                        ProcessName = procEvent.ImageFileName,
+                                        CommandLine = procEvent.CommandLine,
+                                        StartTimeUtc = procEvent.Timestamp
+                                    });
+
+                                    // 2. Check for suspicious parent-child spawn (LOLBin / Macro / Browser RCE / Fake system processes)
+                                    bool isSuspiciousSpawn = false;
+                                    string? anomalyReason = null;
+                                    if (lineageTracker != null && procEvent.ParentProcessId > 0)
+                                    {
+                                        isSuspiciousSpawn = lineageTracker.IsSuspiciousParentChild(procEvent.ParentProcessId, procEvent.ProcessId, out anomalyReason);
+                                    }
+
+                                    // 3. Forward to BehaviorEngine for dynamic session and multi-stage evaluation
+                                    if (behaviorEngine != null)
+                                    {
+                                        var bEvent = new AegisPC.Core.Models.BehaviorEvent
+                                        {
+                                            ProcessId = procEvent.ProcessId,
+                                            ParentProcessId = procEvent.ParentProcessId,
+                                            ProcessName = procEvent.ImageFileName,
+                                            CommandLine = procEvent.CommandLine,
+                                            EventType = isSuspiciousSpawn ? AegisPC.Core.Models.BehaviorEventType.ChildProcessSpawn : AegisPC.Core.Models.BehaviorEventType.ProcessSpawn,
+                                            TargetResource = procEvent.CommandLine,
+                                            Details = isSuspiciousSpawn ? $"Şüpheli Süreç Türetmesi: {anomalyReason}" : "Süreç başlatıldı",
+                                            RiskWeight = isSuspiciousSpawn ? 45.0 : 5.0,
+                                            Timestamp = procEvent.Timestamp
+                                        };
+
+                                        await behaviorEngine.ProcessEventAsync(bEvent);
+                                    }
+                                }
+                                catch { }
+                            };
+
                             etwMonitor.Start();
                         }
 
