@@ -1,0 +1,136 @@
+<Page x:Class="AegisPC.App.Views.BrowserSecurityView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      Title="{Binding PageTitle}"
+      Background="#EEF2F6"
+      UseLayoutRounding="True"
+      SnapsToDevicePixels="True"
+      TextOptions.TextFormattingMode="Display"
+      TextOptions.TextRenderingMode="ClearType"
+      RenderOptions.ClearTypeHint="Enabled">
+
+    <Page.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:RiskLevelToColorConverter x:Key="RiskColorConverter"/>
+        <conv:BoolToStatusTextConverter x:Key="BoolToStatus"/>
+    </Page.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0" Style="{StaticResource PageHeaderStyle}" Text="Tarayıcı Güvenliği ve Eklenti Analizi" />
+
+        <!-- Profile Selector / Toolbar -->
+        <Grid Grid.Row="1" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <ComboBox Grid.Column="0" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" Height="36">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding BrowserType}" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,8,0"/>
+                            <TextBlock Text="{Binding ProfileName}" Foreground="#64748B"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <ui:Button Grid.Column="2" Content="Yenile" Icon="{ui:SymbolIcon ArrowClockwise24}" 
+                       Command="{Binding LoadBrowserDataCommand}"/>
+        </Grid>
+
+        <!-- Main Content (Extensions Table + Details) -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="340"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Table -->
+            <ui:DataGrid Grid.Column="0" ItemsSource="{Binding Extensions}" 
+                         SelectedItem="{Binding SelectedExtension}"
+                         AutoGenerateColumns="False" IsReadOnly="True"
+                         SelectionMode="Single" Margin="0,0,16,0">
+                <ui:DataGrid.Columns>
+                    <DataGridTextColumn Header="Risk Seviyesi" Binding="{Binding RiskLevel}" Width="110"/>
+                    <DataGridTextColumn Header="Eklenti Adı" Binding="{Binding Name}" Width="200"/>
+                    <DataGridTextColumn Header="Sürüm" Binding="{Binding Version}" Width="80"/>
+                    <DataGridTextColumn Header="Harici (Sideload)" Binding="{Binding IsSideloaded, Converter={StaticResource BoolToStatus}, ConverterParameter=yesno}" Width="120"/>
+                    <DataGridTextColumn Header="Eklenti ID" Binding="{Binding Id}" Width="*"/>
+                </ui:DataGrid.Columns>
+            </ui:DataGrid>
+
+            <!-- Detail Panel -->
+            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="8">
+                        <TextBlock Text="Eklenti Güvenlik İncelemesi" FontSize="18" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,16"/>
+
+                        <StackPanel Visibility="{Binding SelectedExtension, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding SelectedExtension.Name}" FontSize="18" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding SelectedExtension.Version, StringFormat='Sürüm: \{0\}'}" Foreground="#64748B" Margin="0,0,0,8"/>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
+                                <TextBlock Text="Risk Durumu: " Foreground="#64748B"/>
+                                <TextBlock Text="{Binding SelectedExtension.RiskLevel}" FontWeight="Bold" Foreground="{Binding SelectedExtension.RiskLevel, Converter={StaticResource RiskColorConverter}}"/>
+                            </StackPanel>
+
+                            <TextBlock Text="Açıklama" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,8,0,4"/>
+                            <TextBlock Text="{Binding SelectedExtension.Description}" TextWrapping="Wrap" FontSize="12" Foreground="#475569" Margin="0,2"/>
+
+                            <TextBlock Text="İstenen İzinler" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,12,0,4"/>
+                            <ItemsControl ItemsSource="{Binding SelectedExtension.Permissions}" Margin="0,0,0,8">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StringFormat='• \{0\}'}" FontSize="12" Foreground="#475569" Margin="0,1"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Risk Reasons -->
+                            <TextBlock Text="Güvenlik Bulguları" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,8,0,4"/>
+                            <ItemsControl ItemsSource="{Binding SelectedExtension.RiskReasons}" Margin="0,0,0,12">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                                            <TextBlock Text="• " Foreground="#D97706" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Foreground="#475569" FontSize="12"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <TextBlock Text="Detayları görmek için listeden bir eklenti seçin." Foreground="#64748B" HorizontalAlignment="Center" Margin="0,60,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedExtension}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="#64748B" FontSize="12" Margin="0,8,0,0"/>
+    </Grid>
+</Page>

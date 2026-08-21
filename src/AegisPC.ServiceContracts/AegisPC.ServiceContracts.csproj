@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AegisPC.ServiceContracts</RootNamespace>
+    <AssemblyName>AegisPC.ServiceContracts</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AegisPC.Core\AegisPC.Core.csproj" />
+  </ItemGroup>
+</Project>

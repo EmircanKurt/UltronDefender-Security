@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AegisPC.Core\AegisPC.Core.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.Contracts\AegisPC.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.Security\AegisPC.Security.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.Performance\AegisPC.Performance.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.Diagnostics\AegisPC.Diagnostics.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.Recommendations\AegisPC.Recommendations.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.Persistence\AegisPC.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.Infrastructure\AegisPC.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.BrowserSecurity\AegisPC.BrowserSecurity.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.App\AegisPC.App.csproj" />
+  </ItemGroup>
+
+</Project>

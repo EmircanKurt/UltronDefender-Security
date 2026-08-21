@@ -1,0 +1,36 @@
+﻿[Version]
+Signature   = "$Windows NT$"
+Class       = "AntiVirus"
+ClassGuid   = {b1d0f744-9971-4570-9a05-610f97f563ab}
+Provider    = "Ultron Security Technologies"
+DriverVer   = 08/21/2026,3.2.0.0
+
+[DestinationDirs]
+DefaultDestDir = 12
+AegisFilter.DriverFiles = 12
+
+[DefaultInstall]
+OptionDesc = "Ultron Defender Minifilter Driver"
+CopyFiles = AegisFilter.DriverFiles
+
+[DefaultInstall.Services]
+AddService = "AegisFilter",,AegisFilter.Service
+
+[AegisFilter.Service]
+DisplayName    = "Ultron Defender Security Minifilter"
+Description    = "Real-time kernel file and process interception driver"
+ServiceBinary  = %12%\AegisFilter.sys
+Dependencies   = "FltMgr"
+ServiceType    = 2
+StartType      = 3
+ErrorControl   = 1
+LoadOrderGroup = "FSFilter Anti-Virus"
+AddReg         = AegisFilter.AddRegistry
+
+[AegisFilter.AddRegistry]
+HKR,"Instances","DefaultInstance",0x00000000,"AegisFilter - Top Instance"
+HKR,"Instances\AegisFilter - Top Instance","Altitude",0x00000000,"320500"
+HKR,"Instances\AegisFilter - Top Instance","Flags",0x00010001,0x0
+
+[AegisFilter.DriverFiles]
+AegisFilter.sys

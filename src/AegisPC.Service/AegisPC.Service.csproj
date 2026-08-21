@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AegisPC.Service</RootNamespace>
+    <AssemblyName>AegisPC.Service</AssemblyName>
+    <Product>Ultron Defender Security</Product>
+    <Company>Ultron Defender Security</Company>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AegisPC.Core\AegisPC.Core.csproj" />
+    <ProjectReference Include="..\AegisPC.Contracts\AegisPC.Contracts.csproj" />
+    <ProjectReference Include="..\AegisPC.ServiceContracts\AegisPC.ServiceContracts.csproj" />
+    <ProjectReference Include="..\AegisPC.Infrastructure\AegisPC.Infrastructure.csproj" />
+    <ProjectReference Include="..\AegisPC.Security\AegisPC.Security.csproj" />
+    <ProjectReference Include="..\AegisPC.Performance\AegisPC.Performance.csproj" />
+    <ProjectReference Include="..\AegisPC.Recommendations\AegisPC.Recommendations.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
+    <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.1" />
+  </ItemGroup>
+</Project>

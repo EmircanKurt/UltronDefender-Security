@@ -1,0 +1,134 @@
+<Page x:Class="AegisPC.App.Views.SecurityView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      Title="{Binding PageTitle}"
+      Background="#EEF2F6"
+      UseLayoutRounding="True"
+      SnapsToDevicePixels="True"
+      TextOptions.TextFormattingMode="Display"
+      TextOptions.TextRenderingMode="ClearType">
+
+    <Page.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:RiskLevelToColorConverter x:Key="RiskColorConverter"/>
+    </Page.Resources>
+
+    <Grid Margin="32,24,32,32">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Style="{StaticResource PageHeaderStyle}" Text="Güvenlik Bulguları ve Tehdit İnceleme" Margin="0,0,0,2"/>
+            <TextBlock Text="Tespit edilen şüpheli dosyalar, dijital imza ihlalleri ve risk analizleri." FontSize="13" Foreground="#64748B"/>
+        </StackPanel>
+
+        <!-- Toolbar -->
+        <Grid Grid.Row="1" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <ui:TextBox Grid.Column="0" PlaceholderText="Dosya adı, yol veya başlık ile filtrele..." 
+                        Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" 
+                        Icon="{ui:SymbolIcon Search24}" Margin="0,0,12,0"/>
+
+            <Button Grid.Column="1" Style="{StaticResource SecondaryButtonStyle}" Content="Yenile"
+                    Command="{Binding LoadFindingsCommand}"/>
+        </Grid>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="380"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Findings Table -->
+            <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Margin="0,0,16,0" Padding="16">
+                <ui:DataGrid ItemsSource="{Binding Findings}" 
+                             SelectedItem="{Binding SelectedFinding}"
+                             AutoGenerateColumns="False" IsReadOnly="True"
+                             SelectionMode="Single">
+                    <ui:DataGrid.Columns>
+                        <DataGridTextColumn Header="Seviye" Binding="{Binding RiskLevel}" Width="100"/>
+                        <DataGridTextColumn Header="Skor" Binding="{Binding RiskScore}" Width="60"/>
+                        <DataGridTextColumn Header="Başlık" Binding="{Binding Title}" Width="200"/>
+                        <DataGridTextColumn Header="Nesne Adı" Binding="{Binding ObjectName}" Width="150"/>
+                        <DataGridTextColumn Header="Durum" Binding="{Binding Status}" Width="90"/>
+                        <DataGridTextColumn Header="Konum" Binding="{Binding ObjectPath}" Width="*"/>
+                    </ui:DataGrid.Columns>
+                </ui:DataGrid>
+            </Border>
+
+            <!-- Finding Detail & Action Panel -->
+            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Padding="20">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+                    <StackPanel>
+                        <TextBlock Text="BULGU DETAYLARI" Style="{StaticResource SectionLabelStyle}" Margin="0,0,0,14"/>
+
+                        <StackPanel Visibility="{Binding SelectedFinding, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding SelectedFinding.Title}" FontSize="16" FontWeight="Bold" Foreground="#0F172A" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
+                                <TextBlock Text="Risk Seviyesi: " Foreground="#64748B" FontSize="12"/>
+                                <TextBlock Text="{Binding SelectedFinding.RiskLevel}" FontWeight="Bold" FontSize="12" Foreground="{Binding SelectedFinding.RiskLevel, Converter={StaticResource RiskColorConverter}}"/>
+                                <TextBlock Text="{Binding SelectedFinding.RiskScore, StringFormat=' (Skor: \{0\}/100)'}" Foreground="#64748B" FontSize="12"/>
+                            </StackPanel>
+
+                            <TextBlock Text="Dosya Konumu" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,8,0,2"/>
+                            <TextBlock Text="{Binding SelectedFinding.ObjectPath}" TextWrapping="Wrap" FontSize="11" Foreground="#475569" Margin="0,0,0,8"/>
+
+                            <TextBlock Text="SHA-256 Özeti" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,4,0,2"/>
+                            <TextBlock Text="{Binding SelectedFinding.SHA256}" TextWrapping="Wrap" FontSize="10" FontFamily="Consolas" Foreground="#64748B" Margin="0,0,0,12"/>
+
+                            <!-- Explanations & Reasons -->
+                            <TextBlock Text="Tespit Sebepleri ve Risk Analizi" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,4,0,6"/>
+                            <ItemsControl ItemsSource="{Binding SelectedFinding.RiskReasons}" Margin="0,0,0,16">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                                            <TextBlock Text="• " Foreground="#DC2626" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Foreground="#475569" FontSize="12"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Actions -->
+                            <StackPanel Margin="0,8,0,0">
+                                <Button Content="Karantinaya Al" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Stretch"
+                                        Command="{Binding QuarantineFindingCommand}" Margin="0,0,0,8"/>
+                                <Button Content="Güvenli Listeye Ekle (Allowlist)" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Stretch"
+                                        Command="{Binding AllowlistFindingCommand}"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Text="Ayrıntıları ve analiz sebeplerini görmek için tablodan bir bulgu seçin." Foreground="#475569" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,80,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedFinding}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="#64748B" FontSize="12" Margin="0,10,0,0"/>
+    </Grid>
+</Page>

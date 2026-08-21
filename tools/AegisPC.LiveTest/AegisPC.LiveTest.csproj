@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AegisPC.Core\AegisPC.Core.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.Contracts\AegisPC.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.Security\AegisPC.Security.csproj" />
+  </ItemGroup>
+</Project>

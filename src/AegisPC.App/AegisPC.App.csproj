@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AegisPC.App</RootNamespace>
+    <AssemblyName>UltronDefender</AssemblyName>
+    <Product>Ultron Defender Security</Product>
+    <Title>Ultron Defender Security</Title>
+    <Company>Ultron Defender Security</Company>
+    <Description>Ultron Defender Security - Total Endpoint Protection</Description>
+    <AssemblyTitle>Ultron Defender Security</AssemblyTitle>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <StartupObject>AegisPC.App.Program</StartupObject>
+    <ApplicationIcon>Resources\Images\app.ico</ApplicationIcon>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AegisPC.Core\AegisPC.Core.csproj" />
+    <ProjectReference Include="..\AegisPC.Contracts\AegisPC.Contracts.csproj" />
+    <ProjectReference Include="..\AegisPC.Infrastructure\AegisPC.Infrastructure.csproj" />
+    <ProjectReference Include="..\AegisPC.Security\AegisPC.Security.csproj" />
+    <ProjectReference Include="..\AegisPC.Diagnostics\AegisPC.Diagnostics.csproj" />
+    <ProjectReference Include="..\AegisPC.Performance\AegisPC.Performance.csproj" />
+    <ProjectReference Include="..\AegisPC.BrowserSecurity\AegisPC.BrowserSecurity.csproj" />
+    <ProjectReference Include="..\AegisPC.Persistence\AegisPC.Persistence.csproj" />
+    <ProjectReference Include="..\AegisPC.Recommendations\AegisPC.Recommendations.csproj" />
+    <ProjectReference Include="..\AegisPC.ServiceContracts\AegisPC.ServiceContracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.11" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Resources\Images\*.png" />
+    <Resource Include="Resources\Images\app.ico" />
+    <Content Include="Resources\Images\app.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

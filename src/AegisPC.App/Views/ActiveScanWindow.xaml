@@ -1,0 +1,353 @@
+<Window x:Class="AegisPC.App.Views.ActiveScanWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:conv="clr-namespace:AegisPC.App.Converters"
+        Title="Tarayıcı - Ultron Defender Total Security"
+        Width="880" Height="580"
+        MinWidth="800" MinHeight="500"
+        WindowStartupLocation="CenterScreen"
+        Background="#FFFFFF"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        FontFamily="Segoe UI"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+
+        <Style x:Key="TabHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#64748B"/>
+            <Setter Property="Margin" Value="0,0,24,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <Style x:Key="ActiveTabHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#0284C7"/>
+            <Setter Property="Margin" Value="0,0,24,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <Style x:Key="SecondaryActionButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="Foreground" Value="#334155"/>
+            <Setter Property="BorderBrush" Value="#CBD5E1"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="btnBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="btnBorder" Property="Background" Value="#F1F5F9"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="btnBorder" Property="Background" Value="#E2E8F0"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryActionButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#0284C7"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Padding" Value="18,7"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="btnBorder" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="btnBorder" Property="Background" Value="#0369A1"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="btnBorder" Property="Background" Value="#075985"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- ══════════════════════════════════════════════════════
+             1. TOP TAB NAVIGATION BAR (Tarayıcı | Zamanlayıcı | Raporlar)
+        ══════════════════════════════════════════════════════ -->
+        <Border Grid.Row="0" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="0,0,0,12" Margin="0,0,0,20">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:SymbolIcon Symbol="Target24" Foreground="#0284C7" FontSize="20" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Tarayıcı" FontSize="16" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,24,0" VerticalAlignment="Center"/>
+
+                    <!-- Tabs -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel Margin="0,0,20,0">
+                            <TextBlock Text="Tarayıcı" Style="{StaticResource ActiveTabHeaderStyle}"/>
+                            <Rectangle Height="2.5" Fill="#0284C7" Margin="0,4,0,0" RadiusX="1" RadiusY="1"/>
+                        </StackPanel>
+                        <TextBlock Text="Zamanlayıcı" Style="{StaticResource TabHeaderStyle}"/>
+                        <TextBlock Text="Raporlar" Style="{StaticResource TabHeaderStyle}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ══════════════════════════════════════════════════════
+             2. ACTIVE SCANNING VIEW (Exact Match to User Image 1)
+        ══════════════════════════════════════════════════════ -->
+        <Grid Grid.Row="1" Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="Tehdit Taraması işleniyor..." FontSize="16" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,24"/>
+
+            <!-- Main 3-Column Scan Container -->
+            <Grid Grid.Row="1" Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="200"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left: Animated Laptop / Scanning Device Illustration -->
+                <Border Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Left" Width="200" Height="145" Background="#F8FAFC" CornerRadius="10" BorderBrush="#E2E8F0" BorderThickness="1" Padding="14">
+                    <Grid>
+                        <!-- Laptop Display Frame -->
+                        <Border Background="#0B132B" CornerRadius="6" Margin="4,4,4,22" BorderBrush="#334155" BorderThickness="1">
+                            <Canvas x:Name="LaserCanvas" ClipToBounds="True">
+                                <!-- Animated Laser Scan Line -->
+                                <Rectangle x:Name="LaserLine" Width="3" Height="90" Fill="#38BDF8" Canvas.Top="0" Canvas.Left="15">
+                                    <Rectangle.Effect>
+                                        <DropShadowEffect BlurRadius="10" Color="#0284C7" ShadowDepth="0"/>
+                                    </Rectangle.Effect>
+                                </Rectangle>
+                            </Canvas>
+                        </Border>
+                        <!-- Laptop Base Plate -->
+                        <Border Height="10" VerticalAlignment="Bottom" Background="#94A3B8" CornerRadius="0,0,6,6" Margin="0,0,0,8"/>
+                    </Grid>
+                </Border>
+
+                <!-- Middle: 5-Step Animated Checklist -->
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,20,0">
+                    <!-- Step 1 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <ui:SymbolIcon Symbol="Checkmark24" Foreground="#10B981" FontSize="16" Margin="0,0,10,0"/>
+                        <TextBlock Text="Güncellemeleri denetle" FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A"/>
+                    </StackPanel>
+
+                    <!-- Step 2 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <ui:SymbolIcon Symbol="Checkmark24" Foreground="#10B981" FontSize="16" Margin="0,0,10,0"/>
+                        <TextBlock Text="Bellek nesnelerini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A"/>
+                    </StackPanel>
+
+                    <!-- Step 3 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <ui:SymbolIcon Symbol="Checkmark24" Foreground="#10B981" FontSize="16" Margin="0,0,10,0"/>
+                        <TextBlock Text="Başlangıç öğelerini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A"/>
+                    </StackPanel>
+
+                    <!-- Step 4 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <ui:SymbolIcon Symbol="Checkmark24" Foreground="#10B981" FontSize="16" Margin="0,0,10,0"/>
+                        <TextBlock Text="Kayıt Defterini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A"/>
+                    </StackPanel>
+
+                    <!-- Step 5 (Active scanning indicator) -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+                        <Canvas Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center">
+                            <Ellipse x:Name="PulseIndicator" Width="14" Height="14" Fill="#0284C7" Canvas.Left="1" Canvas.Top="1"/>
+                        </Canvas>
+                        <TextBlock Text="Dosya sistemini tara" FontSize="13.5" FontWeight="Bold" Foreground="#0284C7"/>
+                    </StackPanel>
+
+                    <!-- Control Buttons (Duraklat & İptal) -->
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Duraklat" Width="100" Height="32" Margin="0,0,12,0" Style="{StaticResource SecondaryActionButtonStyle}"
+                                Command="{Binding TogglePauseResumeCommand}"/>
+                        <Button Content="İptal" Width="100" Height="32" Style="{StaticResource SecondaryActionButtonStyle}"
+                                Command="{Binding CancelScanCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Right: Live Statistics Panel -->
+                <Border Grid.Column="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="18,16" VerticalAlignment="Center">
+                    <StackPanel>
+                        <TextBlock Text="Tarama Süresi" FontSize="11" Foreground="#64748B"/>
+                        <TextBlock Text="{Binding ScanDurationFormatted}" FontSize="15" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,14"/>
+
+                        <TextBlock Text="Taranan Öğeler" FontSize="11" Foreground="#64748B"/>
+                        <TextBlock Text="{Binding ScannedItemsFormatted}" FontSize="15" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,14"/>
+
+                        <TextBlock Text="Tespitler" FontSize="11" Foreground="#64748B"/>
+                        <TextBlock Text="{Binding DetectionsCount}" FontSize="16" FontWeight="Bold" Foreground="#0284C7"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Bottom Progress Bar & Current File Path -->
+            <StackPanel Grid.Row="2">
+                <ProgressBar Value="{Binding ProgressPercentage}" Height="6" Background="#E2E8F0" Foreground="#0284C7" Margin="0,0,0,8"/>
+                <TextBlock Text="{Binding CurrentFile, StringFormat='İncelenen: \{0\}'}" FontSize="11.5" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ══════════════════════════════════════════════════════
+             3. SCAN COMPLETED / THREAT RESULTS VIEW (Exact Match to User Image 2)
+        ══════════════════════════════════════════════════════ -->
+        <Grid Grid.Row="1" Visibility="{Binding IsScanFinishedView, Converter={StaticResource BoolToVis}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header with Real-Time Counters -->
+            <Grid Grid.Row="0" Margin="0,0,0,18">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="Tehdit Taraması Sonuçları" FontSize="18" FontWeight="Bold" Foreground="#0F172A" VerticalAlignment="Center"/>
+
+                <!-- Metrics Summary -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel Margin="0,0,28,0">
+                        <TextBlock Text="Algılanan Öğeler" FontSize="11" Foreground="#64748B" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding DetectionsCount}" FontSize="15" FontWeight="Bold" Foreground="#0284C7" HorizontalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel Margin="0,0,28,0">
+                        <TextBlock Text="Tarama Süresi" FontSize="11" Foreground="#64748B" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding ScanDurationFormatted}" FontSize="15" FontWeight="Bold" Foreground="#0F172A" HorizontalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel>
+                        <TextBlock Text="Taranan Öğeler" FontSize="11" Foreground="#64748B" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding ScannedItemsFormatted}" FontSize="15" FontWeight="Bold" Foreground="#0F172A" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+
+            <!-- Body: Table or Safe Message -->
+            <Grid Grid.Row="1" Margin="0,0,0,18">
+                <!-- Clean State -->
+                <Border Background="#F0FDF4" BorderBrush="#BBF7D0" BorderThickness="1" CornerRadius="8" Padding="20"
+                        Visibility="{Binding HasNoFindings, Converter={StaticResource BoolToVis}}" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="#10B981" FontSize="28" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Sisteminiz Tamamen Güvende!" FontSize="15" FontWeight="Bold" Foreground="#166534"/>
+                            <TextBlock Text="Taranan dosyalarda herhangi bir zararlı kod veya tehdit bulunamadı." FontSize="12" Foreground="#15803D"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Threats Table -->
+                <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8"
+                        Visibility="{Binding HasFindings, Converter={StaticResource BoolToVis}}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <!-- Header -->
+                            <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="12,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="40"/>
+                                        <ColumnDefinition Width="180"/>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="100"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsAllSelected}" Command="{Binding ToggleSelectAllCommand}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="Adı" FontWeight="Bold" FontSize="12" Foreground="#334155"/>
+                                    <TextBlock Grid.Column="2" Text="Tür" FontWeight="Bold" FontSize="12" Foreground="#334155"/>
+                                    <TextBlock Grid.Column="3" Text="Nesne Türü" FontWeight="Bold" FontSize="12" Foreground="#334155"/>
+                                    <TextBlock Grid.Column="4" Text="Konum" FontWeight="Bold" FontSize="12" Foreground="#334155"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Items -->
+                            <ItemsControl ItemsSource="{Binding ThreatResults}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="#F1F5F9" BorderThickness="0,0,0,1" Padding="12,9">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="40"/>
+                                                    <ColumnDefinition Width="180"/>
+                                                    <ColumnDefinition Width="130"/>
+                                                    <ColumnDefinition Width="100"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="Bold" FontSize="12" Foreground="#0284C7" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding ThreatType}" FontSize="11.5" Foreground="#DC2626"/>
+                                                <TextBlock Grid.Column="3" Text="{Binding ObjectType}" FontSize="11.5" Foreground="#64748B"/>
+                                                <TextBlock Grid.Column="4" Text="{Binding Location}" FontSize="11" FontFamily="Consolas" Foreground="#334155" TextTrimming="CharacterEllipsis"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <!-- Bottom Actions -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0" Content="Raporla ⌄" Width="100" Height="34" Style="{StaticResource SecondaryActionButtonStyle}"/>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Content="Kapat" Width="100" Height="34" Margin="0,0,10,0" Style="{StaticResource SecondaryActionButtonStyle}"
+                            Command="{Binding CloseResultsCommand}" Click="OnCloseClicked"/>
+                    <Button Content="Karantinaya Al" Width="130" Height="34" Style="{StaticResource PrimaryActionButtonStyle}"
+                            Command="{Binding QuarantineSelectedCommand}"
+                            Visibility="{Binding HasFindings, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,24 @@
+<Application x:Class="AegisPC.App.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:conv="clr-namespace:AegisPC.App.Converters"
+    ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:ThemesDictionary Theme="Dark" />
+                <ui:ControlsDictionary />
+                <ResourceDictionary Source="Resources/Themes/SharedStyles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Global Converters available application-wide -->
+            <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+            <conv:BoolToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+            <conv:BytesToHumanReadableConverter x:Key="BytesConverter"/>
+            <conv:NullToBoolConverter x:Key="NullToBoolConverter"/>
+            <conv:PercentToColorConverter x:Key="PercentColorConverter"/>
+            <conv:RiskLevelToColorConverter x:Key="RiskColorConverter"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

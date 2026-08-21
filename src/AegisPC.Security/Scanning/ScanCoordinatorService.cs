@@ -1,0 +1,164 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using AegisPC.Contracts.Services;
+using AegisPC.Core.Enums;
+using AegisPC.Core.Models;
+using Microsoft.Extensions.Logging;
+
+namespace AegisPC.Security.Scanning
+{
+    public class ScanCoordinatorService : IScanCoordinatorService
+    {
+        private readonly IFileScanner _fileScanner;
+        private readonly ISecurityFindingService _findingService;
+        private readonly ILogger<ScanCoordinatorService>? _logger;
+
+        private CancellationTokenSource? _scanCts;
+        private readonly object _lock = new();
+        private readonly List<SecurityFinding> _currentFindings = new();
+
+        public bool IsScanning { get; private set; }
+        public ScanType CurrentScanType { get; private set; } = ScanType.Quick;
+        public double ProgressPercent { get; private set; }
+        public string CurrentFile { get; private set; } = string.Empty;
+        public int ScannedFiles { get; private set; }
+        public int TotalFiles { get; private set; }
+        public int FindingsCount => _currentFindings.Count;
+        public string StatusText { get; private set; } = "Taramaya hazır.";
+        public IReadOnlyList<SecurityFinding> CurrentFindings
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _currentFindings.ToList();
+                }
+            }
+        }
+
+        public event Action<ScanProgress>? ProgressChanged;
+        public event Action<ScanResult>? ScanCompleted;
+
+        public ScanCoordinatorService(
+            IFileScanner fileScanner,
+            ISecurityFindingService findingService,
+            ILogger<ScanCoordinatorService>? logger = null)
+        {
+            _fileScanner = fileScanner;
+            _findingService = findingService;
+            _logger = logger;
+        }
+
+        public async Task<ScanResult?> StartScanAsync(ScanType scanType, string customPath = "")
+        {
+            lock (_lock)
+            {
+                if (IsScanning)
+                {
+                    _logger?.LogWarning("A scan is already in progress.");
+                    return null;
+                }
+
+                IsScanning = true;
+                CurrentScanType = scanType;
+                ProgressPercent = 0;
+                CurrentFile = "Tarama başlatılıyor...";
+                ScannedFiles = 0;
+                TotalFiles = 0;
+                _currentFindings.Clear();
+                StatusText = $"{scanType} taraması çalışıyor...";
+                _scanCts = new CancellationTokenSource();
+            }
+
+            var progressHandler = new Progress<ScanProgress>(p =>
+            {
+                ProgressPercent = p.ProgressPercent;
+                CurrentFile = p.CurrentFile;
+                ScannedFiles = p.ScannedFiles;
+                TotalFiles = p.TotalFiles;
+                StatusText = $"{CurrentScanType} taraması: {p.ScannedFiles:N0} dosya incelendi";
+
+                try
+                {
+                    ProgressChanged?.Invoke(p);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogTrace(ex, "Error notifying scan progress listeners");
+                }
+            });
+
+            ScanResult? result = null;
+
+            try
+            {
+                _logger?.LogInformation("Starting {ScanType} scan (path: '{Path}')", scanType, customPath);
+                result = await _fileScanner.ScanDirectoryAsync(customPath, scanType, progressHandler, _scanCts.Token);
+
+                lock (_lock)
+                {
+                    _currentFindings.Clear();
+                    if (result?.Findings != null)
+                    {
+                        _currentFindings.AddRange(result.Findings);
+                    }
+                    StatusText = $"Tarama tamamlandı. {result?.ScannedFiles:N0} dosya incelendi, {_currentFindings.Count} riskli bulgu.";
+                    ProgressPercent = 100;
+                    CurrentFile = "Tarama tamamlandı.";
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                lock (_lock)
+                {
+                    StatusText = "Tarama kullanıcı tarafından durduruldu.";
+                    CurrentFile = "Durduruldu.";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Scan failed with error: {Message}", ex.Message);
+                lock (_lock)
+                {
+                    StatusText = $"Tarama hatası: {ex.Message}";
+                    CurrentFile = "Hata oluştu.";
+                }
+            }
+            finally
+            {
+                lock (_lock)
+                {
+                    IsScanning = false;
+                }
+
+                if (result != null)
+                {
+                    try
+                    {
+                        ScanCompleted?.Invoke(result);
+                    }
+                    catch { }
+                }
+            }
+
+            return result;
+        }
+
+        public void CancelScan()
+        {
+            lock (_lock)
+            {
+                if (!IsScanning || _scanCts == null) return;
+                try
+                {
+                    _scanCts.Cancel();
+                    StatusText = "Tarama iptal ediliyor...";
+                }
+                catch { }
+            }
+        }
+    }
+}

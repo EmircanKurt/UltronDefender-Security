@@ -1,0 +1,132 @@
+<Page x:Class="AegisPC.App.Views.QuarantineView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      Background="#EEF2F6"
+      UseLayoutRounding="True"
+      SnapsToDevicePixels="True"
+      TextOptions.TextFormattingMode="Display"
+      TextOptions.TextRenderingMode="ClearType"
+      Title="{Binding PageTitle}">
+
+    <Page.Resources>
+        <conv:BytesToHumanReadableConverter x:Key="BytesConverter"/>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </Page.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0" Style="{StaticResource PageHeaderStyle}" Text="Karantina Kasası" />
+
+        <!-- Info & Toolbar -->
+        <Grid Grid.Row="1" Margin="0,0,0,16">
+            <TextBlock Text="Karantinaya alınan dosyalar şifrelenerek etkisizleştirilir ve zararlı çalışması engellenir." Foreground="#64748B" VerticalAlignment="Center"/>
+            <ui:Button HorizontalAlignment="Right" Content="Yenile" Icon="{ui:SymbolIcon ArrowClockwise24}" 
+                       Command="{Binding LoadItemsCommand}"/>
+        </Grid>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="320"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Quarantine Grid -->
+            <Grid Grid.Column="0" Margin="0,0,16,0">
+                <ui:DataGrid ItemsSource="{Binding QuarantinedItems}" 
+                             SelectedItem="{Binding SelectedItem}"
+                             AutoGenerateColumns="False" IsReadOnly="True"
+                             SelectionMode="Single">
+                    <ui:DataGrid.Columns>
+                        <DataGridTextColumn Header="Dosya Adı" Binding="{Binding FileName}" Width="230"/>
+                        <DataGridTextColumn Header="Boyut" Binding="{Binding FileSize, Converter={StaticResource BytesConverter}}" Width="90"/>
+                        <DataGridTextColumn Header="Karantina Zamanı" Binding="{Binding QuarantinedAt, StringFormat='\{0:yyyy-MM-dd HH:mm\}'}" Width="140"/>
+                        <DataGridTextColumn Header="Sebep" Binding="{Binding Reason}" Width="*"/>
+                    </ui:DataGrid.Columns>
+                </ui:DataGrid>
+
+                <!-- Empty State Overlay -->
+                <Border Background="#EEF2F6" Visibility="{Binding HasNoQuarantinedItems, Converter={StaticResource BoolToVis}}">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <TextBlock Text="🛡️" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                        <TextBlock Text="Karantinada dosya bulunmuyor" FontSize="18" FontWeight="SemiBold" 
+                                   HorizontalAlignment="Center" Foreground="#0F172A"/>
+                        <TextBlock Text="Sisteminiz temiz — tehditler tespit edildiğinde burada görüntülenir." 
+                                   FontSize="13" Foreground="#475569" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Actions Panel -->
+            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="8">
+                        <TextBlock Text="Karantina Yönetimi" FontSize="18" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,16"/>
+
+                        <StackPanel Visibility="{Binding SelectedItem, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding SelectedItem.FileName}" FontSize="18" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding SelectedItem.FileSize, Converter={StaticResource BytesConverter}, StringFormat='Boyut: \{0\}'}" Foreground="#64748B" Margin="0,0,0,12"/>
+
+                            <Grid Margin="0,8,0,4">
+                                <TextBlock Text="Orijinal Konum" FontWeight="SemiBold" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                <Button Content="📋 Kopyala" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Right" Padding="8,2" FontSize="11"
+                                        Command="{Binding CopyOriginalPathCommand}"/>
+                            </Grid>
+                            <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,2">
+                                <TextBox Text="{Binding SelectedItem.OriginalPath, Mode=OneWay}" IsReadOnly="True" BorderThickness="0" Background="Transparent" 
+                                         TextWrapping="Wrap" FontSize="11.5" FontFamily="Consolas" Foreground="#0F172A"/>
+                            </Border>
+
+                            <Grid Margin="0,10,0,4">
+                                <TextBlock Text="SHA-256 Karması" FontWeight="SemiBold" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                <Button Content="📋 Kopyala" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Right" Padding="8,2" FontSize="11"
+                                        Command="{Binding CopySha256Command}"/>
+                            </Grid>
+                            <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,2">
+                                <TextBox Text="{Binding SelectedItem.SHA256, Mode=OneWay}" IsReadOnly="True" BorderThickness="0" Background="Transparent" 
+                                         TextWrapping="Wrap" FontSize="11" FontFamily="Consolas" Foreground="#64748B"/>
+                            </Border>
+
+                            <TextBlock Text="Karantinaya Alınma Sebebi" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,12,0,4"/>
+                            <Border Background="#FFFBEB" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,2">
+                                <TextBlock Text="{Binding SelectedItem.Reason}" TextWrapping="Wrap" FontSize="12" Foreground="#B45309"/>
+                            </Border>
+
+                            <StackPanel Margin="0,20,0,0">
+                                <Button Content="Dosyayı Geri Yükle" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Stretch"
+                                        Command="{Binding RestoreItemCommand}" Margin="0,0,0,8"/>
+                                <Button Content="Kalıcı Olarak Sil" Style="{StaticResource DangerButtonStyle}" HorizontalAlignment="Stretch"
+                                        Command="{Binding DeleteItemCommand}"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Text="İncelemek veya geri yüklemek için bir dosya seçin." Foreground="Gray" HorizontalAlignment="Center" Margin="0,60,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedItem}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="Gray" FontSize="12" Margin="0,8,0,0"/>
+    </Grid>
+</Page>

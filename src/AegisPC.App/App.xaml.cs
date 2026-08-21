@@ -1,0 +1,234 @@
+using System;
+using System.IO;
+using System.Windows;
+using System.Windows.Threading;
+using AegisPC.App.Startup;
+using Microsoft.Extensions.DependencyInjection;
+using Wpf.Ui;
+
+namespace AegisPC.App
+{
+    public partial class App : System.Windows.Application
+    {
+        public static IServiceProvider? ServiceProvider { get; private set; }
+        private static readonly string LogFile = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "AegisPC", "Logs", "aegis_debug.log");
+
+        private static void Log(string msg)
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(LogFile);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+                File.AppendAllText(LogFile, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {msg}\r\n");
+            }
+            catch { }
+        }
+
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            Log("=== AegisPC App Startup Begin ===");
+            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+            DispatcherUnhandledException += App_DispatcherUnhandledException;
+
+            try
+            {
+                Log("1. Registering services...");
+                var serviceCollection = new ServiceCollection();
+                ServiceRegistration.RegisterServices(serviceCollection);
+                ServiceProvider = serviceCollection.BuildServiceProvider();
+                Log("2. Services registered successfully.");
+
+                // Apply Light theme for high-contrast dark TitleBar buttons and crisp controls
+                try
+                {
+                    Wpf.Ui.Appearance.ApplicationThemeManager.Apply(Wpf.Ui.Appearance.ApplicationTheme.Light);
+                }
+                catch { }
+
+                // Register Windows Startup entry & Antivirus Security Center Registration
+                try
+                {
+                    AutoStartHelper.EnsureAutoStartRegistered();
+                    var secReg = ServiceProvider.GetService<AegisPC.Infrastructure.IWindowsSecurityRegistrationService>();
+                    secReg?.RegisterAsSecurityProvider();
+                }
+                catch { }
+
+                Log("3. Resolving MainWindow...");
+                var mainWindow = ServiceProvider.GetRequiredService<MainWindow>();
+                MainWindow = mainWindow;
+
+                bool startMinimized = false;
+                if (e.Args != null)
+                {
+                    foreach (var arg in e.Args)
+                    {
+                        if (arg.Equals("--minimized", StringComparison.OrdinalIgnoreCase) || 
+                            arg.Equals("/minimized", StringComparison.OrdinalIgnoreCase) ||
+                            arg.Equals("-minimized", StringComparison.OrdinalIgnoreCase))
+                        {
+                            startMinimized = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!startMinimized)
+                {
+                    Log("4. Showing MainWindow...");
+                    mainWindow.Show();
+                    Log("5. MainWindow shown successfully.");
+                }
+                else
+                {
+                    Log("4. Starting in background (System Tray only)...");
+                }
+
+                // Start real-time download and background protection
+                try
+                {
+                    var bgService = ServiceProvider.GetService<AegisPC.Security.RealTime.IBackgroundProtectionService>();
+                    var toastService = ServiceProvider.GetService<AegisPC.Contracts.Services.IWindowsToastNotificationService>();
+                    var behaviorEngine = ServiceProvider.GetService<AegisPC.Contracts.Services.IBehaviorEngine>();
+                    var ipcClient = ServiceProvider.GetService<AegisPC.ServiceContracts.IServiceIpcClient>();
+                    var scanCoordinator = ServiceProvider.GetService<AegisPC.Contracts.Services.IScanCoordinatorService>();
+
+                    // Initialize System Tray Icon First
+                    var trayService = ServiceProvider.GetService<AegisPC.App.Services.ISystemTrayService>();
+                    trayService?.Initialize();
+
+                    if (toastService != null)
+                    {
+                        if (bgService != null)
+                        {
+                            bgService.OnNotificationRaised += (title, msg) => toastService.ShowToast(title, msg);
+                            bgService.StartProtection();
+                        }
+
+                        if (behaviorEngine != null)
+                        {
+                            behaviorEngine.OnThreatContained += (proc, threat) =>
+                            {
+                                toastService.ShowToast($"🚨 Tehdit Engellendi: {threat}", $"Zararlı davranış sergileyen '{proc}' süreci sonlandırıldı ve dosya karantinaya alındı.", "Error");
+                            };
+                        }
+
+                        if (scanCoordinator != null)
+                        {
+                            scanCoordinator.ScanCompleted += (result) =>
+                            {
+                                if (result.Findings.Count > 0)
+                                {
+                                    toastService.ShowToast(
+                                        "🚨 Ultron Defender (Antivirüs Programı): Tehdit Tespit Edildi!",
+                                        $"{result.ScanType} taraması bitti: {result.Findings.Count} adet riskli tehdit bulundu. Detayları görmek için tıklayın.",
+                                        "Warning");
+                                }
+                                else
+                                {
+                                    toastService.ShowToast(
+                                        "🛡️ Ultron Defender (Antivirüs Programı): Sistem Güvende",
+                                        $"{result.ScanType} taraması bitti: {result.ScannedFiles:N0} dosya incelendi, sistem tamamen temiz.",
+                                        "Info");
+                                }
+                            };
+                        }
+
+                        // Start Core Real-Time Progressive Protection Engine
+                        var realTimeEngine = ServiceProvider.GetService<AegisPC.Security.RealTime.IRealTimeProtectionEngine>();
+                        if (realTimeEngine != null)
+                        {
+                            realTimeEngine.Start();
+                            realTimeEngine.OnNotificationRaised += (title, msg, type) =>
+                            {
+                                toastService?.ShowToast(title, msg, type);
+                            };
+                        }
+
+                        var ransomwareEngine = ServiceProvider.GetService<AegisPC.Security.RealTime.IRansomwareProtectionEngine>();
+                        if (ransomwareEngine != null)
+                        {
+                            ransomwareEngine.StartShield();
+                            ransomwareEngine.OnRansomwareAttemptDetected += (s, ev) =>
+                            {
+                                toastService?.ShowToast(
+                                    "🚨 Fidye Saldırısı Engellendi!",
+                                    $"Şüpheli şifreleme girişimi durduruldu: '{System.IO.Path.GetFileName(ev.OffendingFilePath)}'",
+                                    "Error");
+                            };
+                        }
+
+                        var etwMonitor = ServiceProvider.GetService<AegisPC.Contracts.Services.IEtwProcessMonitorService>();
+                        if (etwMonitor != null)
+                        {
+                            etwMonitor.ThreatDetected += (alert) =>
+                            {
+                                toastService?.ShowToast(
+                                    $"🚨 ETW Tehdit Engellendi: {alert.ThreatName}",
+                                    $"Zararlı komut çalıştıran süreç durduruldu (PID: {alert.ProcessId})\nKomut: {alert.CommandLine}",
+                                    "Danger");
+                            };
+                            etwMonitor.Start();
+                        }
+
+                        if (ipcClient != null)
+                        {
+                            ipcClient.ThreatDetected += (threat) =>
+                            {
+                                toastService.ShowToast($"🚨 Arka Plan Tehdit Uyarısı: {threat.ThreatName}", $"Dosya: {threat.FilePath}\nİşlem: {threat.ActionTaken}", "Warning");
+                            };
+                            _ = ipcClient.ConnectAsync();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"Background protection startup warning: {ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"CRITICAL STARTUP ERROR: {ex}");
+                MessageBox.Show($"Uygulama başlatılırken bir hata oluştu:\n\n{ex.Message}\n\nDetay:\n{ex.StackTrace}", 
+                    "Ultron Defender Total Security - Başlatma Hatası", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+
+            base.OnStartup(e);
+            Log("=== OnStartup Completed ===");
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            Log($"=== Ultron Defender App Shut down with code {e.ApplicationExitCode} ===");
+            try
+            {
+                var trayService = ServiceProvider?.GetService<AegisPC.App.Services.ISystemTrayService>();
+                trayService?.Dispose();
+            }
+            catch { }
+            base.OnExit(e);
+        }
+
+        private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            Log($"AppDomain Unhandled Exception: {e.ExceptionObject}");
+            if (e.ExceptionObject is Exception ex)
+            {
+                MessageBox.Show($"Kritik Hata:\n{ex.Message}", "Ultron Defender Total Security - Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+        {
+            Log($"Dispatcher Unhandled Exception: {e.Exception}");
+            MessageBox.Show($"Arayüz Hatası:\n{e.Exception.Message}\n\nDetay: {e.Exception.InnerException?.Message}", 
+                "Ultron Defender Total Security - Arayüz Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
+            e.Handled = true;
+        }
+    }
+}

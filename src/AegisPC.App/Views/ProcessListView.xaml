@@ -1,0 +1,123 @@
+<Page x:Class="AegisPC.App.Views.ProcessListView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      Background="#EEF2F6"
+      UseLayoutRounding="True"
+      SnapsToDevicePixels="True"
+      TextOptions.TextFormattingMode="Display"
+      TextOptions.TextRenderingMode="ClearType"
+      Title="{Binding PageTitle}">
+
+    <Page.Resources>
+        <conv:BytesToHumanReadableConverter x:Key="BytesConverter"/>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:NullToBoolConverter x:Key="NullToBool"/>
+    </Page.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0" Style="{StaticResource PageHeaderStyle}" Text="Süreç Yöneticisi" />
+
+        <!-- Toolbar -->
+        <Grid Grid.Row="1" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <ui:TextBox Grid.Column="0" PlaceholderText="Süreç adı veya PID ile filtrele..." 
+                        Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" 
+                        Icon="{ui:SymbolIcon Search24}" Margin="0,0,12,0"/>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <ui:Button Content="Yenile" Icon="{ui:SymbolIcon ArrowClockwise24}" 
+                           Command="{Binding LoadProcessesCommand}" Margin="0,0,8,0"/>
+                <ui:Button Content="Görevi Sonlandır" Icon="{ui:SymbolIcon DismissCircle24}" 
+                           Appearance="Danger"
+                           Command="{Binding TerminateProcessCommand}"
+                           IsEnabled="{Binding SelectedProcess, Converter={StaticResource NullToBool}}"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Main Content (Table + Detail) -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="320"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Process DataGrid -->
+            <ui:DataGrid Grid.Column="0" ItemsSource="{Binding Processes}" 
+                         SelectedItem="{Binding SelectedProcess}"
+                         AutoGenerateColumns="False" IsReadOnly="True"
+                         SelectionMode="Single" Margin="0,0,16,0">
+                <ui:DataGrid.Columns>
+                    <DataGridTextColumn Header="PID" Binding="{Binding PID}" Width="70"/>
+                    <DataGridTextColumn Header="Süreç Adı" Binding="{Binding Name}" Width="160"/>
+                    <DataGridTextColumn Header="CPU %" Binding="{Binding CpuPercent, StringFormat='\{0:F1\} %'}" Width="80"/>
+                    <DataGridTextColumn Header="Bellek" Binding="{Binding MemoryBytes, Converter={StaticResource BytesConverter}}" Width="100"/>
+                    <DataGridTextColumn Header="Yol" Binding="{Binding ExecutablePath}" Width="*"/>
+                </ui:DataGrid.Columns>
+            </ui:DataGrid>
+
+            <!-- Process Detail Panel -->
+            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="8">
+                        <TextBlock Text="Süreç Detayı" FontSize="18" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,16"/>
+
+                        <StackPanel Visibility="{Binding SelectedProcess, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding SelectedProcess.Name}" FontSize="20" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding SelectedProcess.PID, StringFormat='PID: \{0\}'}" Foreground="#64748B" Margin="0,0,0,12"/>
+
+                            <TextBlock Text="Kaynak Kullanımı" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,8,0,4"/>
+                            <TextBlock Text="{Binding SelectedProcess.CpuPercent, StringFormat='CPU: \{0:F1\} %'}" Foreground="#475569" Margin="0,2"/>
+                            <TextBlock Text="{Binding SelectedProcess.MemoryBytes, Converter={StaticResource BytesConverter}, StringFormat='Bellek: \{0\}'}" Foreground="#475569" Margin="0,2"/>
+
+                            <TextBlock Text="Dosya Konumu" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,12,0,4"/>
+                            <TextBlock Text="{Binding SelectedProcess.ExecutablePath}" TextWrapping="Wrap" FontSize="12" Foreground="#475569" Margin="0,2"/>
+
+                            <TextBlock Text="Başlangıç Zamanı" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,12,0,4"/>
+                            <TextBlock Text="{Binding SelectedProcess.StartTime, StringFormat='\{0:yyyy-MM-dd HH:mm:ss\}'}" Foreground="#475569" Margin="0,2"/>
+
+                            <TextBlock Text="Üst Süreç PID" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,12,0,4"/>
+                            <TextBlock Text="{Binding SelectedProcess.ParentPid}" Foreground="#475569" Margin="0,2"/>
+
+                            <StackPanel Margin="0,24,0,0">
+                                <ui:Button Content="Süreci Sonlandır" Appearance="Danger" HorizontalAlignment="Stretch"
+                                           Command="{Binding TerminateProcessCommand}" Margin="0,0,0,8"/>
+                                <ui:Button Content="Ağacı Sonlandır" Appearance="Secondary" HorizontalAlignment="Stretch"
+                                           Command="{Binding TerminateTreeCommand}"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Text="Bir süreç seçin." Foreground="#64748B" HorizontalAlignment="Center" Margin="0,40,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedProcess}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="#64748B" FontSize="12" Margin="0,8,0,0"/>
+    </Grid>
+</Page>
