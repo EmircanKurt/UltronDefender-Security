@@ -36,8 +36,17 @@ namespace AegisPC.Security.Behavior
         public AttackChainCorrelationResult EvaluateChain(int pid, TimeSpan slidingWindow)
         {
             var cutoff = DateTime.UtcNow - slidingWindow;
+            var relevantPids = new HashSet<int> { pid };
+            if (_tracker != null)
+            {
+                foreach (var desc in _tracker.GetDescendants(pid))
+                {
+                    relevantPids.Add(desc.Pid);
+                }
+            }
+
             var relevantEvents = _events
-                .Where(e => e.ProcessId == pid && e.Timestamp >= cutoff)
+                .Where(e => relevantPids.Contains(e.ProcessId) && e.Timestamp >= cutoff)
                 .OrderBy(e => e.Timestamp)
                 .ToList();
 
