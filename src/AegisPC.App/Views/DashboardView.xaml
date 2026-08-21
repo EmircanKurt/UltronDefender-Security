@@ -1,4 +1,4 @@
-<Page x:Class="AegisPC.App.Views.DashboardView"
+﻿<Page x:Class="AegisPC.App.Views.DashboardView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -155,9 +155,9 @@
                         </Grid.RowDefinitions>
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                             <ui:SymbolIcon Symbol="Shield24" Foreground="#0284C7" FontSize="18" Margin="0,0,8,0"/>
-                            <TextBlock Text="Virüs Taraması" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
+                            <TextBlock Text="Virüs Taraması" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
                         </StackPanel>
-                        <TextBlock Grid.Row="1" Text="Animasyonlu tarayıcı penceresi ile hızlı, tam veya özel dosya analizi." Foreground="#64748B" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <TextBlock Grid.Row="1" Text="Animasyonlu tarayıcı penceresi ile hızlı, tam veya özel dosya analizi." Foreground="{DynamicResource BrushTextMuted}" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,10"/>
                         <Button Grid.Row="2" Content="Taramayı Başlat" Style="{StaticResource SecondaryActionButtonStyle}" 
                                 Command="{Binding StartQuickScanCommand}" HorizontalAlignment="Stretch" Padding="0,5" FontSize="11.5"/>
                     </Grid>
@@ -173,9 +173,9 @@
                         </Grid.RowDefinitions>
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                             <ui:SymbolIcon Symbol="Flash24" Foreground="#10B981" FontSize="18" Margin="0,0,8,0"/>
-                            <TextBlock Text="Gerçek Zamanlı Kalkan" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
+                            <TextBlock Text="Gerçek Zamanlı Kalkan" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
                         </StackPanel>
-                        <TextBlock Grid.Row="1" Text="İndirmeleri, USB ve geçici dizinleri anında denetler." Foreground="#64748B" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <TextBlock Grid.Row="1" Text="İndirmeleri, USB ve geçici dizinleri anında denetler." Foreground="{DynamicResource BrushTextMuted}" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,10"/>
                         <Button Grid.Row="2" Content="Durumu İncele" Style="{StaticResource SecondaryActionButtonStyle}" 
                                 Command="{Binding NavigateToTargetCommand}" CommandParameter="security" HorizontalAlignment="Stretch" Padding="0,5" FontSize="11.5"/>
                     </Grid>
@@ -191,9 +191,9 @@
                         </Grid.RowDefinitions>
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                             <ui:SymbolIcon Symbol="LockClosed24" Foreground="#D97706" FontSize="18" Margin="0,0,8,0"/>
-                            <TextBlock Text="Fidye Kalkanı" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
+                            <TextBlock Text="Fidye Kalkanı" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
                         </StackPanel>
-                        <TextBlock Grid.Row="1" Text="Belgelerim ve resimlerinizi şifreleme girişimlerine karşı korur." Foreground="#64748B" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <TextBlock Grid.Row="1" Text="Belgelerim ve resimlerinizi şifreleme girişimlerine karşı korur." Foreground="{DynamicResource BrushTextMuted}" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,10"/>
                         <Button Grid.Row="2" Content="Klasör Koruması" Style="{StaticResource SecondaryActionButtonStyle}" 
                                 Command="{Binding NavigateToTargetCommand}" CommandParameter="ransomware" HorizontalAlignment="Stretch" Padding="0,5" FontSize="11.5"/>
                     </Grid>
@@ -209,9 +209,9 @@
                         </Grid.RowDefinitions>
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                             <ui:SymbolIcon Symbol="Archive24" Foreground="#8B5CF6" FontSize="18" Margin="0,0,8,0"/>
-                            <TextBlock Text="Karantina Kasası" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
+                            <TextBlock Text="Karantina Kasası" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
                         </StackPanel>
-                        <TextBlock Grid.Row="1" Text="Yalıtılmış ve AES-256 ile şifrelenmiş şüpheli dosyalar." Foreground="#64748B" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <TextBlock Grid.Row="1" Text="Yalıtılmış ve AES-256 ile şifrelenmiş şüpheli dosyalar." Foreground="{DynamicResource BrushTextMuted}" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,10"/>
                         <Button Grid.Row="2" Content="Kasayı Aç" Style="{StaticResource SecondaryActionButtonStyle}" 
                                 Command="{Binding NavigateToTargetCommand}" CommandParameter="quarantine" HorizontalAlignment="Stretch" Padding="0,5" FontSize="11.5"/>
                     </Grid>
@@ -230,8 +230,8 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="Canlı Güvenlik Akışı" FontSize="14" FontWeight="Bold" Foreground="#0F172A"/>
-                            <TextBlock Text="Arka planda taranan ve korunan son olaylar" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock Text="Canlı Güvenlik Akışı" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
+                            <TextBlock Text="Arka planda taranan ve korunan son olaylar" FontSize="11" Foreground="{DynamicResource BrushTextMuted}"/>
                         </StackPanel>
                         <Border Grid.Column="1" Background="#F0FDF4" BorderBrush="#BBF7D0" BorderThickness="1" CornerRadius="8" Padding="8,3" VerticalAlignment="Center">
                             <TextBlock Text="● CANLI İZLEME" FontSize="10" FontWeight="Bold" Foreground="#166534"/>
@@ -239,7 +239,7 @@
                     </Grid>
 
                     <!-- Events Table -->
-                    <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8">
+                    <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8">
                         <DataGrid ItemsSource="{Binding LiveActivities}"
                                   AutoGenerateColumns="False"
                                   CanUserAddRows="False"

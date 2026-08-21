@@ -1,10 +1,10 @@
-<Page x:Class="AegisPC.App.Views.StartupManagerView"
+﻿<Page x:Class="AegisPC.App.Views.StartupManagerView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
       Title="{Binding PageTitle}"
-      Background="#EEF2F6"
+      Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True"
       SnapsToDevicePixels="True"
       TextOptions.TextFormattingMode="Display"
@@ -76,10 +76,10 @@
             <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="8">
-                        <TextBlock Text="Başlangıç Girdisi Detayı" FontSize="18" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,16"/>
+                        <TextBlock Text="Başlangıç Girdisi Detayı" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,16"/>
 
                         <StackPanel Visibility="{Binding SelectedItem, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="{Binding SelectedItem.Name}" FontSize="18" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding SelectedItem.Name}" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4"/>
                             
                             <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
                                 <Border Background="{Binding SelectedItem.RiskLevel, Converter={StaticResource RiskColorConverter}}" 
@@ -88,14 +88,14 @@
                                 </Border>
                             </StackPanel>
 
-                            <TextBlock Text="Kayıt Yeri / Kaynak:" FontWeight="SemiBold" Foreground="#64748B" Margin="0,8,0,2"/>
-                            <TextBlock Text="{Binding SelectedItem.Source}" Foreground="#475569" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <TextBlock Text="Kayıt Yeri / Kaynak:" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextMuted}" Margin="0,8,0,2"/>
+                            <TextBlock Text="{Binding SelectedItem.Source}" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" Margin="0,0,0,8"/>
 
-                            <TextBlock Text="Çalıştırılabilir Dosya / Komut:" FontWeight="SemiBold" Foreground="#64748B" Margin="0,8,0,2"/>
-                            <TextBlock Text="{Binding SelectedItem.FilePath}" Foreground="#475569" TextWrapping="Wrap" Margin="0,0,0,8" FontFamily="Consolas"/>
+                            <TextBlock Text="Çalıştırılabilir Dosya / Komut:" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextMuted}" Margin="0,8,0,2"/>
+                            <TextBlock Text="{Binding SelectedItem.FilePath}" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" Margin="0,0,0,8" FontFamily="Consolas"/>
 
-                            <TextBlock Text="Açılış Etki Seviyesi:" FontWeight="SemiBold" Foreground="#64748B" Margin="0,8,0,2"/>
-                            <TextBlock Text="{Binding SelectedItem.ImpactLevel}" Foreground="#475569" Margin="0,0,0,8"/>
+                            <TextBlock Text="Açılış Etki Seviyesi:" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextMuted}" Margin="0,8,0,2"/>
+                            <TextBlock Text="{Binding SelectedItem.ImpactLevel}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,0,8"/>
 
                             <ui:Button Content="Başlangıç Durumunu Değiştir" Margin="0,16,0,0" 
                                        Appearance="Primary"
@@ -103,7 +103,7 @@
                         </StackPanel>
 
                         <TextBlock Text="Detayları görüntülemek için soldaki listeden bir başlangıç girdisi seçin."
-                                   Foreground="#64748B" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource BrushTextMuted}" TextWrapping="Wrap"
                                    Visibility="{Binding SelectedItem, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"/>
                     </StackPanel>
                 </ScrollViewer>
@@ -111,6 +111,7 @@
         </Grid>
 
         <!-- Status Footer -->
-        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="#64748B" Margin="0,8,0,0"/>
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,8,0,0"/>
     </Grid>
 </Page>
+

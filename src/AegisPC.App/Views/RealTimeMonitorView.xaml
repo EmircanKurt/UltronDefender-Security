@@ -1,4 +1,4 @@
-<Page x:Class="AegisPC.App.Views.RealTimeMonitorView"
+﻿<Page x:Class="AegisPC.App.Views.RealTimeMonitorView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -20,7 +20,7 @@
                 <!-- CPU -->
                 <Border Style="{StaticResource MetricCardStyle}" Height="140" Margin="0,0,12,0">
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="İşlemci (CPU)" Foreground="#64748B" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="İşlemci (CPU)" Foreground="{DynamicResource BrushTextMuted}" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <TextBlock Text="{Binding CurrentCpu, StringFormat='\{0:F1\} %'}" 
                                    FontSize="32" FontWeight="Bold" 
                                    Foreground="{Binding CurrentCpu, Converter={StaticResource PercentColorConverter}}"/>
@@ -32,12 +32,12 @@
                 <!-- RAM -->
                 <Border Style="{StaticResource MetricCardStyle}" Height="140" Margin="0,0,12,0">
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Bellek (RAM)" Foreground="#64748B" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="Bellek (RAM)" Foreground="{DynamicResource BrushTextMuted}" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <TextBlock Text="{Binding CurrentRamPercent, StringFormat='\{0:F1\} %'}" 
                                    FontSize="32" FontWeight="Bold" 
                                    Foreground="{Binding CurrentRamPercent, Converter={StaticResource PercentColorConverter}}"/>
                         <TextBlock Text="{Binding CurrentRamUsedBytes, Converter={StaticResource BytesConverter}, StringFormat='Kullanılan: \{0\}'}" 
-                                   FontSize="12" Foreground="#475569" Margin="0,4,0,0"/>
+                                   FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,0"/>
                         <ProgressBar Value="{Binding CurrentRamPercent}" Height="6" Margin="0,6,0,0" 
                                      Foreground="{Binding CurrentRamPercent, Converter={StaticResource PercentColorConverter}}" Background="#E2E8F0"/>
                     </StackPanel>
@@ -46,7 +46,7 @@
                 <!-- Disk -->
                 <Border Style="{StaticResource MetricCardStyle}" Height="140" Margin="0,0,12,0">
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Disk Doluluğu" Foreground="#64748B" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="Disk Doluluğu" Foreground="{DynamicResource BrushTextMuted}" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <TextBlock Text="{Binding CurrentDiskUsage, StringFormat='\{0:F1\} %'}" 
                                    FontSize="32" FontWeight="Bold" 
                                    Foreground="{Binding CurrentDiskUsage, Converter={StaticResource PercentColorConverter}}"/>
@@ -87,3 +87,4 @@
         </StackPanel>
     </ScrollViewer>
 </Page>
+

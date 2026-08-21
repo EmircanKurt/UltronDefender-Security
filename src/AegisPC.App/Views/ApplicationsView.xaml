@@ -1,10 +1,10 @@
-<Page x:Class="AegisPC.App.Views.ApplicationsView"
+﻿<Page x:Class="AegisPC.App.Views.ApplicationsView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
       Title="{Binding PageTitle}"
-      Background="#EEF2F6"
+      Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True"
       SnapsToDevicePixels="True"
       TextOptions.TextFormattingMode="Display"
@@ -89,7 +89,7 @@
                             <TextBlock Text="{Binding SelectedApp.InstallLocation, TargetNullValue='N/A'}" TextWrapping="Wrap" Margin="0,0,0,8" FontFamily="Consolas"/>
 
                             <TextBlock Text="Kayıt Kaynağı:" FontWeight="SemiBold" Foreground="Gray" Margin="0,8,0,2"/>
-                            <TextBlock Text="{Binding SelectedApp.RegistrySource}" TextWrapping="Wrap" Margin="0,0,0,8" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock Text="{Binding SelectedApp.RegistrySource}" TextWrapping="Wrap" Margin="0,0,0,8" FontSize="11" Foreground="{DynamicResource BrushTextMuted}"/>
 
                             <ui:Button Content="Windows ile Kaldır" Margin="0,16,0,0" 
                                        Appearance="Danger"
@@ -108,3 +108,4 @@
         <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="Gray" Margin="0,8,0,0"/>
     </Grid>
 </Page>
+

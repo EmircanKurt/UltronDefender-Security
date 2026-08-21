@@ -1,4 +1,4 @@
-<Window x:Class="AegisPC.App.Views.ActiveScanWindow"
+﻿<Window x:Class="AegisPC.App.Views.ActiveScanWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -98,7 +98,7 @@
         <!-- ══════════════════════════════════════════════════════
              1. TOP TAB NAVIGATION BAR (Tarayıcı | Zamanlayıcı | Raporlar)
         ══════════════════════════════════════════════════════ -->
-        <Border Grid.Row="0" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="0,0,0,12" Margin="0,0,0,20">
+        <Border Grid.Row="0" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="0,0,0,1" Padding="0,0,0,12" Margin="0,0,0,20">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -108,7 +108,7 @@
 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <ui:SymbolIcon Symbol="Target24" Foreground="#0284C7" FontSize="20" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                    <TextBlock Text="Tarayıcı" FontSize="16" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,24,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Tarayıcı" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,24,0" VerticalAlignment="Center"/>
 
                     <!-- Tabs -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -133,7 +133,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Text="Tehdit Taraması işleniyor..." FontSize="16" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,24"/>
+            <TextBlock Grid.Row="0" Text="Tehdit Taraması işleniyor..." FontSize="16" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,24"/>
 
             <!-- Main 3-Column Scan Container -->
             <Grid Grid.Row="1" Margin="0,0,0,20">
@@ -144,7 +144,7 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Left: Animated Laptop / Scanning Device Illustration -->
-                <Border Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Left" Width="200" Height="145" Background="#F8FAFC" CornerRadius="10" BorderBrush="#E2E8F0" BorderThickness="1" Padding="14">
+                <Border Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Left" Width="200" Height="145" Background="{DynamicResource BrushAppBg}" CornerRadius="10" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" Padding="14">
                     <Grid>
                         <!-- Laptop Display Frame -->
                         <Border Background="#0B132B" CornerRadius="6" Margin="4,4,4,22" BorderBrush="#334155" BorderThickness="1">
@@ -167,25 +167,25 @@
                     <!-- Step 1 -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <ui:SymbolIcon Symbol="Checkmark24" Foreground="#10B981" FontSize="16" Margin="0,0,10,0"/>
-                        <TextBlock Text="Güncellemeleri denetle" FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A"/>
+                        <TextBlock Text="Güncellemeleri denetle" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
                     </StackPanel>
 
                     <!-- Step 2 -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <ui:SymbolIcon Symbol="Checkmark24" Foreground="#10B981" FontSize="16" Margin="0,0,10,0"/>
-                        <TextBlock Text="Bellek nesnelerini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A"/>
+                        <TextBlock Text="Bellek nesnelerini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
                     </StackPanel>
 
                     <!-- Step 3 -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <ui:SymbolIcon Symbol="Checkmark24" Foreground="#10B981" FontSize="16" Margin="0,0,10,0"/>
-                        <TextBlock Text="Başlangıç öğelerini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A"/>
+                        <TextBlock Text="Başlangıç öğelerini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
                     </StackPanel>
 
                     <!-- Step 4 -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <ui:SymbolIcon Symbol="Checkmark24" Foreground="#10B981" FontSize="16" Margin="0,0,10,0"/>
-                        <TextBlock Text="Kayıt Defterini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A"/>
+                        <TextBlock Text="Kayıt Defterini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
                     </StackPanel>
 
                     <!-- Step 5 (Active scanning indicator) -->
@@ -206,15 +206,15 @@
                 </StackPanel>
 
                 <!-- Right: Live Statistics Panel -->
-                <Border Grid.Column="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="18,16" VerticalAlignment="Center">
+                <Border Grid.Column="2" Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10" Padding="18,16" VerticalAlignment="Center">
                     <StackPanel>
-                        <TextBlock Text="Tarama Süresi" FontSize="11" Foreground="#64748B"/>
-                        <TextBlock Text="{Binding ScanDurationFormatted}" FontSize="15" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,14"/>
+                        <TextBlock Text="Tarama Süresi" FontSize="11" Foreground="{DynamicResource BrushTextMuted}"/>
+                        <TextBlock Text="{Binding ScanDurationFormatted}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,14"/>
 
-                        <TextBlock Text="Taranan Öğeler" FontSize="11" Foreground="#64748B"/>
-                        <TextBlock Text="{Binding ScannedItemsFormatted}" FontSize="15" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,14"/>
+                        <TextBlock Text="Taranan Öğeler" FontSize="11" Foreground="{DynamicResource BrushTextMuted}"/>
+                        <TextBlock Text="{Binding ScannedItemsFormatted}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,14"/>
 
-                        <TextBlock Text="Tespitler" FontSize="11" Foreground="#64748B"/>
+                        <TextBlock Text="Tespitler" FontSize="11" Foreground="{DynamicResource BrushTextMuted}"/>
                         <TextBlock Text="{Binding DetectionsCount}" FontSize="16" FontWeight="Bold" Foreground="#0284C7"/>
                     </StackPanel>
                 </Border>
@@ -223,7 +223,7 @@
             <!-- Bottom Progress Bar & Current File Path -->
             <StackPanel Grid.Row="2">
                 <ProgressBar Value="{Binding ProgressPercentage}" Height="6" Background="#E2E8F0" Foreground="#0284C7" Margin="0,0,0,8"/>
-                <TextBlock Text="{Binding CurrentFile, StringFormat='İncelenen: \{0\}'}" FontSize="11.5" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding CurrentFile, StringFormat='İncelenen: \{0\}'}" FontSize="11.5" Foreground="{DynamicResource BrushTextMuted}" TextTrimming="CharacterEllipsis"/>
             </StackPanel>
         </Grid>
 
@@ -244,23 +244,23 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0" Text="Tehdit Taraması Sonuçları" FontSize="18" FontWeight="Bold" Foreground="#0F172A" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="0" Text="Tehdit Taraması Sonuçları" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
 
                 <!-- Metrics Summary -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <StackPanel Margin="0,0,28,0">
-                        <TextBlock Text="Algılanan Öğeler" FontSize="11" Foreground="#64748B" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Algılanan Öğeler" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center"/>
                         <TextBlock Text="{Binding DetectionsCount}" FontSize="15" FontWeight="Bold" Foreground="#0284C7" HorizontalAlignment="Center"/>
                     </StackPanel>
 
                     <StackPanel Margin="0,0,28,0">
-                        <TextBlock Text="Tarama Süresi" FontSize="11" Foreground="#64748B" HorizontalAlignment="Center"/>
-                        <TextBlock Text="{Binding ScanDurationFormatted}" FontSize="15" FontWeight="Bold" Foreground="#0F172A" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Tarama Süresi" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding ScanDurationFormatted}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" HorizontalAlignment="Center"/>
                     </StackPanel>
 
                     <StackPanel>
-                        <TextBlock Text="Taranan Öğeler" FontSize="11" Foreground="#64748B" HorizontalAlignment="Center"/>
-                        <TextBlock Text="{Binding ScannedItemsFormatted}" FontSize="15" FontWeight="Bold" Foreground="#0F172A" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Taranan Öğeler" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding ScannedItemsFormatted}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" HorizontalAlignment="Center"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>
@@ -280,12 +280,12 @@
                 </Border>
 
                 <!-- Threats Table -->
-                <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8"
+                <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8"
                         Visibility="{Binding HasFindings, Converter={StaticResource BoolToVis}}">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel>
                             <!-- Header -->
-                            <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="12,10">
+                            <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="0,0,0,1" Padding="12,10">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="40"/>
@@ -295,10 +295,10 @@
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
                                     <CheckBox Grid.Column="0" IsChecked="{Binding IsAllSelected}" Command="{Binding ToggleSelectAllCommand}" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="Adı" FontWeight="Bold" FontSize="12" Foreground="#334155"/>
-                                    <TextBlock Grid.Column="2" Text="Tür" FontWeight="Bold" FontSize="12" Foreground="#334155"/>
-                                    <TextBlock Grid.Column="3" Text="Nesne Türü" FontWeight="Bold" FontSize="12" Foreground="#334155"/>
-                                    <TextBlock Grid.Column="4" Text="Konum" FontWeight="Bold" FontSize="12" Foreground="#334155"/>
+                                    <TextBlock Grid.Column="1" Text="Adı" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
+                                    <TextBlock Grid.Column="2" Text="Tür" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
+                                    <TextBlock Grid.Column="3" Text="Nesne Türü" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
+                                    <TextBlock Grid.Column="4" Text="Konum" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
                                 </Grid>
                             </Border>
 
@@ -318,8 +318,8 @@
                                                 <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="Bold" FontSize="12" Foreground="#0284C7" TextTrimming="CharacterEllipsis"/>
                                                 <TextBlock Grid.Column="2" Text="{Binding ThreatType}" FontSize="11.5" Foreground="#DC2626"/>
-                                                <TextBlock Grid.Column="3" Text="{Binding ObjectType}" FontSize="11.5" Foreground="#64748B"/>
-                                                <TextBlock Grid.Column="4" Text="{Binding Location}" FontSize="11" FontFamily="Consolas" Foreground="#334155" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Grid.Column="3" Text="{Binding ObjectType}" FontSize="11.5" Foreground="{DynamicResource BrushTextMuted}"/>
+                                                <TextBlock Grid.Column="4" Text="{Binding Location}" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis"/>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
