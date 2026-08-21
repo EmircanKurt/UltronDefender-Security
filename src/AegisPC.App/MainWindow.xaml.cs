@@ -27,6 +27,12 @@ namespace AegisPC.App
             InitializeComponent();
             RootNavigation.SetServiceProvider(serviceProvider);
 
+            UpdateThemeButtonState();
+            AegisPC.App.Services.AppThemeManager.ThemeChanged += (theme) =>
+            {
+                Dispatcher.InvokeAsync(UpdateThemeButtonState);
+            };
+
             // Auto-navigate to Dashboard or Scan when window loads
             Loaded += async (s, e) =>
             {
@@ -126,6 +132,28 @@ namespace AegisPC.App
                 }
                 catch { }
             });
+        }
+
+        private void OnThemeToggleClicked(object sender, RoutedEventArgs e)
+        {
+            AegisPC.App.Services.AppThemeManager.ToggleTheme();
+        }
+
+        private void UpdateThemeButtonState()
+        {
+            if (NavThemeToggle != null && NavThemeIcon != null)
+            {
+                if (AegisPC.App.Services.AppThemeManager.IsDarkMode)
+                {
+                    NavThemeToggle.Content = "☀️ Gündüz Modu";
+                    NavThemeIcon.Symbol = SymbolRegular.WeatherSunny24;
+                }
+                else
+                {
+                    NavThemeToggle.Content = "🌙 Gece Modu";
+                    NavThemeIcon.Symbol = SymbolRegular.WeatherMoon24;
+                }
+            }
         }
     }
 }

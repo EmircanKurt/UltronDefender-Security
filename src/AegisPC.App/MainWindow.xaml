@@ -8,39 +8,28 @@
         WindowStartupLocation="CenterScreen"
         ExtendsContentIntoTitleBar="True"
         Icon="pack://application:,,,/Resources/Images/ultron_logo.png"
-        Background="#EEF2F6"
+        Background="{DynamicResource BrushAppBg}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType"
         RenderOptions.ClearTypeHint="Enabled">
         
-    <Grid Background="#EEF2F6" UseLayoutRounding="True" SnapsToDevicePixels="True">
+    <Grid Background="{DynamicResource BrushAppBg}" UseLayoutRounding="True" SnapsToDevicePixels="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         
-        <!-- Top App Title Bar with Crystal Clear Dark Control Buttons & Enhanced Typography -->
+        <!-- Top App Title Bar with Dynamic Theme Support -->
         <ui:TitleBar Grid.Row="0" 
                      Title="Ultron Defender Total Security (Antivirüs Programı)" 
-                     Foreground="#0F172A" 
-                     Background="#EEF2F6"
+                     Foreground="{DynamicResource BrushTextPrimary}" 
+                     Background="{DynamicResource BrushAppBg}"
                      FontSize="14.5"
                      FontWeight="Bold"
                      Height="40"
                      Padding="6,0,0,0">
-            <ui:TitleBar.Resources>
-                <SolidColorBrush x:Key="TitleBarButtonForeground" Color="#0F172A"/>
-                <SolidColorBrush x:Key="TitleBarButtonPointerOverForeground" Color="#0F172A"/>
-                <SolidColorBrush x:Key="TitleBarButtonPointerOverBackground" Color="#E2E8F0"/>
-                <SolidColorBrush x:Key="TitleBarButtonPressedForeground" Color="#0F172A"/>
-                <SolidColorBrush x:Key="TitleBarButtonPressedBackground" Color="#CBD5E1"/>
-                <SolidColorBrush x:Key="TitleBarCloseButtonPointerOverBackground" Color="#DC2626"/>
-                <SolidColorBrush x:Key="TitleBarCloseButtonPointerOverForeground" Color="#FFFFFF"/>
-                <SolidColorBrush x:Key="TitleBarCloseButtonPressedBackground" Color="#B91C1C"/>
-                <SolidColorBrush x:Key="TitleBarCloseButtonPressedForeground" Color="#FFFFFF"/>
-            </ui:TitleBar.Resources>
             <ui:TitleBar.Icon>
                 <ui:ImageIcon Source="pack://application:,,,/Resources/Images/ultron_logo.png" Width="20" Height="20" Margin="4,0,8,0" RenderOptions.BitmapScalingMode="HighQuality"/>
             </ui:TitleBar.Icon>
@@ -208,6 +197,12 @@
                 </ui:NavigationView.MenuItems>
 
                 <ui:NavigationView.FooterMenuItems>
+                    <ui:NavigationViewItem x:Name="NavThemeToggle" Content="🌙 Gece Modu" Click="OnThemeToggleClicked">
+                        <ui:NavigationViewItem.Icon>
+                            <ui:SymbolIcon x:Name="NavThemeIcon" Symbol="WeatherMoon24" FontSize="16"/>
+                        </ui:NavigationViewItem.Icon>
+                    </ui:NavigationViewItem>
+
                     <ui:NavigationViewItem Content="Ayarlar" TargetPageType="{x:Type views:SettingsView}">
                         <ui:NavigationViewItem.Icon>
                             <ui:SymbolIcon Symbol="Settings24" FontSize="16"/>

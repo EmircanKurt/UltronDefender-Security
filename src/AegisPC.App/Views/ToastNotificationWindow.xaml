@@ -46,7 +46,7 @@
                         <Border Background="#0F172A" CornerRadius="4" Padding="5,2" Margin="0,0,8,0">
                             <TextBlock Text="ULTRON" FontSize="9.5" FontWeight="ExtraBold" Foreground="#38BDF8"/>
                         </Border>
-                        <TextBlock Text="DEFENDER TOTAL SECURITY" FontSize="11" FontWeight="Bold" Foreground="#0F172A" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="AppHeaderTitle" Text="DEFENDER TOTAL SECURITY" FontSize="11" FontWeight="Bold" Foreground="#0F172A" VerticalAlignment="Center"/>
                     </StackPanel>
 
                     <!-- Control Buttons -->

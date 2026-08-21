@@ -55,6 +55,7 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty] private bool isRealTimeProtectionActive = true;
         [ObservableProperty] private int threatsBocked24h = 0;
         [ObservableProperty] private int filesScannedCount = 0;
+        [ObservableProperty] private string themeButtonText = AegisPC.App.Services.AppThemeManager.IsDarkMode ? "☀️ Gündüz Modu" : "🌙 Gece Modu";
 
         // Interactive Feature 1: Ransomware Remediation Banner
         [ObservableProperty] private bool isRansomwareEnabled = false;
@@ -732,6 +733,13 @@ namespace AegisPC.App.ViewModels
                     TriggerToast($"Karantina kaydı bulunamadı.", "Warning");
                 }
             }
+        }
+
+        [RelayCommand]
+        public void ToggleTheme()
+        {
+            AegisPC.App.Services.AppThemeManager.ToggleTheme();
+            ThemeButtonText = AegisPC.App.Services.AppThemeManager.IsDarkMode ? "☀️ Gündüz Modu" : "🌙 Gece Modu";
         }
     }
 }

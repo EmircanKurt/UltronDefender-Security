@@ -7,7 +7,7 @@
         Width="880" Height="580"
         MinWidth="800" MinHeight="500"
         WindowStartupLocation="CenterScreen"
-        Background="#FFFFFF"
+        Background="{DynamicResource BrushCardBg}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         FontFamily="Segoe UI"
@@ -20,7 +20,7 @@
         <Style x:Key="TabHeaderStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="#64748B"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}"/>
             <Setter Property="Margin" Value="0,0,24,0"/>
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
@@ -34,9 +34,9 @@
         </Style>
 
         <Style x:Key="SecondaryActionButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#FFFFFF"/>
-            <Setter Property="Foreground" Value="#334155"/>
-            <Setter Property="BorderBrush" Value="#CBD5E1"/>
+            <Setter Property="Background" Value="{DynamicResource BrushCardBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushCardBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="12"/>

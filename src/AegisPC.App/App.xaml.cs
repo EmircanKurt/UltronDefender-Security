@@ -59,6 +59,13 @@ namespace AegisPC.App
                 }
                 catch { }
 
+                // Apply Saved UI Theme (Dark or Light)
+                try
+                {
+                    AegisPC.App.Services.AppThemeManager.ApplyTheme(AegisPC.App.Services.AppThemeManager.CurrentTheme);
+                }
+                catch { }
+
                 Log("3. Resolving MainWindow...");
                 var mainWindow = ServiceProvider.GetRequiredService<MainWindow>();
                 MainWindow = mainWindow;
