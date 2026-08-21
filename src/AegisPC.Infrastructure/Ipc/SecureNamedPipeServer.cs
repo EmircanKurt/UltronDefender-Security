@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.IO.Pipes;
 using System.Security.AccessControl;
@@ -25,6 +25,8 @@ namespace AegisPC.Infrastructure.Ipc
         private readonly string _pipeName;
         private readonly byte[] _hmacKey;
         private CancellationTokenSource? _cts;
+        // Nonce replay cache — tracks used nonces to prevent replay attacks within the 30s window
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _usedNonces = new();
 
         public SecureNamedPipeServer(string pipeName, string sharedSecret)
         {
@@ -86,6 +88,17 @@ namespace AegisPC.Infrastructure.Ipc
             // Replay attack prevention: Max 30 seconds drift
             var msgTime = new DateTime(msg.TimestampUtcTicks, DateTimeKind.Utc);
             if (Math.Abs((DateTime.UtcNow - msgTime).TotalSeconds) > 30) return false;
+
+            // Nonce deduplication: reject previously used nonces (prevents replay within 30s window)
+            if (!_usedNonces.TryAdd(msg.Nonce, DateTime.UtcNow))
+                return false; // Nonce already seen = replay attack
+
+            // Periodically clean expired nonces (older than 60s)
+            foreach (var kvp in _usedNonces)
+            {
+                if ((DateTime.UtcNow - kvp.Value).TotalSeconds > 60)
+                    _usedNonces.TryRemove(kvp.Key, out _);
+            }
 
             string contentToSign = $"{msg.Command}|{msg.Payload}|{msg.TimestampUtcTicks}|{msg.Nonce}";
             using var hmac = new HMACSHA256(_hmacKey);

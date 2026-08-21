@@ -30,7 +30,7 @@ namespace AegisPC.Security.Scanning
         private readonly object _lock = new();
 
         private byte[]? _cachedMasterKey;
-        private static readonly byte[] DpapiEntropy = Encoding.UTF8.GetBytes("UltronDefender_DPAPI_Entropy_2026!#$");
+        private byte[]? _dpapiEntropy; // Generated per-installation, no longer hardcoded
         private static readonly byte[] LegacyFallbackKeySeed = SHA256.HashData(Encoding.UTF8.GetBytes(Environment.MachineName + "_Ultron_Quarantine_Vault_2026"));
         private const string QuarantineMagicHeader = "ULTRON_QUAR_V2";
 
@@ -73,10 +73,26 @@ namespace AegisPC.Security.Scanning
         {
             try
             {
+                // Generate or load per-installation DPAPI entropy (not hardcoded)
+                var entropyFilePath = Path.Combine(_quarantineDir, "entropy.dat");
+                if (File.Exists(entropyFilePath))
+                {
+                    _dpapiEntropy = File.ReadAllBytes(entropyFilePath);
+                }
+                else
+                {
+                    _dpapiEntropy = new byte[32];
+                    using var rng = RandomNumberGenerator.Create();
+                    rng.GetBytes(_dpapiEntropy);
+                    File.WriteAllBytes(entropyFilePath, _dpapiEntropy);
+                    // Restrict file ACL (best effort)
+                    try { File.SetAttributes(entropyFilePath, FileAttributes.Hidden | FileAttributes.System); } catch { }
+                }
+
                 if (File.Exists(_vaultKeyFilePath))
                 {
                     var encryptedKey = File.ReadAllBytes(_vaultKeyFilePath);
-                    _cachedMasterKey = ProtectedData.Unprotect(encryptedKey, DpapiEntropy, DataProtectionScope.LocalMachine);
+                    _cachedMasterKey = ProtectedData.Unprotect(encryptedKey, _dpapiEntropy, DataProtectionScope.LocalMachine);
                 }
                 else
                 {
@@ -85,7 +101,7 @@ namespace AegisPC.Security.Scanning
                     using var rng = RandomNumberGenerator.Create();
                     rng.GetBytes(newKey);
 
-                    var encryptedKey = ProtectedData.Protect(newKey, DpapiEntropy, DataProtectionScope.LocalMachine);
+                    var encryptedKey = ProtectedData.Protect(newKey, _dpapiEntropy, DataProtectionScope.LocalMachine);
                     File.WriteAllBytes(_vaultKeyFilePath, encryptedKey);
                     _cachedMasterKey = newKey;
                 }
@@ -128,8 +144,7 @@ namespace AegisPC.Security.Scanning
                 var fileInfo = new FileInfo(canonicalPath);
                 long originalFileSize = fileInfo.Length;
                 string originalFileName = fileInfo.Name;
-                var sha256 = await _hashService.ComputeSha256Async(canonicalPath, cancellationToken);
-                
+
                 int id;
                 lock (_lock)
                 {
@@ -139,40 +154,38 @@ namespace AegisPC.Security.Scanning
                 var quarantineFileName = $"vault_{id}_{Guid.NewGuid():N}.quar";
                 var quarantineFilePath = Path.Combine(_quarantineDir, quarantineFileName);
 
-                // 1. Read original payload safely even if opened by another process
-                byte[] originalBytes;
-                using (var fsRead = new FileStream(canonicalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-                using (var msRead = new MemoryStream())
-                {
-                    await fsRead.CopyToAsync(msRead, cancellationToken);
-                    originalBytes = msRead.ToArray();
-                }
-
-                // 2. Encrypt with AES-256-CBC using DPAPI protected Master Key
+                // 1. Encrypt with AES-256-CBC using DPAPI protected Master Key (Streaming — no full RAM load)
                 using var aes = Aes.Create();
                 aes.Key = GetMasterKey();
                 aes.GenerateIV();
+                var sha256 = await _hashService.ComputeSha256Async(canonicalPath, cancellationToken);
 
-                byte[] encryptedBytes;
-                using (var msEncrypt = new MemoryStream())
-                {
-                    using (var csEncrypt = new CryptoStream(msEncrypt, aes.CreateEncryptor(), CryptoStreamMode.Write, leaveOpen: true))
-                    {
-                        csEncrypt.Write(originalBytes, 0, originalBytes.Length);
-                    }
-                    encryptedBytes = msEncrypt.ToArray();
-                }
-
-                // 3. Write Container (Magic + IV + SHA256 + Encrypted Data)
-                using (var fs = new FileStream(quarantineFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
-                using (var bw = new BinaryWriter(fs))
+                // 2. Write Container (Magic + IV + SHA256 + Encrypted Data) via streaming
+                using (var fsOut = new FileStream(quarantineFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var bw = new BinaryWriter(fsOut, Encoding.UTF8, leaveOpen: true))
                 {
                     bw.Write(QuarantineMagicHeader);
                     bw.Write(aes.IV.Length);
                     bw.Write(aes.IV);
                     bw.Write(sha256);
-                    bw.Write(encryptedBytes.Length);
-                    bw.Write(encryptedBytes);
+
+                    // Placeholder for encrypted data length — will be patched after encryption
+                    long encryptedLengthPosition = fsOut.Position;
+                    bw.Write((int)0); // placeholder
+
+                    long encryptedStartPosition = fsOut.Position;
+
+                    using (var csEncrypt = new CryptoStream(fsOut, aes.CreateEncryptor(), CryptoStreamMode.Write, leaveOpen: true))
+                    using (var fsRead = new FileStream(canonicalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                    {
+                        await fsRead.CopyToAsync(csEncrypt, 81920, cancellationToken);
+                    }
+
+                    // Patch the encrypted data length
+                    int encryptedLength = (int)(fsOut.Position - encryptedStartPosition);
+                    fsOut.Position = encryptedLengthPosition;
+                    bw.Write(encryptedLength);
+                    fsOut.Position = fsOut.Length; // seek back to end
                 }
 
                 // 4. Terminate any running process locking the target file

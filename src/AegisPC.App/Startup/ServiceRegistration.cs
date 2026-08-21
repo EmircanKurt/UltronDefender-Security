@@ -94,7 +94,6 @@ namespace AegisPC.App.Startup
             services.AddSingleton<IAmsiScanService, AegisPC.Security.Scanning.AmsiScanService>();
             services.AddSingleton<AegisPC.Contracts.Services.IEtwProcessMonitorService, AegisPC.Security.RealTime.EtwProcessMonitorService>();
             services.AddSingleton<AegisPC.Contracts.AntiEvasion.IMemoryPatternScanner, AegisPC.Security.AntiEvasion.MemoryPatternScanner>();
-            services.AddSingleton<IWindowsSecurityRegistrationService, WindowsSecurityRegistrationService>();
             services.AddSingleton<IWebShieldService, WebShieldService>();
             services.AddSingleton<IDnsProtectionService, AegisPC.Security.RealTime.DnsProtectionService>();
             services.AddSingleton<AegisPC.Contracts.Services.IWindowsToastNotificationService, AegisPC.App.Services.WindowsToastNotificationService>();

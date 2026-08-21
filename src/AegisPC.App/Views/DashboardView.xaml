@@ -1,4 +1,4 @@
-﻿<Page x:Class="AegisPC.App.Views.DashboardView"
+<Page x:Class="AegisPC.App.Views.DashboardView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -238,7 +238,7 @@
 
                     <!-- Events Table -->
                     <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8">
-                        <DataGrid ItemsSource="{Binding RealTimeEvents}"
+                        <DataGrid ItemsSource="{Binding LiveActivities}"
                                   AutoGenerateColumns="False"
                                   CanUserAddRows="False"
                                   CanUserSortColumns="False"

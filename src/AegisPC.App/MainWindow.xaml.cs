@@ -49,7 +49,7 @@ namespace AegisPC.App
 
         public void NavigateToScanAndScanPath(string targetPath)
         {
-            Dispatcher.Invoke(async () =>
+            Dispatcher.InvokeAsync(async () =>
             {
                 ShowAndActivate();
                 NavigateTo(typeof(ScanView));

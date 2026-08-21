@@ -59,7 +59,7 @@ Name: "{group}\Ultron Defender Kaldır (Uninstall)"; Filename: "{app}\{#MyUninst
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "UltronDefender"; ValueData: """{app}\{#MyAppExeName}"" --minimized"; Flags: uninsdeletevalue; Tasks: autostart
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "UltronDefender"; ValueData: """{app}\{#MyAppExeName}"" --minimized"; Flags: uninsdeletevalue; Tasks: autostart
 Root: HKCU; Subkey: "Software\Classes\*\shell\UltronDefenderScan"; ValueType: string; ValueName: ""; ValueData: "🛡️ Ultron Defender ile Tara"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\UltronDefenderScan"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#MyAppExeName}"",0"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\UltronDefenderScan\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" /scan ""%1"""; Flags: uninsdeletekey

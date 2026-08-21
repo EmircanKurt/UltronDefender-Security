@@ -27,7 +27,7 @@ namespace AegisPC.Security.RealTime
         public bool IsContained { get; set; }
     }
 
-    public class BehaviorEngine : IBehaviorEngine
+    public class BehaviorEngine : IBehaviorEngine, IDisposable
     {
         private readonly ILogger<BehaviorEngine>? _logger;
         private readonly IQuarantineService? _quarantineService;
@@ -38,6 +38,7 @@ namespace AegisPC.Security.RealTime
         private readonly ConcurrentDictionary<int, ProcessBehaviorSession> _sessions = new();
         private readonly ConcurrentDictionary<string, SecurityIncident> _incidents = new();
         private readonly object _lock = new();
+        private readonly Timer _cleanupTimer;
 
         public event Action<SecurityIncident>? OnIncidentCreated;
         public event Action<string, string>? OnThreatContained;
@@ -58,6 +59,22 @@ namespace AegisPC.Security.RealTime
             _attackChainCorrelator = attackChainCorrelator ?? new AegisPC.Security.Behavior.AttackChainCorrelator(_lineageTracker);
             _injectionDetector = injectionDetector ?? new AegisPC.Security.Behavior.ProcessInjectionDetector();
             _logger = logger;
+            _cleanupTimer = new Timer(CleanupSessions, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+        }
+
+        private void CleanupSessions(object? state)
+        {
+            var cutoff = DateTime.UtcNow - TimeSpan.FromMinutes(10);
+            var expiredKeys = _sessions.Where(kvp => kvp.Value.LastActivityAt < cutoff).Select(kvp => kvp.Key).ToList();
+            foreach (var key in expiredKeys)
+            {
+                _sessions.TryRemove(key, out _);
+            }
+        }
+
+        public void Dispose()
+        {
+            _cleanupTimer?.Dispose();
         }
 
         public async Task ProcessEventAsync(BehaviorEvent e, CancellationToken cancellationToken = default)
@@ -126,6 +143,7 @@ namespace AegisPC.Security.RealTime
             if (e.ParentProcessId > 0 && _sessions.TryGetValue(e.ParentProcessId, out var parentSession))
             {
                 parentSession.TrackedProcessTree.Add(e.ProcessId);
+                parentSession.LastActivityAt = DateTime.UtcNow;
                 _sessions[e.ProcessId] = parentSession;
                 return parentSession;
             }
@@ -136,6 +154,7 @@ namespace AegisPC.Security.RealTime
                 RootProcessName = e.ProcessName,
                 RootExecutablePath = e.ExecutablePath,
                 StartedAt = e.Timestamp,
+                LastActivityAt = DateTime.UtcNow,
                 TrackedProcessTree = { pid }
             });
         }

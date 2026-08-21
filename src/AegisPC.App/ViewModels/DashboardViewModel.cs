@@ -9,11 +9,16 @@ using AegisPC.Core.Models;
 using AegisPC.Recommendations.Engine;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AegisPC.App.ViewModels
 {
-    public partial class DashboardViewModel : ObservableObject
+    public partial class DashboardViewModel : ObservableObject, IDisposable
     {
+        public void Dispose()
+        {
+            _threatNotificationTimer?.Dispose();
+        }
         private readonly IPerformanceMonitor? _performanceMonitor;
         private readonly IProcessMonitor? _processMonitor;
         private readonly HealthScoringEngine? _healthScoringEngine;
@@ -201,8 +206,15 @@ namespace AegisPC.App.ViewModels
                 // Launch initial non-blocking background sweep
                 Task.Run(async () =>
                 {
-                    await Task.Delay(1200);
-                    await _startupSweepService.RunSweepAsync();
+                    try
+                    {
+                        await Task.Delay(1200);
+                        await _startupSweepService.RunSweepAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Trace.WriteLine(ex);
+                    }
                 });
             }
 
@@ -324,7 +336,17 @@ namespace AegisPC.App.ViewModels
             }
 
             // Arka planda donma yapmadan verileri yükle
-            Task.Run(async () => await LoadDashboardDataAsync());
+            Task.Run(async () => 
+            {
+                try
+                {
+                    await LoadDashboardDataAsync();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine(ex);
+                }
+            });
         }
 
         private void OnPerformanceSampleCollected(object? sender, PerformanceSample sample)

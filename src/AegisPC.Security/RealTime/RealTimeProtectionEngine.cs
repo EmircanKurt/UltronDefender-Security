@@ -117,6 +117,7 @@ namespace AegisPC.Security.RealTime
         private Task? _processingTask;
         private bool _isRunning;
         private readonly object _lock = new();
+        private Timer? _cacheCleanupTimer;
 
         private static readonly string[] DangerousExtensions = new[]
         {
@@ -189,8 +190,20 @@ namespace AegisPC.Security.RealTime
                 // 2. Start Background Event Processing Worker
                 _processingTask = Task.Run(() => ProcessEventLoopAsync(_engineCts.Token));
 
+                _cacheCleanupTimer = new Timer(CleanupCache, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
+
                 _logger?.LogInformation("Ultron Defender Real-Time Protection Engine started successfully.");
                 OnProtectionHealthChanged?.Invoke(true, "Sağlıklı - Tüm dizinler izleniyor");
+            }
+        }
+
+        private void CleanupCache(object? state)
+        {
+            var cutoff = DateTime.UtcNow - TimeSpan.FromMinutes(30);
+            var expiredKeys = _verdictCache.Where(kvp => kvp.Value.cachedAt < cutoff).Select(kvp => kvp.Key).ToList();
+            foreach (var key in expiredKeys)
+            {
+                _verdictCache.TryRemove(key, out _);
             }
         }
 
@@ -211,6 +224,9 @@ namespace AegisPC.Security.RealTime
                 _engineCts?.Cancel();
                 _engineCts?.Dispose();
                 _engineCts = null;
+
+                _cacheCleanupTimer?.Dispose();
+                _cacheCleanupTimer = null;
 
                 _logger?.LogInformation("Ultron Defender Real-Time Protection Engine stopped.");
                 OnProtectionHealthChanged?.Invoke(false, "Durduruldu");

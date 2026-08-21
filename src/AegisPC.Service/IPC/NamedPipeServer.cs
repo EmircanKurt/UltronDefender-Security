@@ -2,6 +2,8 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -113,12 +115,22 @@ namespace AegisPC.Service.IPC
             {
                 try
                 {
-                    var pipeServer = new NamedPipeServerStream(
+                    var pipeSecurity = new PipeSecurity();
+                    pipeSecurity.AddAccessRule(new PipeAccessRule(
+                        new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+                        PipeAccessRights.FullControl, AccessControlType.Allow));
+                    pipeSecurity.AddAccessRule(new PipeAccessRule(
+                        new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+                        PipeAccessRights.FullControl, AccessControlType.Allow));
+
+                    var pipeServer = NamedPipeServerStreamAcl.Create(
                         PipeName,
                         PipeDirection.InOut,
                         NamedPipeServerStream.MaxAllowedServerInstances,
                         PipeTransmissionMode.Byte,
-                        PipeOptions.Asynchronous);
+                        PipeOptions.Asynchronous,
+                        0, 0,
+                        pipeSecurity);
 
                     await pipeServer.WaitForConnectionAsync(stoppingToken);
                     _ = HandleClientConnectionAsync(pipeServer, stoppingToken);
@@ -218,10 +230,12 @@ namespace AegisPC.Service.IPC
                     {
                         _ = _scanCoordinator.StartScanAsync(ScanType.Quick);
                     }
+                    await writer.WriteLineAsync($"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
                     break;
 
                 case ServiceCommandType.StopScan:
                     _scanCoordinator?.CancelScan();
+                    await writer.WriteLineAsync($"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
                     break;
             }
         }

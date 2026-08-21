@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -10,7 +10,7 @@ namespace AegisPC.Security.Behavior
 {
     public class AttackChainCorrelator : IAttackChainCorrelator
     {
-        private readonly ConcurrentBag<BehaviorEvent> _events = new();
+        private readonly ConcurrentQueue<BehaviorEvent> _events = new();
         private readonly IProcessLineageTracker? _tracker;
 
         public AttackChainCorrelator(IProcessLineageTracker? tracker = null)
@@ -21,7 +21,16 @@ namespace AegisPC.Security.Behavior
         public void RecordEvent(BehaviorEvent evt)
         {
             if (evt == null) return;
-            _events.Add(evt);
+            _events.Enqueue(evt);
+
+            if (_events.Count > 1000)
+            {
+                var cutoff = DateTime.UtcNow - TimeSpan.FromHours(1);
+                while (_events.TryPeek(out var oldest) && oldest.Timestamp < cutoff)
+                {
+                    _events.TryDequeue(out _);
+                }
+            }
         }
 
         public AttackChainCorrelationResult EvaluateChain(int pid, TimeSpan slidingWindow)
