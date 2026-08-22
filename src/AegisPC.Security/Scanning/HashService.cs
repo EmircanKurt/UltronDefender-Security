@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.IO;
 using System.Security.Cryptography;
 using System.Threading;
@@ -9,15 +10,20 @@ namespace AegisPC.Security.Scanning
 {
     public class HashService : IHashService
     {
+        // 64 KB buffer — standart I/O performansı için optimal boyut
+        // (önceki 8 KB buffer, büyük dosyalarda 8× fazla syscall yapıyordu)
+        private const int BufferSize = 65536;
+
         public async Task<string> ComputeSha256Async(string filePath, CancellationToken cancellationToken = default)
         {
             if (!File.Exists(filePath)) return string.Empty;
 
             try
             {
-                using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 8192, useAsync: true);
-                using var sha256 = SHA256.Create();
-                var hashBytes = await sha256.ComputeHashAsync(stream, cancellationToken);
+                using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete, BufferSize,
+                    FileOptions.SequentialScan | FileOptions.Asynchronous);
+                var hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
                 return Convert.ToHexString(hashBytes).ToLowerInvariant();
             }
             catch
@@ -32,7 +38,9 @@ namespace AegisPC.Security.Scanning
 
             try
             {
-                using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 8192, useAsync: true);
+                using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete, BufferSize,
+                    FileOptions.SequentialScan | FileOptions.Asynchronous);
                 using var sha1 = SHA1.Create();
                 var hashBytes = await sha1.ComputeHashAsync(stream, cancellationToken);
                 return Convert.ToHexString(hashBytes).ToLowerInvariant();

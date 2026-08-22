@@ -28,8 +28,18 @@ namespace AegisPC.Security.Scanning
         private readonly IDetectionHub _detectionHub;
         private readonly ArchiveSafetyScanner _archiveScanner;
         private readonly ILogger<FileScannerService>? _logger;
+        private const int MaxCacheEntries = 50000;
         private readonly ConcurrentDictionary<string, (long FileSize, DateTime LastWriteTimeUtc, SecurityFinding? Finding)> _scanCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly ManualResetEventSlim _pauseEvent = new(true);
+
+        private void SetCacheEntry(string path, long fileSize, DateTime lastWriteTimeUtc, SecurityFinding? finding)
+        {
+            if (_scanCache.Count >= MaxCacheEntries)
+            {
+                _scanCache.Clear();
+            }
+            _scanCache[path] = (fileSize, lastWriteTimeUtc, finding);
+        }
 
         public bool IsPaused => !_pauseEvent.IsSet;
 
@@ -174,7 +184,7 @@ namespace AegisPC.Security.Scanning
                     {
                         var topFinding = archiveResult.Findings.OrderByDescending(f => f.RiskScore).First();
                         await _findingService.AddFindingAsync(topFinding, cancellationToken);
-                        _scanCache[path] = (fileInfo.Length, fileInfo.LastWriteTimeUtc, topFinding);
+                        SetCacheEntry(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, topFinding);
                         return topFinding;
                     }
                 }
@@ -264,11 +274,11 @@ namespace AegisPC.Security.Scanning
                     };
 
                     await _findingService.AddFindingAsync(finding, cancellationToken);
-                    _scanCache[path] = (fileInfo.Length, fileInfo.LastWriteTimeUtc, finding);
+                    SetCacheEntry(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, finding);
                     return finding;
                 }
 
-                _scanCache[path] = (fileInfo.Length, fileInfo.LastWriteTimeUtc, null);
+                SetCacheEntry(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, null);
                 return null;
             }
             catch (Exception ex)

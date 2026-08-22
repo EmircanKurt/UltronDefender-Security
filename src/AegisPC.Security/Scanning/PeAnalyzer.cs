@@ -31,6 +31,11 @@ namespace AegisPC.Security.Scanning
             "UPX0", "UPX1", "UPX2", ".aspack", ".mpress", ".themida", ".vmp"
         };
 
+        /// <summary>
+        /// Stream tabanlı PE analizi — dosyayı byte[] dizisine kopyalamadan
+        /// doğrudan FileStream üzerinden PeNet ile parse eder.
+        /// Bu sayede 20 MB'a varan LOH (Large Object Heap) tahsisatı ortadan kalkar.
+        /// </summary>
         public static PeAnalysisResult Analyze(string filePath)
         {
             var result = new PeAnalysisResult();
@@ -38,15 +43,23 @@ namespace AegisPC.Security.Scanning
 
             try
             {
-                byte[] peBytes;
-                using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096))
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete, bufferSize: 65536,
+                    FileOptions.SequentialScan);
+
+                // PeNet stream tabanlı constructor — LOH allocation yok
+                PeFile? peFile;
+                try
                 {
-                    long len = Math.Min(fs.Length, 20 * 1024 * 1024);
-                    peBytes = new byte[len];
-                    fs.Read(peBytes, 0, (int)len);
+                    peFile = new PeFile(fs);
+                }
+                catch
+                {
+                    result.IsPeFile = false;
+                    return result;
                 }
 
-                if (!PeFile.TryParse(peBytes, out var peFile) || peFile == null)
+                if (peFile == null)
                 {
                     result.IsPeFile = false;
                     return result;

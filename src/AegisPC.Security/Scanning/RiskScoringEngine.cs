@@ -121,8 +121,20 @@ namespace AegisPC.Security.Scanning
                 }
             }
 
-            // Microsoft or trusted OS binaries: zero risk
-            if (result.IsSigned && result.SignatureValid && (result.SignaturePublisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true || PathHelper.IsSystemPath(result.FilePath)))
+            // Microsoft or trusted OS binaries: zero risk ONLY IF in legitimate system/program directories.
+            // If placed in Temp/Downloads/untrusted drop zones, reduce risk but do not zero it (prevents LOLBin staging).
+            if (result.IsSigned && result.SignatureValid && result.SignaturePublisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                if (result.IsKnownLocation || PathHelper.IsKnownSafePath(result.FilePath))
+                {
+                    score = 0;
+                }
+                else
+                {
+                    score = Math.Max(0, score - 30);
+                }
+            }
+            else if (PathHelper.IsSystemPath(result.FilePath) && result.IsKnownLocation)
             {
                 score = 0;
             }
