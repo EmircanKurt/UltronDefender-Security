@@ -11,6 +11,7 @@
                 <ui:ControlsDictionary />
                 <ResourceDictionary Source="Resources/Themes/Colors.Light.xaml" />
                 <ResourceDictionary Source="Resources/Themes/Typography.xaml" />
+                <ResourceDictionary Source="Resources/Themes/Components.xaml" />
                 <ResourceDictionary Source="Resources/Themes/SharedStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
