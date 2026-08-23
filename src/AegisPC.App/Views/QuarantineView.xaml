@@ -15,7 +15,7 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
     </Page.Resources>
 
-    <Grid Margin="24">
+    <Grid Margin="28,20,28,28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -23,105 +23,145 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <TextBlock Grid.Row="0" Style="{StaticResource PageHeaderStyle}" Text="Karantina Kasası" />
+        <!-- 1. Header -->
+        <TextBlock Grid.Row="0" Style="{StaticResource PageHeadingStyle}" Text="Karantina Kasası" Margin="0,0,0,4"/>
 
-        <!-- Info & Toolbar -->
+        <!-- 2. Info & Toolbar -->
         <Grid Grid.Row="1" Margin="0,0,0,16">
-            <TextBlock Text="Karantinaya alınan dosyalar şifrelenerek etkisizleştirilir ve zararlı çalışması engellenir." Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
-            <ui:Button HorizontalAlignment="Right" Content="Yenile" Icon="{ui:SymbolIcon ArrowClockwise24}" 
-                       Command="{Binding LoadItemsCommand}"/>
+            <TextBlock Text="Karantinaya alınan dosyalar AES-256 ile şifrelenerek etkisizleştirilir ve zararlı çalışması engellenir." 
+                       Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center"/>
+            <Button HorizontalAlignment="Right" Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
+                    Command="{Binding LoadItemsCommand}" Padding="12,4"/>
         </Grid>
 
-        <!-- Main Content -->
+        <!-- 3. Main Content: Table + Side Action Card -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="320"/>
+                <ColumnDefinition Width="340"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Quarantine Grid -->
+            <!-- Quarantine Grid (STRICT DataTableStyle: Sans-Serif, Tabular Numerals) -->
             <Grid Grid.Column="0" Margin="0,0,16,0">
-                <ui:DataGrid ItemsSource="{Binding QuarantinedItems}" 
-                             SelectedItem="{Binding SelectedItem}"
-                             AutoGenerateColumns="False" IsReadOnly="True"
-                             SelectionMode="Single">
-                    <ui:DataGrid.Columns>
-                        <DataGridTemplateColumn Header="Dosya Adı" Width="200">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding FileName}" 
-                                               TextTrimming="CharacterEllipsis" 
-                                               ToolTip="{Binding OriginalPath}" 
-                                               FontWeight="SemiBold"
-                                               VerticalAlignment="Center" 
-                                               Padding="4,0"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="Boyut" Binding="{Binding FileSize, Converter={StaticResource BytesConverter}}" Width="85"/>
-                        <DataGridTextColumn Header="Karantina Zamanı" Binding="{Binding QuarantinedAt, StringFormat='\{0:yyyy-MM-dd HH:mm\}'}" Width="135"/>
-                        <DataGridTemplateColumn Header="Sebep" Width="*">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Reason}" 
-                                               TextTrimming="CharacterEllipsis" 
-                                               ToolTip="{Binding Reason}" 
-                                               VerticalAlignment="Center" 
-                                               Padding="4,0"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-                    </ui:DataGrid.Columns>
-                </ui:DataGrid>
+                <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10">
+                    <ui:DataGrid ItemsSource="{Binding QuarantinedItems}" 
+                                 SelectedItem="{Binding SelectedItem}"
+                                 AutoGenerateColumns="False" 
+                                 IsReadOnly="True"
+                                 SelectionMode="Single"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 RowHeaderWidth="0"
+                                 GridLinesVisibility="Horizontal"
+                                 HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
+                        <ui:DataGrid.Columns>
+                            <!-- Dosya Adı: Pure Sans-Serif Tabular Column -->
+                            <DataGridTemplateColumn Header="Dosya Adı" Width="200">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding FileName}" 
+                                                   Style="{StaticResource DataTableStyle}"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" 
+                                                   ToolTip="{Binding OriginalPath}" 
+                                                   Padding="6,0"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- Boyut: Tabular Numbers -->
+                            <DataGridTemplateColumn Header="Boyut" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding FileSize, Converter={StaticResource BytesConverter}}" 
+                                                   Style="{StaticResource DataTableStyle}"
+                                                   Foreground="{DynamicResource BrushTextSecondary}"
+                                                   Padding="6,0"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- Karantina Zamanı -->
+                            <DataGridTemplateColumn Header="Karantina Zamanı" Width="140">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding QuarantinedAt, StringFormat='\{0:yyyy-MM-dd HH:mm\}'}" 
+                                                   Style="{StaticResource DataTableStyle}"
+                                                   Foreground="{DynamicResource BrushTextMuted}"
+                                                   Padding="6,0"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- Sebep: Kırpma + ToolTip -->
+                            <DataGridTemplateColumn Header="Sebep" Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Reason}" 
+                                                   Style="{StaticResource DataTableStyle}"
+                                                   Foreground="{DynamicResource BrushStatusDangerText}"
+                                                   TextTrimming="CharacterEllipsis" 
+                                                   ToolTip="{Binding Reason}" 
+                                                   Padding="6,0"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </ui:DataGrid.Columns>
+                    </ui:DataGrid>
+                </Border>
 
                 <!-- Empty State Overlay -->
-                <Border Background="{DynamicResource BrushAppBg}" Visibility="{Binding HasNoQuarantinedItems, Converter={StaticResource BoolToVis}}">
-                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock Text="🛡️" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,12"/>
-                        <TextBlock Text="Karantinada dosya bulunmuyor" FontSize="18" FontWeight="SemiBold" 
-                                   HorizontalAlignment="Center" Foreground="{DynamicResource BrushTextPrimary}"/>
-                        <TextBlock Text="Sisteminiz temiz — tehditler tespit edildiğinde burada görüntülenir." 
-                                   FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10" 
+                        Visibility="{Binding HasNoQuarantinedItems, Converter={StaticResource BoolToVis}}">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="24">
+                        <TextBlock Text="🛡️" FontSize="44" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                        <TextBlock Text="Karantinada dosya bulunmuyor" Style="{StaticResource SectionHeadingStyle}" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Sisteminiz temiz — tespit edilen tehditler güvenli şekilde burada depolanır." 
+                                   Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,6,0,0"/>
                     </StackPanel>
                 </Border>
             </Grid>
 
-            <!-- Actions Panel -->
-            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="8">
-                        <TextBlock Text="Karantina Yönetimi" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,16"/>
+            <!-- Actions Side Panel -->
+            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="4">
+                        <TextBlock Text="Karantina Yönetimi" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,14"/>
 
                         <StackPanel Visibility="{Binding SelectedItem, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="{Binding SelectedItem.FileName}" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4"/>
-                            <TextBlock Text="{Binding SelectedItem.FileSize, Converter={StaticResource BytesConverter}, StringFormat='Boyut: \{0\}'}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12"/>
+                            <TextBlock Text="{Binding SelectedItem.FileName}" Style="{StaticResource SectionHeadingStyle}" FontSize="15" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding SelectedItem.FileSize, Converter={StaticResource BytesConverter}, StringFormat='Boyut: \{0\}'}" 
+                                       Style="{StaticResource CaptionTextStyle}" Margin="0,0,0,12"/>
 
+                            <!-- Original Path -->
                             <Grid Margin="0,8,0,4">
-                                <TextBlock Text="Orijinal Konum" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Orijinal Konum" Style="{StaticResource SectionHeadingStyle}" FontSize="12" VerticalAlignment="Center"/>
                                 <Button Content="📋 Kopyala" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Right" Padding="8,2" FontSize="11"
                                         Command="{Binding CopyOriginalPathCommand}"/>
                             </Grid>
                             <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,2">
                                 <TextBox Text="{Binding SelectedItem.OriginalPath, Mode=OneWay}" IsReadOnly="True" BorderThickness="0" Background="Transparent" 
-                                         TextWrapping="Wrap" FontSize="11.5" FontFamily="Consolas" Foreground="{DynamicResource BrushTextPrimary}"/>
+                                         TextWrapping="Wrap" Style="{StaticResource DataMonospaceStyle}"/>
                             </Border>
 
+                            <!-- SHA-256 Hash -->
                             <Grid Margin="0,10,0,4">
-                                <TextBlock Text="SHA-256 Karması" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                                <TextBlock Text="SHA-256 Karması" Style="{StaticResource SectionHeadingStyle}" FontSize="12" VerticalAlignment="Center"/>
                                 <Button Content="📋 Kopyala" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Right" Padding="8,2" FontSize="11"
                                         Command="{Binding CopySha256Command}"/>
                             </Grid>
                             <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,2">
                                 <TextBox Text="{Binding SelectedItem.SHA256, Mode=OneWay}" IsReadOnly="True" BorderThickness="0" Background="Transparent" 
-                                         TextWrapping="Wrap" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource BrushTextMuted}"/>
+                                         TextWrapping="Wrap" Style="{StaticResource DataMonospaceStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
                             </Border>
 
-                            <TextBlock Text="Karantinaya Alınma Sebebi" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,12,0,4"/>
-                            <Border Background="#FFFBEB" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,2">
-                                <TextBlock Text="{Binding SelectedItem.Reason}" TextWrapping="Wrap" FontSize="12" Foreground="#B45309"/>
+                            <!-- Reason Box -->
+                            <TextBlock Text="Karantinaya Alınma Sebebi" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,12,0,4"/>
+                            <Border Background="{DynamicResource BrushStatusWarningBg}" BorderBrush="{DynamicResource BrushStatusWarningBorder}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,2">
+                                <TextBlock Text="{Binding SelectedItem.Reason}" Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushStatusWarningText}"/>
                             </Border>
 
+                            <!-- Action Buttons -->
                             <StackPanel Margin="0,20,0,0">
                                 <Button Content="Dosyayı Geri Yükle" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Stretch"
                                         Command="{Binding RestoreItemCommand}" Margin="0,0,0,8"/>
@@ -130,9 +170,11 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <TextBlock Text="İncelemek veya geri yüklemek için bir dosya seçin." Foreground="Gray" HorizontalAlignment="Center" Margin="0,60,0,0">
+                        <!-- Selection Placeholder -->
+                        <TextBlock Text="İncelemek veya geri yüklemek için listeden bir dosya seçin." 
+                                   HorizontalAlignment="Center" Margin="0,60,0,0">
                             <TextBlock.Style>
-                                <Style TargetType="TextBlock">
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource CaptionTextStyle}">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding SelectedItem}" Value="{x:Null}">
@@ -147,8 +189,7 @@
             </Border>
         </Grid>
 
-        <!-- Status Bar -->
-        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="Gray" FontSize="12" Margin="0,8,0,0"/>
+        <!-- 4. Status Bar -->
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Style="{StaticResource CaptionTextStyle}" Margin="0,8,0,0"/>
     </Grid>
 </Page>
-
