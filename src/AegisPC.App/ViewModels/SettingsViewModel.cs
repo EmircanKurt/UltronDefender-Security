@@ -232,17 +232,26 @@ namespace AegisPC.App.ViewModels
             _ = LogAuditAsync("Süreç İzleme", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı");
         }
 
+        partial void OnIsGameCrackWatchdogEnabledChanged(bool value)
+        {
+            AegisPC.Core.Configuration.FeatureFlags.IsGamerCrackShieldActive = value;
+            _ = SaveSettingsAsync();
+            _ = LogAuditAsync("Oyun ve Crack Kalkanı", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı");
+        }
+
+        partial void OnIsCloudLookupEnabledChanged(bool value)
+        {
+            AegisPC.Core.Configuration.FeatureFlags.IsCloudLookupActive = value;
+            _ = SaveSettingsAsync();
+            _ = LogAuditAsync("Bulut Tehdit Sorgulama", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı");
+        }
+
         partial void OnIsNetworkProtectionEnabledChanged(bool value)
         {
-            if (value)
-            {
-                StatusMessage = "Ağ Koruması (WFP) geliştirme aşamasındadır.";
-                _toastNotificationService?.ShowToast("Ağ Koruması", "Bu özellik yakında eklenecektir.", "Info");
-                
-                // Revert back since it's not yet fully implemented
-                isNetworkProtectionEnabled = false;
-                OnPropertyChanged(nameof(IsNetworkProtectionEnabled));
-            }
+            AegisPC.Core.Configuration.FeatureFlags.IsNetworkShieldActive = value;
+            StatusMessage = value ? "Ağ, DNS ve Web Kalkanı devrede." : "Ağ, DNS ve Web Kalkanı durduruldu.";
+            _ = SaveSettingsAsync();
+            _ = LogAuditAsync("Ağ ve Web Kalkanı", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı");
         }
 
         private async Task LogAuditAsync(string component, string action)

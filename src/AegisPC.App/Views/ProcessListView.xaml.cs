@@ -13,6 +13,11 @@ namespace AegisPC.App.Views
             ViewModel = viewModel;
             DataContext = ViewModel;
             InitializeComponent();
+
+            Loaded += async (s, e) =>
+            {
+                await ViewModel.LoadProcessesAsync();
+            };
         }
 
         private void OnPagePreviewMouseWheel(object sender, MouseWheelEventArgs e)
