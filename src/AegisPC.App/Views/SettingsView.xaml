@@ -16,201 +16,205 @@
     </Page.Resources>
 
     <ScrollViewer x:Name="RootScrollViewer" 
-                  Margin="32,24,32,32"
+                  Margin="28,20,28,28"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
                   CanContentScroll="False"
                   Focusable="True">
-        <StackPanel MaxWidth="760" HorizontalAlignment="Left">
-            <!-- Header -->
+        <StackPanel MaxWidth="780" HorizontalAlignment="Left">
+            <!-- 1. Header -->
             <StackPanel Margin="0,0,0,20">
-                <TextBlock Style="{StaticResource PageHeaderStyle}" Text="Uygulama ve Güvenlik Ayarları" Margin="0,0,0,4"/>
-                <TextBlock Text="Koruma kalkanları, bildirimler ve tarama zamanlamasını yapılandırın." FontSize="13" Foreground="{DynamicResource BrushTextMuted}"/>
+                <TextBlock Style="{StaticResource PageHeadingStyle}" Text="Uygulama ve Güvenlik Ayarları" Margin="0,0,0,4"/>
+                <TextBlock Text="Koruma kalkanları, bildirimler ve tarama zamanlamasını yapılandırın." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
             </StackPanel>
 
-            <!-- Protection Warning Alert Card -->
-            <Border Background="#FEF2F2" BorderBrush="#FCA5A5" BorderThickness="1" CornerRadius="8" Padding="16,14" Margin="0,0,0,20"
+            <!-- 2. Protection Warning Alert Card (Strict Crimson Red) -->
+            <Border Background="{DynamicResource BrushStatusDangerBg}" BorderBrush="{DynamicResource BrushStatusDangerBorder}" BorderThickness="1" CornerRadius="8" Padding="16,14" Margin="0,0,0,20"
                     Visibility="{Binding IsProtectionWarningVisible, Converter={StaticResource BoolToVis}}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <ui:SymbolIcon Symbol="Warning24" Foreground="#DC2626" FontSize="22" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1" Text="{Binding ProtectionWarningText}" Foreground="#991B1B" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    <ui:SymbolIcon Symbol="Warning24" Foreground="{DynamicResource BrushStatusDanger}" FontSize="22" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="{Binding ProtectionWarningText}" Foreground="{DynamicResource BrushStatusDangerText}" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
                 </Grid>
             </Border>
 
-            <!-- Core Protection Layer -->
+            <!-- 3. Core Protection Layer -->
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                        <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="#2563EB" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="Temel Güvenlik Kalkanları" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Temel Güvenlik Kalkanları" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <Grid Margin="0,0,0,12">
+                    <!-- Row 1: File Protection -->
+                    <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
-                            <TextBlock Text="Gerçek Zamanlı Dosya Koruması" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock Text="İndirilen ve oluşturulan dosyaları anlık olarak tarar ve tehditleri engeller." FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Gerçek Zamanlı Dosya Koruması" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="İndirilen ve oluşturulan dosyaları anlık olarak tarar ve tehditleri engeller." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding IsFileProtectionEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
 
-                    <Grid Margin="0,0,0,12">
+                    <!-- Row 2: Ransomware Shield -->
+                    <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
-                            <TextBlock Text="Fidye Yazılımı Kalkanı (Ransomware Shield)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock Text="Kritik kullanıcı belgelerini izler, canary tuzak dosyalarıyla şifreleme girişimlerini durdurur." FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Fidye Yazılımı Kalkanı (Ransomware Shield)" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Kritik kullanıcı belgelerini izler, canary tuzak dosyalarıyla şifreleme girişimlerini durdurur." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding IsRansomwareShieldEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
 
-                    <Grid Margin="0,0,0,12">
+                    <!-- Row 3: Process Monitoring -->
+                    <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
-                            <TextBlock Text="Süreç ve Bellek İzleme" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock Text="Çalışan arka plan süreçlerini analiz eder ve şüpheli davranışları raporlar." FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Süreç ve Bellek İzleme" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Çalışan arka plan süreçlerini analiz eder ve şüpheli davranışları raporlar." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding IsProcessMonitoringEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
 
-                    <Grid Margin="0,0,0,12">
+                    <!-- Row 4: Game & Crack Sandbox Watchdog -->
+                    <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="🎮 Oyun &amp; Crack Koruma Kalkanı (Sandbox Watchdog)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                <Border Background="#ECFDF5" BorderBrush="#A7F3D0" BorderThickness="1" CornerRadius="4" Padding="6,1" Margin="8,0,0,0">
-                                    <TextBlock Text="AKILLI" FontSize="10" FontWeight="Bold" Foreground="#059669"/>
+                                <TextBlock Text="🎮 Oyun &amp; Crack Koruma Kalkanı (Sandbox Watchdog)" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                                <Border Style="{StaticResource BadgeSafeStyle}" Padding="6,1" Margin="8,0,0,0">
+                                    <TextBlock Text="AKILLI" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusSafeText}"/>
                                 </Border>
                             </StackPanel>
-                            <TextBlock Text="Korsan/Crack oyunların Belgelerim/Save kayıtlarına izin verir; gizli dropper ve şifre çalma hareketlerini anında engeller." FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Korsan/Crack oyunların Belgelerim/Save kayıtlarına izin verir; gizli dropper ve şifre çalma hareketlerini anında engeller." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding IsGameCrackWatchdogEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
 
-                    <Grid Margin="0,0,0,0">
+                    <!-- Row 5: Network Protection -->
+                    <Grid Margin="0">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Ağ, DNS ve Web Kalkanı" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                <Border Background="#F0F9FF" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="4" Padding="6,1" Margin="8,0,0,0">
-                                    <TextBlock Text="DNS/WEB" FontSize="10" FontWeight="Bold" Foreground="#0284C7"/>
+                                <TextBlock Text="Ağ, DNS ve Web Kalkanı" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                                <Border Style="{StaticResource BadgeProgressStyle}" Padding="6,1" Margin="8,0,0,0">
+                                    <TextBlock Text="DNS/WEB" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushBrandPrimary}"/>
                                 </Border>
                             </StackPanel>
-                            <TextBlock Text="Zararlı web siteleri, phishing alan adları ve DNS tabanlı tehdit filtreleme kalkanı." FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Zararlı web siteleri, phishing alan adları ve DNS tabanlı tehdit filtreleme kalkanı." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding IsNetworkProtectionEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
                 </StackPanel>
             </Border>
 
-            <!-- Notifications & Telemetry -->
+            <!-- 4. Notifications & Telemetry -->
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                        <ui:SymbolIcon Symbol="AlertBadge24" Foreground="#0284C7" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="Bildirimler ve Telemetri" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <ui:SymbolIcon Symbol="AlertBadge24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Bildirimler ve Telemetri" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <Grid Margin="0,0,0,12">
+                    <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
-                            <TextBlock Text="Kritik Tehdit Bildirimleri" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock Text="Tehdit tespit edildiğinde veya engellendiğinde bildirim gösterir." FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Kritik Tehdit Bildirimleri" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Tehdit tespit edildiğinde veya engellendiğinde bildirim gösterir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding NotificationsEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
 
-                    <Grid Margin="0,0,0,0">
+                    <Grid Margin="0">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
-                            <TextBlock Text="Gerçek Zamanlı Donanım İzleme" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock Text="CPU, RAM, Disk ve Ağ kullanım oranlarını anlık hesaplar." FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Gerçek Zamanlı Donanım İzleme" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="CPU, RAM, Disk ve Ağ kullanım oranlarını anlık hesaplar." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding IsRealTimeMonitoringEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
                 </StackPanel>
             </Border>
 
-            <!-- Scheduled Scanning -->
+            <!-- 5. Scheduled Scanning -->
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                        <ui:SymbolIcon Symbol="Calendar24" Foreground="#10B981" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="Zamanlanmış Güvenlik Taraması" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <ui:SymbolIcon Symbol="Calendar24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Zamanlanmış Güvenlik Taraması" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <Grid Margin="0,0,0,12">
+                    <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
-                            <TextBlock Text="Otomatik Rutin Tarama" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock Text="Belirlenen zaman aralıklarında otomatik hızlı tarama gerçekleştirir." FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Otomatik Rutin Tarama" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Belirlenen zaman aralıklarında otomatik hızlı tarama gerçekleştirir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding ScanScheduleEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
 
-                    <Grid Margin="0,0,0,12">
-                        <StackPanel VerticalAlignment="Center" Margin="0,0,140,0">
-                            <TextBlock Text="Tarama Saati (Günlük Başlangıç)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock Text="Günlük tam taramanın veya ilk döngünün başlayacağı saat dilimi." FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                    <Grid Margin="0,0,0,14">
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,160,0">
+                            <TextBlock Text="Tarama Saati (Günlük Başlangıç)" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Günlük tam taramanın veya ilk döngünün başlayacağı saat dilimi." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <ComboBox ItemsSource="{Binding ScanHours}" 
                                   SelectedItem="{Binding SelectedScanHourString}" 
                                   Width="150" Height="34" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                  FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Background="{DynamicResource BrushCardBg}" BorderBrush="#CBD5E1"/>
+                                  Style="{DynamicResource DefaultComboBoxStyle}"/>
                     </Grid>
 
                     <Grid Margin="0,0,0,10">
-                        <StackPanel VerticalAlignment="Center" Margin="0,0,240,0">
-                            <TextBlock Text="Tarama Tekrar Periyodu" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock Text="Arka planda rutin güvenlik taramasının hangi sıklıkla yürütüleceği." FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,260,0">
+                            <TextBlock Text="Tarama Tekrar Periyodu" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Arka planda rutin güvenlik taramasının hangi sıklıkla yürütüleceği." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <ComboBox ItemsSource="{Binding ScanPeriods}" 
                                   SelectedItem="{Binding SelectedScanPeriod}" 
                                   Width="240" Height="34" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                  FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Background="{DynamicResource BrushCardBg}" BorderBrush="#CBD5E1"/>
+                                  Style="{DynamicResource DefaultComboBoxStyle}"/>
                     </Grid>
 
                     <!-- 30-Minute Frequent Scan Warning Alert Banner -->
-                    <Border Background="#FFFBEB" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,4,0,0"
+                    <Border Background="{DynamicResource BrushStatusWarningBg}" BorderBrush="{DynamicResource BrushStatusWarningBorder}" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,4,0,0"
                             Visibility="{Binding IsFrequentScanWarningVisible, Converter={StaticResource BoolToVis}}">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <ui:SymbolIcon Symbol="Warning24" Foreground="#D97706" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <ui:SymbolIcon Symbol="Warning24" Foreground="{DynamicResource BrushStatusWarning}" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="1" Text="⚠️ Dikkat: 30 dakikada bir tarama periyodu güvenlik düzeyini en üst seviyeye çıkarır ancak eski veya düşük donanımlı sistemlerde disk ve CPU işlemlerini sıklaştırabilir." 
-                                       FontSize="11.5" Foreground="#92400E" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                       Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusWarningText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
                 </StackPanel>
             </Border>
 
-            <!-- Appearance & Updates -->
+            <!-- 6. Appearance & Updates -->
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,24" Padding="20">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                         <ui:SymbolIcon Symbol="Settings24" Foreground="{DynamicResource BrushTextMuted}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="Genel ve Güncelleme" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                        <TextBlock Text="Genel ve Güncelleme" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
                     </StackPanel>
 
                     <Grid Margin="0,0,0,12">
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Otomatik İmza ve Kural Güncellemesi" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock Text="Yeni zararlı yazılım imzalarını arka planda otomatik indirir." FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
+                            <TextBlock Text="Otomatik İmza ve Kural Güncellemesi" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Yeni zararlı yazılım imzalarını arka planda otomatik indirir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding IsAutoUpdateEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
 
-                    <TextBlock Text="{Binding LastUpdateCheck}" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" Margin="0,4,0,0"/>
+                    <TextBlock Text="{Binding LastUpdateCheck}" Style="{StaticResource CaptionTextStyle}" Margin="0,4,0,0"/>
                 </StackPanel>
             </Border>
 
-            <!-- Save Action Button & Status Feedback -->
+            <!-- 7. Save Action Button & Status Feedback -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,32">
                 <Button Style="{StaticResource PrimaryButtonStyle}" 
                         Command="{Binding SaveSettingsCommand}" 
                         Content="Ayarları Kaydet" 
                         Padding="24,10"
                         Margin="0,0,16,0"/>
-                <TextBlock Text="{Binding StatusMessage}" Foreground="#059669" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusSafeDark}" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </Page>
-
