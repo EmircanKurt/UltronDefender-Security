@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
 using AegisPC.Core.Enums;
+using Microsoft.Win32;
 using Wpf.Ui.Appearance;
 
 namespace AegisPC.App.Services
@@ -36,10 +37,36 @@ namespace AegisPC.App.Services
                     if (data != null)
                     {
                         CurrentTheme = data.Theme;
+                        return;
+                    }
+                }
+
+                // Auto-detect Windows System Light/Dark Mode if no explicit preference saved
+                CurrentTheme = DetectWindowsSystemTheme();
+            }
+            catch
+            {
+                CurrentTheme = ThemeMode.Light;
+            }
+        }
+
+        public static ThemeMode DetectWindowsSystemTheme()
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+                if (key != null)
+                {
+                    var appsUseLightTheme = key.GetValue("AppsUseLightTheme");
+                    if (appsUseLightTheme is int val && val == 0)
+                    {
+                        return ThemeMode.Dark;
                     }
                 }
             }
             catch { }
+
+            return ThemeMode.Light;
         }
 
         public static void SaveTheme(ThemeMode theme)
@@ -69,62 +96,90 @@ namespace AegisPC.App.Services
             {
                 try
                 {
-                    var res = Application.Current.Resources;
                     bool dark = theme == ThemeMode.Dark;
+                    var appResources = Application.Current.Resources;
 
-                    // Core Dynamic Palette Tokens
-                    Color colorAppBg = dark ? Color.FromRgb(11, 15, 25) : Color.FromRgb(238, 242, 246); // #0B0F19 vs #EEF2F6
-                    Color colorCardBg = dark ? Color.FromRgb(17, 24, 39) : Color.FromRgb(255, 255, 255); // #111827 vs #FFFFFF
-                    Color colorCardBgAlt = dark ? Color.FromRgb(22, 32, 50) : Color.FromRgb(248, 250, 252); // #162032 vs #F8FAFC
-                    Color colorCardBorder = dark ? Color.FromRgb(30, 41, 59) : Color.FromRgb(226, 232, 240); // #1E293B vs #E2E8F0
-                    Color colorCardBorderHover = dark ? Color.FromRgb(59, 130, 246) : Color.FromRgb(203, 213, 225); // #3B82F6 vs #CBD5E1
+                    // 1. Swap Color Token Dictionary in MergedDictionaries
+                    string themeSource = dark 
+                        ? "Resources/Themes/Colors.Dark.xaml" 
+                        : "Resources/Themes/Colors.Light.xaml";
 
-                    Color colorTextPrimary = dark ? Color.FromRgb(248, 250, 252) : Color.FromRgb(15, 23, 42); // #F8FAFC vs #0F172A
-                    Color colorTextSecondary = dark ? Color.FromRgb(203, 213, 225) : Color.FromRgb(71, 85, 105); // #CBD5E1 vs #475569
-                    Color colorTextMuted = dark ? Color.FromRgb(148, 163, 184) : Color.FromRgb(100, 116, 139); // #94A3B8 vs #64748B
+                    var newThemeDict = new ResourceDictionary 
+                    { 
+                        Source = new Uri(themeSource, UriKind.Relative) 
+                    };
 
-                    Color colorSidebarBg = dark ? Color.FromRgb(7, 11, 20) : Color.FromRgb(10, 15, 29); // #070B14 vs #0A0F1D
+                    int themeDictIndex = -1;
+                    for (int i = 0; i < appResources.MergedDictionaries.Count; i++)
+                    {
+                        var d = appResources.MergedDictionaries[i];
+                        if (d.Source != null && 
+                           (d.Source.OriginalString.Contains("Colors.Light.xaml", StringComparison.OrdinalIgnoreCase) || 
+                            d.Source.OriginalString.Contains("Colors.Dark.xaml", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            themeDictIndex = i;
+                            break;
+                        }
+                    }
 
-                    // Update Dynamic Resources in Application
-                    res["ColorAppBg"] = colorAppBg;
-                    res["ColorCardBg"] = colorCardBg;
-                    res["ColorCardBgAlt"] = colorCardBgAlt;
-                    res["ColorCardBorder"] = colorCardBorder;
-                    res["ColorCardBorderHover"] = colorCardBorderHover;
+                    if (themeDictIndex >= 0)
+                    {
+                        appResources.MergedDictionaries[themeDictIndex] = newThemeDict;
+                    }
+                    else
+                    {
+                        appResources.MergedDictionaries.Add(newThemeDict);
+                    }
 
-                    res["ColorTextPrimary"] = colorTextPrimary;
-                    res["ColorTextSecondary"] = colorTextSecondary;
-                    res["ColorTextMuted"] = colorTextMuted;
+                    // 2. Direct override update on Application.Current.Resources for all keys
+                    foreach (var key in newThemeDict.Keys)
+                    {
+                        appResources[key] = newThemeDict[key];
+                    }
 
-                    // Update Solid Color Brushes
-                    res["BrushAppBg"] = new SolidColorBrush(colorAppBg);
-                    res["BrushCardBg"] = new SolidColorBrush(colorCardBg);
-                    res["BrushCardBgAlt"] = new SolidColorBrush(colorCardBgAlt);
-                    res["BrushCardBorder"] = new SolidColorBrush(colorCardBorder);
-                    res["BrushSidebarBg"] = new SolidColorBrush(colorSidebarBg);
+                    // 3. Update WPF-UI Native Controls Palette & TitleBar
+                    var textPrimary = appResources["BrushTextPrimary"] as Brush;
+                    var textSecondary = appResources["BrushTextSecondary"] as Brush;
+                    var textMuted = appResources["BrushTextMuted"] as Brush;
+                    var cardBg = appResources["BrushCardBg"] as Brush;
+                    var cardBorder = appResources["BrushCardBorder"] as Brush;
+                    var appBg = appResources["BrushAppBg"] as Brush;
 
-                    res["BrushTextPrimary"] = new SolidColorBrush(colorTextPrimary);
-                    res["BrushTextSecondary"] = new SolidColorBrush(colorTextSecondary);
-                    res["BrushTextMuted"] = new SolidColorBrush(colorTextMuted);
+                    if (textPrimary != null)
+                    {
+                        appResources["TextFillColorPrimaryBrush"] = textPrimary;
+                        appResources["TitleBarButtonForeground"] = textPrimary;
+                        appResources["TitleBarButtonPointerOverForeground"] = textPrimary;
+                        appResources["TitleBarButtonPressedForeground"] = textPrimary;
+                    }
 
-                    // Update TitleBar Brushes
-                    res["TitleBarButtonForeground"] = new SolidColorBrush(colorTextPrimary);
-                    res["TitleBarButtonPointerOverForeground"] = new SolidColorBrush(colorTextPrimary);
-                    res["TitleBarButtonPointerOverBackground"] = new SolidColorBrush(dark ? Color.FromRgb(30, 41, 59) : Color.FromRgb(226, 232, 240));
-                    res["TitleBarButtonPressedForeground"] = new SolidColorBrush(colorTextPrimary);
-                    res["TitleBarButtonPressedBackground"] = new SolidColorBrush(dark ? Color.FromRgb(51, 65, 85) : Color.FromRgb(203, 213, 225));
+                    if (textSecondary != null)
+                    {
+                        appResources["TextFillColorSecondaryBrush"] = textSecondary;
+                    }
 
-                    // Update WPF-UI Native Controls Brushes
-                    res["CardBackgroundSolidColorBrush"] = new SolidColorBrush(colorCardBg);
-                    res["CardBorderSolidColorBrush"] = new SolidColorBrush(colorCardBorder);
-                    res["TextFillColorPrimaryBrush"] = new SolidColorBrush(colorTextPrimary);
-                    res["TextFillColorSecondaryBrush"] = new SolidColorBrush(colorTextSecondary);
-                    res["TextFillColorTertiaryBrush"] = new SolidColorBrush(colorTextMuted);
+                    if (textMuted != null)
+                    {
+                        appResources["TextFillColorTertiaryBrush"] = textMuted;
+                    }
 
-                    res["NavigationViewContentBackground"] = new SolidColorBrush(colorAppBg);
-                    res["NavigationViewContentGridBackground"] = new SolidColorBrush(colorAppBg);
+                    if (cardBg != null)
+                    {
+                        appResources["CardBackgroundSolidColorBrush"] = cardBg;
+                    }
 
-                    // Apply WPF-UI Theme
+                    if (cardBorder != null)
+                    {
+                        appResources["CardBorderSolidColorBrush"] = cardBorder;
+                    }
+
+                    if (appBg != null)
+                    {
+                        appResources["NavigationViewContentBackground"] = appBg;
+                        appResources["NavigationViewContentGridBackground"] = appBg;
+                    }
+
+                    // 4. Apply WPF-UI Native Theme Engine
                     ApplicationThemeManager.Apply(dark ? ApplicationTheme.Dark : ApplicationTheme.Light);
                 }
                 catch { }

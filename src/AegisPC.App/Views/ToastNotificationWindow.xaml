@@ -1,4 +1,4 @@
-﻿<Window x:Class="AegisPC.App.Views.ToastNotificationWindow"
+<Window x:Class="AegisPC.App.Views.ToastNotificationWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -11,10 +11,10 @@
         Height="150"
         WindowStartupLocation="Manual">
 
-    <!-- Outer ESET-Style Notification Container with Crisp White & Crimson Left Accent Stripe -->
+    <!-- Outer Notification Container with Theme-Adaptive Background -->
     <Border x:Name="CardBorder" Background="{DynamicResource BrushCardBg}" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource BrushCardBorder}" Padding="0" Cursor="Hand" MouseLeftButtonDown="OnCardClicked">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="20" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.18"/>
+            <DropShadowEffect BlurRadius="20" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.25"/>
         </Border.Effect>
 
         <Grid>
@@ -23,8 +23,8 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 1. Left Color Accent Stripe (Cyber Cyan Blue / Emerald Green) -->
-            <Border x:Name="AccentStripe" Grid.Column="0" Background="#0284C7" CornerRadius="8,0,0,8"/>
+            <!-- 1. Left Color Accent Stripe -->
+            <Border x:Name="AccentStripe" Grid.Column="0" Background="{DynamicResource BrushBrandPrimary}" CornerRadius="8,0,0,8"/>
 
             <!-- 2. Main Notification Card Content -->
             <Grid Grid.Column="1" Margin="14,10,14,10">
@@ -43,8 +43,8 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border Background="#0F172A" CornerRadius="4" Padding="5,2" Margin="0,0,8,0">
-                            <TextBlock Text="ULTRON" FontSize="9.5" FontWeight="ExtraBold" Foreground="#38BDF8"/>
+                        <Border Background="{DynamicResource BrushBrandPrimary}" CornerRadius="4" Padding="5,2" Margin="0,0,8,0">
+                            <TextBlock Text="ULTRON" FontSize="9.5" FontWeight="ExtraBold" Foreground="#FFFFFF"/>
                         </Border>
                         <TextBlock x:Name="AppHeaderTitle" Text="DEFENDER TOTAL SECURITY" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
                     </StackPanel>
@@ -64,21 +64,21 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- Shield Checkmark / Alert Icon Badge -->
-                    <Border x:Name="IconBadge" Grid.Column="0" Width="36" Height="36" CornerRadius="18" Background="#EFF6FF" Margin="0,2,12,0" VerticalAlignment="Top">
-                        <ui:SymbolIcon x:Name="BadgeIcon" Symbol="ShieldCheckmark24" Foreground="#0284C7" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Border x:Name="IconBadge" Grid.Column="0" Width="36" Height="36" CornerRadius="18" Background="{DynamicResource BrushBrandMinimal}" Margin="0,2,12,0" VerticalAlignment="Top">
+                        <ui:SymbolIcon x:Name="BadgeIcon" Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
 
                     <!-- Message Details -->
                     <StackPanel Grid.Column="1" VerticalAlignment="Top">
                         <TextBlock x:Name="ToastTitle" Text="Tehdit engellendi ve karantinaya alındı" FontSize="13.5" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis"/>
                         <TextBlock x:Name="ToastMessage" Text="Zararlı kod içeren dosya yakalandı ve sistemden temizlendi." FontSize="11.5" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" Margin="0,3,0,2" MaxHeight="40" TextTrimming="CharacterEllipsis" LineHeight="16"/>
-                        <TextBlock x:Name="ToastActionStatus" Text="Dosya AES-256 Karantina Kasasına kilitlendi." FontSize="11" FontWeight="SemiBold" Foreground="#059669"/>
+                        <TextBlock x:Name="ToastActionStatus" Text="Dosya AES-256 Karantina Kasasına kilitlendi." FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource BrushStatusSafeDark}"/>
                     </StackPanel>
                 </Grid>
 
                 <!-- Footer Section: More info action link -->
                 <Grid Grid.Row="2" Margin="0,6,0,0">
-                    <TextBlock Text="Bu tehdit hakkında ayrıntıları görüntüle →" FontSize="10.5" Foreground="#0284C7" FontWeight="SemiBold" Cursor="Hand" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                    <TextBlock Text="Detayları ve karantina kaydını incelemek için tıklayın →" FontSize="10.5" Foreground="{DynamicResource BrushBrandPrimary}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                 </Grid>
             </Grid>
         </Grid>
