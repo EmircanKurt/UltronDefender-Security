@@ -39,17 +39,36 @@ namespace AegisPC.App.Services
 
             _notifyIcon = new NotifyIcon();
 
-            // Load app icon
+            // Load app icon with multiple fallbacks
             try
             {
                 var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "Images", "app.ico");
+                var altIconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "Images", "ultron_shield.ico");
+                var rootIconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
+
                 if (File.Exists(iconPath))
                 {
                     _notifyIcon.Icon = new Icon(iconPath);
                 }
+                else if (File.Exists(altIconPath))
+                {
+                    _notifyIcon.Icon = new Icon(altIconPath);
+                }
+                else if (File.Exists(rootIconPath))
+                {
+                    _notifyIcon.Icon = new Icon(rootIconPath);
+                }
                 else
                 {
-                    _notifyIcon.Icon = SystemIcons.Shield;
+                    var streamInfo = Application.GetResourceStream(new Uri("pack://application:,,,/Resources/Images/app.ico"));
+                    if (streamInfo != null)
+                    {
+                        _notifyIcon.Icon = new Icon(streamInfo.Stream);
+                    }
+                    else
+                    {
+                        _notifyIcon.Icon = SystemIcons.Shield;
+                    }
                 }
             }
             catch

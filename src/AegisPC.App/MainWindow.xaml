@@ -7,7 +7,7 @@
         Title="Ultron Defender Total Security (Antivirüs Programı)" Height="880" Width="1300"
         WindowStartupLocation="CenterScreen"
         ExtendsContentIntoTitleBar="True"
-        Icon="pack://application:,,,/Resources/Images/ultron_logo.png"
+        Icon="pack://application:,,,/Resources/Images/app.ico"
         Background="{DynamicResource BrushAppBg}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"

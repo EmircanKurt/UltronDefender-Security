@@ -50,8 +50,14 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\Images\*.png" />
-    <Resource Include="Resources\Images\app.ico" />
+    <Resource Include="Resources\Images\*.ico" />
     <Content Include="Resources\Images\app.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\Images\ultron_shield.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\Images\ultron_logo.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
