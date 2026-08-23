@@ -1,4 +1,4 @@
-﻿<Page x:Class="AegisPC.App.Views.CrashAnalysisView"
+<Page x:Class="AegisPC.App.Views.CrashAnalysisView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -14,7 +14,7 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
     </Page.Resources>
 
-    <Grid Margin="24">
+    <Grid Margin="28,20,28,28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -22,68 +22,97 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <TextBlock Grid.Row="0" Style="{StaticResource PageHeaderStyle}" Text="Windows Çökme ve Donma Teşhis Merkezi" />
+        <!-- 1. Header -->
+        <TextBlock Grid.Row="0" Style="{StaticResource PageHeadingStyle}" Text="Windows Çökme ve Donma Teşhis Merkezi" Margin="0,0,0,4"/>
 
-        <!-- Toolbar -->
+        <!-- 2. Toolbar -->
         <Grid Grid.Row="1" Margin="0,0,0,16">
-            <TextBlock Text="Son 7 gün içindeki uygulama çökmeleri, donmalar ve beklenmeyen sistem kapanmaları:" Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
-            <ui:Button HorizontalAlignment="Right" Content="Yenile" Icon="{ui:SymbolIcon ArrowClockwise24}" 
-                       Command="{Binding LoadCrashesCommand}"/>
+            <TextBlock Text="Son 7 gün içindeki uygulama çökmeleri, donmalar ve beklenmeyen sistem kapanmaları:" 
+                       Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center"/>
+            <Button HorizontalAlignment="Right" Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
+                    Command="{Binding LoadCrashesCommand}" Padding="14,6"/>
         </Grid>
 
-        <!-- Content (List + Incident Report) -->
+        <!-- 3. Content (List + Incident Report) -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="380"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Crash Events List -->
+            <!-- Crash Events List (Strict DataTableStyle: Pure Sans-Serif) -->
             <Grid Grid.Column="0" Margin="0,0,16,0">
-                <ui:DataGrid ItemsSource="{Binding Crashes}" 
-                             SelectedItem="{Binding SelectedCrash}"
-                             AutoGenerateColumns="False" IsReadOnly="True"
-                             SelectionMode="Single">
-                    <ui:DataGrid.Columns>
-                        <DataGridTextColumn Header="Zaman" Binding="{Binding OccurredAt, StringFormat='\{0:MM-dd HH:mm\}'}" Width="110"/>
-                        <DataGridTextColumn Header="Olay Türü" Binding="{Binding EventType}" Width="110"/>
-                        <DataGridTextColumn Header="Uygulama" Binding="{Binding ApplicationName}" Width="*"/>
-                    </ui:DataGrid.Columns>
-                </ui:DataGrid>
+                <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10">
+                    <ui:DataGrid ItemsSource="{Binding Crashes}" 
+                                 SelectedItem="{Binding SelectedCrash}"
+                                 AutoGenerateColumns="False" 
+                                 IsReadOnly="True"
+                                 SelectionMode="Single"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 RowHeaderWidth="0"
+                                 GridLinesVisibility="Horizontal"
+                                 HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
+                        <ui:DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Zaman" Width="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding OccurredAt, StringFormat='\{0:MM-dd HH:mm\}'}" Style="{StaticResource DataTableStyle}" Padding="6,0" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Olay Türü" Width="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding EventType}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" Foreground="{DynamicResource BrushStatusDangerText}" Padding="6,0" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Uygulama" Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding ApplicationName}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" TextTrimming="CharacterEllipsis" Padding="6,0" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </ui:DataGrid.Columns>
+                    </ui:DataGrid>
+                </Border>
 
                 <!-- Empty State Overlay -->
-                <Border Background="{DynamicResource BrushAppBg}" Visibility="{Binding HasNoCrashes, Converter={StaticResource BoolToVis}}">
-                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock Text="✅" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,12"/>
-                        <TextBlock Text="Uygulama çökmesi tespit edilmedi" FontSize="18" FontWeight="SemiBold" 
-                                   HorizontalAlignment="Center" Foreground="{DynamicResource BrushTextPrimary}"/>
+                <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10" 
+                        Visibility="{Binding HasNoCrashes, Converter={StaticResource BoolToVis}}">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="24">
+                        <TextBlock Text="✅" FontSize="44" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                        <TextBlock Text="Uygulama çökmesi tespit edilmedi" Style="{StaticResource SectionHeadingStyle}" HorizontalAlignment="Center"/>
                         <TextBlock Text="Son 7 günde herhangi bir uygulama çökmesi kaydedilmedi." 
-                                   FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                                   Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
                     </StackPanel>
                 </Border>
             </Grid>
 
             <!-- Diagnostic Report & Timeline -->
-            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="12">
-                        <TextBlock Text="Olay Teşhis Raporu" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,16"/>
+            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="4">
+                        <TextBlock Text="Olay Teşhis Raporu" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,16"/>
 
                         <StackPanel Visibility="{Binding SelectedCrashReport, Converter={StaticResource BoolToVis}}">
                             <!-- Incident Summary Header -->
-                            <Border Background="#EBF7F6" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,16">
+                            <Border Background="{DynamicResource BrushBrandMinimal}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,16">
                                 <StackPanel>
-                                    <TextBlock Text="{Binding SelectedCrashReport.Summary}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding SelectedCrashReport.Summary}" Style="{StaticResource SectionHeadingStyle}" FontSize="14" TextWrapping="Wrap"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                        <TextBlock Text="Teşhis Güvenilirlik Seviyesi: " Foreground="{DynamicResource BrushTextMuted}"/>
-                                        <TextBlock Text="{Binding SelectedCrashReport.ConfidenceLevel}" FontWeight="Bold" Foreground="#2563EB"/>
+                                        <TextBlock Text="Teşhis Güvenilirlik Seviyesi: " Style="{StaticResource CaptionTextStyle}"/>
+                                        <TextBlock Text="{Binding SelectedCrashReport.ConfidenceLevel}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{DynamicResource BrushBrandPrimary}"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
 
                             <!-- Incident Timeline -->
-                            <TextBlock Text="Olay Zaman Çizelgesi (Timeline)" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,8,0,8"/>
+                            <TextBlock Text="Olay Zaman Çizelgesi (Timeline)" Style="{StaticResource SectionHeadingStyle}" FontSize="13" Margin="0,8,0,8"/>
                             <ItemsControl ItemsSource="{Binding SelectedCrashReport.TimelineEntries}" Margin="0,0,0,16">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -94,12 +123,12 @@
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
 
-                                            <TextBlock Grid.Column="0" Text="{Binding Timestamp, StringFormat='\{0:HH:mm:ss\}'}" Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
-                                            <Ellipse Grid.Column="1" Width="8" Height="8" Fill="#DC2626" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                                            <Border Grid.Column="2" Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="8" Margin="8,0,0,0">
+                                            <TextBlock Grid.Column="0" Text="{Binding Timestamp, StringFormat='\{0:HH:mm:ss\}'}" Style="{StaticResource DataMonospaceStyle}" VerticalAlignment="Center"/>
+                                            <Ellipse Grid.Column="1" Width="8" Height="8" Fill="{DynamicResource BrushStatusDanger}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                            <Border Grid.Column="2" Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="8,0,0,0">
                                                 <StackPanel>
-                                                    <TextBlock Text="{Binding Category}" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                                    <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12" Margin="0,2,0,0"/>
+                                                    <TextBlock Text="{Binding Category}" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                                                    <TextBlock Text="{Binding Description}" Style="{StaticResource CaptionTextStyle}" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                                 </StackPanel>
                                             </Border>
                                         </Grid>
@@ -108,35 +137,37 @@
                             </ItemsControl>
 
                             <!-- Contributing Factors -->
-                            <TextBlock Text="Potansiyel Katkıda Bulunan Faktörler" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,8,0,8"/>
+                            <TextBlock Text="Potansiyel Katkıda Bulunan Faktörler" Style="{StaticResource SectionHeadingStyle}" FontSize="13" Margin="0,8,0,8"/>
                             <ItemsControl ItemsSource="{Binding SelectedCrashReport.ContributingFactors}" Margin="0,0,0,16">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Margin="0,3">
-                                            <TextBlock Text="• " Foreground="#D97706" FontWeight="Bold"/>
-                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}"/>
+                                            <TextBlock Text="• " Foreground="{DynamicResource BrushStatusWarning}" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding}" Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
                             <!-- Recommended Actions -->
-                            <TextBlock Text="Önerilen Eylemler" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,8,0,8"/>
+                            <TextBlock Text="Önerilen Eylemler" Style="{StaticResource SectionHeadingStyle}" FontSize="13" Margin="0,8,0,8"/>
                             <ItemsControl ItemsSource="{Binding SelectedCrashReport.RecommendedActions}" Margin="0,0,0,16">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Margin="0,3">
-                                            <ui:SymbolIcon Symbol="Checkmark24" Foreground="#10B981" Margin="0,0,6,0"/>
-                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}"/>
+                                            <ui:SymbolIcon Symbol="Checkmark24" Foreground="{DynamicResource BrushStatusSafe}" Margin="0,0,8,0"/>
+                                            <TextBlock Text="{Binding}" Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
 
-                        <TextBlock Text="Teşhis raporunu incelemek için sol listeden bir çökme olayı seçin." Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,60,0,0">
+                        <!-- Selection Placeholder -->
+                        <TextBlock Text="Teşhis raporunu incelemek için sol listeden bir çökme olayı seçin." 
+                                   HorizontalAlignment="Center" Margin="0,60,0,0">
                             <TextBlock.Style>
-                                <Style TargetType="TextBlock">
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource CaptionTextStyle}">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding SelectedCrashReport}" Value="{x:Null}">
@@ -151,8 +182,7 @@
             </Border>
         </Grid>
 
-        <!-- Status Bar -->
-        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextMuted}" FontSize="12" Margin="0,8,0,0"/>
+        <!-- 4. Status Bar -->
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Style="{StaticResource CaptionTextStyle}" Margin="0,8,0,0"/>
     </Grid>
 </Page>
-

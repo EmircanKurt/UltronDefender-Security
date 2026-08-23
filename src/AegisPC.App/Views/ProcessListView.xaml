@@ -1,4 +1,4 @@
-﻿<Page x:Class="AegisPC.App.Views.ProcessListView"
+<Page x:Class="AegisPC.App.Views.ProcessListView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -16,7 +16,7 @@
         <conv:NullToBoolConverter x:Key="NullToBool"/>
     </Page.Resources>
 
-    <Grid Margin="24">
+    <Grid Margin="28,20,28,28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -24,10 +24,10 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <TextBlock Grid.Row="0" Style="{StaticResource PageHeaderStyle}" Text="Süreç Yöneticisi" />
+        <!-- 1. Header -->
+        <TextBlock Grid.Row="0" Style="{StaticResource PageHeadingStyle}" Text="Süreç Yöneticisi" Margin="0,0,0,4"/>
 
-        <!-- Toolbar -->
+        <!-- 2. Toolbar -->
         <Grid Grid.Row="1" Margin="0,0,0,16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -36,73 +36,122 @@
 
             <ui:TextBox Grid.Column="0" PlaceholderText="Süreç adı veya PID ile filtrele..." 
                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" 
-                        Icon="{ui:SymbolIcon Search24}" Margin="0,0,12,0"/>
+                        Icon="{ui:SymbolIcon Search24}" Margin="0,0,12,0" Height="36"/>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <ui:Button Content="Yenile" Icon="{ui:SymbolIcon ArrowClockwise24}" 
-                           Command="{Binding LoadProcessesCommand}" Margin="0,0,8,0"/>
-                <ui:Button Content="Görevi Sonlandır" Icon="{ui:SymbolIcon DismissCircle24}" 
-                           Appearance="Danger"
-                           Command="{Binding TerminateProcessCommand}"
-                           IsEnabled="{Binding SelectedProcess, Converter={StaticResource NullToBool}}"/>
+                <Button Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
+                        Command="{Binding LoadProcessesCommand}" Margin="0,0,8,0" Padding="14,6"/>
+                <Button Content="Görevi Sonlandır" Style="{StaticResource DangerButtonStyle}" 
+                        Command="{Binding TerminateProcessCommand}"
+                        IsEnabled="{Binding SelectedProcess, Converter={StaticResource NullToBool}}" Padding="16,6"/>
             </StackPanel>
         </Grid>
 
-        <!-- Main Content (Table + Detail) -->
+        <!-- 3. Main Content (Table + Detail) -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="320"/>
+                <ColumnDefinition Width="340"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Process DataGrid -->
-            <ui:DataGrid Grid.Column="0" ItemsSource="{Binding Processes}" 
-                         SelectedItem="{Binding SelectedProcess}"
-                         AutoGenerateColumns="False" IsReadOnly="True"
-                         SelectionMode="Single" Margin="0,0,16,0">
-                <ui:DataGrid.Columns>
-                    <DataGridTextColumn Header="PID" Binding="{Binding PID}" Width="70"/>
-                    <DataGridTextColumn Header="Süreç Adı" Binding="{Binding Name}" Width="160"/>
-                    <DataGridTextColumn Header="CPU %" Binding="{Binding CpuPercent, StringFormat='\{0:F1\} %'}" Width="80"/>
-                    <DataGridTextColumn Header="Bellek" Binding="{Binding MemoryBytes, Converter={StaticResource BytesConverter}}" Width="100"/>
-                    <DataGridTextColumn Header="Yol" Binding="{Binding ExecutablePath}" Width="*"/>
-                </ui:DataGrid.Columns>
-            </ui:DataGrid>
+            <!-- Process DataGrid (Strict DataTableStyle: Pure Sans-Serif, Tabular Numerals) -->
+            <Border Grid.Column="0" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10" Margin="0,0,16,0">
+                <ui:DataGrid ItemsSource="{Binding Processes}" 
+                             SelectedItem="{Binding SelectedProcess}"
+                             AutoGenerateColumns="False" 
+                             IsReadOnly="True"
+                             SelectionMode="Single"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             RowHeaderWidth="0"
+                             GridLinesVisibility="Horizontal"
+                             HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
+                    <ui:DataGrid.Columns>
+                        <DataGridTemplateColumn Header="PID" Width="75">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding PID}" Style="{StaticResource DataMonospaceStyle}" Padding="6,0" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Süreç Adı" Width="170">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Padding="6,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="CPU %" Width="85">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding CpuPercent, StringFormat='\{0:F1\} %'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushBrandPrimary}" FontWeight="SemiBold" Padding="6,0" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Bellek" Width="105">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding MemoryBytes, Converter={StaticResource BytesConverter}}" Style="{StaticResource DataTableStyle}" Padding="6,0" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Yol" Width="*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding ExecutablePath}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ExecutablePath}" Padding="6,0" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </ui:DataGrid.Columns>
+                </ui:DataGrid>
+            </Border>
 
             <!-- Process Detail Panel -->
-            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="8">
-                        <TextBlock Text="Süreç Detayı" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,16"/>
+            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="4">
+                        <TextBlock Text="Süreç Detayı" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,16"/>
 
                         <StackPanel Visibility="{Binding SelectedProcess, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="{Binding SelectedProcess.Name}" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4"/>
-                            <TextBlock Text="{Binding SelectedProcess.PID, StringFormat='PID: \{0\}'}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12"/>
+                            <TextBlock Text="{Binding SelectedProcess.Name}" Style="{StaticResource SectionHeadingStyle}" FontSize="18" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding SelectedProcess.PID, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12"/>
 
-                            <TextBlock Text="Kaynak Kullanımı" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,8,0,4"/>
-                            <TextBlock Text="{Binding SelectedProcess.CpuPercent, StringFormat='CPU: \{0:F1\} %'}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2"/>
-                            <TextBlock Text="{Binding SelectedProcess.MemoryBytes, Converter={StaticResource BytesConverter}, StringFormat='Bellek: \{0\}'}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2"/>
+                            <TextBlock Text="Kaynak Kullanımı" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,8,0,4"/>
+                            <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding SelectedProcess.CpuPercent, StringFormat='CPU: \{0:F1\} %'}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                                    <TextBlock Text="{Binding SelectedProcess.MemoryBytes, Converter={StaticResource BytesConverter}, StringFormat='Bellek: \{0\}'}" Style="{StaticResource DataTableStyle}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Border>
 
-                            <TextBlock Text="Dosya Konumu" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,12,0,4"/>
-                            <TextBlock Text="{Binding SelectedProcess.ExecutablePath}" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2"/>
+                            <TextBlock Text="Dosya Konumu" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,8,0,4"/>
+                            <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,8">
+                                <TextBox Text="{Binding SelectedProcess.ExecutablePath}" TextWrapping="Wrap" Style="{StaticResource DataMonospaceStyle}" IsReadOnly="True" BorderThickness="0" Background="Transparent"/>
+                            </Border>
 
-                            <TextBlock Text="Başlangıç Zamanı" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,12,0,4"/>
-                            <TextBlock Text="{Binding SelectedProcess.StartTime, StringFormat='\{0:yyyy-MM-dd HH:mm:ss\}'}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2"/>
+                            <TextBlock Text="Başlangıç Zamanı" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,8,0,4"/>
+                            <TextBlock Text="{Binding SelectedProcess.StartTime, StringFormat='\{0:yyyy-MM-dd HH:mm:ss\}'}" Style="{StaticResource DataTableStyle}" Margin="0,0,0,8"/>
 
-                            <TextBlock Text="Üst Süreç PID" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,12,0,4"/>
-                            <TextBlock Text="{Binding SelectedProcess.ParentPid}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2"/>
+                            <TextBlock Text="Üst Süreç PID" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,8,0,4"/>
+                            <TextBlock Text="{Binding SelectedProcess.ParentPid}" Style="{StaticResource DataMonospaceStyle}" Margin="0,0,0,16"/>
 
-                            <StackPanel Margin="0,24,0,0">
-                                <ui:Button Content="Süreci Sonlandır" Appearance="Danger" HorizontalAlignment="Stretch"
-                                           Command="{Binding TerminateProcessCommand}" Margin="0,0,0,8"/>
-                                <ui:Button Content="Ağacı Sonlandır" Appearance="Secondary" HorizontalAlignment="Stretch"
-                                           Command="{Binding TerminateTreeCommand}"/>
+                            <StackPanel Margin="0,16,0,0">
+                                <Button Content="Süreci Sonlandır" Style="{StaticResource DangerButtonStyle}" HorizontalAlignment="Stretch"
+                                        Command="{Binding TerminateProcessCommand}" Margin="0,0,0,8"/>
+                                <Button Content="Ağacı Sonlandır" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Stretch"
+                                        Command="{Binding TerminateTreeCommand}"/>
                             </StackPanel>
                         </StackPanel>
 
-                        <TextBlock Text="Bir süreç seçin." Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,40,0,0">
+                        <!-- Selection Placeholder -->
+                        <TextBlock Text="İncelemek için listeden bir süreç seçin." 
+                                   HorizontalAlignment="Center" Margin="0,60,0,0">
                             <TextBlock.Style>
-                                <Style TargetType="TextBlock">
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource CaptionTextStyle}">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding SelectedProcess}" Value="{x:Null}">
@@ -117,8 +166,7 @@
             </Border>
         </Grid>
 
-        <!-- Status Bar -->
-        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextMuted}" FontSize="12" Margin="0,8,0,0"/>
+        <!-- 4. Status Bar -->
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Style="{StaticResource CaptionTextStyle}" Margin="0,8,0,0"/>
     </Grid>
 </Page>
-

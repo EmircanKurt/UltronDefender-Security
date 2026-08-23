@@ -17,7 +17,7 @@
         <conv:BoolToStatusTextConverter x:Key="BoolToStatus"/>
     </Page.Resources>
 
-    <Grid Margin="24">
+    <Grid Margin="28,20,28,28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -25,10 +25,10 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <TextBlock Grid.Row="0" Style="{StaticResource PageHeaderStyle}" Text="Tarayıcı Güvenliği ve Eklenti Analizi" />
+        <!-- 1. Header -->
+        <TextBlock Grid.Row="0" Style="{StaticResource PageHeadingStyle}" Text="Tarayıcı Güvenliği ve Eklenti Analizi" Margin="0,0,0,4"/>
 
-        <!-- Profile Selector / Toolbar -->
+        <!-- 2. Profile Selector / Toolbar -->
         <Grid Grid.Row="1" Margin="0,0,0,16" Panel.ZIndex="100">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="280"/>
@@ -36,86 +36,130 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <ComboBox Grid.Column="0" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" Height="36">
+            <ComboBox Grid.Column="0" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" Height="36" Style="{DynamicResource DefaultComboBoxStyle}">
                 <ComboBox.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding BrowserType}" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,8,0"/>
-                            <TextBlock Text="{Binding ProfileName}" Foreground="{DynamicResource BrushTextMuted}"/>
+                            <TextBlock Text="{Binding ProfileName}" Style="{StaticResource CaptionTextStyle}"/>
                         </StackPanel>
                     </DataTemplate>
                 </ComboBox.ItemTemplate>
             </ComboBox>
 
-            <ui:Button Grid.Column="2" Content="Yenile" Icon="{ui:SymbolIcon ArrowClockwise24}" 
-                       Command="{Binding LoadBrowserDataCommand}"/>
+            <Button Grid.Column="2" Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
+                    Command="{Binding LoadBrowserDataCommand}" Padding="14,6"/>
         </Grid>
 
-        <!-- Main Content (Extensions Table + Details) -->
+        <!-- 3. Main Content (Extensions Table + Details) -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="340"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Table -->
-            <ui:DataGrid Grid.Column="0" ItemsSource="{Binding Extensions}" 
-                         SelectedItem="{Binding SelectedExtension}"
-                         AutoGenerateColumns="False" IsReadOnly="True"
-                         SelectionMode="Single" Margin="0,0,16,0">
-                <ui:DataGrid.Columns>
-                    <DataGridTextColumn Header="Risk Seviyesi" Binding="{Binding RiskLevel}" Width="105"/>
-                    <DataGridTextColumn Header="Eklenti Adı" Binding="{Binding Name}" Width="180"/>
-                    <DataGridTextColumn Header="Sürüm" Binding="{Binding Version}" Width="75"/>
-                    <DataGridTextColumn Header="Harici (Sideload)" Binding="{Binding IsSideloaded, Converter={StaticResource BoolToStatus}, ConverterParameter=yesno}" Width="135"/>
-                    <DataGridTextColumn Header="Eklenti ID" Binding="{Binding Id}" Width="*"/>
-                </ui:DataGrid.Columns>
-            </ui:DataGrid>
+            <!-- Table (Strict DataTableStyle: Pure Sans-Serif) -->
+            <Border Grid.Column="0" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10" Margin="0,0,16,0">
+                <ui:DataGrid ItemsSource="{Binding Extensions}" 
+                             SelectedItem="{Binding SelectedExtension}"
+                             AutoGenerateColumns="False" 
+                             IsReadOnly="True"
+                             SelectionMode="Single"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             RowHeaderWidth="0"
+                             GridLinesVisibility="Horizontal"
+                             HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
+                    <ui:DataGrid.Columns>
+                        <DataGridTemplateColumn Header="Risk Seviyesi" Width="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding RiskLevel}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{Binding RiskLevel, Converter={StaticResource RiskColorConverter}}" Padding="6,0" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Eklenti Adı" Width="180">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Padding="6,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Sürüm" Width="80">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Version}" Style="{StaticResource DataTableStyle}" Padding="6,0" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Harici (Sideload)" Width="135">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding IsSideloaded, Converter={StaticResource BoolToStatus}, ConverterParameter=yesno}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" Padding="6,0" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Eklenti ID" Width="*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Id}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Id}" Padding="6,0" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </ui:DataGrid.Columns>
+                </ui:DataGrid>
+            </Border>
 
             <!-- Detail Panel -->
-            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="8">
-                        <TextBlock Text="Eklenti Güvenlik İncelemesi" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,16"/>
+            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="4">
+                        <TextBlock Text="Eklenti Güvenlik İncelemesi" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,16"/>
 
                         <StackPanel Visibility="{Binding SelectedExtension, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="{Binding SelectedExtension.Name}" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4"/>
-                            <TextBlock Text="{Binding SelectedExtension.Version, StringFormat='Sürüm: \{0\}'}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,8"/>
+                            <TextBlock Text="{Binding SelectedExtension.Name}" Style="{StaticResource SectionHeadingStyle}" FontSize="18" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding SelectedExtension.Version, StringFormat='Sürüm: \{0\}'}" Style="{StaticResource CaptionTextStyle}" Margin="0,0,0,8"/>
 
                             <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
-                                <TextBlock Text="Risk Durumu: " Foreground="{DynamicResource BrushTextMuted}"/>
-                                <TextBlock Text="{Binding SelectedExtension.RiskLevel}" FontWeight="Bold" Foreground="{Binding SelectedExtension.RiskLevel, Converter={StaticResource RiskColorConverter}}"/>
+                                <TextBlock Text="Risk Durumu: " Style="{StaticResource CaptionTextStyle}"/>
+                                <TextBlock Text="{Binding SelectedExtension.RiskLevel}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{Binding SelectedExtension.RiskLevel, Converter={StaticResource RiskColorConverter}}"/>
                             </StackPanel>
 
-                            <TextBlock Text="Açıklama" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,8,0,4"/>
-                            <TextBlock Text="{Binding SelectedExtension.Description}" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2"/>
+                            <TextBlock Text="Açıklama" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,8,0,4"/>
+                            <TextBlock Text="{Binding SelectedExtension.Description}" Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap" Margin="0,2"/>
 
-                            <TextBlock Text="İstenen İzinler" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,12,0,4"/>
+                            <TextBlock Text="İstenen İzinler" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,12,0,4"/>
                             <ItemsControl ItemsSource="{Binding SelectedExtension.Permissions}" Margin="0,0,0,8">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding StringFormat='• \{0\}'}" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,1"/>
+                                        <TextBlock Text="{Binding StringFormat='• \{0\}'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,1"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
                             <!-- Risk Reasons -->
-                            <TextBlock Text="Güvenlik Bulguları" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,8,0,4"/>
+                            <TextBlock Text="Güvenlik Bulguları" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,8,0,4"/>
                             <ItemsControl ItemsSource="{Binding SelectedExtension.RiskReasons}" Margin="0,0,0,12">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Margin="0,2">
-                                            <TextBlock Text="• " Foreground="#D97706" FontWeight="Bold"/>
-                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12"/>
+                                            <TextBlock Text="• " Foreground="{DynamicResource BrushStatusWarning}" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding}" Style="{StaticResource CaptionTextStyle}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
 
-                        <TextBlock Text="Detayları görmek için listeden bir eklenti seçin." Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,60,0,0">
+                        <!-- Selection Placeholder -->
+                        <TextBlock Text="Detayları görmek için listeden bir eklenti seçin." 
+                                   HorizontalAlignment="Center" Margin="0,60,0,0">
                             <TextBlock.Style>
-                                <Style TargetType="TextBlock">
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource CaptionTextStyle}">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding SelectedExtension}" Value="{x:Null}">
@@ -130,8 +174,7 @@
             </Border>
         </Grid>
 
-        <!-- Status Bar -->
-        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextMuted}" FontSize="12" Margin="0,8,0,0"/>
+        <!-- 4. Status Bar -->
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Style="{StaticResource CaptionTextStyle}" Margin="0,8,0,0"/>
     </Grid>
 </Page>
-
