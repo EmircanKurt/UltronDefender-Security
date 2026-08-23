@@ -247,7 +247,7 @@ namespace AegisPC.Security.Scanning
                     path.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), StringComparison.OrdinalIgnoreCase))
                 {
                     var sig = await _signatureVerifier.VerifySignatureAsync(path, cancellationToken);
-                    if (sig.IsSigned && sig.IsValid && (
+                    if (sig.IsSigned && sig.IsValid && !string.IsNullOrEmpty(sig.Publisher) && (
                         sig.Publisher.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) ||
                         sig.Publisher.Contains("Windows", StringComparison.OrdinalIgnoreCase) ||
                         sig.Publisher.Contains("Google", StringComparison.OrdinalIgnoreCase)))

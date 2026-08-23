@@ -34,7 +34,7 @@ namespace AegisPC.App
             };
 
             // Auto-navigate to Dashboard or Scan when window loads
-            Loaded += async (s, e) =>
+            Loaded += (s, e) =>
             {
                 try
                 {

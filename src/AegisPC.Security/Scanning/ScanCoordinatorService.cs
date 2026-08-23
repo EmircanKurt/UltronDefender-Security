@@ -21,6 +21,7 @@ namespace AegisPC.Security.Scanning
         private readonly List<SecurityFinding> _currentFindings = new();
 
         private bool _isExternalScanRunning = false;
+        public bool IsExternalScanRunning => _isExternalScanRunning;
         public bool IsScanning { get; private set; }
         public ScanType CurrentScanType { get; private set; } = ScanType.Quick;
         public double ProgressPercent { get; private set; }
