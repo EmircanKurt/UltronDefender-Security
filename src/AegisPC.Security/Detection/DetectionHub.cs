@@ -181,7 +181,9 @@ namespace AegisPC.Security.Detection
                 e.RuleName.Contains("Signature.Valid", StringComparison.OrdinalIgnoreCase) ||
                 e.RuleName.Contains("Cert.ValidPublisher", StringComparison.OrdinalIgnoreCase));
 
-            bool isGameCrackOrEmulator = !string.IsNullOrEmpty(context.FilePath) && AegisPC.Core.Helpers.GameCrackClassifier.IsGameCrackOrEmulator(context.FilePath);
+            bool isGameCrackOrEmulator = !string.IsNullOrEmpty(context.FilePath) && 
+                (AegisPC.Core.Helpers.GameCrackClassifier.IsGameCrackOrEmulator(context.FilePath) || 
+                 AegisPC.Core.Helpers.PathHelper.IsGameOrRepackDirectory(context.FilePath));
 
             if (!hasExplicitMalwareSignature)
             {
@@ -199,8 +201,8 @@ namespace AegisPC.Security.Detection
                 }
                 else if (isGameCrackOrEmulator)
                 {
-                    // Zararsız Oyun Crack / Steam Emülatörü: Heuristik imza/API puanlarını normalize et (Temiz/Düşük Risk seviyesinde tut)
-                    contextModifier = 0.25;
+                    // Zararsız Oyun Crack / Steam Emülatörü / Mod Dosyası: Gerçek malware imzası taşımıyorsa puanı sıfırla (Temiz)
+                    contextModifier = 0.0;
                 }
             }
 

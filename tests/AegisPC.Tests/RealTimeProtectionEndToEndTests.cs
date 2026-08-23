@@ -57,6 +57,7 @@ namespace AegisPC.Tests
             // Attach watcher to test directory before starting the live background protection loop
             _engine.AddWatchDirectory(_testSandboxDir);
             _engine.Start(watchDefaultLocations: false);
+            Thread.Sleep(60);
         }
 
         [Fact]

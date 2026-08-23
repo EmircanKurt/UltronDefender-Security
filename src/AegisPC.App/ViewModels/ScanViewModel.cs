@@ -304,6 +304,12 @@ namespace AegisPC.App.ViewModels
                 DetectionsCount = FindingsCount;
                 ScanStatusText = _scanCoordinator.StatusText;
 
+                if (IsScanning)
+                {
+                    if (!_stopwatch.IsRunning) _stopwatch.Start();
+                    _timer?.Start();
+                }
+
                 UpdateChecklistSteps(ProgressPercentage);
             });
         }
@@ -423,6 +429,12 @@ namespace AegisPC.App.ViewModels
         [RelayCommand]
         public async Task StartQuickScanAsync()
         {
+            if (_scanCoordinator != null && _scanCoordinator.IsScanning)
+            {
+                // Halihazırda çalışan tarama var: doğrudan kalınan yerden pencereyi aç ve göster
+                Views.ActiveScanWindow.ShowScanWindow(this);
+                return;
+            }
             await RunScanAsync(ScanType.Quick, string.Empty);
         }
 

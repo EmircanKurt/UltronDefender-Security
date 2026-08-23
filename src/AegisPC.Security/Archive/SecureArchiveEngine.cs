@@ -39,7 +39,7 @@ namespace AegisPC.Security.Archive
             try
             {
                 await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, FileOptions.SequentialScan | FileOptions.Asynchronous);
-                return await InspectArchiveStreamInternalAsync(fs, limits ?? new ArchiveSafetyLimits(), currentDepth: 1, cancellationToken);
+                return InspectArchiveStreamInternal(fs, limits ?? new ArchiveSafetyLimits(), currentDepth: 1, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -48,12 +48,12 @@ namespace AegisPC.Security.Archive
             }
         }
 
-        public async Task<ArchiveScanVerdict> InspectArchiveStreamAsync(Stream stream, ArchiveSafetyLimits? limits = null, CancellationToken cancellationToken = default)
+        public Task<ArchiveScanVerdict> InspectArchiveStreamAsync(Stream stream, ArchiveSafetyLimits? limits = null, CancellationToken cancellationToken = default)
         {
-            return await InspectArchiveStreamInternalAsync(stream, limits ?? new ArchiveSafetyLimits(), currentDepth: 1, cancellationToken);
+            return Task.FromResult(InspectArchiveStreamInternal(stream, limits ?? new ArchiveSafetyLimits(), currentDepth: 1, cancellationToken));
         }
 
-        private async Task<ArchiveScanVerdict> InspectArchiveStreamInternalAsync(
+        private ArchiveScanVerdict InspectArchiveStreamInternal(
             Stream stream,
             ArchiveSafetyLimits limits,
             int currentDepth,
@@ -88,16 +88,7 @@ namespace AegisPC.Security.Archive
                 if (verdict.TotalEntryCount > limits.MaxEntryCount)
                 {
                     verdict.IsQuotaExceeded = true;
-                    verdict.HasZipBomb = true;
-                    verdict.Evidences.Add(new SecurityEvidence
-                    {
-                        Category = EvidenceCategory.ArchiveAnomaly,
-                        RuleName = "ARCHIVE_MAX_ENTRY_COUNT_EXCEEDED",
-                        ScoreContribution = 60,
-                        Confidence = EvidenceConfidence.Absolute,
-                        Description = $"Arşiv içindeki dosya sayısı sınırı aşıldı ({verdict.TotalEntryCount} > {limits.MaxEntryCount})."
-                    });
-                    verdict.Explanation = "Arşiv içinde olağandışı sayıda dosya (Decompression Bomb / Denial of Service).";
+                    verdict.Explanation = $"Arşiv inceleme dosya sayısı kotası aşıldı ({verdict.TotalEntryCount} > {limits.MaxEntryCount}).";
                     return verdict;
                 }
 
@@ -130,38 +121,22 @@ namespace AegisPC.Security.Archive
                         });
                     }
 
-                    // 2. Tekil Dosya Boyut Sınırı
-                    if (entry.Length > limits.MaxSingleFileUncompressedBytes)
-                    {
-                        verdict.IsQuotaExceeded = true;
-                        verdict.HasZipBomb = true;
-                        verdict.Evidences.Add(new SecurityEvidence
-                        {
-                            Category = EvidenceCategory.ArchiveAnomaly,
-                            RuleName = "ARCHIVE_SINGLE_FILE_SIZE_EXCEEDED",
-                            ScoreContribution = 70,
-                            Confidence = EvidenceConfidence.High,
-                            Description = $"Arşivdeki tekil dosya açılmış boyut sınırı aşıldı ({entry.Length / 1024 / 1024} MB > {limits.MaxSingleFileUncompressedBytes / 1024 / 1024} MB)."
-                        });
-                    }
-
-                    // 3. Toplam Açılmış Boyut Sınırı
+                    // 2. Toplam Açılmış Boyut Kota Sınırı
                     if (accumulatedUncompressed > limits.MaxTotalUncompressedBytes)
                     {
                         verdict.IsQuotaExceeded = true;
-                        verdict.HasZipBomb = true;
                         verdict.Evidences.Add(new SecurityEvidence
                         {
                             Category = EvidenceCategory.ArchiveAnomaly,
                             RuleName = "ARCHIVE_TOTAL_SIZE_QUOTA_EXCEEDED",
-                            ScoreContribution = 75,
+                            ScoreContribution = 30,
                             Confidence = EvidenceConfidence.High,
                             Description = $"Toplam açılmış arşiv boyut kotası aşıldı ({accumulatedUncompressed / 1024 / 1024} MB > {limits.MaxTotalUncompressedBytes / 1024 / 1024} MB)."
                         });
                         break;
                     }
 
-                    // 4. Şüpheli İkili / Yürütülebilir Dosya Varlığı
+                    // 3. Şüpheli İkili / Yürütülebilir Dosya Varlığı
                     var ext = Path.GetExtension(entry.FullName).ToLowerInvariant();
                     if (DangerousPayloadExtensions.Contains(ext))
                     {
@@ -176,17 +151,17 @@ namespace AegisPC.Security.Archive
                         });
                     }
 
-                    // 5. İç İçe Arşiv Taraması (.zip içinde .zip)
-                    if (ext is ".zip" && entry.Length > 0 && entry.Length < 50 * 1024 * 1024)
+                    // 4. İç İçe Arşiv Taraması (.zip içinde .zip)
+                    if (ext is ".zip" && entry.Length > 0 && entry.Length < 10 * 1024 * 1024)
                     {
                         try
                         {
                             using var nestedStream = entry.Open();
                             using var ms = new MemoryStream();
-                            await nestedStream.CopyToAsync(ms, cancellationToken);
+                            nestedStream.CopyTo(ms);
                             ms.Position = 0;
 
-                            var nestedVerdict = await InspectArchiveStreamInternalAsync(ms, limits, currentDepth + 1, cancellationToken);
+                            var nestedVerdict = InspectArchiveStreamInternal(ms, limits, currentDepth + 1, cancellationToken);
                             verdict.DeepestLevel = Math.Max(verdict.DeepestLevel, nestedVerdict.DeepestLevel);
                             verdict.Evidences.AddRange(nestedVerdict.Evidences);
                             if (nestedVerdict.HasZipBomb) verdict.HasZipBomb = true;

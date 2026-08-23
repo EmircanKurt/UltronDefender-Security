@@ -38,8 +38,8 @@ namespace AegisPC.Security.Notifications
                 Timestamp = DateTime.UtcNow
             });
 
-            // For critical events, use shorter 400ms aggregation window to bundle rapid drops, otherwise standard window
-            int windowMs = isCritical ? 400 : (int)AggregationWindow.TotalMilliseconds;
+            // Kayan pencere (Sliding Debounce): Seri halde düşen tehditleri tek bir toplu bildirimde birleştirir
+            int windowMs = isCritical ? 200 : (int)AggregationWindow.TotalMilliseconds;
             _aggregationTimer.Change(windowMs, Timeout.Infinite);
         }
 

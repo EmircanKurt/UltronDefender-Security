@@ -240,6 +240,9 @@ namespace AegisPC.App
                             _ = ipcClient.ConnectAsync();
                         }
                     }
+
+                    // Strict Memory Watchdog: 2 GB Mutlak RAM Tavanı Bekçisi
+                    StartMemoryWatchdog();
                 }
                 catch (Exception ex)
                 {
@@ -256,6 +259,49 @@ namespace AegisPC.App
             base.OnStartup(e);
             Log("=== OnStartup Completed ===");
         }
+
+        #region Strict 2GB Memory Watchdog & Working Set Trimming
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        private static extern bool SetProcessWorkingSetSize(IntPtr hProcess, IntPtr dwMinimumWorkingSetSize, IntPtr dwMaximumWorkingSetSize);
+
+        private static void StartMemoryWatchdog()
+        {
+            var memoryTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(10)
+            };
+
+            memoryTimer.Tick += (s, e) =>
+            {
+                try
+                {
+                    long managedMemory = GC.GetTotalMemory(forceFullCollection: false);
+                    long workingSet = System.Diagnostics.Process.GetCurrentProcess().WorkingSet64;
+
+                    // 1. Yönetilen bellek 400 MB'ı aşarsa veya fiziksel RAM 1 GB'ı geçerse agresif toplama
+                    if (managedMemory > 400 * 1024 * 1024 || workingSet > 1024 * 1024 * 1024)
+                    {
+                        GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+                        GC.WaitForPendingFinalizers();
+
+                        // Kullanılmayan fiziksel sayfaları Windows çekirdeğine geri ver
+                        try
+                        {
+                            SetProcessWorkingSetSize(System.Diagnostics.Process.GetCurrentProcess().Handle, (IntPtr)(-1), (IntPtr)(-1));
+                        }
+                        catch { }
+                    }
+                    else if (managedMemory > 200 * 1024 * 1024)
+                    {
+                        GC.Collect(1, GCCollectionMode.Optimized, false, false);
+                    }
+                }
+                catch { }
+            };
+
+            memoryTimer.Start();
+        }
+        #endregion
 
         protected override void OnExit(ExitEventArgs e)
         {

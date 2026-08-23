@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -16,6 +17,12 @@ namespace AegisPC.Security.AntiEvasion
     public class AntiEvasionDetector : IAntiEvasionDetector
     {
         private readonly ILogger<AntiEvasionDetector>? _logger;
+        private const int MaxSampleBytes = 512 * 1024; // 512 KB örnekleme sınırı — tüm dosyayı belleğe almayı engeller
+
+        private static readonly HashSet<string> TargetBinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".exe", ".dll", ".sys", ".scr", ".ocx", ".drv", ".efi", ".bin", ".com", ".pif"
+        };
 
         private static readonly (string ApiName, int Score, string Description)[] AntiDebugApis = new[]
         {
@@ -58,12 +65,42 @@ namespace AegisPC.Security.AntiEvasion
         {
             var result = new AntiEvasionEvaluation();
 
+            byte[]? rentedBuffer = null;
             try
             {
-                byte[] bytes = rawBytes ?? (File.Exists(filePath) ? File.ReadAllBytes(filePath) : Array.Empty<byte>());
-                if (bytes.Length == 0) return result;
+                byte[] bytes;
+                int validLength;
 
-                string asciiContent = Encoding.ASCII.GetString(bytes);
+                if (rawBytes != null)
+                {
+                    bytes = rawBytes;
+                    validLength = Math.Min(rawBytes.Length, MaxSampleBytes);
+                }
+                else
+                {
+                    if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return result;
+
+                    string ext = Path.GetExtension(filePath);
+                    if (!string.IsNullOrEmpty(ext) && !TargetBinaryExtensions.Contains(ext))
+                    {
+                        // Binary olmayan dosyaları (video, ses, metin, ofis) atla
+                        return result;
+                    }
+
+                    var fileInfo = new FileInfo(filePath);
+                    if (fileInfo.Length == 0) return result;
+
+                    int bytesToRead = (int)Math.Min(fileInfo.Length, MaxSampleBytes);
+                    rentedBuffer = ArrayPool<byte>.Shared.Rent(bytesToRead);
+
+                    using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 8192);
+                    validLength = fs.Read(rentedBuffer, 0, bytesToRead);
+                    if (validLength <= 0) return result;
+
+                    bytes = rentedBuffer;
+                }
+
+                string asciiContent = Encoding.ASCII.GetString(bytes, 0, validLength);
 
                 // 1. Anti-Debug API Tespiti
                 int antiDebugCount = 0;
@@ -151,6 +188,13 @@ namespace AegisPC.Security.AntiEvasion
             catch (Exception ex)
             {
                 _logger?.LogTrace(ex, "AntiEvasion analysis error for {Path}", filePath);
+            }
+            finally
+            {
+                if (rentedBuffer != null)
+                {
+                    ArrayPool<byte>.Shared.Return(rentedBuffer);
+                }
             }
 
             return result;

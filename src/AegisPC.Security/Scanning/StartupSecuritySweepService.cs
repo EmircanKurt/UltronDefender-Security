@@ -57,6 +57,8 @@ namespace AegisPC.Security.Scanning
         }
 
         public event Action<StartupSweepProgress>? OnProgressChanged;
+        private readonly IScanCoordinatorService? _scanCoordinator;
+
         public event Action<StartupSweepFinding>? OnThreatDiscovered;
         public event Action<StartupSweepResult>? OnSweepCompleted;
 
@@ -64,11 +66,13 @@ namespace AegisPC.Security.Scanning
             IRealTimeProtectionEngine realTimeEngine,
             IQuarantineService quarantineService,
             IAuditLogService? auditLogService = null,
+            IScanCoordinatorService? scanCoordinator = null,
             ILogger<StartupSecuritySweepService>? logger = null)
         {
             _realTimeEngine = realTimeEngine;
             _quarantineService = quarantineService;
             _auditLogService = auditLogService;
+            _scanCoordinator = scanCoordinator;
             _logger = logger;
         }
 
@@ -94,7 +98,7 @@ namespace AegisPC.Security.Scanning
                 var stopwatch = Stopwatch.StartNew();
                 var result = new StartupSweepResult();
                 var progress = new StartupSweepProgress { Status = StartupSweepStatus.Preparing };
-                OnProgressChanged?.Invoke(progress);
+                NotifyProgress(progress);
 
             try
             {
@@ -133,7 +137,7 @@ namespace AegisPC.Security.Scanning
                 progress.TotalFiles = candidateFiles.Count;
                 progress.Status = StartupSweepStatus.Scanning;
                 Status = StartupSweepStatus.Scanning;
-                OnProgressChanged?.Invoke(progress);
+                NotifyProgress(progress);
 
                 // 3. Snapshot Running Processes for Correlation
                 var processMap = BuildRunningProcessMap();
@@ -161,7 +165,7 @@ namespace AegisPC.Security.Scanning
                         progress.SkippedUnchanged++;
                         result.CleanCount++;
                         result.SkippedCount++;
-                        OnProgressChanged?.Invoke(progress);
+                        NotifyProgress(progress);
                         continue;
                     }
 
@@ -295,7 +299,7 @@ namespace AegisPC.Security.Scanning
                         _fileCache[file.FullName] = (file.Length, file.LastWriteTimeUtc, verdictResult.SHA256, "Clean", verdictResult.RiskScore);
                     }
 
-                    OnProgressChanged?.Invoke(progress);
+                    NotifyProgress(progress);
                 }
 
                 stopwatch.Stop();
@@ -309,8 +313,8 @@ namespace AegisPC.Security.Scanning
                 Status = result.FinalStatus;
                 LastResult = result;
 
-                OnProgressChanged?.Invoke(progress);
-                OnSweepCompleted?.Invoke(result);
+                NotifyProgress(progress);
+                NotifyCompleted(result, stopwatch.Elapsed);
 
                 return result;
             }
@@ -335,6 +339,52 @@ namespace AegisPC.Security.Scanning
             _sweepSemaphore.Release();
         }
     }
+
+        private void NotifyProgress(StartupSweepProgress progress)
+        {
+            OnProgressChanged?.Invoke(progress);
+            if (_scanCoordinator != null)
+            {
+                _scanCoordinator.RegisterExternalScanProgress(new ScanProgress
+                {
+                    ScanType = ScanType.Quick,
+                    CurrentFile = progress.CurrentFile,
+                    ScannedFiles = progress.ScannedFiles,
+                    TotalFiles = progress.TotalFiles,
+                    FindingsCount = progress.ThreatsFound + progress.SuspiciousFound,
+                    ProgressPercent = progress.ProgressPercent
+                });
+            }
+        }
+
+        private void NotifyCompleted(StartupSweepResult result, TimeSpan duration)
+        {
+            OnSweepCompleted?.Invoke(result);
+            if (_scanCoordinator != null)
+            {
+                _scanCoordinator.CompleteExternalScan(new ScanResult
+                {
+                    ScanType = ScanType.Quick,
+                    ScannedFiles = result.TotalScanned,
+                    TotalFiles = result.TotalScanned,
+                    ElapsedMs = (long)duration.TotalMilliseconds,
+                    Status = ScanStatus.Completed,
+                    CompletedAt = DateTime.UtcNow,
+                    Findings = result.Findings
+                        .Where(f => f.IsQuarantined || f.Action == "QUARANTINED" || f.RiskScore >= 50)
+                        .Select(f => new SecurityFinding
+                        {
+                            ObjectName = f.FileName,
+                            ObjectPath = f.FilePath,
+                            RiskScore = f.RiskScore,
+                            RiskLevel = f.RiskScore >= 85 ? RiskLevel.ConfirmedMalicious : RiskLevel.HighRisk,
+                            Title = $"Başlangıç Tehdidi: {f.FileName}",
+                            Description = string.Join("; ", f.Evidences),
+                            Status = f.IsQuarantined ? FindingStatus.Resolved : FindingStatus.Active
+                        }).ToList()
+                });
+            }
+        }
 
         private void AddDefaultAttackSurfaceDirectories(HashSet<string> targetDirs)
         {

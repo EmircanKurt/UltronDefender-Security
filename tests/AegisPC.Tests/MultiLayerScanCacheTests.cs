@@ -122,8 +122,8 @@ namespace AegisPC.Tests
 
             await _cache.SetVerdictAsync(verdict);
 
-            // Wait 100ms for background L2 persistence task
-            await Task.Delay(150);
+            // Wait for background L2 persistence task
+            await Task.Delay(400);
 
             // Create a second new cache instance pointing to the same storage directory
             var secondCacheInstance = new MultiLayerScanCache(_sandboxDir);

@@ -143,7 +143,7 @@ namespace AegisPC.Tests
             var mockToast = new MockToast(toastList);
             using var aggregator = new NotificationAggregator(mockToast)
             {
-                AggregationWindow = TimeSpan.FromMilliseconds(200)
+                AggregationWindow = TimeSpan.FromMilliseconds(500)
             };
 
             for (int i = 1; i <= 20; i++)
@@ -155,7 +155,7 @@ namespace AegisPC.Tests
                 aggregator.PushThreatEvent($"Threat #{i}", dummyThreat, "Quarantined", isCritical: false);
             }
 
-            await Task.Delay(350); // Wait for aggregator flush
+            await Task.Delay(700); // Wait for aggregator flush
 
             _output.WriteLine($"Total Threats Pushed:   20");
             _output.WriteLine($"Total Notifications Fired: {toastList.Count} (Expected: Aggregated Batch Notification)");

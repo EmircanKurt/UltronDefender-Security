@@ -26,6 +26,8 @@ namespace AegisPC.Security.Scanning
             int score = 0;
             var reasons = new List<string>();
 
+            bool isGameOrRepack = PathHelper.IsGameOrRepackDirectory(result.FilePath) || GameCrackClassifier.IsGameCrackOrEmulator(result.FilePath);
+
             // 1. Digital Signature & Known Location Safe Modifiers
             if (result.IsSigned && result.SignatureValid)
             {
@@ -41,8 +43,15 @@ namespace AegisPC.Security.Scanning
                 reasons.Add("-30 Güvenilir Windows sistem konumu (System32 / Program Files)");
             }
 
-            // 2. PUP / Crack / Keygen Pattern Heuristics (ONLY for unsigned files outside known safe locations)
-            if (!result.IsSigned && !result.IsKnownLocation)
+            if (isGameOrRepack)
+            {
+                // Oyun/Repack/Emülatör/Trainer İstisnası: Meşru oyun hileleri ve emülatörler için temel güven indirimi
+                score -= 25;
+                reasons.Add("-25 Oyun/Repack/Emülatör Güvenlik Muafiyeti (Gamer Protection Shield)");
+            }
+
+            // 2. PUP / Crack / Keygen Pattern Heuristics (ONLY for unsigned files outside known safe/game locations)
+            if (!result.IsSigned && !result.IsKnownLocation && !isGameOrRepack)
             {
                 var fileNameOnly = Path.GetFileNameWithoutExtension(result.FileName).ToLowerInvariant();
                 var tokens = fileNameOnly.Split(new[] { '.', '-', '_', ' ' }, StringSplitOptions.RemoveEmptyEntries);
@@ -67,27 +76,31 @@ namespace AegisPC.Security.Scanning
                 score += 25;
                 reasons.Add("+25 Dosya geçici dizinde (Temp) çalıştırılıyor / indirildi");
             }
-            else if (path.Contains(@"\AppData\Roaming\", StringComparison.OrdinalIgnoreCase) && !result.IsSigned && !isInstalledAppFolder)
+            else if (path.Contains(@"\AppData\Roaming\", StringComparison.OrdinalIgnoreCase) && !result.IsSigned && !isInstalledAppFolder && !isGameOrRepack)
             {
                 score += 10;
                 reasons.Add("+10 İmzasız dosya kullanıcı AppData\\Roaming dizininde");
             }
-            else if (PathHelper.IsUserDownloadsPath(path) && !result.IsSigned)
+            else if (PathHelper.IsUserDownloadsPath(path) && !result.IsSigned && !isGameOrRepack)
             {
                 score += 10;
                 reasons.Add("+10 İmzasız dosya İndirilenler (Downloads) klasöründe");
             }
 
             // 4. Shannon Entropy Check (Extreme entropy indicates crypters/ransomware payloads)
-            if (result.Entropy >= 7.85)
+            // NOT: Oyun crack ve repack dosyalarında packer (UPX, Themida vb.) doğal olduğundan muaf tutulur
+            if (!isGameOrRepack)
             {
-                score += 35;
-                reasons.Add($"+35 Aşırı yüksek Shannon entropisi ({result.Entropy:F2} / 8.0) — Şifrelenmiş/Paketlenmiş veri");
-            }
-            else if (result.Entropy >= 7.5 && !result.IsSigned && !result.IsKnownLocation && !isInstalledAppFolder)
-            {
-                score += 15;
-                reasons.Add($"+15 Yüksek Shannon entropisi ({result.Entropy:F2} / 8.0)");
+                if (result.Entropy >= 7.85)
+                {
+                    score += 35;
+                    reasons.Add($"+35 Aşırı yüksek Shannon entropisi ({result.Entropy:F2} / 8.0) — Şifrelenmiş/Paketlenmiş veri");
+                }
+                else if (result.Entropy >= 7.5 && !result.IsSigned && !result.IsKnownLocation && !isInstalledAppFolder)
+                {
+                    score += 15;
+                    reasons.Add($"+15 Yüksek Shannon entropisi ({result.Entropy:F2} / 8.0)");
+                }
             }
 
             // 5. File extension disguise check (e.g. .pdf.exe or .docx.scr)
@@ -102,8 +115,8 @@ namespace AegisPC.Security.Scanning
                 }
             }
 
-            // 6. Unsigned Executable Penalty (Only outside of known system/installed app directories)
-            if (!result.IsSigned && result.IsExecutable && !result.IsKnownLocation && !isInstalledAppFolder)
+            // 6. Unsigned Executable Penalty (Only outside of known system/installed app/game directories)
+            if (!result.IsSigned && result.IsExecutable && !result.IsKnownLocation && !isInstalledAppFolder && !isGameOrRepack)
             {
                 score += 10;
                 reasons.Add("+10 Yürütülebilir dosya dijital olarak imzalanmamış");
@@ -116,8 +129,10 @@ namespace AegisPC.Security.Scanning
                 var apis = await MalwareSignatureDatabase.ScanApiIndicatorsAsync(result.FilePath, cancellationToken);
                 foreach (var api in apis)
                 {
-                    score += api.Weight;
-                    reasons.Add($"+{api.Weight} Şüpheli API Göstergesi: {api.Description}");
+                    // Oyun ve crack dosyalarında bellek hook'lama (VirtualAllocEx, SetWindowsHookEx) doğal olduğundan ağırlık hafifletilir
+                    int effectiveWeight = isGameOrRepack ? Math.Max(2, api.Weight / 4) : api.Weight;
+                    score += effectiveWeight;
+                    reasons.Add($"+{effectiveWeight} API Göstergesi: {api.Description}" + (isGameOrRepack ? " (Oyun Modu İndirimi)" : ""));
                 }
             }
 

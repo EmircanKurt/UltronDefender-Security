@@ -30,8 +30,8 @@ namespace AegisPC.Security.Scanning
     public class ArchiveSafetyScanner
     {
         private readonly ILogger<ArchiveSafetyScanner>? _logger;
-        private const long MaxDecompressedSizeBytes = 250 * 1024 * 1024; // 250 MB Limit
-        private const int MaxEntryCount = 1000;
+        private const long MaxDecompressedSizeBytes = 500 * 1024 * 1024; // 500 MB İnceleme Limiti
+        private const int MaxEntryCount = 25000; // 25,000 dosya sınırı
         private const double MaxCompressionRatio = 100.0; // 100:1 oranından fazla sıkıştırma = Zip Bomb şüphesi
 
         private static readonly string[] ExecutableExtensions = new[]
@@ -49,6 +49,12 @@ namespace AegisPC.Security.Scanning
             var result = new ArchiveScanResult();
             if (!File.Exists(filePath)) return result;
 
+            // Oyun ve mod dizinlerindeki arşivleri (BeamNG araçları, haritalar, modlar) false-positive ve bellek yükünden koru
+            if (AegisPC.Core.Helpers.PathHelper.IsGameOrRepackDirectory(filePath) || AegisPC.Core.Helpers.GameCrackClassifier.IsGameCrackOrEmulator(filePath))
+            {
+                return result;
+            }
+
             var ext = Path.GetExtension(filePath).ToLowerInvariant();
             if (ext != ".zip" && ext != ".jar" && ext != ".nupkg")
             {
@@ -59,8 +65,9 @@ namespace AegisPC.Security.Scanning
 
             try
             {
-                var compressedFileSize = new FileInfo(filePath).Length;
-                if (compressedFileSize == 0) return result;
+                var fileInfo = new FileInfo(filePath);
+                var compressedFileSize = fileInfo.Length;
+                if (compressedFileSize == 0 || compressedFileSize > 100 * 1024 * 1024) return result; // 100 MB üzeri devasa arşivleri atla
 
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
                 using var archive = new ZipArchive(fs, ZipArchiveMode.Read, leaveOpen: false);
@@ -73,17 +80,15 @@ namespace AegisPC.Security.Scanning
                     cancellationToken.ThrowIfCancellationRequested();
                     count++;
 
-                    // 1. Max Entry Limit
+                    // 1. Max Entry Limit (Kota aşılırsa taramayı güvenle durdur, asla virüs deme)
                     if (count > MaxEntryCount)
                     {
-                        result.IsZipBomb = true;
-                        result.SuspiciousEntries.Add($"Arşiv izin verilen maksimum dosya sayısını aştı (> {MaxEntryCount}).");
                         break;
                     }
 
-                    // 2. Path Traversal Check (e.g. ../../Windows/System32)
+                    // 2. Real Path Traversal Check (e.g. ../../Windows/System32)
                     var entryName = entry.FullName;
-                    if (entryName.Contains("..") || Path.IsPathRooted(entryName))
+                    if (entryName.StartsWith("../") || entryName.StartsWith(@"..\") || entryName.Contains("/../") || entryName.Contains(@"\..\"))
                     {
                         result.SuspiciousEntries.Add($"Path Traversal tespit edildi: '{entryName}'");
                         result.Findings.Add(new SecurityFinding
@@ -101,19 +106,22 @@ namespace AegisPC.Security.Scanning
 
                     // 3. Accumulate uncompressed size
                     totalUncompressed += entry.Length;
-                    if (totalUncompressed > MaxDecompressedSizeBytes)
+
+                    // Zip Bomb Denetimi: Sadece oran 100:1'den büyük VE sıkıştırılmış boyut küçükken tetiklenir (örn: 10MB -> 2GB)
+                    double entryRatio = entry.CompressedLength > 0 ? (double)entry.Length / entry.CompressedLength : 1.0;
+                    if (entryRatio > MaxCompressionRatio && entry.Length > 50 * 1024 * 1024)
                     {
                         result.IsZipBomb = true;
-                        result.SuspiciousEntries.Add($"Arşiv açılmış boyutu limit sınırını aştı (> 250 MB). Zip-Bomb saldırı deseni.");
+                        result.SuspiciousEntries.Add($"Anormal sıkıştırma oranı tespit edildi ({entryRatio:F0}:1). Zip-Bomb saldırı deseni.");
                         result.Findings.Add(new SecurityFinding
                         {
                             ObjectPath = filePath,
                             ObjectName = Path.GetFileName(filePath),
                             Category = FindingCategory.HighResourceUsage,
                             RiskLevel = RiskLevel.HighRisk,
-                            RiskScore = 85,
+                            RiskScore = 90,
                             Title = "Zip-Bomb Kaynak Tüketim Saldırısı",
-                            Description = "Aşırı sıkıştırılmış veri deseni (RAM/Disk çökertme girişimi) engellendi.",
+                            Description = $"Aşırı sıkıştırılmış veri deseni tespit edildi (Genişleme oranı: {entryRatio:F0}:1).",
                             ConfidenceLevel = ConfidenceLevel.High
                         });
                         break;
@@ -125,23 +133,44 @@ namespace AegisPC.Security.Scanning
                     {
                         try
                         {
+                            byte[] sampleBuffer = new byte[Math.Min((int)entry.Length, 256 * 1024)];
+                            int totalSampleRead = 0;
+                            using var incHash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
                             using var entryStream = entry.Open();
-                            using var ms = new MemoryStream();
-                            await entryStream.CopyToAsync(ms, cancellationToken);
-                            var bytes = ms.ToArray();
-                            var sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+                            
+                            byte[] chunk = System.Buffers.ArrayPool<byte>.Shared.Rent(8192);
+                            try
+                            {
+                                int read;
+                                while ((read = await entryStream.ReadAsync(chunk.AsMemory(0, 8192), cancellationToken)) > 0)
+                                {
+                                    incHash.AppendData(chunk, 0, read);
+                                    if (totalSampleRead < sampleBuffer.Length)
+                                    {
+                                        int toCopy = Math.Min(read, sampleBuffer.Length - totalSampleRead);
+                                        Buffer.BlockCopy(chunk, 0, sampleBuffer, totalSampleRead, toCopy);
+                                        totalSampleRead += toCopy;
+                                    }
+                                }
+                            }
+                            finally
+                            {
+                                System.Buffers.ArrayPool<byte>.Shared.Return(chunk);
+                            }
 
+                            var sha256 = Convert.ToHexString(incHash.GetHashAndReset());
                             var match = MalwareSignatureDatabase.CheckHash(sha256);
-                            var patternMatch = MalwareSignatureDatabase.CheckBytesPattern(bytes);
-                            var text = Encoding.ASCII.GetString(bytes);
+                            var patternMatch = MalwareSignatureDatabase.CheckBytesPattern(sampleBuffer);
+                            var text = Encoding.ASCII.GetString(sampleBuffer, 0, totalSampleRead);
 
-                            if (match.IsMatched || patternMatch.IsMatched || text.Contains("EICAR", StringComparison.OrdinalIgnoreCase) || text.Contains("powershell", StringComparison.OrdinalIgnoreCase) || text.Contains("vssadmin", StringComparison.OrdinalIgnoreCase))
+                            // Yalnızca gerçek doğrulanmış malware hash'i veya kesin exploit deseni varsa işaretle
+                            if (match.IsMatched || patternMatch.IsMatched || text.Contains("EICAR-STANDARD-ANTIVIRUS-TEST-FILE", StringComparison.OrdinalIgnoreCase))
                             {
                                 var threatName = match.IsMatched 
                                     ? match.ThreatName 
-                                    : (patternMatch.IsMatched ? patternMatch.ThreatName : (text.Contains("EICAR") ? "EICAR-Standard-AV-Test" : "Trojan.Script.Dropper"));
+                                    : (patternMatch.IsMatched ? patternMatch.ThreatName : "EICAR-Standard-AV-Test");
 
-                                int score = match.IsMatched ? match.SeverityScore : (patternMatch.IsMatched ? patternMatch.SeverityScore : 90);
+                                int score = match.IsMatched ? match.SeverityScore : (patternMatch.IsMatched ? patternMatch.SeverityScore : 100);
 
                                 result.Findings.Add(new SecurityFinding
                                 {

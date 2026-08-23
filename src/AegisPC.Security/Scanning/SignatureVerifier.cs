@@ -57,9 +57,24 @@ namespace AegisPC.Security.Scanning
             _logger = logger;
         }
 
+        private static readonly HashSet<string> SignableExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".exe", ".dll", ".sys", ".msi", ".cat", ".cab", ".ocx", ".drv", ".efi", ".scr", ".appx", ".msix"
+        };
+
         public Task<SignatureInfo> VerifySignatureAsync(string filePath, CancellationToken cancellationToken = default)
         {
-            if (!File.Exists(filePath))
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+            {
+                return Task.FromResult(new SignatureInfo
+                {
+                    IsSigned = false,
+                    IsValid = false
+                });
+            }
+
+            var ext = Path.GetExtension(filePath);
+            if (string.IsNullOrEmpty(ext) || !SignableExtensions.Contains(ext))
             {
                 return Task.FromResult(new SignatureInfo
                 {

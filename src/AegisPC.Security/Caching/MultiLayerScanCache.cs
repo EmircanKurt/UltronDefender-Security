@@ -19,7 +19,7 @@ namespace AegisPC.Security.Caching
         private readonly ILogger<MultiLayerScanCache>? _logger;
         private readonly string _cacheDirectory;
         private readonly string _cacheDbPath;
-        private const int MaxL1Entries = 10000;
+        private const int MaxL1Entries = 5000;
 
         // L1: In-Memory Fast Cache: CompositeKey -> CachedScanVerdict
         private readonly ConcurrentDictionary<string, CachedScanVerdict> _l1Cache = new(StringComparer.OrdinalIgnoreCase);
@@ -96,6 +96,10 @@ namespace AegisPC.Security.Caching
             return null;
         }
 
+        private readonly object _persistLock = new();
+        private volatile bool _isPersisting;
+        private volatile bool _isDirty;
+
         public async Task SetVerdictAsync(CachedScanVerdict verdict, CancellationToken cancellationToken = default)
         {
             if (verdict == null || string.IsNullOrWhiteSpace(verdict.SHA256)) return;
@@ -115,15 +119,37 @@ namespace AegisPC.Security.Caching
                 _pathToKeyMap[verdict.FilePath] = key;
             }
 
-            // Arka planda L2 Kalıcı Diske Yaz
-            _ = Task.Run(async () =>
+            // Debounced L2 persist: 50ms gecikmeli arka plan yazımı (toplu yazım optimizasyonu)
+            _isDirty = true;
+            if (!_isPersisting)
             {
-                try
+                _ = Task.Run(async () =>
                 {
-                    await PersistL2CacheToDiskAsync(CancellationToken.None);
-                }
-                catch { }
-            }, CancellationToken.None);
+                    lock (_persistLock)
+                    {
+                        if (_isPersisting) return;
+                        _isPersisting = true;
+                    }
+
+                    try
+                    {
+                        await Task.Delay(50);
+                        while (_isDirty)
+                        {
+                            _isDirty = false;
+                            await PersistL2CacheToDiskAsync(CancellationToken.None);
+                        }
+                    }
+                    catch { }
+                    finally
+                    {
+                        lock (_persistLock)
+                        {
+                            _isPersisting = false;
+                        }
+                    }
+                }, CancellationToken.None);
+            }
 
             await Task.CompletedTask;
         }

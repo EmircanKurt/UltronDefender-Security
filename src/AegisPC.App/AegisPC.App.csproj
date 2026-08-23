@@ -16,6 +16,13 @@
     <StartupObject>AegisPC.App.Program</StartupObject>
     <ApplicationIcon>Resources\Images\app.ico</ApplicationIcon>
     <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <!-- Bellek Optimizasyonu: Masaüstü uygulaması için Workstation GC kullan -->
+    <!-- Server GC web sunucuları için tasarlanmıştır ve 2-4× fazla RAM tutar -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <GarbageCollectionConserveMemory>9</GarbageCollectionConserveMemory>
+    <GCHeapHardLimit>0x80000000</GCHeapHardLimit>
+    <GCLargeObjectHeapCompactionMode>1</GCLargeObjectHeapCompactionMode>
   </PropertyGroup>
   <ItemGroup>
     <Using Remove="System.Windows.Forms" />

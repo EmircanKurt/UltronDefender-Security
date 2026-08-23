@@ -220,24 +220,50 @@ namespace AegisPC.Security.Scanning
 
         private static void LoadFromSqlite(string dbPath)
         {
-            if (!File.Exists(dbPath)) return;
+            // No longer loads all rows — embedded threats are already in _memoryCache
+            // SQLite queries happen on-demand in CheckHash()
+        }
 
-            using var conn = new SqliteConnection($"Data Source={dbPath}");
-            conn.Open();
+        private const int MaxMemoryCacheEntries = 5000;
 
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT Sha256, Name, Category, Severity FROM ThreatSignatures";
-
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+        private static void EnforceCacheLimit()
+        {
+            if (_memoryCache.Count > MaxMemoryCacheEntries)
             {
-                string sha256 = reader.GetString(0);
-                string name = reader.GetString(1);
-                string category = reader.GetString(2);
-                int severity = reader.GetInt32(3);
-
-                _memoryCache[sha256] = (name, category, severity);
+                int toRemove = MaxMemoryCacheEntries / 5; // Remove oldest 20%
+                int removed = 0;
+                foreach (var key in _memoryCache.Keys)
+                {
+                    if (removed >= toRemove) break;
+                    _memoryCache.TryRemove(key, out _);
+                    removed++;
+                }
             }
+        }
+
+        private static (bool IsMatched, string Name, string Category, int Severity) QuerySqliteDirect(string sha256)
+        {
+            if (string.IsNullOrEmpty(_dbPath) || !System.IO.File.Exists(_dbPath))
+                return (false, string.Empty, string.Empty, 0);
+
+            try
+            {
+                using var conn = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly");
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT Name, Category, Severity FROM ThreatSignatures WHERE Sha256 = $sha256 COLLATE NOCASE LIMIT 1";
+                cmd.Parameters.AddWithValue("$sha256", sha256);
+                using var reader = cmd.ExecuteReader();
+                if (reader.Read())
+                {
+                    var name = reader.GetString(0);
+                    var category = reader.GetString(1);
+                    var severity = reader.GetInt32(2);
+                    return (true, name, category, severity);
+                }
+            }
+            catch { }
+            return (false, string.Empty, string.Empty, 0);
         }
 
         /// <summary>
@@ -262,7 +288,15 @@ namespace AegisPC.Security.Scanning
                 return (true, match.Name, match.Category, match.Severity);
             }
 
-            return (false, string.Empty, string.Empty, 0);
+            // Cache miss — query SQLite directly (indexed O(log n) lookup)
+            var sqlResult = QuerySqliteDirect(sha256);
+            if (sqlResult.IsMatched)
+            {
+                // Add to LRU cache for future fast lookups
+                EnforceCacheLimit();
+                _memoryCache[sha256] = (sqlResult.Name, sqlResult.Category, sqlResult.Severity);
+            }
+            return sqlResult;
         }
 
         /// <summary>
@@ -311,6 +345,7 @@ namespace AegisPC.Security.Scanning
                     cmd.ExecuteNonQuery();
 
                     // Güncel RAM önbelleğine de anında ekle
+                    EnforceCacheLimit();
                     _memoryCache[threat.Sha256.Trim().ToLowerInvariant()] = (threat.Name ?? "Generic.Malware", threat.Category ?? "Malware", threat.Severity > 0 ? threat.Severity : 100);
                     imported++;
                 }

@@ -90,6 +90,7 @@ namespace AegisPC.App.Startup
             services.AddSingleton<ISecurityFindingService, SecurityFindingService>();
             services.AddSingleton<IFileScanner, FileScannerService>();
             services.AddSingleton<IScanCoordinatorService, ScanCoordinatorService>();
+            services.AddSingleton<AegisPC.Contracts.Services.IStartupSecuritySweepService, AegisPC.Security.Scanning.StartupSecuritySweepService>();
             services.AddSingleton<IReputationService, ReputationService>();
             services.AddSingleton<ArchiveSafetyScanner>();
             services.AddSingleton<IBehaviorEngine, AegisPC.Security.RealTime.BehaviorEngine>();

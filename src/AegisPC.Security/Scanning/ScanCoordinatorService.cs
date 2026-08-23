@@ -20,6 +20,7 @@ namespace AegisPC.Security.Scanning
         private readonly object _lock = new();
         private readonly List<SecurityFinding> _currentFindings = new();
 
+        private bool _isExternalScanRunning = false;
         public bool IsScanning { get; private set; }
         public ScanType CurrentScanType { get; private set; } = ScanType.Quick;
         public double ProgressPercent { get; private set; }
@@ -52,16 +53,60 @@ namespace AegisPC.Security.Scanning
             _logger = logger;
         }
 
+        public void RegisterExternalScanProgress(ScanProgress progress)
+        {
+            lock (_lock)
+            {
+                _isExternalScanRunning = true;
+                IsScanning = true;
+                CurrentScanType = progress.ScanType;
+                ProgressPercent = progress.ProgressPercent;
+                CurrentFile = progress.CurrentFile;
+                ScannedFiles = progress.ScannedFiles;
+                TotalFiles = progress.TotalFiles;
+                StatusText = $"Arka plan başlangıç taraması: {progress.ScannedFiles:N0} dosya incelendi (%{(int)progress.ProgressPercent})";
+            }
+            try
+            {
+                ProgressChanged?.Invoke(progress);
+            }
+            catch { }
+        }
+
+        public void CompleteExternalScan(ScanResult result)
+        {
+            lock (_lock)
+            {
+                _isExternalScanRunning = false;
+                IsScanning = false;
+                ProgressPercent = 100;
+                ScannedFiles = result.ScannedFiles;
+                TotalFiles = result.TotalFiles;
+                StatusText = $"Başlangıç taraması tamamlandı. {result.ScannedFiles:N0} dosya incelendi.";
+                _currentFindings.Clear();
+                if (result.Findings != null)
+                {
+                    _currentFindings.AddRange(result.Findings);
+                }
+            }
+            try
+            {
+                ScanCompleted?.Invoke(result);
+            }
+            catch { }
+        }
+
         public async Task<ScanResult?> StartScanAsync(ScanType scanType, string customPath = "")
         {
             lock (_lock)
             {
-                if (IsScanning)
+                if (IsScanning && !_isExternalScanRunning)
                 {
                     _logger?.LogWarning("A scan is already in progress.");
                     return null;
                 }
 
+                _isExternalScanRunning = false;
                 IsScanning = true;
                 CurrentScanType = scanType;
                 ProgressPercent = 0;

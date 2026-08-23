@@ -236,7 +236,13 @@ namespace AegisPC.Security.AntiEvasion
 
             try
             {
-                byte[] diskBytes = File.ReadAllBytes(dllPath);
+                byte[] diskBytes = new byte[4096];
+                using (var fs = new FileStream(dllPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                {
+                    int readBytes = fs.Read(diskBytes, 0, diskBytes.Length);
+                    if (readBytes < 64) return verdict;
+                    if (readBytes < diskBytes.Length) Array.Resize(ref diskBytes, readBytes);
+                }
                 using var proc = Process.GetProcessById(pid);
 
                 // Süreçte yüklü modülü bul
@@ -317,8 +323,13 @@ namespace AegisPC.Security.AntiEvasion
                 var mainMod = proc.MainModule;
                 if (mainMod == null) return verdict;
 
-                byte[] diskBytes = File.ReadAllBytes(diskExecutablePath);
-                if (diskBytes.Length < 0x200) return verdict;
+                byte[] diskBytes = new byte[1024];
+                using (var fs = new FileStream(diskExecutablePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                {
+                    int readBytes = fs.Read(diskBytes, 0, diskBytes.Length);
+                    if (readBytes < 0x200) return verdict;
+                    if (readBytes < diskBytes.Length) Array.Resize(ref diskBytes, readBytes);
+                }
 
                 IntPtr hProcess = OpenProcess(ProcessAccessFlags.QueryInformation | ProcessAccessFlags.VirtualMemoryRead, false, pid);
                 if (hProcess == IntPtr.Zero) return verdict;

@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Management;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -85,6 +87,7 @@ namespace AegisPC.Security.RealTime
         bool IsRunning { get; }
         IReadOnlyList<string> WatchedLocations { get; }
         void AddWatchDirectory(string path);
+        void RemoveWatchDirectory(string path);
         event Action<SecurityFinding>? OnThreatDetected;
         event Action<SecurityIncident>? OnIncidentCreated;
         event Action<string, string, string>? OnNotificationRaised; // title, message, type (Success, Warning, Danger)
@@ -99,6 +102,14 @@ namespace AegisPC.Security.RealTime
     /// </summary>
     public class RealTimeProtectionEngine : IRealTimeProtectionEngine, IDisposable
     {
+        #region Native Win32 / NT API
+        [DllImport("ntdll.dll", SetLastError = true)]
+        private static extern int NtSuspendProcess(IntPtr processHandle);
+
+        [DllImport("ntdll.dll", SetLastError = true)]
+        private static extern int NtResumeProcess(IntPtr processHandle);
+        #endregion
+
         private readonly IFileScanner _fileScanner;
         private readonly IHashService _hashService;
         private readonly ISignatureVerifier _signatureVerifier;
@@ -111,17 +122,24 @@ namespace AegisPC.Security.RealTime
         private readonly List<FileSystemWatcher> _watchers = new();
         private readonly List<string> _watchedLocationsList = new();
         private readonly Channel<NormalizedFileEvent> _eventChannel;
-        private readonly ConcurrentDictionary<string, (string hash, RealTimeVerdict verdict, RealTimePolicyAction policy, int riskScore, RiskLevel riskLevel, DateTime cachedAt)> _verdictCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, (string hash, RealTimeVerdict verdict, RealTimePolicyAction policy, int riskScore, RiskLevel riskLevel, string threatTitle, string threatDesc, DateTime cachedAt)> _verdictCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, DateTime> _recentlyProcessed = new(StringComparer.OrdinalIgnoreCase);
         private CancellationTokenSource? _engineCts;
-        private Task? _processingTask;
+        private readonly List<Task> _workerTasks = new();
+        private ManagementEventWatcher? _usbArrivalWatcher;
         private bool _isRunning;
         private readonly object _lock = new();
         private Timer? _cacheCleanupTimer;
 
-        private static readonly string[] DangerousExtensions = new[]
+        private static readonly HashSet<string> DangerousExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
-            ".exe", ".dll", ".sys", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".hta", ".jar", ".iso", ".zip", ".rar", ".7z", ".vbe", ".wsf", ".cpl", ".msi", ".com", ".pif"
+            ".exe", ".dll", ".sys", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".hta", ".jar", 
+            ".iso", ".zip", ".rar", ".7z", ".vbe", ".wsf", ".cpl", ".msi", ".com", ".pif", ".txt", ".bin", ".dat"
+        };
+
+        private static readonly string[] IgnoredDirectoryMarkers = new[]
+        {
+            @"\.git\", @"\.vs\", @"\node_modules\", @"\obj\Debug\", @"\obj\Release\", @"\bin\Debug\", @"\bin\Release\", @"\.cache\"
         };
 
         public bool IsRunning => _isRunning;
@@ -158,10 +176,10 @@ namespace AegisPC.Security.RealTime
             _auditLogService = auditLogService;
             _logger = logger;
 
-            _eventChannel = Channel.CreateBounded<NormalizedFileEvent>(new BoundedChannelOptions(5000)
+            _eventChannel = Channel.CreateBounded<NormalizedFileEvent>(new BoundedChannelOptions(2000)
             {
                 FullMode = BoundedChannelFullMode.DropOldest,
-                SingleReader = true,
+                SingleReader = false,
                 SingleWriter = false
             });
         }
@@ -187,14 +205,77 @@ namespace AegisPC.Security.RealTime
                     try { w.EnableRaisingEvents = true; } catch { }
                 }
 
-                // 2. Start Background Event Processing Worker
-                _processingTask = Task.Run(() => ProcessEventLoopAsync(_engineCts.Token));
+                // 2. Start Background Multi-Worker Pool Consumers
+                _workerTasks.Clear();
+                int workerCount = Math.Clamp(Environment.ProcessorCount / 2, 2, 4);
+                for (int i = 0; i < workerCount; i++)
+                {
+                    int workerId = i;
+                    _workerTasks.Add(Task.Run(() => ProcessEventLoopWorkerAsync(workerId, _engineCts.Token)));
+                }
+
+                // 3. Start WMI Dynamic Removable Media / USB Listener
+                StartUsbArrivalListener();
 
                 _cacheCleanupTimer = new Timer(CleanupCache, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
 
-                _logger?.LogInformation("Ultron Defender Real-Time Protection Engine started successfully.");
-                OnProtectionHealthChanged?.Invoke(true, "Sağlıklı - Tüm dizinler izleniyor");
+                _logger?.LogInformation("Ultron Defender Real-Time Protection Engine started successfully with {Workers} workers.", workerCount);
+                OnProtectionHealthChanged?.Invoke(true, "Sağlıklı - Tüm dizinler ve USB izleniyor");
             }
+        }
+
+        private void StartUsbArrivalListener()
+        {
+            try
+            {
+                var query = new WqlEventQuery("SELECT * FROM Win32_VolumeChangeEvent WHERE EventType = 2 OR EventType = 3");
+                _usbArrivalWatcher = new ManagementEventWatcher(query);
+                _usbArrivalWatcher.EventArrived += (s, e) =>
+                {
+                    try
+                    {
+                        var eventTypeObj = e.NewEvent.Properties["EventType"]?.Value;
+                        int eventType = eventTypeObj != null ? Convert.ToInt32(eventTypeObj) : 0;
+                        string? driveName = e.NewEvent.Properties["DriveName"]?.Value?.ToString();
+
+                        if (!string.IsNullOrEmpty(driveName))
+                        {
+                            string drivePath = driveName.EndsWith('\\') ? driveName : driveName + "\\";
+                            if (eventType == 2) // Arrival
+                            {
+                                _logger?.LogInformation("Yeni çıkarılabilir USB medya algılandı: {Drive}. Gerçek zamanlı koruma başlatılıyor...", drivePath);
+                                AddWatchDirectory(drivePath);
+                                OnNotificationRaised?.Invoke("💾 Yeni Medya Algılandı", $"{drivePath} çıkarılabilir sürücüsü gerçek zamanlı koruma altına alındı.", "Info");
+                            }
+                            else if (eventType == 3) // Removal
+                            {
+                                _logger?.LogInformation("Çıkarılabilir medya çıkarıldı: {Drive}", drivePath);
+                                RemoveWatchDirectory(drivePath);
+                            }
+                        }
+                    }
+                    catch { }
+                };
+                _usbArrivalWatcher.Start();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "USB dinamik WMI izleme başlatılamadı.");
+            }
+        }
+
+        private void StopUsbArrivalListener()
+        {
+            try
+            {
+                if (_usbArrivalWatcher != null)
+                {
+                    _usbArrivalWatcher.Stop();
+                    _usbArrivalWatcher.Dispose();
+                    _usbArrivalWatcher = null;
+                }
+            }
+            catch { }
         }
 
         private void CleanupCache(object? state)
@@ -214,6 +295,8 @@ namespace AegisPC.Security.RealTime
                 if (!_isRunning) return;
                 _isRunning = false;
 
+                StopUsbArrivalListener();
+
                 foreach (var w in _watchers)
                 {
                     try { w.EnableRaisingEvents = false; w.Dispose(); } catch { }
@@ -224,6 +307,8 @@ namespace AegisPC.Security.RealTime
                 _engineCts?.Cancel();
                 _engineCts?.Dispose();
                 _engineCts = null;
+
+                _workerTasks.Clear();
 
                 _cacheCleanupTimer?.Dispose();
                 _cacheCleanupTimer = null;
@@ -250,23 +335,10 @@ namespace AegisPC.Security.RealTime
             var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
             if (Directory.Exists(documents)) pathsToWatch.Add(documents);
 
-            // Temp directories
-            var localTemp = Path.GetTempPath();
-            if (Directory.Exists(localTemp)) pathsToWatch.Add(localTemp);
-
-            var winTemp = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp");
-            if (Directory.Exists(winTemp)) pathsToWatch.Add(winTemp);
-
-            // User AppData Local & Roaming
-            var appDataLocal = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            if (Directory.Exists(appDataLocal)) pathsToWatch.Add(appDataLocal);
-
-            var appDataRoaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            if (Directory.Exists(appDataRoaming)) pathsToWatch.Add(appDataRoaming);
-
-            // ProgramData (CommonApplicationData)
-            var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-            if (Directory.Exists(programData)) pathsToWatch.Add(programData);
+            // NOT: Temp, AppData ve ProgramData dizinleri kasıtlı olarak izleme dışı bırakıldı.
+            // Bu dizinler saniyede yüzlerce dosya olayı üretir (tarayıcı cache, VS Code, Steam vb.)
+            // ve FileSystemWatcher kernel buffer taşmasına, aşırı bellek tüketimine neden olur.
+            // Bu dizinler yalnızca Quick/Full Scan sırasında taranır, real-time izleme gerekmez.
 
             // Startup folders
             var userStartup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
@@ -304,6 +376,29 @@ namespace AegisPC.Security.RealTime
             }
         }
 
+        public void RemoveWatchDirectory(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            lock (_lock)
+            {
+                for (int i = _watchers.Count - 1; i >= 0; i--)
+                {
+                    if (string.Equals(_watchers[i].Path, path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            _watchers[i].EnableRaisingEvents = false;
+                            _watchers[i].Dispose();
+                        }
+                        catch { }
+                        _watchers.RemoveAt(i);
+                    }
+                }
+                _watchedLocationsList.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
         private void AttachWatcher(string path)
         {
             if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
@@ -319,7 +414,7 @@ namespace AegisPC.Security.RealTime
                 {
                     NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
                     IncludeSubdirectories = true,
-                    InternalBufferSize = 65536,
+                    InternalBufferSize = 32768,
                     EnableRaisingEvents = _isRunning
                 };
 
@@ -352,6 +447,12 @@ namespace AegisPC.Security.RealTime
         {
             if (string.IsNullOrWhiteSpace(path)) return;
 
+            // Geliştirici ve IDE derleme gürültüsü filtresi (CPU spike ve buffer overflow önler)
+            foreach (var marker in IgnoredDirectoryMarkers)
+            {
+                if (path.Contains(marker, StringComparison.OrdinalIgnoreCase)) return;
+            }
+
             var ext = Path.GetExtension(path).ToLowerInvariant();
             if (!DangerousExtensions.Contains(ext)) return;
 
@@ -368,7 +469,7 @@ namespace AegisPC.Security.RealTime
             _eventChannel.Writer.TryWrite(normalizedEvent);
         }
 
-        private async Task ProcessEventLoopAsync(CancellationToken ct)
+        private async Task ProcessEventLoopWorkerAsync(int workerId, CancellationToken ct)
         {
             var reader = _eventChannel.Reader;
             while (!ct.IsCancellationRequested && await reader.WaitToReadAsync(ct))
@@ -376,176 +477,192 @@ namespace AegisPC.Security.RealTime
                 while (reader.TryRead(out var evt))
                 {
                     if (ct.IsCancellationRequested) break;
-
-                    try
-                    {
-                        var fileName = Path.GetFileName(evt.NormalizedPath);
-
-                        // Stage 1: Event Captured Telemetry
-                        OnActivityLogged?.Invoke(new RealTimeActivityEvent
-                        {
-                            CorrelationId = evt.CorrelationId,
-                            FileName = fileName,
-                            FilePath = evt.NormalizedPath,
-                            Stage = "FILE_DETECTED",
-                            Message = $"Dosya hareketi algılandı ({evt.EventType})",
-                            Severity = "Info",
-                            Timestamp = DateTime.Now
-                        });
-
-                        // Stage 2: Wait for file write stability (file download or write completion)
-                        OnActivityLogged?.Invoke(new RealTimeActivityEvent
-                        {
-                            CorrelationId = evt.CorrelationId,
-                            FileName = fileName,
-                            FilePath = evt.NormalizedPath,
-                            Stage = "STABILITY_CHECK",
-                            Message = "Dosya stabilite ve yazma kilidi kontrol ediliyor...",
-                            Severity = "Info",
-                            Timestamp = DateTime.Now
-                        });
-
-                        bool isStable = await WaitForFileStabilityAsync(evt.NormalizedPath, ct);
-                        if (!isStable || !File.Exists(evt.NormalizedPath)) continue;
-
-                        // Stage 3: Progressive Instant Arrival Inspection
-                        OnActivityLogged?.Invoke(new RealTimeActivityEvent
-                        {
-                            CorrelationId = evt.CorrelationId,
-                            FileName = fileName,
-                            FilePath = evt.NormalizedPath,
-                            Stage = "SCAN_STARTED",
-                            Message = "Progresif güvenlik taraması başlatıldı (Hash, İmza, PE, Sezgiseller)...",
-                            Severity = "Info",
-                            Timestamp = DateTime.Now
-                        });
-
-                        var verdict = await InspectFileAsync(evt.NormalizedPath, ct);
-                        verdict.EventTime = evt.Timestamp;
-
-                        // Stage 4: Verdict Telemetry
-                        OnActivityLogged?.Invoke(new RealTimeActivityEvent
-                        {
-                            CorrelationId = evt.CorrelationId,
-                            FileName = fileName,
-                            FilePath = evt.NormalizedPath,
-                            Stage = "VERDICT",
-                            RiskScore = verdict.RiskScore,
-                            Verdict = verdict.Verdict.ToString(),
-                            TimeToDetectMs = verdict.TimeToDetectMs,
-                            Message = $"Risk Skoru: {verdict.RiskScore}/100 ({verdict.Verdict}) - TTD: {verdict.TimeToDetectMs:F1}ms",
-                            Severity = verdict.RiskScore >= 70 ? "Danger" : (verdict.RiskScore >= 40 ? "Warning" : "Success"),
-                            Timestamp = DateTime.Now
-                        });
-
-                        // Stage 5: Policy Enforcement
-                        if (verdict.RecommendedPolicy == RealTimePolicyAction.BlockAndQuarantine)
-                        {
-                            await EnforceQuarantineAsync(evt, verdict, ct);
-                            verdict.ActionTime = DateTime.UtcNow;
-
-                            OnActivityLogged?.Invoke(new RealTimeActivityEvent
-                            {
-                                CorrelationId = evt.CorrelationId,
-                                FileName = fileName,
-                                FilePath = evt.NormalizedPath,
-                                Stage = "ACTION_APPLIED",
-                                Action = "QUARANTINED",
-                                RiskScore = verdict.RiskScore,
-                                Verdict = verdict.Verdict.ToString(),
-                                TimeToActionMs = verdict.TimeToActionMs,
-                                Message = $"Müdahale: Karantinaya Alındı (TTA: {verdict.TimeToActionMs:F1}ms)",
-                                Severity = "Danger",
-                                Timestamp = DateTime.Now
-                            });
-                        }
-                        else if (verdict.RecommendedPolicy == RealTimePolicyAction.Warn)
-                        {
-                            await EnforceWarningAsync(evt, verdict, ct);
-                            verdict.ActionTime = DateTime.UtcNow;
-
-                            OnActivityLogged?.Invoke(new RealTimeActivityEvent
-                            {
-                                CorrelationId = evt.CorrelationId,
-                                FileName = fileName,
-                                FilePath = evt.NormalizedPath,
-                                Stage = "ACTION_APPLIED",
-                                Action = "WARN",
-                                RiskScore = verdict.RiskScore,
-                                Verdict = verdict.Verdict.ToString(),
-                                TimeToActionMs = verdict.TimeToActionMs,
-                                Message = $"Müdahale: Kullanıcı Uyarıldı, Dosya Korundu (TTA: {verdict.TimeToActionMs:F1}ms)",
-                                Severity = "Warning",
-                                Timestamp = DateTime.Now
-                            });
-                        }
-                        else
-                        {
-                            // Policy is Allow / Unknown - LOG ONLY, NEVER DELETE UNKNOWN!
-                            verdict.ActionTime = DateTime.UtcNow;
-                            _logger?.LogInformation("Instant File Arrival: '{Path}' evaluated as {Verdict} (TimeToDetect: {Ttd:F1}ms). Allowed.", evt.NormalizedPath, verdict.Verdict, verdict.TimeToDetectMs);
-
-                            OnActivityLogged?.Invoke(new RealTimeActivityEvent
-                            {
-                                CorrelationId = evt.CorrelationId,
-                                FileName = fileName,
-                                FilePath = evt.NormalizedPath,
-                                Stage = "ACTION_APPLIED",
-                                Action = "ALLOWED",
-                                RiskScore = verdict.RiskScore,
-                                Verdict = verdict.Verdict.ToString(),
-                                TimeToActionMs = verdict.TimeToActionMs,
-                                Message = $"Müdahale: İzin Verildi (TTA: {verdict.TimeToActionMs:F1}ms)",
-                                Severity = "Success",
-                                Timestamp = DateTime.Now
-                            });
-                        }
-                    }
-                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                    {
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogTrace(ex, "Error processing normalized real-time event for {Path}", evt.NormalizedPath);
-                    }
+                    await HandleNormalizedEventAsync(evt, ct);
                 }
             }
         }
 
+        private async Task HandleNormalizedEventAsync(NormalizedFileEvent evt, CancellationToken ct)
+        {
+            try
+            {
+                var fileName = Path.GetFileName(evt.NormalizedPath);
+
+                // Stage 1: Event Captured Telemetry
+                OnActivityLogged?.Invoke(new RealTimeActivityEvent
+                {
+                    CorrelationId = evt.CorrelationId,
+                    FileName = fileName,
+                    FilePath = evt.NormalizedPath,
+                    Stage = "FILE_DETECTED",
+                    Message = $"Dosya hareketi algılandı ({evt.EventType})",
+                    Severity = "Info",
+                    Timestamp = DateTime.Now
+                });
+
+                // Stage 2: Wait for file write stability (file download or write completion)
+                OnActivityLogged?.Invoke(new RealTimeActivityEvent
+                {
+                    CorrelationId = evt.CorrelationId,
+                    FileName = fileName,
+                    FilePath = evt.NormalizedPath,
+                    Stage = "STABILITY_CHECK",
+                    Message = "Dosya stabilite ve yazma kilidi kontrol ediliyor...",
+                    Severity = "Info",
+                    Timestamp = DateTime.Now
+                });
+
+                bool isStable = await WaitForFileStabilityAsync(evt.NormalizedPath, ct);
+                if (!isStable || !File.Exists(evt.NormalizedPath)) return;
+
+                // Stage 3: Progressive Instant Arrival Inspection
+                OnActivityLogged?.Invoke(new RealTimeActivityEvent
+                {
+                    CorrelationId = evt.CorrelationId,
+                    FileName = fileName,
+                    FilePath = evt.NormalizedPath,
+                    Stage = "SCAN_STARTED",
+                    Message = "Progresif güvenlik taraması başlatıldı (Hash, İmza, PE, Sezgiseller)...",
+                    Severity = "Info",
+                    Timestamp = DateTime.Now
+                });
+
+                var verdict = await InspectFileAsync(evt.NormalizedPath, ct);
+                verdict.EventTime = evt.Timestamp;
+
+                // Stage 4: Verdict Telemetry
+                OnActivityLogged?.Invoke(new RealTimeActivityEvent
+                {
+                    CorrelationId = evt.CorrelationId,
+                    FileName = fileName,
+                    FilePath = evt.NormalizedPath,
+                    Stage = "VERDICT",
+                    RiskScore = verdict.RiskScore,
+                    Verdict = verdict.Verdict.ToString(),
+                    TimeToDetectMs = verdict.TimeToDetectMs,
+                    Message = $"Risk Skoru: {verdict.RiskScore}/100 ({verdict.Verdict}) - TTD: {verdict.TimeToDetectMs:F1}ms",
+                    Severity = verdict.RiskScore >= 70 ? "Danger" : (verdict.RiskScore >= 40 ? "Warning" : "Success"),
+                    Timestamp = DateTime.Now
+                });
+
+                // Stage 5: Policy Enforcement
+                if (verdict.RecommendedPolicy == RealTimePolicyAction.BlockAndQuarantine)
+                {
+                    await EnforceQuarantineAsync(evt, verdict, ct);
+                    verdict.ActionTime = DateTime.UtcNow;
+
+                    OnActivityLogged?.Invoke(new RealTimeActivityEvent
+                    {
+                        CorrelationId = evt.CorrelationId,
+                        FileName = fileName,
+                        FilePath = evt.NormalizedPath,
+                        Stage = "ACTION_APPLIED",
+                        Action = "QUARANTINED",
+                        RiskScore = verdict.RiskScore,
+                        Verdict = verdict.Verdict.ToString(),
+                        TimeToActionMs = verdict.TimeToActionMs,
+                        Message = $"Müdahale: Karantinaya Alındı (TTA: {verdict.TimeToActionMs:F1}ms)",
+                        Severity = "Danger",
+                        Timestamp = DateTime.Now
+                    });
+                }
+                else if (verdict.RecommendedPolicy == RealTimePolicyAction.Warn)
+                {
+                    await EnforceWarningAsync(evt, verdict, ct);
+                    verdict.ActionTime = DateTime.UtcNow;
+
+                    OnActivityLogged?.Invoke(new RealTimeActivityEvent
+                    {
+                        CorrelationId = evt.CorrelationId,
+                        FileName = fileName,
+                        FilePath = evt.NormalizedPath,
+                        Stage = "ACTION_APPLIED",
+                        Action = "WARN",
+                        RiskScore = verdict.RiskScore,
+                        Verdict = verdict.Verdict.ToString(),
+                        TimeToActionMs = verdict.TimeToActionMs,
+                        Message = $"Müdahale: Kullanıcı Uyarıldı, Dosya Korundu (TTA: {verdict.TimeToActionMs:F1}ms)",
+                        Severity = "Warning",
+                        Timestamp = DateTime.Now
+                    });
+                }
+                else
+                {
+                    // Policy is Allow / Unknown - LOG ONLY, NEVER DELETE UNKNOWN!
+                    verdict.ActionTime = DateTime.UtcNow;
+                    _logger?.LogInformation("Instant File Arrival: '{Path}' evaluated as {Verdict} (TimeToDetect: {Ttd:F1}ms). Allowed.", evt.NormalizedPath, verdict.Verdict, verdict.TimeToDetectMs);
+
+                    OnActivityLogged?.Invoke(new RealTimeActivityEvent
+                    {
+                        CorrelationId = evt.CorrelationId,
+                        FileName = fileName,
+                        FilePath = evt.NormalizedPath,
+                        Stage = "ACTION_APPLIED",
+                        Action = "ALLOWED",
+                        RiskScore = verdict.RiskScore,
+                        Verdict = verdict.Verdict.ToString(),
+                        TimeToActionMs = verdict.TimeToActionMs,
+                        Message = $"Müdahale: İzin Verildi (TTA: {verdict.TimeToActionMs:F1}ms)",
+                        Severity = "Success",
+                        Timestamp = DateTime.Now
+                    });
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogTrace(ex, "Error processing normalized real-time event for {Path}", evt.NormalizedPath);
+            }
+        }
+
         /// <summary>
-        /// Dosya yazımı devam ederken (örneğin web tarayıcısı .exe indirirken) dosyanın tamamlanmasını bekler.
+        /// Dosya yazımı devam ederken (örneğin web tarayıcısı .exe indirirken) dosyanın tamamlanmasını adaptif bekler.
+        /// Büyük dosyalarda (GB) dosya boyutu değiştikçe bekler, boyut sabitlendiğinde (3 ardışık kontrol) analize geçer.
         /// </summary>
         private async Task<bool> WaitForFileStabilityAsync(string filePath, CancellationToken ct)
         {
-            const int maxAttempts = 15;
-            const int delayMs = 40;
+            if (!File.Exists(filePath)) return false;
 
-            for (int i = 0; i < maxAttempts; i++)
+            long lastSize = -1;
+            int stableReadCount = 0;
+            const int maxTotalWaitMs = 6000;
+            var sw = Stopwatch.StartNew();
+
+            while (sw.ElapsedMilliseconds < maxTotalWaitMs && !ct.IsCancellationRequested)
             {
-                if (ct.IsCancellationRequested) return false;
                 if (!File.Exists(filePath)) return false;
 
                 try
                 {
-                    var fileInfo = new FileInfo(filePath);
-                    long currentSize = fileInfo.Length;
+                    var fi = new FileInfo(filePath);
+                    long currentSize = fi.Length;
 
-                    // Try opening for read access with shared read/write/delete
+                    // Dosyaya paylaşımlı okuma erişimi dene
                     using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                     {
-                        if (fs.Length > 0 && fs.Length == currentSize)
+                        if (currentSize > 0 && currentSize == lastSize)
                         {
-                            return true; // File is stable and immediately accessible
+                            stableReadCount++;
+                            if (stableReadCount >= 2) // Art arda 2 kontrolde dosya boyutu değişmediyse yazım tamamdır
+                            {
+                                return true;
+                            }
+                        }
+                        else
+                        {
+                            stableReadCount = 0;
+                            lastSize = currentSize;
                         }
                     }
                 }
                 catch (IOException)
                 {
-                    // File is still being written to by another process
+                    stableReadCount = 0; // Dosya hâlâ başka bir işlem tarafından kilitli / yazılıyor
                 }
 
-                await Task.Delay(delayMs, ct);
+                await Task.Delay(40, ct);
             }
 
             return File.Exists(filePath);
@@ -596,14 +713,8 @@ namespace AegisPC.Security.RealTime
                     result.RecommendedPolicy = cached.policy;
                     result.RiskScore = cached.riskScore;
                     result.RiskLevel = cached.riskLevel;
-                    if (result.Verdict == RealTimeVerdict.ConfirmedMalicious)
-                    {
-                        result.ThreatTitle = $"Zararlı Dosya (Önbellek): {fileInfo.Name}";
-                    }
-                    else if (result.Verdict == RealTimeVerdict.Suspicious)
-                    {
-                        result.ThreatTitle = $"Şüpheli Dosya (Önbellek): {fileInfo.Name}";
-                    }
+                    result.ThreatTitle = !string.IsNullOrEmpty(cached.threatTitle) ? cached.threatTitle : (result.Verdict == RealTimeVerdict.ConfirmedMalicious ? $"Zararlı Dosya: {fileInfo.Name}" : $"Şüpheli Dosya: {fileInfo.Name}");
+                    result.ThreatDescription = cached.threatDesc;
                     result.ScanEndTime = DateTime.UtcNow;
                     result.VerdictTime = DateTime.UtcNow;
                     return result;
@@ -623,7 +734,7 @@ namespace AegisPC.Security.RealTime
                     result.Evidences.Add($"İmza: {hashMatch.ThreatName} ({hashMatch.ThreatCategory})");
                     result.Evidences.Add($"Tespit Metodu: {hashMatch.DetectionMethod}");
 
-                    if (!string.IsNullOrEmpty(sha256)) _verdictCache[cacheKey] = (sha256, result.Verdict, result.RecommendedPolicy, result.RiskScore, result.RiskLevel, DateTime.UtcNow);
+                    if (!string.IsNullOrEmpty(sha256)) _verdictCache[cacheKey] = (sha256, result.Verdict, result.RecommendedPolicy, result.RiskScore, result.RiskLevel, result.ThreatTitle, result.ThreatDescription, DateTime.UtcNow);
                     result.ScanEndTime = DateTime.UtcNow;
                     result.VerdictTime = DateTime.UtcNow;
                     return result;
@@ -643,7 +754,7 @@ namespace AegisPC.Security.RealTime
                     result.Evidences.Add($"Desen: {patternMatch.ThreatName}");
                     result.Evidences.Add($"Metod: {patternMatch.DetectionMethod}");
 
-                    if (!string.IsNullOrEmpty(sha256)) _verdictCache[cacheKey] = (sha256, result.Verdict, result.RecommendedPolicy, result.RiskScore, result.RiskLevel, DateTime.UtcNow);
+                    if (!string.IsNullOrEmpty(sha256)) _verdictCache[cacheKey] = (sha256, result.Verdict, result.RecommendedPolicy, result.RiskScore, result.RiskLevel, result.ThreatTitle, result.ThreatDescription, DateTime.UtcNow);
                     result.ScanEndTime = DateTime.UtcNow;
                     result.VerdictTime = DateTime.UtcNow;
                     return result;
@@ -653,7 +764,7 @@ namespace AegisPC.Security.RealTime
                 var sigInfo = await _signatureVerifier.VerifySignatureAsync(filePath, ct);
                 if (sigInfo.IsValid && sigInfo.Publisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true && PathHelper.IsKnownSafePath(filePath))
                 {
-                    if (!string.IsNullOrEmpty(sha256)) _verdictCache[cacheKey] = (sha256, RealTimeVerdict.Clean, RealTimePolicyAction.Allow, 0, RiskLevel.Clean, DateTime.UtcNow);
+                    if (!string.IsNullOrEmpty(sha256)) _verdictCache[cacheKey] = (sha256, RealTimeVerdict.Clean, RealTimePolicyAction.Allow, 0, RiskLevel.Clean, "Güvenilir Microsoft İmzalı Dosya", string.Empty, DateTime.UtcNow);
                     result.ScanEndTime = DateTime.UtcNow;
                     result.VerdictTime = DateTime.UtcNow;
                     return result;
@@ -686,11 +797,13 @@ namespace AegisPC.Security.RealTime
                 result.RiskLevel = riskLevel;
                 result.Evidences.AddRange(reasons);
 
-                // POLICY MATRIX:
+                // POLICY MATRIX WITH GAMER / REPACK SAFE SHIELD:
+                bool isGameOrRepack = PathHelper.IsGameOrRepackDirectory(filePath) || GameCrackClassifier.IsGameCrackOrEmulator(filePath);
+
                 // 1. Confirmed Malicious / Score >= 85 (High Confidence) -> BlockAndQuarantine
-                // 2. High Risk / Score >= 70 (Medium Confidence) -> BlockAndQuarantine
+                // 2. High Risk / Score >= 70 (Medium Confidence) -> BlockAndQuarantine (Oyun/Crack dosyaları için muaf tutulur)
                 // 3. Suspicious / Score >= 40 (Low Confidence) -> Warn (ALLOW + LOG + USER ALERT, NEVER DELETE)
-                // 4. Clean / Unknown -> Allow (NEVER DELETE UNKNOWN)
+                // 4. Clean / Unknown / Game Crack -> Allow (NEVER DELETE UNKNOWN)
                 if (riskLevel >= RiskLevel.ConfirmedMalicious || score >= 85)
                 {
                     result.Verdict = RealTimeVerdict.ConfirmedMalicious;
@@ -699,7 +812,7 @@ namespace AegisPC.Security.RealTime
                     result.ThreatTitle = $"🚨 Zararlı Yazılım: {fileInfo.Name}";
                     result.ThreatDescription = string.Join(" ", reasons.Take(2));
                 }
-                else if (riskLevel >= RiskLevel.HighRisk || score >= 70)
+                else if (!isGameOrRepack && (riskLevel >= RiskLevel.HighRisk || score >= 70))
                 {
                     result.Verdict = RealTimeVerdict.Suspicious;
                     result.RecommendedPolicy = RealTimePolicyAction.BlockAndQuarantine;
@@ -707,7 +820,7 @@ namespace AegisPC.Security.RealTime
                     result.ThreatTitle = $"⚠️ Yüksek Riskli Dosya: {fileInfo.Name}";
                     result.ThreatDescription = string.Join(" ", reasons.Take(2));
                 }
-                else if (score >= 40)
+                else if (score >= 40 && !isGameOrRepack)
                 {
                     result.Verdict = RealTimeVerdict.Suspicious;
                     result.RecommendedPolicy = RealTimePolicyAction.Warn;
@@ -724,7 +837,7 @@ namespace AegisPC.Security.RealTime
 
                 if (!string.IsNullOrEmpty(sha256) && !sha256.Equals("E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855", StringComparison.OrdinalIgnoreCase))
                 {
-                    _verdictCache[cacheKey] = (sha256, result.Verdict, result.RecommendedPolicy, result.RiskScore, result.RiskLevel, DateTime.UtcNow);
+                    _verdictCache[cacheKey] = (sha256, result.Verdict, result.RecommendedPolicy, result.RiskScore, result.RiskLevel, result.ThreatTitle, result.ThreatDescription, DateTime.UtcNow);
                 }
             }
             catch (Exception ex)
@@ -846,9 +959,18 @@ namespace AegisPC.Security.RealTime
                             {
                                 terminatedPid = proc.Id;
                                 terminatedProcName = proc.ProcessName;
+
+                                // 1. Önce süreci anında dondur (Ransomware şifreleme ve disk tahribatını milisaniyede durdurur)
+                                try
+                                {
+                                    NtSuspendProcess(proc.Handle);
+                                }
+                                catch { }
+
+                                // 2. Ardından tüm süreç ağacıyla birlikte yok et
                                 proc.Kill(entireProcessTree: true);
                                 proc.WaitForExit(2000);
-                                _logger?.LogWarning("Active malicious process terminated: {ProcName} (PID: {Pid})", terminatedProcName, terminatedPid);
+                                _logger?.LogWarning("Active malicious process contained & terminated: {ProcName} (PID: {Pid})", terminatedProcName, terminatedPid);
                             }
                         }
                         catch { }

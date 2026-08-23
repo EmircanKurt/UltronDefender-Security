@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -46,26 +47,42 @@ namespace AegisPC.Security.PE
                 return new PeDeepAnalysisResult { FilePath = filePath, IsPeFile = false };
             }
 
+            byte[]? rentedBuffer = null;
             try
             {
+                await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 8192, useAsync: true);
+                long readLen = Math.Min(fs.Length, 256 * 1024); // Maks 256 KB analiz sınırı — PE başlıkları ve tabloları için yeterli
+                int bytesToRead = (int)readLen;
+                
+                // ArrayPool: GC baskısını azaltır — her dosya için yeni byte[] alloc edilmez
+                rentedBuffer = ArrayPool<byte>.Shared.Rent(bytesToRead);
+                int read = await fs.ReadAsync(rentedBuffer.AsMemory(0, bytesToRead), cancellationToken);
+
+                // PeNet, buffer'ın tam boyutunu beklediğinden exact-size kopyası gerekli
                 byte[] buffer;
-                await using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 8192, useAsync: true))
+                if (read == bytesToRead && read == rentedBuffer.Length)
                 {
-                    long readLen = Math.Min(fs.Length, 30 * 1024 * 1024); // Maks 30 MB analiz sınırı
-                    buffer = new byte[readLen];
-                    int read = await fs.ReadAsync(buffer.AsMemory(0, (int)readLen), cancellationToken);
-                    if (read < buffer.Length)
-                    {
-                        Array.Resize(ref buffer, read);
-                    }
+                    buffer = rentedBuffer; // Rent edilen buffer tam boyutla eşleşiyorsa kopyalamaya gerek yok
+                }
+                else
+                {
+                    buffer = new byte[read];
+                    Buffer.BlockCopy(rentedBuffer, 0, buffer, 0, read);
                 }
 
-                return Analyze(buffer, filePath);
+                var result = Analyze(buffer, filePath);
+                
+                return result;
             }
             catch (Exception ex)
             {
                 _logger?.LogTrace(ex, "Error reading PE file '{Path}' for deep analysis.", filePath);
                 return new PeDeepAnalysisResult { FilePath = filePath, IsPeFile = false };
+            }
+            finally
+            {
+                if (rentedBuffer != null)
+                    ArrayPool<byte>.Shared.Return(rentedBuffer);
             }
         }
 

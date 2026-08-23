@@ -28,7 +28,7 @@ namespace AegisPC.Security.Scanning
         private readonly IDetectionHub _detectionHub;
         private readonly ArchiveSafetyScanner _archiveScanner;
         private readonly ILogger<FileScannerService>? _logger;
-        private const int MaxCacheEntries = 50000;
+        private const int MaxCacheEntries = 10000;
         private readonly ConcurrentDictionary<string, (long FileSize, DateTime LastWriteTimeUtc, SecurityFinding? Finding)> _scanCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly ManualResetEventSlim _pauseEvent = new(true);
 
@@ -36,7 +36,15 @@ namespace AegisPC.Security.Scanning
         {
             if (_scanCache.Count >= MaxCacheEntries)
             {
-                _scanCache.Clear();
+                // Kademeli eviction: En eski %30'unu temizle (atomik Clear yerine GC baskısını azaltır)
+                int toRemove = MaxCacheEntries / 3;
+                int removed = 0;
+                foreach (var key in _scanCache.Keys)
+                {
+                    if (removed >= toRemove) break;
+                    _scanCache.TryRemove(key, out _);
+                    removed++;
+                }
             }
             _scanCache[path] = (fileSize, lastWriteTimeUtc, finding);
         }
@@ -58,17 +66,21 @@ namespace AegisPC.Security.Scanning
             ".exe", ".dll", ".sys", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".vbe", ".js", ".jse",
             ".hta", ".jar", ".wsf", ".ws", ".wsh", ".cpl", ".msi", ".msc", ".reg", ".com", ".pif",
             ".drv", ".ocx", ".efi", ".zip", ".7z", ".rar", ".iso", ".img", ".tar", ".gz", ".cab",
-            ".nupkg", ".apk", ".bin", ".dat", ".tmp", ".txt", ".log", ".ini", ".cfg", ".xml", ".json",
-            ".csv", ".md", ".inf", ".htm", ".html", ".lua", ".yml", ".yaml"
+            ".nupkg", ".apk", ".bin", ".dat", ".tmp"
         };
 
         private static readonly HashSet<string> SafeMediaExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
+            // Medya Dosyaları
             ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tiff",
             ".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a",
             ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm",
+            // Belgeler ve Yazı Tipleri
             ".pdf", ".docx", ".xlsx", ".pptx", ".odt", ".ods",
-            ".ttf", ".otf", ".woff", ".woff2"
+            ".ttf", ".otf", ".woff", ".woff2",
+            // Metin ve Yapılandırma Dosyaları (Yürütülebilir Değil — CPU/RAM Tasarrufu)
+            ".txt", ".log", ".ini", ".cfg", ".xml", ".json", ".csv", ".md", ".inf", ".htm", ".html",
+            ".lua", ".yml", ".yaml", ".css", ".map", ".pak", ".dae", ".dds", ".pc", ".jbeam"
         };
 
         public FileScannerService(
@@ -103,30 +115,40 @@ namespace AegisPC.Security.Scanning
             {
                 if (!File.Exists(filePath)) return false;
 
-                string ext = Path.GetExtension(filePath);
+                string ext = Path.GetExtension(filePath).ToLowerInvariant();
                 
-                // 1. Bilinen güvenli medya ve ofis uzantılarını doğrudan atla (Hızlı taramayı yavaşlatmaz)
+                // 1. Bilinen güvenli medya, ofis ve belge uzantılarını doğrudan atla (CPU/RAM harcamaz)
                 if (!string.IsNullOrEmpty(ext) && SafeMediaExtensions.Contains(ext))
                 {
                     return false;
                 }
 
-                // 2. Yürütülebilir veya komut dosyası uzantısı ise doğrudan adaydır
+                // 2. Oyun ve Mod Klasörü Koruması: Oyun kaynakları (.zip, .bin, .dat, .pak, .dds, .dae) virüs değildir ve devasadır
+                bool isGame = PathHelper.IsGameOrRepackDirectory(filePath) || GameCrackClassifier.IsGameCrackOrEmulator(filePath);
+                if (isGame && (ext != ".exe" && ext != ".dll" && ext != ".scr" && ext != ".bat" && ext != ".cmd" && ext != ".ps1"))
+                {
+                    return false;
+                }
+
+                var fileInfo = new FileInfo(filePath);
+                if (fileInfo.Length == 0) return false;
+
+                // 3. 100 MB'dan büyük dosyaları tarama (Oyun repacki, büyük video, ISO, VM disk vb. CPU/RAM patlamasını önler)
+                if (fileInfo.Length > 100 * 1024 * 1024)
+                {
+                    return false;
+                }
+
+                // 4. Yürütülebilir veya komut dosyası uzantısı ise doğrudan adaydır
                 if (!string.IsNullOrEmpty(ext) && KnownCandidateExtensions.Contains(ext))
                 {
                     return true;
                 }
 
-                var fileInfo = new FileInfo(filePath);
-                if (fileInfo.Length == 0 || fileInfo.Length > 200 * 1024 * 1024)
-                {
-                    return false;
-                }
-
-                // 3. Sihirli Bayt (Magic Byte) Denetimi: PE ("MZ"), ZIP ("PK"), 7z, RAR, Shebang ("#!")
+                // 5. Sihirli Bayt (Magic Byte) Denetimi: PE ("MZ"), ZIP ("PK"), 7z, RAR, Shebang ("#!")
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 16);
-                byte[] header = new byte[4];
-                int read = fs.Read(header, 0, 4);
+                Span<byte> header = stackalloc byte[4];
+                int read = fs.Read(header);
 
                 if (read >= 2)
                 {
@@ -164,49 +186,57 @@ namespace AegisPC.Security.Scanning
             try
             {
                 var fileInfo = new FileInfo(path);
+                if (fileInfo.Length == 0 || fileInfo.Length > 100 * 1024 * 1024) return null;
+
+                var ext = fileInfo.Extension.ToLowerInvariant();
+                bool isGameDir = PathHelper.IsGameOrRepackDirectory(path) || GameCrackClassifier.IsGameCrackOrEmulator(path);
 
                 // Multi-Tier Caching: Skip deep 13-detector re-scan if clean and unchanged
                 if (_scanCache.TryGetValue(path, out var cached))
                 {
                     if (cached.FileSize == fileInfo.Length && cached.LastWriteTimeUtc == fileInfo.LastWriteTimeUtc)
                     {
-                        return cached.Finding;
+                        // Eski sahte tespitleri (oyun, mod, zip) önbellekten dönmeyip temizce değerlendir
+                        if (cached.Finding == null || (!isGameDir && ext != ".zip"))
+                        {
+                            return cached.Finding;
+                        }
                     }
                 }
 
-                var ext = fileInfo.Extension.ToLowerInvariant();
-
-                // 1. Arşiv Dosyası Güvenlik Taraması (Zip bomb, path traversal, nested payload)
-                if (ext == ".zip" || ext == ".jar" || ext == ".nupkg" || ext == ".apk")
-                {
-                    var archiveResult = await _archiveScanner.ScanArchiveAsync(path, cancellationToken);
-                    if (archiveResult.Findings.Count > 0)
-                    {
-                        var topFinding = archiveResult.Findings.OrderByDescending(f => f.RiskScore).First();
-                        await _findingService.AddFindingAsync(topFinding, cancellationToken);
-                        SetCacheEntry(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, topFinding);
-                        return topFinding;
-                    }
-                }
-
-                // 2. SHA256 Hesaplama & Güvenli Beyaz Liste (Allowlist)
-                var sha256 = await _hashService.ComputeSha256Async(path, cancellationToken);
-                if (!string.IsNullOrEmpty(sha256) && await _allowlistService.IsAllowlistedAsync(sha256, cancellationToken))
-                {
-                    return null; // Beyaz listede güvenli onaylı
-                }
-
-                bool isGameDir = PathHelper.IsGameOrRepackDirectory(path);
+                // 1. Oyun Klasörü Kontrolü — Güvenli oyun modları ve kaynaklarını (BeamNG zip modları, seviyeler, dokular) atla
                 if (isGameDir)
                 {
-                    // Non-executables in game directories are safe game resources (levels, lua scripts, licenses, json, etc.)
                     if (ext != ".exe" && ext != ".dll" && ext != ".scr" && ext != ".bat" && ext != ".ps1")
                     {
                         return null;
                     }
                 }
 
-                // 3. Tekil ve Bütünleşik DetectionHub ile 13 Modüler Dedektör Üzerinden Analiz
+                // 2. Arşiv Dosyası Güvenlik Taraması (Zip bomb, path traversal, nested payload)
+                if (ext == ".zip" || ext == ".jar" || ext == ".nupkg" || ext == ".apk")
+                {
+                    if (!isGameDir)
+                    {
+                        var archiveResult = await _archiveScanner.ScanArchiveAsync(path, cancellationToken);
+                        if (archiveResult.Findings.Count > 0)
+                        {
+                            var topFinding = archiveResult.Findings.OrderByDescending(f => f.RiskScore).First();
+                            await _findingService.AddFindingAsync(topFinding, cancellationToken);
+                            SetCacheEntry(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, topFinding);
+                            return topFinding;
+                        }
+                    }
+                }
+
+                // 3. SHA256 Hesaplama & Güvenli Beyaz Liste (Allowlist)
+                var sha256 = await _hashService.ComputeSha256Async(path, cancellationToken);
+                if (!string.IsNullOrEmpty(sha256) && await _allowlistService.IsAllowlistedAsync(sha256, cancellationToken))
+                {
+                    return null; // Beyaz listede güvenli onaylı
+                }
+
+                // 4. Tekil ve Bütünleşik DetectionHub ile 13 Modüler Dedektör Üzerinden Analiz
                 var context = new DetectionContext
                 {
                     FilePath = path,
@@ -218,9 +248,9 @@ namespace AegisPC.Security.Scanning
 
                 var detectionResult = await _detectionHub.EvaluateAsync(context, cancellationToken);
 
-                // 4. Eşik Değeri ve Risk Kararı Haritalaması (Oyun klasörlerinde güvenli emülatörler için 85 eşik, genel sistemde 50 eşik)
+                // 5. Eşik Değeri ve Risk Kararı Haritalaması (Oyun klasörlerinde güvenli emülatörler için 85 eşik, genel sistemde 50 eşik)
                 int minThreshold = isGameDir ? 85 : 50;
-                bool hasExplicitSignature = detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.StaticSignature);
+                bool hasExplicitSignature = detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.StaticSignature && e.ScoreContribution >= 80);
 
                 if ((detectionResult.Verdict >= DetectionVerdict.Suspicious && detectionResult.RiskScore >= minThreshold) || hasExplicitSignature)
                 {
@@ -287,6 +317,36 @@ namespace AegisPC.Security.Scanning
                 return null;
             }
         }
+
+        private static readonly HashSet<string> ExcludedDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "$Recycle.Bin",
+            "System Volume Information",
+            "WinSxS",
+            "Servicing",
+            "SoftwareDistribution",
+            "assembly",
+            "Microsoft.NET",
+            "Installer",
+            "DriverStore",
+            "SystemApps",
+            "Prefetch",
+            "Panther",
+            "rescache",
+            "Fonts",
+            "DeliveryOptimization",
+            "$Windows.~BT",
+            "$WinREAgent",
+            "Config.Msi",
+            "Recovery",
+            ".git",
+            ".vs",
+            ".cache",
+            "node_modules",
+            "Package Cache",
+            "AegisPC_BrowserStress_Tests",
+            "AegisLabSuite"
+        };
 
         public async Task<ScanResult> ScanDirectoryAsync(
             string path,
@@ -388,7 +448,7 @@ namespace AegisPC.Security.Scanning
             // ══════════════════════════════════════════════════════════════
             // STAGE 2: ASYNC FILE STREAMING & CONCURRENT SCANNING
             // ══════════════════════════════════════════════════════════════
-            var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(5000)
+            var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(2000)
             {
                 FullMode = BoundedChannelFullMode.Wait,
                 SingleWriter = true,
@@ -397,7 +457,7 @@ namespace AegisPC.Security.Scanning
 
             var producerTask = Task.Run(async () =>
             {
-                var queuedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var queuedPaths = scanType != ScanType.Full ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) : null;
 
                 async Task TryQueueFileAsync(string? filePath)
                 {
@@ -405,12 +465,19 @@ namespace AegisPC.Security.Scanning
 
                     try
                     {
-                        if (File.Exists(filePath) && IsInspectableCandidate(filePath))
+                        if (File.Exists(filePath))
                         {
-                            if (queuedPaths.Add(filePath))
+                            if (queuedPaths == null || queuedPaths.Add(filePath))
                             {
                                 Interlocked.Increment(ref totalFiles);
-                                await channel.Writer.WriteAsync(filePath, cancellationToken);
+                                if (IsInspectableCandidate(filePath))
+                                {
+                                    await channel.Writer.WriteAsync(filePath, cancellationToken);
+                                }
+                                else
+                                {
+                                    Interlocked.Increment(ref scannedFiles);
+                                }
                             }
                         }
                     }
@@ -442,6 +509,8 @@ namespace AegisPC.Security.Scanning
                             // 2. Alt dizinleri kuyruğa ekle (Junction / ReparsePoint atlayarak sonsuz döngüyü engelle)
                             if (recursive)
                             {
+                                bool isWindowsRoot = currentDir.Equals(KnownPaths.WindowsDir, StringComparison.OrdinalIgnoreCase);
+
                                 foreach (var subDir in Directory.EnumerateDirectories(currentDir))
                                 {
                                     if (cancellationToken.IsCancellationRequested) break;
@@ -450,8 +519,21 @@ namespace AegisPC.Security.Scanning
                                     {
                                         var dirInfo = new DirectoryInfo(subDir);
                                         if ((dirInfo.Attributes & FileAttributes.ReparsePoint) != 0) continue;
-                                        if (dirInfo.Name.Equals("$Recycle.Bin", StringComparison.OrdinalIgnoreCase) ||
-                                            dirInfo.Name.Equals("System Volume Information", StringComparison.OrdinalIgnoreCase)) continue;
+
+                                        // Windows kök dizinindeyken yalnızca tehdit barındırabilecek kritik çalışma alanlarını kuyruğa ekle
+                                        if (isWindowsRoot)
+                                        {
+                                            if (!dirInfo.Name.Equals("System32", StringComparison.OrdinalIgnoreCase) &&
+                                                !dirInfo.Name.Equals("SysWOW64", StringComparison.OrdinalIgnoreCase) &&
+                                                !dirInfo.Name.Equals("Temp", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                continue;
+                                            }
+                                        }
+
+                                        if (ExcludedDirectoryNames.Contains(dirInfo.Name) ||
+                                            dirInfo.Name.StartsWith("AegisLabSuite_", StringComparison.OrdinalIgnoreCase) ||
+                                            dirInfo.Name.StartsWith("AegisPC_", StringComparison.OrdinalIgnoreCase)) continue;
 
                                         dirQueue.Enqueue(subDir);
                                     }
@@ -468,26 +550,9 @@ namespace AegisPC.Security.Scanning
                     if (scanType == ScanType.Full)
                     {
                         // ───────────────────────────────────────────────────────
-                        // TAM DİSK TARAMASI: TÜM SABİT SÜRÜCÜLER VE KULLANICI DİZİNLERİ
+                        // TAM DİSK TARAMASI: TÜM SABİT SÜRÜCÜLER TEK SEFERDE TEMİZCE TARANIR
+                        // (Milyonlarca dosya yolu bellekte tutulmaz, her dosya tekil taranır)
                         // ───────────────────────────────────────────────────────
-                        ReportProgress("Öncelikli Kullanıcı Alanları indeksleniyor...");
-                        var highPriorityDirs = new List<string>
-                        {
-                            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-                            KnownPaths.Downloads,
-                            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                            KnownPaths.UserStartup,
-                            KnownPaths.CommonStartup,
-                            KnownPaths.Temp,
-                            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp")
-                        };
-
-                        foreach (var hpDir in highPriorityDirs.Distinct(StringComparer.OrdinalIgnoreCase))
-                        {
-                            if (cancellationToken.IsCancellationRequested) break;
-                            await EnumerateDirectorySafelyAsync(hpDir, recursive: true);
-                        }
-
                         var allDrives = DriveInfo.GetDrives()
                             .Where(d => d.IsReady && d.DriveType == DriveType.Fixed)
                             .Select(d => d.RootDirectory.FullName)
@@ -571,8 +636,8 @@ namespace AegisPC.Security.Scanning
                 }
             }, cancellationToken);
 
-            // Consumer Tasks: Paralel tarama işçileri
-            int concurrency = Math.Clamp(Environment.ProcessorCount * 2, 4, 16);
+            // Consumer Tasks: Paralel tarama işçileri (Çekirdek gücünü verimli kullanan %45-%60 dengeli mod)
+            int concurrency = Math.Clamp((int)Math.Ceiling(Environment.ProcessorCount * 0.65), 2, 6);
             var workerTasks = new List<Task>();
 
             for (int i = 0; i < concurrency; i++)
@@ -581,6 +646,9 @@ namespace AegisPC.Security.Scanning
                 {
                     try
                     {
+                        Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+                        int fileProcessCounter = 0;
+
                         await foreach (var filePath in channel.Reader.ReadAllAsync(cancellationToken))
                         {
                             try
@@ -598,7 +666,30 @@ namespace AegisPC.Security.Scanning
                             }
                             finally
                             {
-                                Interlocked.Increment(ref scannedFiles);
+                                int currentScanned = Interlocked.Increment(ref scannedFiles);
+                                fileProcessCounter++;
+
+                                // Dengeli CPU Yönetimi: Her 20 dosyada bir sisteme kooperatif nefes aldırma (Sistemi dondurmadan yüksek hız)
+                                if ((fileProcessCounter % 20) == 0)
+                                {
+                                    await Task.Yield();
+                                }
+
+                                // Strict RAM Ceiling (Max 250MB - 500MB Tavanı): Bellek 250 MB'ı aşarsa LOH ve Gen2 agresif sıkıştırma
+                                if ((currentScanned % 100) == 0)
+                                {
+                                    long currentMemory = GC.GetTotalMemory(forceFullCollection: false);
+                                    if (currentMemory > 250 * 1024 * 1024) // 250 MB sınır
+                                    {
+                                        GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+                                        GC.WaitForPendingFinalizers();
+                                    }
+                                    else if ((currentScanned % 500) == 0)
+                                    {
+                                        GC.Collect(1, GCCollectionMode.Optimized, false, false);
+                                    }
+                                }
+
                                 ReportProgress(filePath);
                             }
                         }
@@ -609,6 +700,9 @@ namespace AegisPC.Security.Scanning
 
             await Task.WhenAll(workerTasks.Concat(new[] { producerTask }));
             stopwatch.Stop();
+
+            // Tarama tamamlandığında geçici nesneleri optimize serbest bırak
+            GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
 
             int finalTotal = Volatile.Read(ref totalFiles);
             int finalScanned = Volatile.Read(ref scannedFiles);

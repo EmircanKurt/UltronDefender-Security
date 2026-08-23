@@ -258,6 +258,38 @@ namespace AegisPC.Tests
             Assert.Equal(2, reloadedItems.Count);
         }
 
+        [Fact]
+        public void Test_DynamicWatchDirectory_AddAndRemove()
+        {
+            var customDir = Path.Combine(_testSandboxDir, "CustomWatch");
+            Directory.CreateDirectory(customDir);
+
+            _engine.Start(watchDefaultLocations: false);
+            Assert.True(_engine.IsRunning);
+
+            _engine.AddWatchDirectory(customDir);
+            Assert.Contains(customDir, _engine.WatchedLocations);
+
+            _engine.RemoveWatchDirectory(customDir);
+            Assert.DoesNotContain(customDir, _engine.WatchedLocations);
+
+            _engine.Stop();
+            Assert.False(_engine.IsRunning);
+        }
+
+        [Fact]
+        public async Task Test_InspectFileAsync_SafeMicrosoftSignedFile_EvaluatesCleanFast()
+        {
+            string cmdPath = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            if (File.Exists(cmdPath))
+            {
+                var verdict = await _engine.InspectFileAsync(cmdPath);
+                Assert.Equal(RealTimeVerdict.Clean, verdict.Verdict);
+                Assert.Equal(RealTimePolicyAction.Allow, verdict.RecommendedPolicy);
+                Assert.Equal(0, verdict.RiskScore);
+            }
+        }
+
         public void Dispose()
         {
             try

@@ -88,6 +88,8 @@ namespace AegisPC.Security.RealTime
         private bool _isActive;
         private int _totalBlockedCount;
         private readonly object _lock = new();
+        private Timer? _entropyCacheCleanupTimer;
+        private const int MaxEntropyCacheEntries = 5000;
 
         public bool IsShieldActive => _isActive;
         public int CanaryFileCount => _canaryFiles.Count;
@@ -274,7 +276,7 @@ namespace AegisPC.Security.RealTime
                         {
                             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
                             IncludeSubdirectories = true,
-                            InternalBufferSize = 65536,
+                            InternalBufferSize = 32768,
                             EnableRaisingEvents = true
                         };
 
@@ -301,6 +303,23 @@ namespace AegisPC.Security.RealTime
                 }
 
                 _logger?.LogInformation("Ransomware Defense Engine activated across {Count} directories with {Canaries} canary decoys.", _protectedDirs.Count, _canaryFiles.Count);
+
+                // Entropi cache temizleme timer'ı — bellek sızıntısını önle
+                _entropyCacheCleanupTimer = new Timer(_ =>
+                {
+                    if (_fileEntropyCache.Count > MaxEntropyCacheEntries)
+                    {
+                        // En eski %50'sini temizle
+                        int toRemove = _fileEntropyCache.Count / 2;
+                        int removed = 0;
+                        foreach (var key in _fileEntropyCache.Keys)
+                        {
+                            if (removed >= toRemove) break;
+                            _fileEntropyCache.TryRemove(key, out double _);
+                            removed++;
+                        }
+                    }
+                }, null, TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(15));
             }
         }
 
@@ -314,6 +333,12 @@ namespace AegisPC.Security.RealTime
                     try { w.EnableRaisingEvents = false; w.Dispose(); } catch { }
                 }
                 _watchers.Clear();
+
+                // Entropi cache temizleme timer'ını durdur ve cache'i temizle
+                _entropyCacheCleanupTimer?.Dispose();
+                _entropyCacheCleanupTimer = null;
+                _fileEntropyCache.Clear();
+
                 CleanupCanaryFiles();
             }
         }

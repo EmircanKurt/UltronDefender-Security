@@ -43,25 +43,22 @@ public static class PathHelper
                path.StartsWith(KnownPaths.LocalAppData, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static readonly string[] EncodedGameRepackKeywords = new[]
+    private static readonly string[] GameRepackKeywords = new[]
     {
-        "YmVhbW5n", "aW5zYW5lcmFtemVz", "Zml0Z2lybA==", "ZG9kaQ==", "Y29kZXg=", "c2tpZHJvdw==", "Zmx0", "cnVuZQ==", 
-        "Z29sZGJlcmc=", "ZW1wcmVzcw==", "dGVub2tl", "cmF6b3IxOTEx", "Y3B5", "cmVsb2FkZWQ=", "cGxhemE=",
-        "c3RlYW1hcHBz", "ZXBpYyBnYW1lcw==", "cmlvdCBnYW1lcw==", "dWJpc29mdA==", "cm9ja3N0YXIgZ2FtZXM=", "XGdhbWVzXA==", "XG95dW5sYXJc", "XHJlcGFja1w="
+        "beamng", "insaneramzes", "fitgirl", "dodi", "codex", "skidrow", "flt", "rune", 
+        "goldberg", "empress", "tenoke", "razor1911", "cpy", "reloaded", "plaza",
+        "steamapps", "epic games", "riot games", "ubisoft", "rockstar games", "gog games", "gog galaxy",
+        "ea games", "origin games", "battle.net", "xboxgames", @"\games\", @"\oyunlar\", @"\repack\",
+        "modorganizer", "vortex", "curseforge", "minecraft", ".minecraft", "roblox", "unity", "unreal"
     };
 
     public static bool IsGameOrRepackDirectory(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
         var lower = path.ToLowerInvariant();
-        foreach (var b64 in EncodedGameRepackKeywords)
+        foreach (var kw in GameRepackKeywords)
         {
-            try
-            {
-                var kw = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(b64));
-                if (lower.Contains(kw)) return true;
-            }
-            catch { }
+            if (lower.Contains(kw, StringComparison.OrdinalIgnoreCase)) return true;
         }
         return false;
     }
