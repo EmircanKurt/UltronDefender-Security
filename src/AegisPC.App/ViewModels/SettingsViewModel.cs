@@ -52,7 +52,7 @@ namespace AegisPC.App.ViewModels
         private bool isGameCrackWatchdogEnabled = true;
 
         [ObservableProperty]
-        private bool isNetworkProtectionEnabled = false;
+        private bool isNetworkProtectionEnabled = AegisPC.Core.Configuration.FeatureFlags.IsNetworkShieldActive;
 
         [ObservableProperty]
         private bool isCloudLookupEnabled = false;
