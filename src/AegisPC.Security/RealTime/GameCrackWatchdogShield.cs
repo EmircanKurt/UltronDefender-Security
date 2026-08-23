@@ -97,12 +97,28 @@ namespace AegisPC.Security.RealTime
                     IsMalicious = true,
                     Verdict = WatchdogActionVerdict.PersistenceTamper,
                     ThreatTitle = "🚨 Başlangıca Gizli Kalıcılık Enjeksiyonu",
-                    Description = $"Oyun süreci Windows başlangıcına yetkisiz dosya eklemeye çalışıyor: {targetPath}",
-                    RiskScore = 90
+                    Description = $"Oyun/Crack süreci Windows başlangıcına yetkisiz dosya eklemeye çalışıyor: {targetPath}",
+                    RiskScore = 95
                 };
             }
 
-            // 3. Çapraz Dizin Binary / Script Dropper (Temp/Windows/System32)
+            // 3. Sistem Dizinlerine Yetkisiz Yazma / Yayılma (System32, Windows, Drivers)
+            if (targetLower.Contains(@"\windows\system32\") || 
+                targetLower.Contains(@"\windows\syswow64\") ||
+                targetLower.Contains(@"\windows\drivers\") ||
+                targetLower.Contains(@"\system volume information\"))
+            {
+                return new WatchdogEvaluationResult
+                {
+                    IsMalicious = true,
+                    Verdict = WatchdogActionVerdict.SuspiciousCrossFolderDrop,
+                    ThreatTitle = "🚨 Windows Sistem Dizinine Yetkisiz Müdahale!",
+                    Description = $"Oyun/Crack süreci ({Path.GetFileName(processExePath)}) Windows çekirdek/sistem dizinine ({targetPath}) izinsiz dosya yazmaya çalıştı.",
+                    RiskScore = 95
+                };
+            }
+
+            // 4. Çapraz Dizin Binary / Script Dropper (Temp/Windows/System32/Other Program Files)
             if (DangerousDropExtensions.Contains(ext))
             {
                 bool isInsideOwnDir = !string.IsNullOrWhiteSpace(processExePath) &&
@@ -112,15 +128,16 @@ namespace AegisPC.Security.RealTime
                 {
                     if (targetLower.Contains(@"\temp\") || 
                         targetLower.Contains(@"\windows\") ||
-                        targetLower.Contains(@"\appdata\roaming\microsoft\"))
+                        targetLower.Contains(@"\appdata\roaming\microsoft\") ||
+                        targetLower.Contains(@"\program files\"))
                     {
                         return new WatchdogEvaluationResult
                         {
                             IsMalicious = true,
                             Verdict = WatchdogActionVerdict.SuspiciousCrossFolderDrop,
                             ThreatTitle = "🚨 Çapraz Dizin Zararlı Yayılımı (Dropper)",
-                            Description = $"Oyun süreci ({Path.GetFileName(processExePath)}) kendi dizini dışındaki geçici konuma çalıştırılabilir kod attı: {targetPath}",
-                            RiskScore = 85
+                            Description = $"Oyun süreci ({Path.GetFileName(processExePath)}) kendi dizini dışındaki konuma çalıştırılabilir kod attı: {targetPath}",
+                            RiskScore = 90
                         };
                     }
                 }

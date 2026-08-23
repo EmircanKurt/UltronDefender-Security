@@ -87,14 +87,20 @@ namespace AegisPC.Security.Scanning
                 reasons.Add("+10 İmzasız dosya İndirilenler (Downloads) klasöründe");
             }
 
-            // 4. Shannon Entropy Check (Extreme entropy indicates crypters/ransomware payloads)
-            // NOT: Oyun crack ve repack dosyalarında packer (UPX, Themida vb.) doğal olduğundan muaf tutulur
+            // 4. Shannon Entropy & Packer Heuristics (Calibrated for Cracks/Packers)
+            // NOT: Yüksek entropi ve bilinen packer'lar (UPX, Themida, VMProtect) tek başına dosyayı ConfirmedMalicious yapmaz.
             if (!isGameOrRepack)
             {
-                if (result.Entropy >= 7.85)
+                if (result.IsPacked)
                 {
-                    score += 35;
-                    reasons.Add($"+35 Aşırı yüksek Shannon entropisi ({result.Entropy:F2} / 8.0) — Şifrelenmiş/Paketlenmiş veri");
+                    string pName = result.PackerName ?? "UPX/Themida/VMProtect";
+                    score += 20;
+                    reasons.Add($"+20 Paketlenmiş/Korunmuş Yürütülebilir ({pName}) — Bu durum crack ve korumalı yazılımlar için olağandır.");
+                }
+                else if (result.Entropy >= 7.85)
+                {
+                    score += 25;
+                    reasons.Add($"+25 Aşırı yüksek Shannon entropisi ({result.Entropy:F2} / 8.0) — Şifrelenmiş/Paketlenmiş veri");
                 }
                 else if (result.Entropy >= 7.5 && !result.IsSigned && !result.IsKnownLocation && !isInstalledAppFolder)
                 {

@@ -983,8 +983,19 @@ namespace AegisPC.Security.RealTime
                 }
                 catch { }
 
-                // 2. Perform Secure AES-256 Quarantine
-                bool quarantined = await _quarantineService.QuarantineFileAsync(evt.NormalizedPath, verdict.ThreatTitle, ct);
+                // 2. Perform Secure AES-256 Quarantine with resilient retry
+                bool quarantined = false;
+                for (int retry = 0; retry < 5; retry++)
+                {
+                    quarantined = await _quarantineService.QuarantineFileAsync(evt.NormalizedPath, verdict.ThreatTitle, ct);
+                    if (quarantined || !File.Exists(evt.NormalizedPath))
+                    {
+                        quarantined = true;
+                        break;
+                    }
+                    await Task.Delay(40, ct);
+                }
+
                 if (quarantined)
                 {
                     finding.Status = FindingStatus.Resolved;

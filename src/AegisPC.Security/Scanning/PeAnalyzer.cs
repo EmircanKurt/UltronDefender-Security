@@ -12,9 +12,11 @@ namespace AegisPC.Security.Scanning
         public bool IsPeFile { get; set; }
         public string ExecutableType { get; set; } = "Other";
         public bool IsPacked { get; set; }
+        public string? PackerName { get; set; }
         public List<string> PackerIndicators { get; set; } = new();
         public List<string> SuspiciousImports { get; set; } = new();
         public bool HasWritableExecutableSection { get; set; }
+        public string TransparencyNote { get; set; } = string.Empty;
     }
 
     public static class PeAnalyzer
@@ -27,9 +29,35 @@ namespace AegisPC.Security.Scanning
             "NtUnmapViewOfSection", "ZwUnmapViewOfSection"
         };
 
-        private static readonly string[] KnownPackerSections = new[]
+        private static readonly (string Signature, string PackerName)[] KnownPackerSignatures = new[]
         {
-            "UPX0", "UPX1", "UPX2", ".aspack", ".mpress", ".themida", ".vmp"
+            ("UPX0", "UPX Packer"),
+            ("UPX1", "UPX Packer"),
+            ("UPX2", "UPX Packer"),
+            ("UPX!", "UPX Packer"),
+            (".aspack", "ASPack"),
+            ("aspack", "ASPack"),
+            (".mpress", "MPRESS"),
+            ("mpress", "MPRESS"),
+            (".themida", "Themida / WinLicense"),
+            ("themida", "Themida / WinLicense"),
+            ("winlicen", "WinLicense"),
+            (".vmp", "VMProtect"),
+            ("vmp0", "VMProtect"),
+            ("vmp1", "VMProtect"),
+            ("vmprotect", "VMProtect"),
+            (".enigma", "Enigma Protector"),
+            ("enigma", "Enigma Protector"),
+            ("reactor", ".NET Reactor"),
+            ("_reactor", ".NET Reactor"),
+            ("smartassembly", "SmartAssembly"),
+            ("confuserex", "ConfuserEx"),
+            (".petite", "Petite"),
+            ("pec2", "PECompact"),
+            ("pecompact", "PECompact"),
+            ("nsp0", "NSPack"),
+            ("nsp1", "NSPack"),
+            (".packer", "Generic Protector")
         };
 
         private const int MaxPeReadBytes = 128 * 1024; // 128 KB sınır — PE başlıkları ve tabloları için fazlasıyla yeterli (LOH baskısını sıfırlar)
@@ -92,10 +120,15 @@ namespace AegisPC.Security.Scanning
                     foreach (var section in peFile.ImageSectionHeaders)
                     {
                         var name = section.Name?.Trim('\0') ?? string.Empty;
-                        if (KnownPackerSections.Any(p => name.Contains(p, StringComparison.OrdinalIgnoreCase)))
+                        foreach (var (sig, pName) in KnownPackerSignatures)
                         {
-                            result.IsPacked = true;
-                            result.PackerIndicators.Add($"Şüpheli/Paketlenmiş bölüm adı: '{name}'");
+                            if (name.Contains(sig, StringComparison.OrdinalIgnoreCase))
+                            {
+                                result.IsPacked = true;
+                                result.PackerName ??= pName;
+                                result.PackerIndicators.Add($"Paketlenmiş/Korunmuş bölüm adı: '{name}' ({pName})");
+                                break;
+                            }
                         }
 
                         // Bitwise check: 0x20000000 = MEM_EXECUTE, 0x80000000 = MEM_WRITE
@@ -107,6 +140,11 @@ namespace AegisPC.Security.Scanning
                             result.HasWritableExecutableSection = true;
                             result.PackerIndicators.Add($"Hem yazılabilir hem çalıştırılabilir bölüm: '{name}' (W+X anomalisi)");
                         }
+                    }
+
+                    if (result.IsPacked)
+                    {
+                        result.TransparencyNote = $"Bu dosya paketlenmiş/korumalı (packed/protector: {result.PackerName ?? "Bilinmeyen Packer"}) bir yürütülebilir olarak tanındı. Bu durum crack/keygen veya oyun modları için olağandır ancak riski sıfırlamaz. Güvendiğiniz bir kaynaktan indirdiyseniz 'Güvenilir Olarak İşaretle' seçeneğini kullanabilirsiniz.";
                     }
                 }
 

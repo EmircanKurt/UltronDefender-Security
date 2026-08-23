@@ -70,22 +70,25 @@ namespace AegisPC.Security.Detection.Detectors
                 });
             }
 
-            // 2. Known Packer Sections (UPX, Themida, MPRESS, etc.)
+            // 2. Known Packer Sections (UPX, Themida, VMProtect, .NET Reactor, Enigma, etc.)
             if (peResult.IsPacked)
             {
-                foreach (var indicator in peResult.PackerIndicators)
+                string packerName = peResult.PackerName ?? "Bilinmeyen Packer";
+                list.Add(new SecurityEvidence
                 {
-                    list.Add(new SecurityEvidence
-                    {
-                        Category = EvidenceCategory.AntiEvasion,
-                        SourceDetector = DisplayName,
-                        RuleName = "PE.Packer.KnownSignatures",
-                        Description = indicator,
-                        ScoreContribution = 20,
-                        Confidence = EvidenceConfidence.Medium,
-                        FilePath = context.FilePath,
-                        SHA256 = context.SHA256
-                    });
+                    Category = EvidenceCategory.AntiEvasion,
+                    SourceDetector = DisplayName,
+                    RuleName = "PE.Packer.ProtectedBinary",
+                    Description = $"Paketlenmiş/Korunmuş Yürütülebilir ({packerName}) — Doğal crack/koruma yapısı. Risk 'Şüpheli' (Suspicious) seviyesinde tutuldu.",
+                    ScoreContribution = 20,
+                    Confidence = EvidenceConfidence.Low,
+                    FilePath = context.FilePath,
+                    SHA256 = context.SHA256
+                });
+
+                if (!string.IsNullOrEmpty(peResult.TransparencyNote))
+                {
+                    context.Properties["TransparencyNote"] = peResult.TransparencyNote;
                 }
             }
 

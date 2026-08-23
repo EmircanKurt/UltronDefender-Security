@@ -26,29 +26,34 @@ namespace AegisPC.Security.Detection.Detectors
             double entropy = await EntropyCalculator.CalculateEntropyAsync(context.FilePath, cancellationToken);
             context.Properties["ShannonEntropy"] = entropy;
 
+            bool isGameOrRepack = !string.IsNullOrEmpty(context.FilePath) && 
+                (AegisPC.Core.Helpers.PathHelper.IsGameOrRepackDirectory(context.FilePath) || 
+                 AegisPC.Core.Helpers.GameCrackClassifier.IsGameCrackOrEmulator(context.FilePath));
+
             if (entropy >= 7.85)
             {
+                int scoreVal = isGameOrRepack ? 10 : 20;
                 list.Add(new SecurityEvidence
                 {
                     Category = EvidenceCategory.EntropyAnomaly,
                     SourceDetector = DisplayName,
                     RuleName = "Entropy.Extreme.PackerOrEncrypted",
-                    Description = $"Aşırı yüksek Shannon entropisi ({entropy:F2} / 8.0) — Şifrelenmiş veya paketlenmiş yük göstergesi",
-                    ScoreContribution = 35,
-                    Confidence = EvidenceConfidence.Medium,
+                    Description = $"Yüksek Shannon entropisi ({entropy:F2} / 8.0) — Paketlenmiş/Sıkıştırılmış veri",
+                    ScoreContribution = scoreVal,
+                    Confidence = EvidenceConfidence.Low,
                     FilePath = context.FilePath,
                     SHA256 = context.SHA256
                 });
             }
-            else if (entropy >= 7.50)
+            else if (entropy >= 7.50 && !isGameOrRepack)
             {
                 list.Add(new SecurityEvidence
                 {
                     Category = EvidenceCategory.EntropyAnomaly,
                     SourceDetector = DisplayName,
                     RuleName = "Entropy.High.SuspiciousPacking",
-                    Description = $"Yüksek Shannon entropisi ({entropy:F2} / 8.0)",
-                    ScoreContribution = 15,
+                    Description = $"Shannon entropisi ({entropy:F2} / 8.0)",
+                    ScoreContribution = 10,
                     Confidence = EvidenceConfidence.Low,
                     FilePath = context.FilePath,
                     SHA256 = context.SHA256

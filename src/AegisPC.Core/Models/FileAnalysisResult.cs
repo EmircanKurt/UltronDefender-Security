@@ -20,6 +20,8 @@ public class FileAnalysisResult
     public string? ExecutableType { get; set; }
     public double Entropy { get; set; }
     public bool IsKnownLocation { get; set; }
+    public bool IsPacked { get; set; }
+    public string? PackerName { get; set; }
     public int RiskScore { get; set; }
     public List<string> RiskReasons { get; set; } = new();
     public RiskLevel RiskLevel { get; set; }
