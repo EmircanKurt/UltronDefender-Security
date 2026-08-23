@@ -429,9 +429,9 @@ namespace AegisPC.App.ViewModels
         [RelayCommand]
         public async Task StartQuickScanAsync()
         {
-            if (_scanCoordinator != null && _scanCoordinator.IsScanning)
+            if (_scanCoordinator != null && _scanCoordinator.IsScanning && _scanCoordinator.CurrentScanType == ScanType.Quick)
             {
-                // Halihazırda çalışan tarama var: doğrudan kalınan yerden pencereyi aç ve göster
+                // Halihazırda hızlı tarama çalışıyor: doğrudan kalınan yerden pencereyi aç ve göster
                 Views.ActiveScanWindow.ShowScanWindow(this);
                 return;
             }
@@ -441,6 +441,12 @@ namespace AegisPC.App.ViewModels
         [RelayCommand]
         public async Task StartFullScanAsync()
         {
+            if (_scanCoordinator != null && _scanCoordinator.IsScanning && _scanCoordinator.CurrentScanType == ScanType.Full)
+            {
+                // Halihazırda tam tarama çalışıyor: doğrudan kalınan yerden pencereyi aç ve göster
+                Views.ActiveScanWindow.ShowScanWindow(this);
+                return;
+            }
             await RunScanAsync(ScanType.Full, string.Empty);
         }
 
@@ -575,7 +581,18 @@ namespace AegisPC.App.ViewModels
 
         private async Task RunScanAsync(ScanType scanType, string customPath)
         {
-            if (_scanCoordinator == null || IsScanning) return;
+            if (_scanCoordinator == null)
+            {
+                ScanStatusText = "Tarayıcı servisi hazır değil.";
+                return;
+            }
+
+            // Arka planda veya ön planda başka bir tarama (örn. başlangıç taraması) çalışıyorsa iptal et ve yeni taramayı başlat
+            if (IsScanning || _scanCoordinator.IsScanning)
+            {
+                _scanCoordinator.CancelScan();
+                await Task.Delay(100);
+            }
 
             IsScanning = true;
             IsNotScanning = false;
@@ -595,7 +612,7 @@ namespace AegisPC.App.ViewModels
             _stopwatch.Restart();
             _timer?.Start();
 
-            // Open the dedicated animated scanning window per user directive
+            // Kullanıcının başlattığı animasyonlu tarayıcı penceresini anında aç
             Views.ActiveScanWindow.ShowScanWindow(this);
 
             await _scanCoordinator.StartScanAsync(scanType, customPath);

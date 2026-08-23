@@ -50,7 +50,7 @@ namespace AegisPC.Security.PE
             byte[]? rentedBuffer = null;
             try
             {
-                await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 8192, useAsync: true);
+                await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 8192, FileOptions.SequentialScan | FileOptions.Asynchronous);
                 long readLen = Math.Min(fs.Length, 256 * 1024); // Maks 256 KB analiz sınırı — PE başlıkları ve tabloları için yeterli
                 int bytesToRead = (int)readLen;
                 

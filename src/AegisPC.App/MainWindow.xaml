@@ -197,6 +197,28 @@
                 </ui:NavigationView.MenuItems>
 
                 <ui:NavigationView.FooterMenuItems>
+                    <!-- License / Protection Tier Badge Card -->
+                    <Border Margin="12,4,12,8" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="28" Height="28" CornerRadius="14" Background="#10B981" Margin="0,0,8,0" VerticalAlignment="Center">
+                                <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="#FFFFFF" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="PRO LİSANS" FontSize="10.5" FontWeight="Black" Foreground="#FFFFFF"/>
+                                    <Border Background="#2563EB" CornerRadius="3" Padding="4,1" Margin="5,0,0,0">
+                                        <TextBlock Text="AKTİF" FontSize="8" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="365 Gün Kaldı (18.08.2027)" FontSize="9.5" Foreground="#94A3B8" Margin="0,1,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
                     <ui:NavigationViewItem x:Name="NavThemeToggle" Content="🌙 Gece Modu" Click="OnThemeToggleClicked">
                         <ui:NavigationViewItem.Icon>
                             <ui:SymbolIcon x:Name="NavThemeIcon" Symbol="WeatherMoon24" FontSize="16"/>

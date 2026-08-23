@@ -50,6 +50,11 @@ namespace AegisPC.Security.RealTime
         public double TimeToDetectMs { get; set; }
         public double TimeToActionMs { get; set; }
         public string Severity { get; set; } = "Info"; // "Info", "Warning", "Danger", "Success"
+
+        public string TimestampFormatted => Timestamp.ToString("HH:mm:ss");
+        public string StageDetails => string.IsNullOrWhiteSpace(Message) ? $"{Stage} ({FilePath})" : $"{Stage}: {Message}";
+        public string ScoreBadge => RiskScore > 0 ? $"{RiskScore}/100" : "Güvenli";
+        public string ActionTaken => Action;
     }
 
     public class RealTimeVerdictResult

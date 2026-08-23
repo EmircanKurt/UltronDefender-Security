@@ -36,6 +36,7 @@ namespace AegisPC.Security.Scanning
 
         private readonly AegisPC.Contracts.Safety.IProtectedPathGuard _protectedPathGuard;
         private readonly AegisPC.Contracts.Safety.IReparsePointGuard _reparsePointGuard;
+        private readonly ISignatureVerifier _signatureVerifier;
 
         public QuarantineService(
             IHashService hashService,
@@ -43,13 +44,15 @@ namespace AegisPC.Security.Scanning
             ILogger<QuarantineService>? logger = null,
             string? customVaultDir = null,
             AegisPC.Contracts.Safety.IProtectedPathGuard? protectedPathGuard = null,
-            AegisPC.Contracts.Safety.IReparsePointGuard? reparsePointGuard = null)
+            AegisPC.Contracts.Safety.IReparsePointGuard? reparsePointGuard = null,
+            ISignatureVerifier? signatureVerifier = null)
         {
             _hashService = hashService;
             _auditLogService = auditLogService;
             _logger = logger;
             _protectedPathGuard = protectedPathGuard ?? new AegisPC.Security.Safety.ProtectedPathGuard();
             _reparsePointGuard = reparsePointGuard ?? new AegisPC.Security.Safety.ReparsePointGuard();
+            _signatureVerifier = signatureVerifier ?? new SignatureVerifier();
 
             if (!string.IsNullOrEmpty(customVaultDir))
             {
@@ -138,6 +141,18 @@ namespace AegisPC.Security.Scanning
                     _reparsePointGuard.SafeDeleteLinkOnly(path);
                     _logger?.LogWarning("Symlink trap severed to protect target: {Path}", path);
                     return false;
+                }
+
+                // Authenticode & Microsoft Core Binary Guard:
+                // Valid Microsoft-signed files in system or program directories can NEVER be quarantined automatically.
+                if (AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(path))
+                {
+                    var sig = await _signatureVerifier.VerifySignatureAsync(path, cancellationToken);
+                    if (sig.IsValid && sig.Publisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        _logger?.LogWarning("Refusing automatic quarantine of valid Microsoft-signed binary in system path: {Path} (Publisher: '{Publisher}'). Safety Guard Active.", path, sig.Publisher);
+                        return false;
+                    }
                 }
 
                 var canonicalPath = Path.GetFullPath(path);

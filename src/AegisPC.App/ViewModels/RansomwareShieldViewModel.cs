@@ -76,8 +76,21 @@ namespace AegisPC.App.ViewModels
 
         private void UpdateStatusText()
         {
-            ShieldStatusText = IsShieldEnabled ? "Fidye Kalkanı Aktif (Tuzaklar ve İzleme Devrede)" : "Fidye Kalkanı Devre Dışı";
-            ToggleButtonText = IsShieldEnabled ? "Kalkanı Devre Dışı Bırak" : "Kalkanı Etkinleştir";
+            if (!IsShieldEnabled)
+            {
+                ShieldStatusText = "Fidye Kalkanı Devre Dışı";
+                ToggleButtonText = "Kalkanı Etkinleştir";
+            }
+            else if (ProtectedFolderCount == 0 && CanaryFileCount == 0)
+            {
+                ShieldStatusText = "Kalkan Hazır — Henüz Korumalı Klasör veya Yem Eklenmedi";
+                ToggleButtonText = "Kalkanı Devre Dışı Bırak";
+            }
+            else
+            {
+                ShieldStatusText = $"Fidye Kalkanı Aktif ({ProtectedFolderCount} Klasör, {CanaryFileCount} Tuzak Devrede)";
+                ToggleButtonText = "Kalkanı Devre Dışı Bırak";
+            }
         }
 
         [ObservableProperty]

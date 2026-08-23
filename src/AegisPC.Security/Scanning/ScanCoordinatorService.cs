@@ -98,12 +98,12 @@ namespace AegisPC.Security.Scanning
 
         public async Task<ScanResult?> StartScanAsync(ScanType scanType, string customPath = "")
         {
+            CancellationTokenSource? oldCts = null;
             lock (_lock)
             {
-                if (IsScanning && !_isExternalScanRunning)
+                if (_scanCts != null && !_scanCts.IsCancellationRequested)
                 {
-                    _logger?.LogWarning("A scan is already in progress.");
-                    return null;
+                    oldCts = _scanCts;
                 }
 
                 _isExternalScanRunning = false;
@@ -116,6 +116,17 @@ namespace AegisPC.Security.Scanning
                 _currentFindings.Clear();
                 StatusText = $"{scanType} taraması çalışıyor...";
                 _scanCts = new CancellationTokenSource();
+            }
+
+            if (oldCts != null)
+            {
+                try
+                {
+                    oldCts.Cancel();
+                    oldCts.Dispose();
+                }
+                catch { }
+                await Task.Delay(100);
             }
 
             var progressHandler = new Progress<ScanProgress>(p =>

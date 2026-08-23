@@ -51,6 +51,9 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty] private string protectionStatusText = "GÜVENDESİNİZ";
         [ObservableProperty] private string protectionBadgeText = "GERÇEK ZAMANLI KORUMA AKTİF";
         [ObservableProperty] private string protectionStatusColor = "#10B981"; // Emerald Green
+        [ObservableProperty] private string protectionStatusSymbol = "ShieldCheckmark24";
+        [ObservableProperty] private bool hasThreatsDetected = false;
+        [ObservableProperty] private string threatActionText = "🚨 Tehditleri İncele";
         [ObservableProperty] private bool isServiceConnected = true;
         [ObservableProperty] private bool isRealTimeProtectionActive = true;
         [ObservableProperty] private int threatsBocked24h = 0;
@@ -187,9 +190,26 @@ namespace AegisPC.App.ViewModels
                     {
                         StartupSweepFindings.Insert(0, f);
                         ThreatsBocked24h++;
+                        HasThreatsDetected = true;
                         ProtectionStatusText = "TEHDİT TESPİT EDİLDİ";
                         ProtectionBadgeText = $"🚨 {f.FileName} ({f.Verdict})";
-                        ProtectionStatusColor = "#FF5C5C";
+                        ProtectionStatusColor = "#EF4444";
+                        ProtectionStatusSymbol = "ShieldAlert24";
+
+                        LiveActivities.Insert(0, new AegisPC.Security.RealTime.RealTimeActivityEvent
+                        {
+                            Timestamp = DateTime.Now,
+                            FileName = f.FileName,
+                            FilePath = f.FilePath,
+                            Stage = "BAŞLANGIÇ SÜPÜRME",
+                            Message = f.FilePath,
+                            RiskScore = f.RiskScore,
+                            Verdict = f.Verdict,
+                            Action = f.Action ?? "QUARANTINED",
+                            Severity = "Danger"
+                        });
+                        while (LiveActivities.Count > 15) LiveActivities.RemoveAt(LiveActivities.Count - 1);
+
                         TriggerThreatToast(f.FileName);
                     });
                 };
@@ -200,7 +220,7 @@ namespace AegisPC.App.ViewModels
                     {
                         IsStartupSweepRunning = false;
                         StartupSweepStatusText = res.ThreatsCount > 0 ? $"{res.ThreatsCount} TEHDİT" : "TEMİZ";
-                        StartupSweepBadgeColor = res.ThreatsCount > 0 ? "#FF5C5C" : "#35D07F";
+                        StartupSweepBadgeColor = res.ThreatsCount > 0 ? "#EF4444" : "#10B981";
                     });
                 };
 
@@ -233,9 +253,11 @@ namespace AegisPC.App.ViewModels
                         if (act.Action == "QUARANTINED" || act.Severity == "Danger")
                         {
                             ThreatsBocked24h++;
+                            HasThreatsDetected = true;
                             ProtectionStatusText = "TEHDİT ENGELLENDİ";
                             ProtectionBadgeText = $"🚨 {act.FileName} Karantinaya Alındı";
-                            ProtectionStatusColor = "#FF5C5C";
+                            ProtectionStatusColor = "#EF4444";
+                            ProtectionStatusSymbol = "ShieldAlert24";
                             TriggerThreatToast(act.FileName);
                         }
                     });
@@ -733,6 +755,12 @@ namespace AegisPC.App.ViewModels
                     TriggerToast($"Karantina kaydı bulunamadı.", "Warning");
                 }
             }
+        }
+
+        [RelayCommand]
+        public void ReviewThreats()
+        {
+            NavigateToTarget("quarantine");
         }
 
         [RelayCommand]

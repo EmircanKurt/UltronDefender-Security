@@ -41,8 +41,7 @@ namespace AegisPC.Security.Scanning
                 using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
                     FileShare.ReadWrite | FileShare.Delete, BufferSize,
                     FileOptions.SequentialScan | FileOptions.Asynchronous);
-                using var sha1 = SHA1.Create();
-                var hashBytes = await sha1.ComputeHashAsync(stream, cancellationToken);
+                var hashBytes = await SHA1.HashDataAsync(stream, cancellationToken);
                 return Convert.ToHexString(hashBytes).ToLowerInvariant();
             }
             catch

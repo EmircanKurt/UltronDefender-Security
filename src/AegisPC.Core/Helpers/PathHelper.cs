@@ -63,5 +63,21 @@ public static class PathHelper
         return false;
     }
 
+    public static string ExtractExecutablePath(string rawCommand)
+    {
+        if (string.IsNullOrWhiteSpace(rawCommand)) return string.Empty;
+        var trimmed = rawCommand.Trim();
+        if (trimmed.StartsWith("\""))
+        {
+            int nextQuote = trimmed.IndexOf('"', 1);
+            if (nextQuote > 1)
+            {
+                return trimmed.Substring(1, nextQuote - 1);
+            }
+        }
+        int firstSpace = trimmed.IndexOf(' ');
+        return firstSpace > 0 ? trimmed.Substring(0, firstSpace) : trimmed;
+    }
+
     public static bool ValidateFilePath(string path) => !string.IsNullOrWhiteSpace(path) && File.Exists(path);
 }

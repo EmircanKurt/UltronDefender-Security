@@ -109,5 +109,58 @@ namespace AegisPC.Tests
             double avgMicroseconds = (sw.Elapsed.TotalMilliseconds * 1000) / iterations;
             Assert.True(avgMicroseconds < 500, $"L1 Cache lookup must be < 500 microseconds (Actual: {avgMicroseconds:F1} µs).");
         }
+
+        [Fact]
+        public async Task Benchmark_FileScannerService_Throughput_And_Memory_Cap()
+        {
+            var hashService = new HashService();
+            var signatureVerifier = new SignatureVerifier();
+            var riskScoringEngine = new RiskScoringEngine();
+            var allowlistService = new AllowlistService(hashService);
+            var findingService = new SecurityFindingService();
+            var detectionHub = DetectionHubFactory.CreateDefault(hashService, signatureVerifier);
+            var archiveScanner = new ArchiveSafetyScanner();
+
+            var scanner = new FileScannerService(
+                hashService,
+                signatureVerifier,
+                riskScoringEngine,
+                allowlistService,
+                findingService,
+                detectionHub,
+                archiveScanner);
+
+            // Create 150 test files of mixed types in sandbox
+            for (int i = 0; i < 150; i++)
+            {
+                string ext = (i % 3 == 0) ? ".exe" : (i % 3 == 1) ? ".txt" : ".png";
+                string testFile = Path.Combine(_sandboxDir, $"bench_file_{i}{ext}");
+                await File.WriteAllBytesAsync(testFile, Encoding.ASCII.GetBytes($"Sample binary content {i} MZ test"));
+            }
+
+            long memBefore = GC.GetTotalMemory(true);
+            var sw = Stopwatch.StartNew();
+
+            // 1. Cold Scan
+            var coldResult = await scanner.ScanDirectoryAsync(_sandboxDir, ScanType.Custom);
+            sw.Stop();
+            long coldElapsedMs = sw.ElapsedMilliseconds;
+
+            Assert.NotNull(coldResult);
+            Assert.True(coldResult.ScannedFiles >= 150, $"Expected >= 150 scanned files, got {coldResult.ScannedFiles}");
+
+            // 2. Warm Scan (Smart Cache Verification)
+            sw.Restart();
+            var warmResult = await scanner.ScanDirectoryAsync(_sandboxDir, ScanType.Custom);
+            sw.Stop();
+            long warmElapsedMs = sw.ElapsedMilliseconds;
+
+            long memAfter = GC.GetTotalMemory(false);
+            long memDeltaMb = (memAfter - memBefore) / (1024 * 1024);
+
+            Assert.NotNull(warmResult);
+            Assert.True(warmElapsedMs <= coldElapsedMs + 50, $"Warm scan ({warmElapsedMs}ms) should be faster than or comparable to cold scan ({coldElapsedMs}ms)");
+            Assert.True(memDeltaMb < 150, $"Memory delta ({memDeltaMb} MB) must remain strictly under 150 MB");
+        }
     }
 }

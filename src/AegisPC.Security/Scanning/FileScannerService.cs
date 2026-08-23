@@ -71,16 +71,22 @@ namespace AegisPC.Security.Scanning
 
         private static readonly HashSet<string> SafeMediaExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
-            // Medya Dosyaları
-            ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tiff",
-            ".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a",
-            ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm",
+            // Medya ve Ses Dosyaları (Yürütülemez Veri)
+            ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tiff", ".tga", ".psd",
+            ".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a", ".wma", ".opus", ".mid", ".midi",
+            ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm", ".flv", ".m4v", ".3gp",
             // Belgeler ve Yazı Tipleri
-            ".pdf", ".docx", ".xlsx", ".pptx", ".odt", ".ods",
-            ".ttf", ".otf", ".woff", ".woff2",
-            // Metin ve Yapılandırma Dosyaları (Yürütülebilir Değil — CPU/RAM Tasarrufu)
-            ".txt", ".log", ".ini", ".cfg", ".xml", ".json", ".csv", ".md", ".inf", ".htm", ".html",
-            ".lua", ".yml", ".yaml", ".css", ".map", ".pak", ".dae", ".dds", ".pc", ".jbeam"
+            ".pdf", ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".doc", ".xls", ".ppt",
+            ".ttf", ".otf", ".woff", ".woff2", ".eot", ".fon",
+            // 3D Modeller, Dokular ve Oyun Varlıkları (Tamamen veri / render dosyaları)
+            ".dae", ".dds", ".obj", ".fbx", ".blend", ".3ds", ".max", ".gltf", ".glb", ".mtl", ".mat",
+            ".prefab", ".asset", ".anim", ".mesh", ".unityweb", ".pck", ".bsp", ".wad", ".pak",
+            ".pc", ".jbeam", ".cda", ".bik", ".bk2",
+            // Metin, Yapılandırma ve Veri Dosyaları (Yürütülemez — 2 Milyon Dosyada Mikro-saniye Atlama)
+            ".txt", ".log", ".ini", ".cfg", ".conf", ".xml", ".json", ".csv", ".tsv", ".md", ".inf",
+            ".htm", ".html", ".css", ".scss", ".sass", ".less", ".map", ".sql", ".sqlite", ".db-shm",
+            ".db-wal", ".yml", ".yaml", ".toml", ".properties", ".nfo", ".diz", ".mo", ".po", ".pot",
+            ".cache", ".idx", ".dict", ".sub", ".srt", ".vtt", ".ass"
         };
 
         public FileScannerService(
@@ -233,7 +239,24 @@ namespace AegisPC.Security.Scanning
                 var sha256 = await _hashService.ComputeSha256Async(path, cancellationToken);
                 if (!string.IsNullOrEmpty(sha256) && await _allowlistService.IsAllowlistedAsync(sha256, cancellationToken))
                 {
+                    SetCacheEntry(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, null);
                     return null; // Beyaz listede güvenli onaylı
+                }
+
+                // 3.5. Fast-Path Microsoft / WHQL Dijital İmza Denetimi (Windows, System32 ve Program Files altındaki geçerli imzalı dosyalar için derin analizi atla)
+                if (PathHelper.IsSystemPath(path) ||
+                    path.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), StringComparison.OrdinalIgnoreCase) ||
+                    path.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), StringComparison.OrdinalIgnoreCase))
+                {
+                    var sig = await _signatureVerifier.VerifySignatureAsync(path, cancellationToken);
+                    if (sig.IsSigned && sig.IsValid && (
+                        sig.Publisher.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) ||
+                        sig.Publisher.Contains("Windows", StringComparison.OrdinalIgnoreCase) ||
+                        sig.Publisher.Contains("Google", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        SetCacheEntry(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, null);
+                        return null;
+                    }
                 }
 
                 // 4. Tekil ve Bütünleşik DetectionHub ile 13 Modüler Dedektör Üzerinden Analiz
@@ -448,7 +471,7 @@ namespace AegisPC.Security.Scanning
             // ══════════════════════════════════════════════════════════════
             // STAGE 2: ASYNC FILE STREAMING & CONCURRENT SCANNING
             // ══════════════════════════════════════════════════════════════
-            var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(2000)
+            var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(8192)
             {
                 FullMode = BoundedChannelFullMode.Wait,
                 SingleWriter = true,
@@ -465,20 +488,29 @@ namespace AegisPC.Security.Scanning
 
                     try
                     {
-                        if (File.Exists(filePath))
+                        if (queuedPaths == null || queuedPaths.Add(filePath))
                         {
-                            if (queuedPaths == null || queuedPaths.Add(filePath))
+                            Interlocked.Increment(ref totalFiles);
+
+                            string ext = Path.GetExtension(filePath);
+
+                            // Fast-Path 1: Medya, doku, metin ve statik asset dosyalarını anında atla (0 disk syscall, mikro-saniye)
+                            if (!string.IsNullOrEmpty(ext) && SafeMediaExtensions.Contains(ext))
                             {
-                                Interlocked.Increment(ref totalFiles);
-                                if (IsInspectableCandidate(filePath))
-                                {
-                                    await channel.Writer.WriteAsync(filePath, cancellationToken);
-                                }
-                                else
-                                {
-                                    Interlocked.Increment(ref scannedFiles);
-                                }
+                                Interlocked.Increment(ref scannedFiles);
+                                return;
                             }
+
+                            // Fast-Path 2: Oyun ve Mod Klasörü Koruması (Yalnızca yürütülebilir ikili dosyaları tara)
+                            bool isGame = PathHelper.IsGameOrRepackDirectory(filePath) || GameCrackClassifier.IsGameCrackOrEmulator(filePath);
+                            if (isGame && (ext != ".exe" && ext != ".dll" && ext != ".scr" && ext != ".bat" && ext != ".cmd" && ext != ".ps1"))
+                            {
+                                Interlocked.Increment(ref scannedFiles);
+                                return;
+                            }
+
+                            // Fast-Path 3: Yürütülebilir / Script / Arşiv / İnceleme adaylarını paralel işçi kuyruğuna yaz
+                            await channel.Writer.WriteAsync(filePath, cancellationToken);
                         }
                     }
                     catch { }
@@ -606,12 +638,46 @@ namespace AegisPC.Security.Scanning
                         await EnumerateDirectorySafelyAsync(KnownPaths.UserStartup, true);
                         await EnumerateDirectorySafelyAsync(KnownPaths.CommonStartup, true);
 
-                        // Geçici Dizinler (Yürütülebilir dosyalar)
+                        // Windows Registry Autoruns (HKCU & HKLM Run anahtarları)
+                        try
+                        {
+                            using var cuKey = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+                            if (cuKey != null)
+                            {
+                                foreach (var valName in cuKey.GetValueNames())
+                                {
+                                    var rawVal = cuKey.GetValue(valName)?.ToString();
+                                    if (!string.IsNullOrEmpty(rawVal))
+                                    {
+                                        var cleanPath = PathHelper.ExtractExecutablePath(rawVal);
+                                        if (File.Exists(cleanPath)) await TryQueueFileAsync(cleanPath);
+                                    }
+                                }
+                            }
+
+                            using var lmKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+                            if (lmKey != null)
+                            {
+                                foreach (var valName in lmKey.GetValueNames())
+                                {
+                                    var rawVal = lmKey.GetValue(valName)?.ToString();
+                                    if (!string.IsNullOrEmpty(rawVal))
+                                    {
+                                        var cleanPath = PathHelper.ExtractExecutablePath(rawVal);
+                                        if (File.Exists(cleanPath)) await TryQueueFileAsync(cleanPath);
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+
+                        // İndirilenler & Masaüstü (En yaygın indirme bulaşma noktaları)
+                        await EnumerateDirectorySafelyAsync(KnownPaths.Downloads, false);
+                        await EnumerateDirectorySafelyAsync(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), false);
+
+                        // Geçici Dizinler (%TEMP% ve Windows\Temp)
                         await EnumerateDirectorySafelyAsync(KnownPaths.Temp, false);
                         await EnumerateDirectorySafelyAsync(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp"), false);
-
-                        // Masaüstü (Yalnızca kök seviye dosyalar)
-                        await EnumerateDirectorySafelyAsync(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), false);
 
                         // Sistem Sürücüleri ve System32
                         ReportProgress("Kritik Sistem Sürücüleri taranıyor...");
@@ -636,8 +702,13 @@ namespace AegisPC.Security.Scanning
                 }
             }, cancellationToken);
 
-            // Consumer Tasks: Paralel tarama işçileri (Çekirdek gücünü verimli kullanan %45-%60 dengeli mod)
-            int concurrency = Math.Clamp((int)Math.Ceiling(Environment.ProcessorCount * 0.65), 2, 6);
+            // Consumer Tasks: Paralel tarama işçileri (HDD/SSD Donanım Duyarlı)
+            // SSD/NVMe: Çok çekirdekli paralellik (ProcessorCount * 0.75)
+            // HDD: Mekanik kafa atlamasını (head thrashing) engelleyen sıralı 2 iş parçacığı
+            bool isSsd = DiskHardwareHelper.IsSolidStateDrive(path);
+            int concurrency = isSsd
+                ? Math.Clamp((int)Math.Ceiling(Environment.ProcessorCount * 0.75), 2, 8)
+                : 2;
             var workerTasks = new List<Task>();
 
             for (int i = 0; i < concurrency; i++)
@@ -698,7 +769,8 @@ namespace AegisPC.Security.Scanning
                 }, cancellationToken));
             }
 
-            await Task.WhenAll(workerTasks.Concat(new[] { producerTask }));
+            workerTasks.Add(producerTask);
+            await Task.WhenAll(workerTasks);
             stopwatch.Stop();
 
             // Tarama tamamlandığında geçici nesneleri optimize serbest bırak
