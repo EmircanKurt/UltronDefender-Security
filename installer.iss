@@ -54,9 +54,9 @@ Name: "autostart"; Description: "{cm:AutoStartDesc}"; GroupDescription: "{cm:Aut
 Source: "c:\Users\PC\Documents\gemini virüs program\AegisPC_App\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\Ultron Defender Kaldır (Uninstall)"; Filename: "{app}\{#MyUninstallerExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\ultron_shield.ico"
+Name: "{group}\Ultron Defender Kaldır (Uninstall)"; Filename: "{app}\{#MyUninstallerExeName}"; IconFilename: "{app}\ultron_shield.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\ultron_shield.ico"; Tasks: desktopicon
 
 [Registry]
 Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "UltronDefender"; ValueData: """{app}\{#MyAppExeName}"" --minimized"; Flags: uninsdeletevalue; Tasks: autostart
