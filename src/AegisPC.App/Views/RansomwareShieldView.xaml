@@ -1,4 +1,4 @@
-﻿<Page x:Class="AegisPC.App.Views.RansomwareShieldView"
+<Page x:Class="AegisPC.App.Views.RansomwareShieldView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
@@ -18,7 +18,7 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
     </Page.Resources>
 
-    <ScrollViewer x:Name="RootScrollViewer" Margin="24"
+    <ScrollViewer x:Name="RootScrollViewer" Margin="28,20,28,28"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
                   CanContentScroll="False"
@@ -32,15 +32,14 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- Header -->
+            <!-- 1. Header -->
             <StackPanel Grid.Row="0" Margin="0,0,0,20">
-                <TextBlock Text="Fidye Yazılımı Savunma Sistemi (Ransomware Defense)" Style="{StaticResource PageHeaderStyle}"/>
-                <TextBlock Text="Controlled Folder Access, Canary tuzak dosyaları, kitle modifikasyon ve anlık entropi analizi." Foreground="{DynamicResource BrushTextMuted}" FontSize="13" Margin="0,4,0,0"/>
+                <TextBlock Text="Fidye Yazılımı Savunma Sistemi (Ransomware Defense)" Style="{StaticResource PageHeadingStyle}"/>
+                <TextBlock Text="Controlled Folder Access, Canary tuzak dosyaları, kitle modifikasyon ve anlık entropi analizi." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,4,0,0"/>
             </StackPanel>
 
-            <!-- Status Banner Card -->
-            <Border Grid.Row="1" Background="{DynamicResource BrushCardBg}" CornerRadius="10" Padding="20" Margin="0,0,0,20"
-                    BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+            <!-- 2. Status Banner Card -->
+            <Border Grid.Row="1" Style="{StaticResource HeroCardStyle}" Margin="0,0,0,20" Padding="20">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -48,20 +47,20 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     
-                    <Border Grid.Column="0" Background="#EFF6FF" CornerRadius="8" Padding="14" Margin="0,0,16,0">
-                        <ui:SymbolIcon Symbol="ShieldLock24" FontSize="36" Foreground="#2563EB"/>
+                    <Border Grid.Column="0" Background="{DynamicResource BrushBrandMinimal}" CornerRadius="10" Padding="14" Margin="0,0,16,0">
+                        <ui:SymbolIcon Symbol="ShieldLock24" FontSize="36" Foreground="{DynamicResource BrushBrandPrimary}"/>
                     </Border>
                     
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding ShieldStatusText}" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4"/>
-                        <TextBlock Text="Kişisel dosyalarınız ve belgeleriniz izinsiz şifreleme girişimlerine karşı 7/24 korunmaktadır." Foreground="{DynamicResource BrushTextMuted}" FontSize="13"/>
+                        <TextBlock Text="{Binding ShieldStatusText}" Style="{StaticResource SectionHeadingStyle}" FontSize="17" Margin="0,0,0,4"/>
+                        <TextBlock Text="Kişisel dosyalarınız ve belgeleriniz izinsiz şifreleme girişimlerine karşı 7/24 korunmaktadır." Style="{StaticResource BodyTextStyle}"/>
                     </StackPanel>
 
-                    <Button Grid.Column="2" Content="{Binding ToggleButtonText}" Command="{Binding ToggleShieldCommand}" Style="{StaticResource PrimaryButtonStyle}" VerticalAlignment="Center" Padding="20,10" FontWeight="SemiBold"/>
+                    <Button Grid.Column="2" Content="{Binding ToggleButtonText}" Command="{Binding ToggleShieldCommand}" Style="{StaticResource PrimaryButtonStyle}" VerticalAlignment="Center" Padding="20,10"/>
                 </Grid>
             </Border>
 
-            <!-- Stats Metric Cards -->
+            <!-- 3. Stats Metric Cards -->
             <Grid Grid.Row="2" Margin="0,0,0,20">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -71,29 +70,29 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <Border Grid.Column="0" Background="{DynamicResource BrushCardBg}" CornerRadius="8" Padding="18" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Margin="0">
                     <StackPanel>
-                        <TextBlock Text="Korumalı Klasör Sayısı" FontSize="13" Foreground="{DynamicResource BrushTextMuted}" FontWeight="Medium" Margin="0,0,0,6"/>
-                        <TextBlock Text="{Binding ProtectedFolderCount}" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
+                        <TextBlock Text="Korumalı Klasör Sayısı" Style="{StaticResource CaptionTextStyle}" FontWeight="Medium" Margin="0,0,0,6"/>
+                        <TextBlock Text="{Binding ProtectedFolderCount}" Style="{StaticResource MetricValueStyle}"/>
                     </StackPanel>
                 </Border>
 
-                <Border Grid.Column="2" Background="{DynamicResource BrushCardBg}" CornerRadius="8" Padding="18" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+                <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Margin="0">
                     <StackPanel>
-                        <TextBlock Text="Aktif Canary Yem Tuzakları" FontSize="13" Foreground="{DynamicResource BrushTextMuted}" FontWeight="Medium" Margin="0,0,0,6"/>
-                        <TextBlock Text="{Binding CanaryFileCount}" FontSize="26" FontWeight="Bold" Foreground="#2563EB"/>
+                        <TextBlock Text="Aktif Canary Yem Tuzakları" Style="{StaticResource CaptionTextStyle}" FontWeight="Medium" Margin="0,0,0,6"/>
+                        <TextBlock Text="{Binding CanaryFileCount}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushBrandPrimary}"/>
                     </StackPanel>
                 </Border>
 
-                <Border Grid.Column="4" Background="{DynamicResource BrushCardBg}" CornerRadius="8" Padding="18" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+                <Border Grid.Column="4" Style="{StaticResource MetricCardStyle}" Margin="0">
                     <StackPanel>
-                        <TextBlock Text="Engellenen Saldırılar" FontSize="13" Foreground="{DynamicResource BrushTextMuted}" FontWeight="Medium" Margin="0,0,0,6"/>
-                        <TextBlock Text="{Binding TotalBlockedCount}" FontSize="26" FontWeight="Bold" Foreground="#DC2626"/>
+                        <TextBlock Text="Engellenen Saldırılar" Style="{StaticResource CaptionTextStyle}" FontWeight="Medium" Margin="0,0,0,6"/>
+                        <TextBlock Text="{Binding TotalBlockedCount}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushStatusDanger}"/>
                     </StackPanel>
                 </Border>
             </Grid>
 
-            <!-- Main Sections Grid (Folders + Allowed Apps) -->
+            <!-- 4. Main Sections Grid (Folders + Allowed Apps) -->
             <Grid Grid.Row="3" Margin="0,0,0,20">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -102,7 +101,7 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Protected Folders Section -->
-                <Border Grid.Column="0" Background="{DynamicResource BrushCardBg}" CornerRadius="10" Padding="18" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+                <Border Grid.Column="0" Style="{StaticResource FeatureCardStyle}" Margin="0">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -111,38 +110,38 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                            <TextBlock Text="Korumalı Klasörler (Controlled Folders)" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock Text="Bu klasörlerdeki dosyalara yalnızca güvenilir uygulamalar yazabilir." FontSize="12" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Korumalı Klasörler (Controlled Folders)" Style="{StaticResource SectionHeadingStyle}"/>
+                            <TextBlock Text="Bu klasörlerdeki dosyalara yalnızca güvenilir uygulamalar yazabilir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
 
                         <ListView Grid.Row="1" ItemsSource="{Binding ProtectedFolders}" BorderThickness="0" Background="Transparent" MinHeight="160" MaxHeight="220" ScrollViewer.VerticalScrollBarVisibility="Auto">
                             <ListView.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="{DynamicResource BrushAppBg}" CornerRadius="6" Padding="10,8" Margin="0,3" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+                                    <Border Background="{DynamicResource BrushAppBg}" CornerRadius="8" Padding="10,8" Margin="0,3" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <ui:SymbolIcon Symbol="Folder24" Foreground="#2563EB" FontSize="20" Grid.Column="0" Margin="0,0,10,0"/>
+                                            <ui:SymbolIcon Symbol="Folder24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="20" Grid.Column="0" Margin="0,0,10,0"/>
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                                <TextBlock Text="{Binding Path}" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding Path}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
-                                            <Button Grid.Column="2" Content="Kaldır" Command="{Binding DataContext.RemoveFolderCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" Background="Transparent" Foreground="#DC2626" BorderThickness="0" Padding="6,2" FontSize="11" Cursor="Hand"/>
+                                            <Button Grid.Column="2" Content="Kaldır" Command="{Binding DataContext.RemoveFolderCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" Background="Transparent" Foreground="{DynamicResource BrushStatusDanger}" BorderThickness="0" Padding="6,2" FontSize="11" Cursor="Hand"/>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
                         </ListView>
 
-                        <Button Grid.Row="2" Content="+ Yeni Klasör Ekle" Command="{Binding AddFolderCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,12,0,0" HorizontalAlignment="Stretch" Padding="0,8" FontWeight="SemiBold"/>
+                        <Button Grid.Row="2" Content="+ Yeni Klasör Ekle" Command="{Binding AddFolderCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,12,0,0" HorizontalAlignment="Stretch" Padding="0,8"/>
                     </Grid>
                 </Border>
 
                 <!-- Allowed Applications Section -->
-                <Border Grid.Column="2" Background="{DynamicResource BrushCardBg}" CornerRadius="10" Padding="18" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+                <Border Grid.Column="2" Style="{StaticResource FeatureCardStyle}" Margin="0">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -151,65 +150,65 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                            <TextBlock Text="İzinli Uygulamalar (Allowlist)" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock Text="Korunan klasörlerde güvenle yazma işlemi yapabilen uygulamalar." FontSize="12" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock Text="İzinli Uygulamalar (Allowlist)" Style="{StaticResource SectionHeadingStyle}"/>
+                            <TextBlock Text="Korunan klasörlerde güvenle yazma işlemi yapabilen uygulamalar." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
 
                         <ListView Grid.Row="1" ItemsSource="{Binding AllowedApplications}" BorderThickness="0" Background="Transparent" MinHeight="160" MaxHeight="220" ScrollViewer.VerticalScrollBarVisibility="Auto">
                             <ListView.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="{DynamicResource BrushAppBg}" CornerRadius="6" Padding="10,8" Margin="0,3" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+                                    <Border Background="{DynamicResource BrushAppBg}" CornerRadius="8" Padding="10,8" Margin="0,3" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <ui:SymbolIcon Symbol="AppGeneric24" Foreground="#10B981" FontSize="20" Grid.Column="0" Margin="0,0,10,0"/>
+                                            <ui:SymbolIcon Symbol="AppGeneric24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="20" Grid.Column="0" Margin="0,0,10,0"/>
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding ApplicationName}" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                                <TextBlock Text="{Binding ExecutablePath}" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding ExecutablePath}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
-                                            <Button Grid.Column="2" Content="Kaldır" Command="{Binding DataContext.RemoveAllowedAppCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" Background="Transparent" Foreground="#DC2626" BorderThickness="0" Padding="6,2" FontSize="11" Cursor="Hand"/>
+                                            <Button Grid.Column="2" Content="Kaldır" Command="{Binding DataContext.RemoveAllowedAppCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" Background="Transparent" Foreground="{DynamicResource BrushStatusDanger}" BorderThickness="0" Padding="6,2" FontSize="11" Cursor="Hand"/>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
                         </ListView>
 
-                        <Button Grid.Row="2" Content="+ Güvenilir Uygulama Ekle (.exe)" Command="{Binding AddAllowedAppCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,12,0,0" HorizontalAlignment="Stretch" Padding="0,8" FontWeight="SemiBold"/>
+                        <Button Grid.Row="2" Content="+ Güvenilir Uygulama Ekle (.exe)" Command="{Binding AddAllowedAppCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,12,0,0" HorizontalAlignment="Stretch" Padding="0,8"/>
                     </Grid>
                 </Border>
             </Grid>
 
-            <!-- Recent Security Events Section -->
-            <Border Grid.Row="4" Background="{DynamicResource BrushCardBg}" CornerRadius="10" Padding="18" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+            <!-- 5. Recent Security Events Section (Strict Crimson Red Theme) -->
+            <Border Grid.Row="4" Style="{StaticResource MetricCardStyle}" Margin="0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <TextBlock Text="Son Fidye Saldırısı ve İhlal Kayıtları" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,12"/>
+                    <TextBlock Text="Son Fidye Saldırısı ve İhlal Kayıtları" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,12"/>
 
                     <ListView Grid.Row="1" ItemsSource="{Binding RecentEvents}" BorderThickness="0" Background="Transparent" MinHeight="100">
                         <ListView.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="#FEF2F2" CornerRadius="6" Padding="12,10" Margin="0,3" BorderBrush="#FCA5A5" BorderThickness="1">
+                                <Border Background="{DynamicResource BrushStatusDangerBg}" CornerRadius="8" Padding="12,10" Margin="0,3" BorderBrush="{DynamicResource BrushStatusDangerBorder}" BorderThickness="1">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <ui:SymbolIcon Symbol="ShieldError20" Foreground="#DC2626" FontSize="24" Grid.Column="0" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                        <ui:SymbolIcon Symbol="ShieldError20" Foreground="{DynamicResource BrushStatusDanger}" FontSize="24" Grid.Column="0" Margin="0,0,12,0" VerticalAlignment="Center"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding ProcessName}" FontWeight="Bold" FontSize="13" Foreground="#991B1B"/>
-                                            <TextBlock Text="{Binding FilePath}" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding ProcessName}" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource BrushStatusDangerText}"/>
+                                            <TextBlock Text="{Binding FilePath}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-                                            <TextBlock Text="{Binding Action}" FontWeight="SemiBold" FontSize="12" Foreground="#DC2626" HorizontalAlignment="Right"/>
-                                            <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Right"/>
+                                            <TextBlock Text="{Binding Action}" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource BrushStatusDanger}" HorizontalAlignment="Right"/>
+                                            <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}" Style="{StaticResource CaptionTextStyle}" HorizontalAlignment="Right"/>
                                         </StackPanel>
                                     </Grid>
                                 </Border>
@@ -221,4 +220,3 @@
         </Grid>
     </ScrollViewer>
 </Page>
-
