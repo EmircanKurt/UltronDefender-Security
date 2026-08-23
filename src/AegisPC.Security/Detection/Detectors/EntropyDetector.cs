@@ -23,6 +23,13 @@ namespace AegisPC.Security.Detection.Detectors
                 return list;
             }
 
+            var ext = Path.GetExtension(context.FilePath).ToLowerInvariant();
+            // Yalnızca ikili yürütülebilirler veya uzantısız/şüpheli dosyalar için entropi hesapla
+            if (!string.IsNullOrEmpty(ext) && AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(context.FilePath))
+            {
+                return list;
+            }
+
             double entropy = await EntropyCalculator.CalculateEntropyAsync(context.FilePath, cancellationToken);
             context.Properties["ShannonEntropy"] = entropy;
 

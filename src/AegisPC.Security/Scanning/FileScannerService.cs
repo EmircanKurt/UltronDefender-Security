@@ -30,23 +30,21 @@ namespace AegisPC.Security.Scanning
         private readonly ILogger<FileScannerService>? _logger;
         private const int MaxCacheEntries = 10000;
         private readonly ConcurrentDictionary<string, (long FileSize, DateTime LastWriteTimeUtc, SecurityFinding? Finding)> _scanCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentQueue<string> _cacheKeyQueue = new();
         private readonly ManualResetEventSlim _pauseEvent = new(true);
 
         private void SetCacheEntry(string path, long fileSize, DateTime lastWriteTimeUtc, SecurityFinding? finding)
         {
             if (_scanCache.Count >= MaxCacheEntries)
             {
-                // Kademeli eviction: En eski %30'unu temizle (atomik Clear yerine GC baskısını azaltır)
-                int toRemove = MaxCacheEntries / 3;
-                int removed = 0;
-                foreach (var key in _scanCache.Keys)
+                // Sıfır tahsisli FIFO tahliye (Snapshot almadan mikrosaniyede temizlik)
+                while (_scanCache.Count >= (MaxCacheEntries - 1000) && _cacheKeyQueue.TryDequeue(out var oldKey))
                 {
-                    if (removed >= toRemove) break;
-                    _scanCache.TryRemove(key, out _);
-                    removed++;
+                    _scanCache.TryRemove(oldKey, out _);
                 }
             }
             _scanCache[path] = (fileSize, lastWriteTimeUtc, finding);
+            _cacheKeyQueue.Enqueue(path);
         }
 
         public bool IsPaused => !_pauseEvent.IsSet;
@@ -740,25 +738,16 @@ namespace AegisPC.Security.Scanning
                                 int currentScanned = Interlocked.Increment(ref scannedFiles);
                                 fileProcessCounter++;
 
-                                // Dengeli CPU Yönetimi: Her 20 dosyada bir sisteme kooperatif nefes aldırma (Sistemi dondurmadan yüksek hız)
-                                if ((fileProcessCounter % 20) == 0)
+                                // Dengeli CPU Yönetimi: Her 50 dosyada bir sisteme kooperatif nefes aldırma
+                                if ((fileProcessCounter % 50) == 0)
                                 {
                                     await Task.Yield();
                                 }
 
-                                // Strict RAM Ceiling (Max 250MB - 500MB Tavanı): Bellek 250 MB'ı aşarsa LOH ve Gen2 agresif sıkıştırma
-                                if ((currentScanned % 100) == 0)
+                                // Periyodik hafif Gen0/Gen1 temizliği (Stop-The-World engellenir)
+                                if ((currentScanned % 1000) == 0)
                                 {
-                                    long currentMemory = GC.GetTotalMemory(forceFullCollection: false);
-                                    if (currentMemory > 250 * 1024 * 1024) // 250 MB sınır
-                                    {
-                                        GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-                                        GC.WaitForPendingFinalizers();
-                                    }
-                                    else if ((currentScanned % 500) == 0)
-                                    {
-                                        GC.Collect(1, GCCollectionMode.Optimized, false, false);
-                                    }
+                                    GC.Collect(0, GCCollectionMode.Optimized, false, false);
                                 }
 
                                 ReportProgress(filePath);
@@ -773,7 +762,9 @@ namespace AegisPC.Security.Scanning
             await Task.WhenAll(workerTasks);
             stopwatch.Stop();
 
-            // Tarama tamamlandığında geçici nesneleri optimize serbest bırak
+            // Tarama tamamlandığında çalışan tüm Gen2/LOH birikimini eksiksiz serbest bırak
+            GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+            GC.WaitForPendingFinalizers();
             GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
 
             int finalTotal = Volatile.Read(ref totalFiles);

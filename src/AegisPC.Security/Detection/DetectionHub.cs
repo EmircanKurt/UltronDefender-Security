@@ -112,6 +112,31 @@ namespace AegisPC.Security.Detection
                 }
             }
 
+            // Fast-Path: Eğer hiçbir dedektör kanıt üretmediyse (Temiz Dosya), 0 bellek tahsisi ile anında dön
+            if (rawEvidences.Count == 0)
+            {
+                stopwatch.Stop();
+                return new DetectionResult
+                {
+                    CorrelationId = context.CorrelationId,
+                    FilePath = context.FilePath,
+                    SHA256 = context.SHA256,
+                    Verdict = DetectionVerdict.Clean,
+                    RecommendedPolicy = DetectionPolicy.Allow,
+                    RiskScore = 0,
+                    RawScore = 0,
+                    DeduplicatedScore = 0,
+                    CategoryAdjustedScore = 0,
+                    ContextModifier = 1.0,
+                    ScoreTrace = "Clean (0 evidence)",
+                    OverallConfidence = EvidenceConfidence.High,
+                    ThreatTitle = string.Empty,
+                    Evidences = new List<SecurityEvidence>(),
+                    LatencyMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 2),
+                    ScanTimeUtc = DateTime.UtcNow
+                };
+            }
+
             // 2. Deduplicate Evidence by RuleName and FilePath
             var uniqueEvidences = rawEvidences
                 .GroupBy(e => $"{e.RuleName}::{e.FilePath}")
@@ -208,32 +233,37 @@ namespace AegisPC.Security.Detection
 
             int finalScore = Math.Clamp((int)Math.Floor(categoryAdjustedScore * contextModifier), 0, 100);
 
-            // 6. Build Auditable Score Trace String
-            var traceSb = new System.Text.StringBuilder();
-            traceSb.AppendLine("=== RISK ENGINE AUDITABLE SCORE TRACE ===");
-            traceSb.AppendLine($"Raw Evidence Count: {uniqueEvidences.Count} | Raw Arithmetic Sum: {rawScore}");
-            traceSb.AppendLine("\n[Evidence Items]:");
-            foreach (var ev in uniqueEvidences)
+            // 6. Build Auditable Score Trace String SADECE riskli/şüpheli bulgular için üretilir
+            string scoreTrace = string.Empty;
+            if (finalScore > 0 || uniqueEvidences.Count > 0)
             {
-                string grp = string.IsNullOrEmpty(ev.CorrelationGroup) ? ev.Category.ToString() : ev.CorrelationGroup;
-                traceSb.AppendLine($" • [{ev.Category}] [{grp}] {ev.RuleName}: +{ev.ScoreContribution} (Conf: {ev.Confidence}) — {ev.Description}");
-            }
+                var traceSb = new System.Text.StringBuilder();
+                traceSb.AppendLine("=== RISK ENGINE AUDITABLE SCORE TRACE ===");
+                traceSb.AppendLine($"Raw Evidence Count: {uniqueEvidences.Count} | Raw Arithmetic Sum: {rawScore}");
+                traceSb.AppendLine("\n[Evidence Items]:");
+                foreach (var ev in uniqueEvidences)
+                {
+                    string grp = string.IsNullOrEmpty(ev.CorrelationGroup) ? ev.Category.ToString() : ev.CorrelationGroup;
+                    traceSb.AppendLine($" • [{ev.Category}] [{grp}] {ev.RuleName}: +{ev.ScoreContribution} (Conf: {ev.Confidence}) — {ev.Description}");
+                }
 
-            traceSb.AppendLine("\n[Correlation Group Deduplication]:");
-            foreach (var g in groupEvaluations)
-            {
-                traceSb.AppendLine($" • Group '{g.GroupName}' ({g.Category}): Dominant={g.Dominant}, Corroborating={g.Corroborating} -> Effective = {g.EffectiveGroupScore}");
-            }
-            traceSb.AppendLine($"Deduplicated Group Sum: {deduplicatedSum}");
+                traceSb.AppendLine("\n[Correlation Group Deduplication]:");
+                foreach (var g in groupEvaluations)
+                {
+                    traceSb.AppendLine($" • Group '{g.GroupName}' ({g.Category}): Dominant={g.Dominant}, Corroborating={g.Corroborating} -> Effective = {g.EffectiveGroupScore}");
+                }
+                traceSb.AppendLine($"Deduplicated Group Sum: {deduplicatedSum}");
 
-            traceSb.AppendLine("\n[Category Caps]:");
-            foreach (var c in categoryBreakdown)
-            {
-                traceSb.AppendLine($" • {c.Category}: GroupSum={c.RawGroupSum}, Cap={c.Cap} -> CategoryScore={c.EffectiveScore}");
+                traceSb.AppendLine("\n[Category Caps]:");
+                foreach (var c in categoryBreakdown)
+                {
+                    traceSb.AppendLine($" • {c.Category}: GroupSum={c.RawGroupSum}, Cap={c.Cap} -> CategoryScore={c.EffectiveScore}");
+                }
+                traceSb.AppendLine($"Category Adjusted Sum: {categoryAdjustedScore}");
+                traceSb.AppendLine($"Context Trust Modifier: {contextModifier:F2}");
+                traceSb.AppendLine($"FINAL CALCULATED RISK SCORE: {finalScore}/100");
+                scoreTrace = traceSb.ToString();
             }
-            traceSb.AppendLine($"Category Adjusted Sum: {categoryAdjustedScore}");
-            traceSb.AppendLine($"Context Trust Modifier: {contextModifier:F2}");
-            traceSb.AppendLine($"FINAL CALCULATED RISK SCORE: {finalScore}/100");
 
             // 7. Calculate Overall Confidence
             var highestConfidence = uniqueEvidences.Count > 0
@@ -257,7 +287,7 @@ namespace AegisPC.Security.Detection
                 DeduplicatedScore = deduplicatedSum,
                 CategoryAdjustedScore = categoryAdjustedScore,
                 ContextModifier = contextModifier,
-                ScoreTrace = traceSb.ToString(),
+                ScoreTrace = scoreTrace,
                 OverallConfidence = highestConfidence,
                 ThreatTitle = threatTitle,
                 Evidences = uniqueEvidences,

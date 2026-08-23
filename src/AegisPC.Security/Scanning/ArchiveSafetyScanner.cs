@@ -131,9 +131,10 @@ namespace AegisPC.Security.Scanning
                     var entryExt = Path.GetExtension(entry.Name).ToLowerInvariant();
                     if (ExecutableExtensions.Contains(entryExt) && entry.Length > 0 && entry.Length < 10 * 1024 * 1024)
                     {
+                        int sampleSize = Math.Min((int)entry.Length, 256 * 1024);
+                        byte[] sampleBuffer = System.Buffers.ArrayPool<byte>.Shared.Rent(sampleSize);
                         try
                         {
-                            byte[] sampleBuffer = new byte[Math.Min((int)entry.Length, 256 * 1024)];
                             int totalSampleRead = 0;
                             using var incHash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
                             using var entryStream = entry.Open();
@@ -145,9 +146,9 @@ namespace AegisPC.Security.Scanning
                                 while ((read = await entryStream.ReadAsync(chunk.AsMemory(0, 8192), cancellationToken)) > 0)
                                 {
                                     incHash.AppendData(chunk, 0, read);
-                                    if (totalSampleRead < sampleBuffer.Length)
+                                    if (totalSampleRead < sampleSize)
                                     {
-                                        int toCopy = Math.Min(read, sampleBuffer.Length - totalSampleRead);
+                                        int toCopy = Math.Min(read, sampleSize - totalSampleRead);
                                         Buffer.BlockCopy(chunk, 0, sampleBuffer, totalSampleRead, toCopy);
                                         totalSampleRead += toCopy;
                                     }
@@ -160,8 +161,8 @@ namespace AegisPC.Security.Scanning
 
                             var sha256 = Convert.ToHexString(incHash.GetHashAndReset());
                             var match = MalwareSignatureDatabase.CheckHash(sha256);
-                            var patternMatch = MalwareSignatureDatabase.CheckBytesPattern(sampleBuffer);
-                            var text = Encoding.ASCII.GetString(sampleBuffer, 0, totalSampleRead);
+                            var text = totalSampleRead > 0 ? Encoding.ASCII.GetString(sampleBuffer, 0, totalSampleRead) : string.Empty;
+                            var patternMatch = !string.IsNullOrEmpty(text) ? MalwareSignatureDatabase.CheckContentString(text) : new MalwareSignatureMatch();
 
                             // Yalnızca gerçek doğrulanmış malware hash'i veya kesin exploit deseni varsa işaretle
                             if (match.IsMatched || patternMatch.IsMatched || text.Contains("EICAR-STANDARD-ANTIVIRUS-TEST-FILE", StringComparison.OrdinalIgnoreCase))
@@ -187,6 +188,10 @@ namespace AegisPC.Security.Scanning
                             }
                         }
                         catch { }
+                        finally
+                        {
+                            System.Buffers.ArrayPool<byte>.Shared.Return(sampleBuffer);
+                        }
                     }
                 }
 
