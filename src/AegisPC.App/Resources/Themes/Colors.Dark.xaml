@@ -7,16 +7,16 @@
          ══════════════════════════════════════════════════════════════════════════════════ -->
 
     <!-- ── 1. BACKGROUND & SURFACE TOKENS ── -->
-    <Color x:Key="ColorAppBg">#0F1115</Color>
-    <Color x:Key="ColorCardBg">#1A1C22</Color>
-    <Color x:Key="ColorCardBgAlt">#23262F</Color>
-    <Color x:Key="ColorCardBorder">#2A2E39</Color>
-    <Color x:Key="ColorCardBorderHover">#3F4554</Color>
+    <Color x:Key="ColorAppBg">#0B0F17</Color>
+    <Color x:Key="ColorCardBg">#121824</Color>
+    <Color x:Key="ColorCardBgAlt">#182030</Color>
+    <Color x:Key="ColorCardBorder">#222E42</Color>
+    <Color x:Key="ColorCardBorderHover">#33435E</Color>
 
-    <Color x:Key="ColorSidebarBg">#0C0D11</Color>
-    <Color x:Key="ColorSidebarHeader">#0F1115</Color>
-    <Color x:Key="ColorSidebarBorder">#1E222B</Color>
-    <Color x:Key="ColorSidebarHover">#1A1C22</Color>
+    <Color x:Key="ColorSidebarBg">#090C13</Color>
+    <Color x:Key="ColorSidebarHeader">#0B0F17</Color>
+    <Color x:Key="ColorSidebarBorder">#1A2232</Color>
+    <Color x:Key="ColorSidebarHover">#141B28</Color>
     <Color x:Key="ColorSidebarActive">#FF7F1A</Color>
 
     <!-- ── 2. PRIMARY BRAND ACCENT TOKENS (DARK TUNED LOGO ORANGE #FF7F1A) ── -->
@@ -36,12 +36,12 @@
     <Color x:Key="ColorAccentHover">#FF9440</Color>
     <Color x:Key="ColorAccentLight">#1F1710</Color>
 
-    <!-- ── 3. TYPOGRAPHY TOKENS ── -->
-    <Color x:Key="ColorTextPrimary">#F5F5F5</Color>
-    <Color x:Key="ColorTextSecondary">#A0A0A8</Color>
-    <Color x:Key="ColorTextMuted">#6E717D</Color>
+    <!-- ── 3. TYPOGRAPHY TOKENS (CALM HIGH-CONTRAST NEUTRALS) ── -->
+    <Color x:Key="ColorTextPrimary">#F8FAFC</Color>
+    <Color x:Key="ColorTextSecondary">#94A3B8</Color>
+    <Color x:Key="ColorTextMuted">#64748B</Color>
     <Color x:Key="ColorTextOnAccent">#FFFFFF</Color>
-    <Color x:Key="ColorTextOnDark">#FFFFFF</Color>
+    <Color x:Key="ColorTextOnDark">#F8FAFC</Color>
 
     <!-- ── 4. SEMANTIC STATUS TOKENS (SATURATED ALARM SYSTEM TONES) ── -->
     <!-- Safe / Clean (Enterprise Emerald Green) -->

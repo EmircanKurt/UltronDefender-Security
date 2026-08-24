@@ -2,25 +2,30 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- ══════════════════════════════════════════════════════════════════════════════════
-         ULTRON DEFENDER TOTAL SECURITY — TYPOGRAPHY DESIGN SYSTEM
-         Strict Hierarchy:
-         • Casual/Handwritten Brand Font: ONLY for App Title, Hero Status Headlines & Slogans
-         • Ultra-Legible Modern Sans-Serif: MANDATORY for Tables, Buttons, Forms & Metrics
+         ULTRON DEFENDER TOTAL SECURITY — CLAUDE-INSPIRED ENTERPRISE TYPOGRAPHY SYSTEM
+         Hierarchy:
+         • FontBrand: Casual Script font STRICTLY FOR LOGO ("ULTRON") ONLY
+         • FontHeading: Segoe UI Variable Display / Inter Semibold for authoritative titles
+         • FontSans: Segoe UI Variable Text / Inter Regular for readable, airy body text
+         • FontMono: Cascadia Code / Consolas for hashes, PIDs, and tabular technical metrics
          ══════════════════════════════════════════════════════════════════════════════════ -->
 
     <!-- ── 1. FONT FAMILY DEFINITIONS ── -->
-    <!-- Brand / Hero Handwritten Font Stack (matches logo branding) -->
+    <!-- Brand Handwritten Font (RESTRICTED: Logo Only) -->
     <FontFamily x:Key="FontBrand">Caveat, Kalam, Segoe Print, Ink Free, MV Boli, Segoe UI</FontFamily>
 
-    <!-- UI Standard Clean Sans-Serif Font Stack (high legibility ClearType) -->
-    <FontFamily x:Key="FontSans">Segoe UI Variable Display, Segoe UI Variable Text, Segoe UI, Inter, Aptos, Arial</FontFamily>
+    <!-- Headings & Prominent Titles (Crisp Semibold Authority) -->
+    <FontFamily x:Key="FontHeading">Segoe UI Variable Display, Inter, Segoe UI, Aptos, -apple-system, sans-serif</FontFamily>
+
+    <!-- UI Standard Clean Sans-Serif Body & Interface Font -->
+    <FontFamily x:Key="FontSans">Segoe UI Variable Text, Inter, Segoe UI, Aptos, -apple-system, sans-serif</FontFamily>
 
     <!-- Monospace & Tabular Data Font Stack (for Hashes, PIDs, Paths, Hex) -->
     <FontFamily x:Key="FontMono">Cascadia Code, Consolas, Segoe UI Mono, Courier New, monospace</FontFamily>
 
     <!-- ── 2. TYPOGRAPHY STYLES ── -->
 
-    <!-- [1] Brand Title: Large Casual/Handwritten for Logo & App Header -->
+    <!-- [1] Brand Title: Large Casual/Handwritten (RESTRICTED ONLY FOR LOGO / BRAND AREA) -->
     <Style x:Key="BrandTitleStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontBrand}"/>
         <Setter Property="FontSize" Value="24"/>
@@ -31,73 +36,92 @@
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
-    <!-- [1.1] Brand Tagline / Slogan ("Kesintisiz koruma disiplini") -->
+    <!-- [1.1] Brand Tagline ("Kesintisiz koruma disiplini") -->
     <Style x:Key="BrandTaglineStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="FontStyle" Value="Normal"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
-        <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
-        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
-    </Style>
-
-    <!-- [2] Page Heading: Bold Modern Sans-Serif for Page Titles (e.g. "Karantina Kasası", "Ayarlar") -->
-    <Style x:Key="PageHeadingStyle" TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-        <Setter Property="FontSize" Value="20"/>
-        <Setter Property="FontWeight" Value="Bold"/>
-        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
-        <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
-        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
-        <Setter Property="VerticalAlignment" Value="Center"/>
-    </Style>
-
-    <!-- [2.1] Section Subheading: Bold Sans-Serif for Card & Group Headers -->
-    <Style x:Key="SectionHeadingStyle" TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-        <Setter Property="FontSize" Value="13.5"/>
-        <Setter Property="FontWeight" Value="Bold"/>
-        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
 
-    <!-- [3] Status Headline: Modern Bold Sans-Serif for Hero Messages ("TEHDİT TESPİT EDİLDİ", "SİSTEM GÜVENDE", "SİSTEM TARANIYOR") -->
-    <Style x:Key="StatusHeadlineStyle" TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-        <Setter Property="FontSize" Value="22"/>
-        <Setter Property="FontWeight" Value="Bold"/>
+    <!-- [2] Page Heading: 25px Clean Semibold Sans-Serif for Page Titles -->
+    <Style x:Key="PageHeadingStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontHeading}"/>
+        <Setter Property="FontSize" Value="25"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+        <Setter Property="LineHeight" Value="32"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
-    <!-- [4] Body Text: Regular Clean Sans-Serif for Descriptions & Explanations -->
+    <!-- [2.1] Section / Card Heading: 16px Semibold for Card & Group Headers -->
+    <Style x:Key="SectionHeadingStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontHeading}"/>
+        <Setter Property="FontSize" Value="16"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+        <Setter Property="LineHeight" Value="22"/>
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+    </Style>
+
+    <!-- [2.2] Card Heading Style Alias -->
+    <Style x:Key="CardHeadingStyle" TargetType="TextBlock" BasedOn="{StaticResource SectionHeadingStyle}"/>
+
+    <!-- [3] Status Headline: 24px Semibold Sans-Serif for Hero Status Messages ("GÜVENDESİNİZ", "SİSTEM TARANIYOR") -->
+    <Style x:Key="StatusHeadlineStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontHeading}"/>
+        <Setter Property="FontSize" Value="24"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+        <Setter Property="LineHeight" Value="30"/>
+        <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- [4] Body Text: 13.5px Regular Clean Sans-Serif with Generous Line Height (20px) -->
     <Style x:Key="BodyTextStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontSize" Value="13.5"/>
         <Setter Property="FontWeight" Value="Normal"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="LineHeight" Value="20"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
-        <Setter Property="LineHeight" Value="18"/>
     </Style>
 
-    <!-- [4.1] Caption / Muted Text: Smaller Sans-Serif for Timestamps and Secondary Metadata -->
+    <!-- [4.1] Caption / Helper Text: 11.5px Sans-Serif for Timestamps and Secondary Metadata -->
     <Style x:Key="CaptionTextStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
         <Setter Property="FontSize" Value="11.5"/>
         <Setter Property="FontWeight" Value="Normal"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}"/>
+        <Setter Property="LineHeight" Value="16"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
 
-    <!-- [5] Data Table Style: Clean Sans-Serif with Tabular Numerals for Process Manager, Quarantine, Logs -->
+    <!-- [5] Data Table Style: 13px Clean Sans-Serif with Tabular Numerals for Process Manager, Quarantine, Logs -->
     <Style x:Key="DataTableStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+    </Style>
+
+    <!-- [5.1] Data Monospace Style: 12px for Hashes (SHA-256), PIDs, Registry Paths, Network IPs -->
+    <Style x:Key="DataMonospaceStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontMono}"/>
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="FontWeight" Value="Normal"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
@@ -107,21 +131,10 @@
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
 
-    <!-- [5.1] Data Monospace Style: For Hashes (SHA-256), PIDs, Registry Paths, Network IPs -->
-    <Style x:Key="DataMonospaceStyle" TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{StaticResource FontMono}"/>
-        <Setter Property="FontSize" Value="11"/>
-        <Setter Property="FontWeight" Value="Normal"/>
-        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
-        <Setter Property="VerticalAlignment" Value="Center"/>
-        <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
-        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
-    </Style>
-
-    <!-- [6] Button Text Style: Semi-Bold Sans-Serif for Buttons & Interactive Controls -->
+    <!-- [6] Button Text Style: 13px Semi-Bold Sans-Serif for Buttons & Interactive Controls -->
     <Style x:Key="ButtonTextStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontSize" Value="13"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextOnAccent}"/>
         <Setter Property="HorizontalAlignment" Value="Center"/>
@@ -130,22 +143,22 @@
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
 
-    <!-- [7] Metric Value Style: Large Bold Sans-Serif for Stats & Resource Gauges (% RAM, CPU, Count) -->
+    <!-- [7] Metric Value Style: 26px Semibold Sans-Serif with Tabular Numerals for Stats & Resource Gauges -->
     <Style x:Key="MetricValueStyle" TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-        <Setter Property="FontSize" Value="24"/>
-        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="FontFamily" Value="{StaticResource FontHeading}"/>
+        <Setter Property="FontSize" Value="26"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
         <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
 
-    <!-- [8] Badge Text Style: Compact Bold Sans-Serif for Status Badges & Feature Tags -->
+    <!-- [8] Badge Text Style: 11px Compact SemiBold Sans-Serif for Status Badges & Feature Chips -->
     <Style x:Key="BadgeTextStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-        <Setter Property="FontSize" Value="10"/>
-        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="HorizontalAlignment" Value="Center"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>

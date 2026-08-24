@@ -7,16 +7,16 @@
          ══════════════════════════════════════════════════════════════════════════════════ -->
 
     <!-- ── 1. BACKGROUND & SURFACE TOKENS ── -->
-    <Color x:Key="ColorAppBg">#F7F7F8</Color>
+    <Color x:Key="ColorAppBg">#F8FAFC</Color>
     <Color x:Key="ColorCardBg">#FFFFFF</Color>
-    <Color x:Key="ColorCardBgAlt">#F2F3F5</Color>
-    <Color x:Key="ColorCardBorder">#E5E7EB</Color>
-    <Color x:Key="ColorCardBorderHover">#D1D5DB</Color>
+    <Color x:Key="ColorCardBgAlt">#F1F5F9</Color>
+    <Color x:Key="ColorCardBorder">#E2E8F0</Color>
+    <Color x:Key="ColorCardBorderHover">#CBD5E1</Color>
 
     <Color x:Key="ColorSidebarBg">#FFFFFF</Color>
-    <Color x:Key="ColorSidebarHeader">#F7F7F8</Color>
-    <Color x:Key="ColorSidebarBorder">#E5E7EB</Color>
-    <Color x:Key="ColorSidebarHover">#F3F4F6</Color>
+    <Color x:Key="ColorSidebarHeader">#F8FAFC</Color>
+    <Color x:Key="ColorSidebarBorder">#E2E8F0</Color>
+    <Color x:Key="ColorSidebarHover">#F1F5F9</Color>
     <Color x:Key="ColorSidebarActive">#FE7002</Color>
 
     <!-- ── 2. PRIMARY BRAND ACCENT TOKENS (LOGO ORANGE #FE7002) ── -->
@@ -36,10 +36,10 @@
     <Color x:Key="ColorAccentHover">#E65E00</Color>
     <Color x:Key="ColorAccentLight">#FFF4EB</Color>
 
-    <!-- ── 3. TYPOGRAPHY TOKENS ── -->
-    <Color x:Key="ColorTextPrimary">#1A1A1A</Color>
-    <Color x:Key="ColorTextSecondary">#6B6B6B</Color>
-    <Color x:Key="ColorTextMuted">#9E9E9E</Color>
+    <!-- ── 3. TYPOGRAPHY TOKENS (CALM HIGH-CONTRAST NEUTRALS) ── -->
+    <Color x:Key="ColorTextPrimary">#1A1D20</Color>
+    <Color x:Key="ColorTextSecondary">#475569</Color>
+    <Color x:Key="ColorTextMuted">#64748B</Color>
     <Color x:Key="ColorTextOnAccent">#FFFFFF</Color>
     <Color x:Key="ColorTextOnDark">#FFFFFF</Color>
 
