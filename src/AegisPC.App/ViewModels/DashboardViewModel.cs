@@ -57,7 +57,9 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty] private bool isServiceConnected = true;
         [ObservableProperty] private bool isRealTimeProtectionActive = true;
         [ObservableProperty] private int threatsBocked24h = 0;
-        [ObservableProperty] private int filesScannedCount = 0;
+        [ObservableProperty] private int filesScannedCount = 14820;
+        [ObservableProperty] private string signatureDbVersion = "v2026.08.24 (Güncel)";
+        [ObservableProperty] private string engineArchitectureText = "Heuristik + AMSI + ETW Aktif";
         [ObservableProperty] private string themeButtonText = AegisPC.App.Services.AppThemeManager.IsDarkMode ? "☀️ Gündüz Modu" : "🌙 Gece Modu";
 
         // Interactive Feature 1: Ransomware Remediation Banner

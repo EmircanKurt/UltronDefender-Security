@@ -52,11 +52,11 @@
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
-    <!-- [2.1] Section Subheading: Semi-Bold Sans-Serif for Card & Group Headers -->
+    <!-- [2.1] Section Subheading: Bold Sans-Serif for Card & Group Headers -->
     <Style x:Key="SectionHeadingStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-        <Setter Property="FontSize" Value="14"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="13.5"/>
+        <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
