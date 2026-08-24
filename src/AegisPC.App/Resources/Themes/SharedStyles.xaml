@@ -270,7 +270,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border CornerRadius="6" Padding="{TemplateBinding Padding}">
+                    <Border CornerRadius="4" Padding="{TemplateBinding Padding}">
                         <Border.Background>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                                 <GradientStop Color="#2563EB" Offset="0"/>
@@ -313,7 +313,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border CornerRadius="6" 
+                    <Border CornerRadius="4" 
                             Background="{TemplateBinding Background}" 
                             BorderBrush="{TemplateBinding BorderBrush}" 
                             BorderThickness="{TemplateBinding BorderThickness}" 
@@ -345,7 +345,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border CornerRadius="6" Padding="{TemplateBinding Padding}">
+                    <Border CornerRadius="4" Padding="{TemplateBinding Padding}">
                         <Border.Background>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                                 <GradientStop Color="#DC2626" Offset="0"/>
