@@ -64,9 +64,17 @@ namespace AegisPC.App.ViewModels
             {
                 Adapters.Add(a);
             }
-            if (Adapters.Count > 0 && SelectedAdapter == null)
+            if (Adapters.Count > 0)
             {
-                SelectedAdapter = Adapters.First();
+                if (SelectedAdapter == null || !Adapters.Any(x => x.Name == SelectedAdapter.Name))
+                {
+                    // Auto-select active internet gateway adapter
+                    SelectedAdapter = Adapters.FirstOrDefault(x => x.HasInternetGateway) ?? Adapters.First();
+                }
+                else
+                {
+                    SelectedAdapter = Adapters.First(x => x.Name == SelectedAdapter.Name);
+                }
             }
         }
 
@@ -95,47 +103,75 @@ namespace AegisPC.App.ViewModels
         [RelayCommand]
         public async Task SetDnsCloudflareAsync()
         {
-            if (SelectedAdapter == null) return;
+            if (SelectedAdapter == null)
+            {
+                StatusMessage = "Lütfen önce yapılandırılacak bir ağ bağdaştırıcısı seçin.";
+                _toastService?.ShowToast("Ağ Koruması", StatusMessage, "Warning");
+                return;
+            }
+
+            StatusMessage = $"'{SelectedAdapter.Name}' için Cloudflare DNS uygulanıyor...";
             var ok = await _dnsService.SetSecureDnsAsync(SelectedAdapter.Name, SecureDnsProvider.Cloudflare);
             if (ok)
             {
-                StatusMessage = $"'{SelectedAdapter.Name}' için Cloudflare DNS (1.1.1.1) uygulandı.";
-                _toastService?.ShowToast("DNS Koruması", StatusMessage, "Success");
+                StatusMessage = $"'{SelectedAdapter.Name}' için Cloudflare DNS (1.1.1.1, 1.0.0.1) başarıyla uygulandı ve doğrulandı.";
+                _toastService?.ShowToast("DNS Koruması Aktif", StatusMessage, "Success");
                 await RefreshAdaptersAsync();
             }
             else
             {
-                StatusMessage = "DNS değiştirilemedi (Yönetici yetkisi gerekebilir).";
+                StatusMessage = $"DNS uygulanamadı! Windows Yönetici (UAC) izninin verildiğinden ve '{SelectedAdapter.Name}' bağdaştırıcısının etkin olduğundan emin olun.";
+                _toastService?.ShowToast("DNS Yapılandırma Hatası", StatusMessage, "Danger");
             }
         }
 
         [RelayCommand]
         public async Task SetDnsQuad9Async()
         {
-            if (SelectedAdapter == null) return;
+            if (SelectedAdapter == null)
+            {
+                StatusMessage = "Lütfen önce yapılandırılacak bir ağ bağdaştırıcısı seçin.";
+                _toastService?.ShowToast("Ağ Koruması", StatusMessage, "Warning");
+                return;
+            }
+
+            StatusMessage = $"'{SelectedAdapter.Name}' için Quad9 Zararlı Engelleyici DNS uygulanıyor...";
             var ok = await _dnsService.SetSecureDnsAsync(SelectedAdapter.Name, SecureDnsProvider.Quad9);
             if (ok)
             {
-                StatusMessage = $"'{SelectedAdapter.Name}' için Quad9 Zararlı Engelleyici DNS (9.9.9.9) uygulandı.";
-                _toastService?.ShowToast("DNS Koruması", StatusMessage, "Success");
+                StatusMessage = $"'{SelectedAdapter.Name}' için Quad9 Zararlı Engelleyici DNS (9.9.9.9, 149.112.112.112) başarıyla uygulandı ve doğrulandı.";
+                _toastService?.ShowToast("DNS Koruması Aktif", StatusMessage, "Success");
                 await RefreshAdaptersAsync();
             }
             else
             {
-                StatusMessage = "DNS değiştirilemedi (Yönetici yetkisi gerekebilir).";
+                StatusMessage = $"DNS uygulanamadı! Windows Yönetici (UAC) izninin verildiğinden ve '{SelectedAdapter.Name}' bağdaştırıcısının etkin olduğundan emin olun.";
+                _toastService?.ShowToast("DNS Yapılandırma Hatası", StatusMessage, "Danger");
             }
         }
 
         [RelayCommand]
         public async Task SetDnsDhcpAsync()
         {
-            if (SelectedAdapter == null) return;
+            if (SelectedAdapter == null)
+            {
+                StatusMessage = "Lütfen önce yapılandırılacak bir ağ bağdaştırıcısı seçin.";
+                _toastService?.ShowToast("Ağ Koruması", StatusMessage, "Warning");
+                return;
+            }
+
+            StatusMessage = $"'{SelectedAdapter.Name}' için DNS otomatik (DHCP) yapılıyor...";
             var ok = await _dnsService.SetSecureDnsAsync(SelectedAdapter.Name, SecureDnsProvider.Automatic);
             if (ok)
             {
-                StatusMessage = $"'{SelectedAdapter.Name}' için DNS otomatik (DHCP) yapıldı.";
-                _toastService?.ShowToast("DNS Koruması", StatusMessage, "Info");
+                StatusMessage = $"'{SelectedAdapter.Name}' için DNS otomatik (DHCP) olarak sıfırlandı ve doğrulandı.";
+                _toastService?.ShowToast("DNS Sıfırlandı", StatusMessage, "Info");
                 await RefreshAdaptersAsync();
+            }
+            else
+            {
+                StatusMessage = $"DNS sıfırlanamadı! Windows Yönetici (UAC) izninin verildiğinden ve '{SelectedAdapter.Name}' bağdaştırıcısının etkin olduğundan emin olun.";
+                _toastService?.ShowToast("DNS Sıfırlama Hatası", StatusMessage, "Danger");
             }
         }
 

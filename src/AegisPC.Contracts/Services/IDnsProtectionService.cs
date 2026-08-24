@@ -21,6 +21,7 @@ namespace AegisPC.Contracts.Services
         public string Status { get; set; } = string.Empty;
         public List<string> DnsServers { get; set; } = new();
         public bool IsSecureDns { get; set; }
+        public bool HasInternetGateway { get; set; }
         public string ProviderName { get; set; } = "Bilinmeyen / Servis Sağlayıcı";
     }
 

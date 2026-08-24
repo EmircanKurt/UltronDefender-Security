@@ -35,36 +35,77 @@
                         <Button Content="Yenile" Command="{Binding RefreshAdaptersCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Right" Padding="12,4"/>
                     </Grid>
 
-                    <!-- Adapters List (DataTableStyle for clear metrics) -->
-                    <ItemsControl ItemsSource="{Binding Adapters}" Margin="0,0,0,16">
-                        <ItemsControl.ItemTemplate>
+                    <!-- Adapters List (Selectable ListBox with Active Gateway & Selection Highlight) -->
+                    <ListBox ItemsSource="{Binding Adapters}" 
+                             SelectedItem="{Binding SelectedAdapter}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Margin="0,0,0,16"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Margin" Value="0,0,0,8"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="ItemBorder" Background="{DynamicResource BrushAppBg}" 
+                                                    BorderBrush="{DynamicResource BrushCardBorder}" 
+                                                    BorderThickness="1" 
+                                                    CornerRadius="4" 
+                                                    Padding="14,10">
+                                                <ContentPresenter/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource BrushPrimary}"/>
+                                                    <Setter TargetName="ItemBorder" Property="BorderThickness" Value="1.5"/>
+                                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource BrushCardBg}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource BrushPrimary}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="14,10" Margin="0,0,0,8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <ui:SymbolIcon Symbol="Router24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="22" Margin="0,0,14,0" VerticalAlignment="Center"/>
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
-                                                <Border Style="{StaticResource BadgeBlueStyle}" Padding="6,1" Margin="8,0,0,0">
-                                                    <TextBlock Text="{Binding Status}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusInfoText}"/>
-                                                </Border>
-                                            </StackPanel>
-                                            <TextBlock Text="{Binding ProviderName}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,0"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ui:SymbolIcon Symbol="Router24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="22" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                                            <Border Style="{StaticResource BadgeBlueStyle}" Padding="6,1" Margin="8,0,0,0">
+                                                <TextBlock Text="{Binding Status}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusInfoText}"/>
+                                            </Border>
+                                            <Border Style="{StaticResource BadgeGreenStyle}" Padding="6,1" Margin="6,0,0,0"
+                                                    Visibility="{Binding HasInternetGateway, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="AKTİF İNTERNET" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusSafeText}"/>
+                                            </Border>
                                         </StackPanel>
-                                        <TextBlock Grid.Column="2" Text="{Binding DnsServers[0], FallbackValue='Otomatik DNS'}" Style="{StaticResource DataMonospaceStyle}" Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
-                                    </Grid>
-                                </Border>
+                                        <TextBlock Text="{Binding ProviderName}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding DnsServers[0], FallbackValue='Otomatik DNS'}" Style="{StaticResource DataMonospaceStyle}" Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
+                                </Grid>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
 
                     <!-- Quick DNS Change Buttons -->
-                    <TextBlock Text="Tek Tıkla Güvenli DNS Sunucusuna Geçiş Yapın:" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,8"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock Text="Seçili Bağdaştırıcıya Güvenli DNS Uygula:" Style="{StaticResource SectionHeadingStyle}" FontSize="12" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding SelectedAdapter.Name, StringFormat=' ({0})', FallbackValue=' (Bağdaştırıcı seçilmedi)'}" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource BrushPrimary}" VerticalAlignment="Center"/>
+                    </StackPanel>
                     <WrapPanel Margin="0,0,0,4">
                         <Button Content="Quad9 Zararlı Engelleyici (9.9.9.9)" Command="{Binding SetDnsQuad9Command}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" Padding="12,6"/>
                         <Button Content="Cloudflare Hızlı DNS (1.1.1.1)" Command="{Binding SetDnsCloudflareCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" Padding="12,6"/>

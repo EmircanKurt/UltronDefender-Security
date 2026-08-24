@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -68,7 +70,12 @@ namespace AegisPC.Security.RealTime
                     if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback || ni.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
 
                     var ipProps = ni.GetIPProperties();
-                    var dnsAddresses = ipProps.DnsAddresses.Select(ip => ip.ToString()).ToList();
+                    var dnsAddresses = ipProps.DnsAddresses
+                        .Where(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork || ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                        .Select(ip => ip.ToString())
+                        .ToList();
+
+                    var hasGateway = ipProps.GatewayAddresses.Any(g => g?.Address != null && g.Address.ToString() != "0.0.0.0" && !string.IsNullOrWhiteSpace(g.Address.ToString()));
 
                     var adapter = new DnsAdapterInfo
                     {
@@ -76,7 +83,8 @@ namespace AegisPC.Security.RealTime
                         Name = ni.Name,
                         Description = ni.Description,
                         Status = ni.OperationalStatus.ToString(),
-                        DnsServers = dnsAddresses
+                        DnsServers = dnsAddresses,
+                        HasInternetGateway = hasGateway
                     };
 
                     // Identify provider
@@ -103,6 +111,9 @@ namespace AegisPC.Security.RealTime
 
                     result.Add(adapter);
                 }
+
+                // Sort: Active gateway adapters come first
+                result = result.OrderByDescending(a => a.HasInternetGateway).ThenBy(a => a.Name).ToList();
             }
             catch (Exception ex)
             {
@@ -114,12 +125,15 @@ namespace AegisPC.Security.RealTime
 
         public async Task<bool> SetSecureDnsAsync(string adapterName, SecureDnsProvider provider, CancellationToken cancellationToken = default)
         {
-            return await Task.Run(() =>
+            if (string.IsNullOrWhiteSpace(adapterName)) return false;
+
+            return await Task.Run(async () =>
             {
                 try
                 {
                     string primaryDns = "";
                     string secondaryDns = "";
+                    bool isDhcp = (provider == SecureDnsProvider.Automatic);
 
                     switch (provider)
                     {
@@ -135,21 +149,127 @@ namespace AegisPC.Security.RealTime
                             primaryDns = "8.8.8.8";
                             secondaryDns = "8.8.4.4";
                             break;
-                        case SecureDnsProvider.Automatic:
-                            RunNetshCommand($"interface ipv4 set dns name=\"{adapterName}\" source=dhcp");
-                            return true;
                     }
 
-                    // Set primary DNS
-                    RunNetshCommand($"interface ipv4 set dns name=\"{adapterName}\" static {primaryDns} primary");
+                    bool executed = false;
+                    bool isAdmin = IsCurrentProcessAdmin();
 
-                    // Set secondary DNS
-                    if (!string.IsNullOrEmpty(secondaryDns))
+                    if (isAdmin)
                     {
-                        RunNetshCommand($"interface ipv4 add dns name=\"{adapterName}\" {secondaryDns} index=2");
+                        // 1. Current process is Administrator: Run netsh directly
+                        if (isDhcp)
+                        {
+                            var r = RunProcess("netsh.exe", $"interface ipv4 set dns name=\"{adapterName}\" source=dhcp");
+                            if (r.ExitCode == 0) executed = true;
+                            else
+                            {
+                                var ps = RunProcess("powershell.exe", $"-NoProfile -NonInteractive -Command \"Set-DnsClientServerAddress -InterfaceAlias '{adapterName}' -ResetServerAddresses\"");
+                                if (ps.ExitCode == 0) executed = true;
+                            }
+                        }
+                        else
+                        {
+                            var r1 = RunProcess("netsh.exe", $"interface ipv4 set dns name=\"{adapterName}\" static {primaryDns} primary");
+                            if (r1.ExitCode == 0)
+                            {
+                                executed = true;
+                                if (!string.IsNullOrEmpty(secondaryDns))
+                                {
+                                    RunProcess("netsh.exe", $"interface ipv4 add dns name=\"{adapterName}\" {secondaryDns} index=2");
+                                }
+                            }
+                            else
+                            {
+                                var ips = string.IsNullOrEmpty(secondaryDns) ? $"'{primaryDns}'" : $"'{primaryDns}','{secondaryDns}'";
+                                var ps = RunProcess("powershell.exe", $"-NoProfile -NonInteractive -Command \"Set-DnsClientServerAddress -InterfaceAlias '{adapterName}' -ServerAddresses ({ips})\"");
+                                if (ps.ExitCode == 0) executed = true;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 2. Not Administrator: Elevate via AegisPC.ElevatedHelper or UAC Prompt
+                        var helperPath = GetElevatedHelperPath();
+                        if (helperPath != null)
+                        {
+                            string arg = isDhcp ? "dhcp" : $"{primaryDns},{secondaryDns}".TrimEnd(',');
+                            var psi = new ProcessStartInfo
+                            {
+                                FileName = helperPath,
+                                Arguments = $"--set-dns \"{adapterName}\" \"{arg}\"",
+                                UseShellExecute = true,
+                                Verb = "runas"
+                            };
+                            using var proc = Process.Start(psi);
+                            if (proc != null)
+                            {
+                                await proc.WaitForExitAsync(cancellationToken);
+                                executed = (proc.ExitCode == 0);
+                            }
+                        }
+                        else
+                        {
+                            // Fallback to elevated PowerShell
+                            string psCmd = isDhcp
+                                ? $"Set-DnsClientServerAddress -InterfaceAlias '{adapterName}' -ResetServerAddresses"
+                                : $"Set-DnsClientServerAddress -InterfaceAlias '{adapterName}' -ServerAddresses @('{primaryDns}'{(!string.IsNullOrEmpty(secondaryDns) ? $",'{secondaryDns}'" : "")})";
+
+                            var psi = new ProcessStartInfo
+                            {
+                                FileName = "powershell.exe",
+                                Arguments = $"-NoProfile -WindowStyle Hidden -Command \"{psCmd}; ipconfig /flushdns\"",
+                                UseShellExecute = true,
+                                Verb = "runas"
+                            };
+                            using var proc = Process.Start(psi);
+                            if (proc != null)
+                            {
+                                await proc.WaitForExitAsync(cancellationToken);
+                                executed = (proc.ExitCode == 0);
+                            }
+                        }
                     }
 
-                    return true;
+                    // 3. DNS Cache Temizleme (Flush DNS)
+                    FlushDnsResolverCache();
+
+                    // 4. Değişikliğin Doğrulanması (Verification)
+                    await Task.Delay(400, cancellationToken);
+                    bool verified = false;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        var currentAdapters = await GetNetworkAdaptersDnsAsync(cancellationToken);
+                        var target = currentAdapters.FirstOrDefault(a => a.Name.Equals(adapterName, StringComparison.OrdinalIgnoreCase) || a.Id == adapterName);
+                        if (target != null)
+                        {
+                            if (isDhcp)
+                            {
+                                if (!target.IsSecureDns || target.DnsServers.Count == 0 || target.ProviderName.Contains("Otomatik") || target.ProviderName.Contains("Varsayılan"))
+                                {
+                                    verified = true;
+                                    break;
+                                }
+                            }
+                            else if (provider == SecureDnsProvider.Cloudflare && target.DnsServers.Any(d => d.StartsWith("1.1.1.1") || d.StartsWith("1.0.0.1")))
+                            {
+                                verified = true;
+                                break;
+                            }
+                            else if (provider == SecureDnsProvider.Quad9 && target.DnsServers.Any(d => d.StartsWith("9.9.9.9") || d.StartsWith("149.112.112.112")))
+                            {
+                                verified = true;
+                                break;
+                            }
+                            else if (provider == SecureDnsProvider.Google && target.DnsServers.Any(d => d.StartsWith("8.8.8.8") || d.StartsWith("8.8.4.4")))
+                            {
+                                verified = true;
+                                break;
+                            }
+                        }
+                        await Task.Delay(300, cancellationToken);
+                    }
+
+                    return verified || executed;
                 }
                 catch (Exception ex)
                 {
@@ -288,12 +408,68 @@ namespace AegisPC.Security.RealTime
             return content.TrimEnd();
         }
 
-        private static void RunNetshCommand(string arguments)
+        [DllImport("dnsapi.dll", EntryPoint = "DnsFlushResolverCache", SetLastError = true)]
+        private static extern int DnsFlushResolverCache();
+
+        public static void FlushDnsResolverCache()
+        {
+            try
+            {
+                DnsFlushResolverCache();
+            }
+            catch { }
+
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "ipconfig.exe",
+                    Arguments = "/flushdns",
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                using var proc = Process.Start(psi);
+                proc?.WaitForExit(2000);
+            }
+            catch { }
+        }
+
+        private static bool IsCurrentProcessAdmin()
+        {
+            try
+            {
+                using var identity = WindowsIdentity.GetCurrent();
+                var principal = new WindowsPrincipal(identity);
+                return principal.IsInRole(WindowsBuiltInRole.Administrator);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string? GetElevatedHelperPath()
+        {
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var candidates = new[]
+            {
+                Path.Combine(baseDir, "Helpers", "AegisPC.ElevatedHelper.exe"),
+                Path.Combine(baseDir, "AegisPC.ElevatedHelper.exe"),
+                Path.Combine(baseDir, "tools", "AegisPC.ElevatedHelper", "bin", "Release", "net8.0-windows", "AegisPC.ElevatedHelper.exe"),
+                Path.Combine(baseDir, "tools", "AegisPC.ElevatedHelper", "bin", "Debug", "net8.0-windows", "AegisPC.ElevatedHelper.exe")
+            };
+
+            return candidates.FirstOrDefault(File.Exists);
+        }
+
+        private static (int ExitCode, string Output, string Error) RunProcess(string fileName, string args)
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "netsh.exe",
-                Arguments = arguments,
+                FileName = fileName,
+                Arguments = args,
                 CreateNoWindow = true,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -301,7 +477,11 @@ namespace AegisPC.Security.RealTime
             };
 
             using var proc = Process.Start(psi);
-            proc?.WaitForExit(3000);
+            if (proc == null) return (-1, "", "Process başlatılamadı.");
+            var output = proc.StandardOutput.ReadToEnd();
+            var error = proc.StandardError.ReadToEnd();
+            proc.WaitForExit(5000);
+            return (proc.ExitCode, output, error);
         }
 
         public void Dispose()
