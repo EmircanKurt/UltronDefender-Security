@@ -72,6 +72,13 @@
     <Color x:Key="ColorStatusInfoBorder">#0369A1</Color>
     <Color x:Key="ColorStatusInfoText">#7DD3FC</Color>
 
+    <!-- Purple (Quarantine / Vault) -->
+    <Color x:Key="ColorStatusPurple">#A78BFA</Color>
+    <Color x:Key="ColorStatusPurpleDark">#8B5CF6</Color>
+    <Color x:Key="ColorStatusPurpleBg">#1E1430</Color>
+    <Color x:Key="ColorStatusPurpleBorder">#4C1D95</Color>
+    <Color x:Key="ColorStatusPurpleText">#C4B5FD</Color>
+
     <!-- Compatibility Status Aliases -->
     <Color x:Key="ColorStatusGreen">#10B981</Color>
     <Color x:Key="ColorStatusGreenBg">#08281E</Color>
@@ -141,6 +148,12 @@
     <SolidColorBrush x:Key="BrushStatusInfoBg" Color="{StaticResource ColorStatusInfoBg}"/>
     <SolidColorBrush x:Key="BrushStatusInfoBorder" Color="{StaticResource ColorStatusInfoBorder}"/>
     <SolidColorBrush x:Key="BrushStatusInfoText" Color="{StaticResource ColorStatusInfoText}"/>
+
+    <SolidColorBrush x:Key="BrushStatusPurple" Color="{StaticResource ColorStatusPurple}"/>
+    <SolidColorBrush x:Key="BrushStatusPurpleDark" Color="{StaticResource ColorStatusPurpleDark}"/>
+    <SolidColorBrush x:Key="BrushStatusPurpleBg" Color="{StaticResource ColorStatusPurpleBg}"/>
+    <SolidColorBrush x:Key="BrushStatusPurpleBorder" Color="{StaticResource ColorStatusPurpleBorder}"/>
+    <SolidColorBrush x:Key="BrushStatusPurpleText" Color="{StaticResource ColorStatusPurpleText}"/>
 
     <!-- Compatibility Status Brushes -->
     <SolidColorBrush x:Key="BrushStatusGreen" Color="{StaticResource ColorStatusSafe}"/>

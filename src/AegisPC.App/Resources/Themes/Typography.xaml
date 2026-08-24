@@ -33,9 +33,9 @@
 
     <!-- [1.1] Brand Tagline / Slogan ("Kesintisiz koruma disiplini") -->
     <Style x:Key="BrandTaglineStyle" TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{StaticResource FontBrand}"/>
-        <Setter Property="FontSize" Value="14"/>
-        <Setter Property="FontStyle" Value="Italic"/>
+        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontStyle" Value="Normal"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
@@ -62,10 +62,10 @@
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
 
-    <!-- [3] Status Headline: Expressive Brand Font for Hero Messages ("TEHDİT TESPİT EDİLDİ", "SİSTEM GÜVENDE") -->
+    <!-- [3] Status Headline: Modern Bold Sans-Serif for Hero Messages ("TEHDİT TESPİT EDİLDİ", "SİSTEM GÜVENDE", "SİSTEM TARANIYOR") -->
     <Style x:Key="StatusHeadlineStyle" TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{StaticResource FontBrand}"/>
-        <Setter Property="FontSize" Value="20"/>
+        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
+        <Setter Property="FontSize" Value="22"/>
         <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
