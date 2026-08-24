@@ -43,51 +43,51 @@
     <Color x:Key="ColorTextOnAccent">#FFFFFF</Color>
     <Color x:Key="ColorTextOnDark">#FFFFFF</Color>
 
-    <!-- ── 4. SEMANTIC STATUS TOKENS (CONTRAST TUNED FOR DARK BACKGROUND) ── -->
-    <!-- Safe / Clean (Emerald Green) -->
-    <Color x:Key="ColorStatusSafe">#10B981</Color>
-    <Color x:Key="ColorStatusSafeDark">#059669</Color>
-    <Color x:Key="ColorStatusSafeBg">#08281E</Color>
+    <!-- ── 4. SEMANTIC STATUS TOKENS (SATURATED ALARM SYSTEM TONES) ── -->
+    <!-- Safe / Clean (Enterprise Emerald Green) -->
+    <Color x:Key="ColorStatusSafe">#059669</Color>
+    <Color x:Key="ColorStatusSafeDark">#047857</Color>
+    <Color x:Key="ColorStatusSafeBg">#041F16</Color>
     <Color x:Key="ColorStatusSafeBorder">#065F46</Color>
-    <Color x:Key="ColorStatusSafeText">#34D399</Color>
+    <Color x:Key="ColorStatusSafeText">#10B981</Color>
 
-    <!-- Warning / Suspicious (Vibrant Honey Amber / Gold - cleanly distinct from brand orange) -->
-    <Color x:Key="ColorStatusWarning">#F59E0B</Color>
-    <Color x:Key="ColorStatusWarningDark">#D97706</Color>
-    <Color x:Key="ColorStatusWarningBg">#2A1B05</Color>
+    <!-- Warning / Suspicious (Technical Amber - cleanly distinct from brand orange) -->
+    <Color x:Key="ColorStatusWarning">#D97706</Color>
+    <Color x:Key="ColorStatusWarningDark">#B45309</Color>
+    <Color x:Key="ColorStatusWarningBg">#241403</Color>
     <Color x:Key="ColorStatusWarningBorder">#78350F</Color>
-    <Color x:Key="ColorStatusWarningText">#FBBF24</Color>
+    <Color x:Key="ColorStatusWarningText">#F59E0B</Color>
 
-    <!-- Danger / Critical (Luminous Crimson Red) -->
-    <Color x:Key="ColorStatusDanger">#EF4444</Color>
-    <Color x:Key="ColorStatusDangerDark">#DC2626</Color>
-    <Color x:Key="ColorStatusDangerBg">#2D0E0E</Color>
+    <!-- Danger / Critical (Alarm Crimson Red) -->
+    <Color x:Key="ColorStatusDanger">#DC2626</Color>
+    <Color x:Key="ColorStatusDangerDark">#B91C1C</Color>
+    <Color x:Key="ColorStatusDangerBg">#240606</Color>
     <Color x:Key="ColorStatusDangerBorder">#7F1D1D</Color>
-    <Color x:Key="ColorStatusDangerText">#F87171</Color>
+    <Color x:Key="ColorStatusDangerText">#EF4444</Color>
 
-    <!-- Info (Cyan-Sky Blue) -->
-    <Color x:Key="ColorStatusInfo">#38BDF8</Color>
-    <Color x:Key="ColorStatusInfoDark">#0284C7</Color>
-    <Color x:Key="ColorStatusInfoBg">#082F49</Color>
-    <Color x:Key="ColorStatusInfoBorder">#0369A1</Color>
-    <Color x:Key="ColorStatusInfoText">#7DD3FC</Color>
+    <!-- Info (Corporate Cobalt Blue) -->
+    <Color x:Key="ColorStatusInfo">#2563EB</Color>
+    <Color x:Key="ColorStatusInfoDark">#1D4ED8</Color>
+    <Color x:Key="ColorStatusInfoBg">#081D3C</Color>
+    <Color x:Key="ColorStatusInfoBorder">#1E40AF</Color>
+    <Color x:Key="ColorStatusInfoText">#3B82F6</Color>
 
     <!-- Purple (Quarantine / Vault) -->
-    <Color x:Key="ColorStatusPurple">#A78BFA</Color>
-    <Color x:Key="ColorStatusPurpleDark">#8B5CF6</Color>
-    <Color x:Key="ColorStatusPurpleBg">#1E1430</Color>
+    <Color x:Key="ColorStatusPurple">#8B5CF6</Color>
+    <Color x:Key="ColorStatusPurpleDark">#7C3AED</Color>
+    <Color x:Key="ColorStatusPurpleBg">#1C1030</Color>
     <Color x:Key="ColorStatusPurpleBorder">#4C1D95</Color>
-    <Color x:Key="ColorStatusPurpleText">#C4B5FD</Color>
+    <Color x:Key="ColorStatusPurpleText">#A78BFA</Color>
 
     <!-- Compatibility Status Aliases -->
-    <Color x:Key="ColorStatusGreen">#10B981</Color>
-    <Color x:Key="ColorStatusGreenBg">#08281E</Color>
-    <Color x:Key="ColorStatusAmber">#F59E0B</Color>
-    <Color x:Key="ColorStatusAmberBg">#2A1B05</Color>
-    <Color x:Key="ColorStatusRed">#EF4444</Color>
-    <Color x:Key="ColorStatusRedBg">#2D0E0E</Color>
-    <Color x:Key="ColorStatusBlue">#38BDF8</Color>
-    <Color x:Key="ColorStatusBlueBg">#082F49</Color>
+    <Color x:Key="ColorStatusGreen">#059669</Color>
+    <Color x:Key="ColorStatusGreenBg">#041F16</Color>
+    <Color x:Key="ColorStatusAmber">#D97706</Color>
+    <Color x:Key="ColorStatusAmberBg">#241403</Color>
+    <Color x:Key="ColorStatusRed">#DC2626</Color>
+    <Color x:Key="ColorStatusRedBg">#240606</Color>
+    <Color x:Key="ColorStatusBlue">#2563EB</Color>
+    <Color x:Key="ColorStatusBlueBg">#081D3C</Color>
 
     <!-- ══════════════════════════════════════════════════════════════════════════════════
          SOLID COLOR BRUSHES (FOR DynamicResource BINDING)

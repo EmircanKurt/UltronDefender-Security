@@ -217,8 +217,8 @@
 
                         <!-- Large Colored Icon Box (6px Corner Radius) -->
                         <Border Grid.Row="0" Width="42" Height="42" HorizontalAlignment="Left" CornerRadius="6"
-                                Background="{DynamicResource BrushBrandMinimal}" BorderBrush="{DynamicResource BrushBrandSubtle}" BorderThickness="1" Margin="0,0,0,12">
-                            <ui:SymbolIcon Symbol="LockClosed24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                Background="{DynamicResource BrushStatusWarningBg}" BorderBrush="{DynamicResource BrushStatusWarningBorder}" BorderThickness="1" Margin="0,0,0,12">
+                            <ui:SymbolIcon Symbol="LockClosed24" Foreground="{DynamicResource BrushStatusWarning}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
 
                         <!-- Title -->

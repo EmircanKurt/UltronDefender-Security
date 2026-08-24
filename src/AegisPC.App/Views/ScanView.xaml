@@ -51,14 +51,14 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                        <ui:SymbolIcon Symbol="Target24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                        <ui:SymbolIcon Symbol="Target24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
                         <TextBlock Text="Tarayıcı" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,28,0" VerticalAlignment="Center"/>
 
                         <!-- Tabs -->
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <StackPanel Margin="0,0,24,0">
                                 <TextBlock Text="Tarayıcı" Style="{StaticResource ActiveTabHeaderStyle}"/>
-                                <Rectangle Height="2.5" Fill="{DynamicResource BrushBrandPrimary}" Margin="0,4,0,0" RadiusX="1" RadiusY="1"/>
+                                <Rectangle Height="2" Fill="{DynamicResource BrushBrandPrimary}" Margin="0,4,0,0" RadiusX="1" RadiusY="1"/>
                             </StackPanel>
                             <TextBlock Text="Zamanlayıcı" Style="{StaticResource TabHeaderStyle}"/>
                             <TextBlock Text="Raporlar" Style="{StaticResource TabHeaderStyle}"/>
@@ -80,7 +80,7 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                            <ui:SymbolIcon Symbol="Flash24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="20" Margin="0,0,8,0"/>
+                            <ui:SymbolIcon Symbol="Flash24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="20" Margin="0,0,8,0"/>
                             <TextBlock Text="Hızlı Tarama" Style="{StaticResource SectionHeadingStyle}" FontSize="15"/>
                         </StackPanel>
                         <TextBlock Grid.Row="1" Text="İndirilenler, Temp, Masaüstü ve başlangıç noktaları gibi en yaygın tehdit konumlarını hızlıca analiz eder." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,14"/>
@@ -90,7 +90,7 @@
                 </Border>
 
                 <!-- Full Scan -->
-                <Border Style="{StaticResource MetricCardStyle}" BorderBrush="{DynamicResource BrushBrandPrimary}" BorderThickness="1.5" Margin="0,0,12,0" Padding="20">
+                <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,12,0" Padding="20">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -98,7 +98,7 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                            <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="20" Margin="0,0,8,0"/>
+                            <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="20" Margin="0,0,8,0"/>
                             <TextBlock Text="Tam Sistem Taraması" Style="{StaticResource SectionHeadingStyle}" FontSize="15"/>
                         </StackPanel>
                         <TextBlock Grid.Row="1" Text="Tüm sabit disklerdeki bütün dosyaları, IFEO kaçırmalarını, Hosts dosyası ve bellek enjeksiyonlarını derinlemesine tarar." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,14"/>
@@ -137,8 +137,8 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0" Width="40" Height="40" CornerRadius="20" Background="{DynamicResource BrushBrandMinimal}" Margin="0,0,14,0" VerticalAlignment="Center">
-                        <ui:SymbolIcon Symbol="Shield24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Border Grid.Column="0" Width="40" Height="40" CornerRadius="4" Background="{DynamicResource BrushStatusInfoBg}" BorderBrush="{DynamicResource BrushStatusInfoBorder}" BorderThickness="1" Margin="0,0,14,0" VerticalAlignment="Center">
+                        <ui:SymbolIcon Symbol="Shield24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
 
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">

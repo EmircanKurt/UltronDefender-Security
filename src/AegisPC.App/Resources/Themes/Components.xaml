@@ -60,7 +60,7 @@
     <!-- Primary Action Button Alias -->
     <Style x:Key="PrimaryActionButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}"/>
 
-    <!-- Secondary Button: Neutral Corporate Slate Border + Primary Text (Hover: Orange Accent) -->
+    <!-- Secondary Button: Strictly Neutral Slate/Gray Border & Background (NO Orange) -->
     <Style x:Key="SecondaryButtonStyle" TargetType="Button">
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Background" Value="{DynamicResource BrushCardBgAlt}"/>
@@ -90,13 +90,13 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource BrushCardBorderHover}"/>
-                            <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource BrushBrandPrimary}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource BrushBrandPrimary}"/>
+                            <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource BrushCardBorderHover}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource BrushBrandMinimal}"/>
-                            <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource BrushBrandPressed}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource BrushBrandPressed}"/>
+                            <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource BrushCardBorder}"/>
+                            <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource BrushCardBorder}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.45"/>
@@ -107,8 +107,9 @@
         </Setter>
     </Style>
 
-    <!-- Secondary Action Button Alias -->
+    <!-- Secondary & Neutral Action Button Aliases -->
     <Style x:Key="SecondaryActionButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}"/>
+    <Style x:Key="NeutralActionButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}"/>
 
     <!-- Danger Button: Enterprise Crimson Red Fill (4px CornerRadius) -->
     <Style x:Key="DangerButtonStyle" TargetType="Button">

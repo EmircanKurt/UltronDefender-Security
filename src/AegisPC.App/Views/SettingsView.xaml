@@ -45,7 +45,7 @@
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
                         <TextBlock Text="Temel Güvenlik Kalkanları" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
                     </StackPanel>
 
@@ -95,8 +95,8 @@
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="Ağ, DNS ve Web Kalkanı" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
-                                <Border Style="{StaticResource BadgeProgressStyle}" Padding="6,1" Margin="8,0,0,0">
-                                    <TextBlock Text="DNS/WEB" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                                <Border Style="{StaticResource BadgeBlueStyle}" Padding="6,1" Margin="8,0,0,0">
+                                    <TextBlock Text="DNS/WEB" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusInfoText}"/>
                                 </Border>
                             </StackPanel>
                             <TextBlock Text="Zararlı web siteleri, phishing alan adları ve DNS tabanlı tehdit filtreleme kalkanı." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
@@ -110,7 +110,7 @@
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <ui:SymbolIcon Symbol="AlertBadge24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <ui:SymbolIcon Symbol="AlertBadge24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
                         <TextBlock Text="Bildirimler ve Telemetri" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
                     </StackPanel>
 
@@ -136,7 +136,7 @@
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <ui:SymbolIcon Symbol="Calendar24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <ui:SymbolIcon Symbol="Calendar24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
                         <TextBlock Text="Zamanlanmış Güvenlik Taraması" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
                     </StackPanel>
 

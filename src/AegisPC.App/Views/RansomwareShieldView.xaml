@@ -47,8 +47,8 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     
-                    <Border Grid.Column="0" Background="{DynamicResource BrushBrandMinimal}" CornerRadius="10" Padding="14" Margin="0,0,16,0">
-                        <ui:SymbolIcon Symbol="ShieldLock24" FontSize="36" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                    <Border Grid.Column="0" Background="{DynamicResource BrushStatusWarningBg}" BorderBrush="{DynamicResource BrushStatusWarningBorder}" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,16,0">
+                        <ui:SymbolIcon Symbol="ShieldLock24" FontSize="36" Foreground="{DynamicResource BrushStatusWarning}"/>
                     </Border>
                     
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -80,7 +80,7 @@
                 <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Margin="0">
                     <StackPanel>
                         <TextBlock Text="Aktif Canary Yem Tuzakları" Style="{StaticResource CaptionTextStyle}" FontWeight="Medium" Margin="0,0,0,6"/>
-                        <TextBlock Text="{Binding CanaryFileCount}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                        <TextBlock Text="{Binding CanaryFileCount}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushStatusWarning}"/>
                     </StackPanel>
                 </Border>
 
@@ -124,7 +124,7 @@
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <ui:SymbolIcon Symbol="Folder24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="20" Grid.Column="0" Margin="0,0,10,0"/>
+                                            <ui:SymbolIcon Symbol="Folder24" Foreground="{DynamicResource BrushStatusWarning}" FontSize="20" Grid.Column="0" Margin="0,0,10,0"/>
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
                                                 <TextBlock Text="{Binding Path}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis"/>

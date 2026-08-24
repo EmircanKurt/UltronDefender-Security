@@ -48,12 +48,12 @@
                 <Border Style="{StaticResource MetricCardStyle}" Height="135" Margin="0,0,12,0" Padding="16">
                     <StackPanel VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <ui:SymbolIcon Symbol="DeveloperBoard24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="18" Margin="0,0,8,0"/>
+                            <ui:SymbolIcon Symbol="DeveloperBoard24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0"/>
                             <TextBlock Text="İŞLEMCİ (CPU)" Style="{StaticResource CaptionTextStyle}" FontWeight="Bold"/>
                         </StackPanel>
                         <TextBlock Text="{Binding Cpu.Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="13" TextTrimming="CharacterEllipsis"/>
                         <TextBlock Text="{Binding CpuSummary}" Style="{StaticResource CaptionTextStyle}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding Cpu.MaxClockSpeedMhz, StringFormat='Taban Hız: \{0\} MHz'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushBrandPrimary}" Margin="0,2,0,0"/>
+                        <TextBlock Text="{Binding Cpu.MaxClockSpeedMhz, StringFormat='Taban Hız: \{0\} MHz'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>
 
@@ -61,12 +61,12 @@
                 <Border Style="{StaticResource MetricCardStyle}" Height="135" Margin="0,0,12,0" Padding="16">
                     <StackPanel VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <ui:SymbolIcon Symbol="Tv24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="18" Margin="0,0,8,0"/>
+                            <ui:SymbolIcon Symbol="Tv24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0"/>
                             <TextBlock Text="EKRAN KARTI (GPU)" Style="{StaticResource CaptionTextStyle}" FontWeight="Bold"/>
                         </StackPanel>
                         <TextBlock Text="{Binding PrimaryGpu.Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="13" TextTrimming="CharacterEllipsis"/>
                         <TextBlock Text="{Binding GpuSummary}" Style="{StaticResource CaptionTextStyle}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding PrimaryGpu.DriverVersion, StringFormat='Sürücü: \{0\}'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushBrandPrimary}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding PrimaryGpu.DriverVersion, StringFormat='Sürücü: \{0\}'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
                 </Border>
 
@@ -79,7 +79,7 @@
                         </StackPanel>
                         <TextBlock Text="{Binding MotherboardSummary}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="13" TextTrimming="CharacterEllipsis"/>
                         <TextBlock Text="{Binding Motherboard.SerialNumber, StringFormat='Seri No: \{0\}'}" Style="{StaticResource CaptionTextStyle}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding Motherboard.Version, StringFormat='Sürüm: \{0\}'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushBrandPrimary}" Margin="0,2,0,0"/>
+                        <TextBlock Text="{Binding Motherboard.Version, StringFormat='Sürüm: \{0\}'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>
 
@@ -120,7 +120,7 @@
 
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                             <TextBlock Text="{Binding UltronPid, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,14,0"/>
-                            <TextBlock Text="{Binding UltronUptime, StringFormat='Çalışma Süresi: \{0\}'}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                            <TextBlock Text="{Binding UltronUptime, StringFormat='Çalışma Süresi: \{0\}'}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" Foreground="{DynamicResource BrushStatusSafeText}"/>
                         </StackPanel>
                     </Grid>
 
@@ -130,7 +130,7 @@
                         <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,10,0">
                             <StackPanel>
                                 <TextBlock Text="İşlemci (CPU) Kullanımı" Style="{StaticResource CaptionTextStyle}" Margin="0,0,0,4"/>
-                                <TextBlock Text="{Binding UltronCpuUsage}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                                <TextBlock Text="{Binding UltronCpuUsage}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushTextPrimary}"/>
                                 <TextBlock Text="Sıfır etki / Arka plan optimizasyonu" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusSafeDark}" Margin="0,2,0,0"/>
                             </StackPanel>
                         </Border>
@@ -180,7 +180,7 @@
                         <Border Style="{StaticResource MetricCardStyle}" Width="280" Height="135" Margin="0,0,16,16" Padding="16">
                             <StackPanel VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <ui:SymbolIcon Symbol="HardDrive24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="20" Margin="0,0,8,0"/>
+                                    <ui:SymbolIcon Symbol="HardDrive24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="20" Margin="0,0,8,0"/>
                                     <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="15"/>
                                     <TextBlock Text="{Binding VolumeLabel, StringFormat=' ({0})'}" Style="{StaticResource CaptionTextStyle}" FontSize="13"/>
                                 </StackPanel>
@@ -215,21 +215,21 @@
                                 <DataTemplate>
                                     <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,6">
                                         <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Width="26" Height="26" Background="{DynamicResource BrushStatusDangerBg}" CornerRadius="5" Margin="0,0,8,0">
-                                                <ui:SymbolIcon Symbol="DeveloperBoard24" Foreground="{DynamicResource BrushStatusDanger}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding PID, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" FontSize="10" Foreground="{DynamicResource BrushTextSecondary}"/>
-                                            </StackPanel>
-                                            <Border Grid.Column="2" Style="{StaticResource BadgeDangerStyle}" Padding="6,2" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding CpuPercent, StringFormat='\{0:0.0\} %'}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource BrushStatusDangerText}"/>
-                                            </Border>
+                                             <Grid.ColumnDefinitions>
+                                                 <ColumnDefinition Width="Auto"/>
+                                                 <ColumnDefinition Width="*"/>
+                                                 <ColumnDefinition Width="Auto"/>
+                                             </Grid.ColumnDefinitions>
+                                             <Border Grid.Column="0" Width="26" Height="26" Background="{DynamicResource BrushStatusDangerBg}" CornerRadius="5" Margin="0,0,8,0">
+                                                 <ui:SymbolIcon Symbol="DeveloperBoard24" Foreground="{DynamicResource BrushStatusDanger}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                             </Border>
+                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                 <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                                 <TextBlock Text="{Binding PID, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" FontSize="10" Foreground="{DynamicResource BrushTextSecondary}"/>
+                                             </StackPanel>
+                                             <Border Grid.Column="2" Style="{StaticResource BadgeDangerStyle}" Padding="6,2" VerticalAlignment="Center">
+                                                 <TextBlock Text="{Binding CpuPercent, StringFormat='\{0:0.0\} %'}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource BrushStatusDangerText}"/>
+                                             </Border>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
@@ -252,15 +252,15 @@
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Width="26" Height="26" Background="{DynamicResource BrushBrandMinimal}" CornerRadius="5" Margin="0,0,8,0">
-                                                <ui:SymbolIcon Symbol="AppsListDetail24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            <Border Grid.Column="0" Width="26" Height="26" Background="{DynamicResource BrushStatusInfoBg}" CornerRadius="5" Margin="0,0,8,0">
+                                                <ui:SymbolIcon Symbol="AppsListDetail24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Border>
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="12" TextTrimming="CharacterEllipsis"/>
                                                 <TextBlock Text="{Binding PID, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" FontSize="10" Foreground="{DynamicResource BrushTextSecondary}"/>
                                             </StackPanel>
-                                            <Border Grid.Column="2" Style="{StaticResource BadgeProgressStyle}" Padding="6,2" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding MemoryBytes, Converter={StaticResource BytesConverter}}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                                            <Border Grid.Column="2" Style="{StaticResource BadgeSafeStyle}" Padding="6,2" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding MemoryBytes, Converter={StaticResource BytesConverter}}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource BrushStatusSafeText}"/>
                                             </Border>
                                         </Grid>
                                     </Border>

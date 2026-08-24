@@ -86,7 +86,7 @@
                         <DataGridTemplateColumn Header="CPU %" Width="85">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding CpuPercent, StringFormat='\{0:F1\} %'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushBrandPrimary}" FontWeight="SemiBold" Padding="6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding CpuPercent, StringFormat='\{0:F1\} %'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextPrimary}" FontWeight="SemiBold" Padding="6,0" VerticalAlignment="Center"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
@@ -123,7 +123,7 @@
                             <TextBlock Text="Kaynak Kullanımı" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,8,0,4"/>
                             <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,8">
                                 <StackPanel>
-                                    <TextBlock Text="{Binding SelectedProcess.CpuPercent, StringFormat='CPU: \{0:F1\} %'}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                                    <TextBlock Text="{Binding SelectedProcess.CpuPercent, StringFormat='CPU: \{0:F1\} %'}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
                                     <TextBlock Text="{Binding SelectedProcess.MemoryBytes, Converter={StaticResource BytesConverter}, StringFormat='Bellek: \{0\}'}" Style="{StaticResource DataTableStyle}" Margin="0,4,0,0"/>
                                 </StackPanel>
                             </Border>
