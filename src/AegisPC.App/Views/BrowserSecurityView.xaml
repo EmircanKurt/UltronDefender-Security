@@ -59,7 +59,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- Table (Strict DataTableStyle: Pure Sans-Serif) -->
-            <Border Grid.Column="0" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10" Margin="0,0,16,0">
+            <Border Grid.Column="0" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Margin="0,0,16,0">
                 <ui:DataGrid ItemsSource="{Binding Extensions}" 
                              SelectedItem="{Binding SelectedExtension}"
                              AutoGenerateColumns="False" 

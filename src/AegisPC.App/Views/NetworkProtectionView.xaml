@@ -29,7 +29,7 @@
                 <StackPanel>
                     <Grid Margin="0,0,0,14">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="GlobeShield24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <ui:SymbolIcon Symbol="GlobeShield24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <TextBlock Text="Ağ Bağdaştırıcıları ve Güvenli DNS Yapılandırması" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
                         </StackPanel>
                         <Button Content="Yenile" Command="{Binding RefreshAdaptersCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Right" Padding="12,4"/>
@@ -39,19 +39,19 @@
                     <ItemsControl ItemsSource="{Binding Adapters}" Margin="0,0,0,16">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,8">
+                                <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="14,10" Margin="0,0,0,8">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <ui:SymbolIcon Symbol="Router24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="22" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                                        <ui:SymbolIcon Symbol="Router24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="22" Margin="0,0,14,0" VerticalAlignment="Center"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
-                                                <Border Style="{StaticResource BadgeProgressStyle}" Padding="6,1" Margin="8,0,0,0">
-                                                    <TextBlock Text="{Binding Status}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                                                <Border Style="{StaticResource BadgeBlueStyle}" Padding="6,1" Margin="8,0,0,0">
+                                                    <TextBlock Text="{Binding Status}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusInfoText}"/>
                                                 </Border>
                                             </StackPanel>
                                             <TextBlock Text="{Binding ProviderName}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,0"/>
@@ -66,9 +66,9 @@
                     <!-- Quick DNS Change Buttons -->
                     <TextBlock Text="Tek Tıkla Güvenli DNS Sunucusuna Geçiş Yapın:" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,8"/>
                     <WrapPanel Margin="0,0,0,4">
-                        <Button Content="🛡️ Quad9 Zararlı Engelleyici (9.9.9.9)" Command="{Binding SetDnsQuad9Command}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" Padding="12,6"/>
-                        <Button Content="⚡ Cloudflare Hızlı DNS (1.1.1.1)" Command="{Binding SetDnsCloudflareCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" Padding="12,6"/>
-                        <Button Content="🔄 Varsayılana Sıfırla (DHCP)" Command="{Binding SetDnsDhcpCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" Padding="12,6"/>
+                        <Button Content="Quad9 Zararlı Engelleyici (9.9.9.9)" Command="{Binding SetDnsQuad9Command}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" Padding="12,6"/>
+                        <Button Content="Cloudflare Hızlı DNS (1.1.1.1)" Command="{Binding SetDnsCloudflareCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" Padding="12,6"/>
+                        <Button Content="Varsayılana Sıfırla (DHCP)" Command="{Binding SetDnsDhcpCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" Padding="12,6"/>
                     </WrapPanel>
                 </StackPanel>
             </Border>
@@ -86,7 +86,7 @@
                     <TextBlock Text="{Binding HostsStatusText}" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,12"/>
 
                     <StackPanel Orientation="Horizontal">
-                        <Button Content="🛡️ Zararlı Domain Kalkanını Uygula (Sinkhole)" Command="{Binding ApplySinkholeCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,10,0" Padding="16,8"/>
+                        <Button Content="Zararlı Domain Kalkanını Uygula (Sinkhole)" Command="{Binding ApplySinkholeCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,10,0" Padding="16,8"/>
                         <Button Content="Kaldır" Command="{Binding RemoveSinkholeCommand}" Style="{StaticResource SecondaryButtonStyle}" Padding="14,8"/>
                     </StackPanel>
                 </StackPanel>
@@ -96,7 +96,7 @@
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                        <ui:SymbolIcon Symbol="Search24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                        <ui:SymbolIcon Symbol="Search24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
                         <TextBlock Text="Gerçek Zamanlı Web &amp; Phishing URL Analizcisi" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
                     </StackPanel>
 
@@ -110,7 +110,7 @@
                     </Grid>
 
                     <!-- Result Panel -->
-                    <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,4,0,0"
+                    <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="16" Margin="0,4,0,0"
                             Visibility="{Binding HasAnalysisResult, Converter={StaticResource BoolToVis}}">
                         <StackPanel>
                             <Grid Margin="0,0,0,8">

@@ -68,18 +68,18 @@
                     <!-- Primary Action Buttons -->
                     <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
                         <!-- Direct Review Threats Action when threats exist (Crimson Red Danger Button) -->
-                        <Button Style="{StaticResource DangerActionButtonStyle}" Content="{Binding ThreatActionText, FallbackValue='🚨 Tehditleri İncele'}" 
+                        <Button Style="{StaticResource DangerActionButtonStyle}" Content="{Binding ThreatActionText, FallbackValue='Tehditleri İncele'}" 
                                 Command="{Binding ReviewThreatsCommand}" Margin="0,0,0,6" MinWidth="150"
                                 Visibility="{Binding HasThreatsDetected, Converter={StaticResource BoolToVis}}"/>
 
                         <!-- Standard Quick Scan Action (Brand Orange Primary Button) -->
-                        <Button Style="{StaticResource PrimaryActionButtonStyle}" Content="⚡ Hızlı Tarama Başlat" 
+                        <Button Style="{StaticResource PrimaryActionButtonStyle}" Content="Hızlı Tarama Başlat" 
                                 Command="{Binding StartQuickScanCommand}" Margin="0,0,0,6" MinWidth="150"
                                 Visibility="{Binding HasThreatsDetected, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"/>
 
-                        <Button Style="{StaticResource SecondaryActionButtonStyle}" Content="{Binding ThemeButtonText, FallbackValue='🌙 Gece Modu'}" 
+                        <Button Style="{StaticResource SecondaryActionButtonStyle}" Content="{Binding ThemeButtonText, FallbackValue='Gece Modu'}" 
                                 Command="{Binding ToggleThemeCommand}" Margin="0,0,0,6" MinWidth="150"/>
-                        <Button Style="{StaticResource SecondaryActionButtonStyle}" Content="🛡️ Korumayı Yönet" 
+                        <Button Style="{StaticResource SecondaryActionButtonStyle}" Content="Korumayı Yönet" 
                                 Command="{Binding NavigateToTargetCommand}" CommandParameter="security" MinWidth="150"/>
                     </StackPanel>
                 </Grid>
@@ -125,7 +125,7 @@
                     <StackPanel>
                         <TextBlock Text="İMZA VERİTABANI" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="ArrowSyncCircle24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <ui:SymbolIcon Symbol="ArrowSyncCircle24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
                             <TextBlock Text="{Binding SignatureDbVersion}" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold"/>
                         </StackPanel>
                     </StackPanel>
@@ -276,7 +276,7 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="Activity24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <ui:SymbolIcon Symbol="Activity24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
                             <TextBlock Text="Canlı Güvenlik Akışı" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                             <TextBlock Text="— Arka planda taranan ve korunan son olaylar" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center"/>
                         </StackPanel>

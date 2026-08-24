@@ -40,7 +40,7 @@
 
         <!-- 3. Logs DataGrid (Strict DataTableStyle: Pure Sans-Serif, Tabular Numerals) -->
         <Grid Grid.Row="2">
-            <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10">
+            <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6">
                 <ui:DataGrid ItemsSource="{Binding Logs}" 
                              AutoGenerateColumns="False" 
                              IsReadOnly="True"

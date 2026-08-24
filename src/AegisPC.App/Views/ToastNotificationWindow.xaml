@@ -12,7 +12,7 @@
         WindowStartupLocation="Manual">
 
     <!-- Outer Notification Container with Theme-Adaptive Background -->
-    <Border x:Name="CardBorder" Background="{DynamicResource BrushCardBg}" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource BrushCardBorder}" Padding="0" Cursor="Hand" MouseLeftButtonDown="OnCardClicked">
+    <Border x:Name="CardBorder" Background="{DynamicResource BrushCardBg}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BrushCardBorder}" Padding="0" Cursor="Hand" MouseLeftButtonDown="OnCardClicked">
         <Border.Effect>
             <DropShadowEffect BlurRadius="20" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.25"/>
         </Border.Effect>
@@ -24,7 +24,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- 1. Left Color Accent Stripe -->
-            <Border x:Name="AccentStripe" Grid.Column="0" Background="{DynamicResource BrushBrandPrimary}" CornerRadius="8,0,0,8"/>
+            <Border x:Name="AccentStripe" Grid.Column="0" Background="{DynamicResource BrushBrandPrimary}" CornerRadius="6,0,0,6"/>
 
             <!-- 2. Main Notification Card Content -->
             <Grid Grid.Column="1" Margin="14,10,14,10">
@@ -43,7 +43,7 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border Background="{DynamicResource BrushBrandPrimary}" CornerRadius="4" Padding="5,2" Margin="0,0,8,0">
+                        <Border Background="{DynamicResource BrushBrandPrimary}" CornerRadius="3" Padding="5,2" Margin="0,0,8,0">
                             <TextBlock Text="ULTRON" FontSize="9.5" FontWeight="ExtraBold" Foreground="#FFFFFF"/>
                         </Border>
                         <TextBlock x:Name="AppHeaderTitle" Text="DEFENDER TOTAL SECURITY" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
@@ -64,7 +64,7 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- Shield Checkmark / Alert Icon Badge -->
-                    <Border x:Name="IconBadge" Grid.Column="0" Width="36" Height="36" CornerRadius="18" Background="{DynamicResource BrushBrandMinimal}" Margin="0,2,12,0" VerticalAlignment="Top">
+                    <Border x:Name="IconBadge" Grid.Column="0" Width="36" Height="36" CornerRadius="4" Background="{DynamicResource BrushBrandMinimal}" Margin="0,2,12,0" VerticalAlignment="Top">
                         <ui:SymbolIcon x:Name="BadgeIcon" Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
 

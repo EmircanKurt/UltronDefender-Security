@@ -36,7 +36,7 @@
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                 <Border Style="{StaticResource BadgeDangerStyle}" Margin="0,0,12,0"
                         Visibility="{Binding HasNoIncidents, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}">
-                    <TextBlock Text="{Binding ActiveIncidentCount, StringFormat='🚨 {0} Aktif Olay'}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusDangerText}"/>
+                    <TextBlock Text="{Binding ActiveIncidentCount, StringFormat='{}{0} Aktif Olay'}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusDangerText}"/>
                 </Border>
                 <Button Style="{StaticResource SecondaryButtonStyle}" Content="Yenile" Command="{Binding LoadIncidentsCommand}"/>
             </StackPanel>
@@ -58,7 +58,7 @@
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,8">
+                                <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="12" Margin="0,0,0,8">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto"/>
@@ -90,7 +90,7 @@
                     <!-- Empty State -->
                     <Border Background="{DynamicResource BrushCardBg}" Visibility="{Binding HasNoIncidents, Converter={StaticResource BoolToVis}}">
                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20">
-                            <TextBlock Text="🛡️" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                            <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="40" Foreground="{DynamicResource BrushStatusSafe}" HorizontalAlignment="Center" Margin="0,0,0,10"/>
                             <TextBlock Text="Aktif Tehdit Olayı Yok" Style="{StaticResource SectionHeadingStyle}" HorizontalAlignment="Center"/>
                             <TextBlock Text="Sisteminiz arka planda gerçek zamanlı korunuyor." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,4,0,0"/>
                         </StackPanel>
@@ -111,13 +111,13 @@
                                     <TextBlock Text="{Binding Title}" Style="{StaticResource PageHeadingStyle}" FontSize="18"/>
                                     <TextBlock Text="{Binding IncidentId, StringFormat='Olay Kimliği: {0}'}" Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                                 </StackPanel>
-                                <Border HorizontalAlignment="Right" Background="{DynamicResource BrushStatusDanger}" CornerRadius="6" Padding="12,4" VerticalAlignment="Top">
+                                <Border HorizontalAlignment="Right" Background="{DynamicResource BrushStatusDanger}" CornerRadius="4" Padding="12,4" VerticalAlignment="Top">
                                     <TextBlock Text="{Binding RiskScore, StringFormat='Risk Skoru: {0}/100'}" Style="{StaticResource ButtonTextStyle}" Foreground="#FFFFFF"/>
                                 </Border>
                             </Grid>
 
                             <!-- Key Metadata Grid (Strict Tabular Sans-Serif) -->
-                            <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,16">
+                            <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,16">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -140,7 +140,7 @@
 
                             <!-- File Path (Monospace) -->
                             <TextBlock Text="Zararlı Kaynak Dosya Yolu:" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,4"/>
-                            <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,16">
+                            <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="10,6" Margin="0,0,0,16">
                                 <TextBlock Text="{Binding RootExecutablePath}" Style="{StaticResource DataMonospaceStyle}" TextWrapping="Wrap"/>
                             </Border>
 
@@ -149,7 +149,7 @@
                             <ItemsControl ItemsSource="{Binding Timeline}" Margin="0,0,0,16">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,4">
+                                        <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="10,6" Margin="0,0,0,4">
                                             <TextBlock Text="{Binding}" Style="{StaticResource DataTableStyle}" FontSize="11.5"/>
                                         </Border>
                                     </DataTemplate>
@@ -158,16 +158,16 @@
 
                             <!-- Plain Turkish Explanation (Crimson Red Warning Container) -->
                             <TextBlock Text="Güvenlik Analizi ve Açıklama:" Style="{StaticResource SectionHeadingStyle}" FontSize="13" Margin="0,0,0,8"/>
-                            <Border Background="{DynamicResource BrushStatusDangerBg}" BorderBrush="{DynamicResource BrushStatusDangerBorder}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,16">
+                            <Border Background="{DynamicResource BrushStatusDangerBg}" BorderBrush="{DynamicResource BrushStatusDangerBorder}" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,16">
                                 <TextBlock Text="{Binding HumanExplanation}" Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushStatusDangerText}" TextWrapping="Wrap" LineHeight="18"/>
                             </Border>
 
                             <!-- Action Buttons -->
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <Button Content="🔒 Kaynak Dosyayı Karantinaya Al" 
+                                <Button Content="Kaynak Dosyayı Karantinaya Al" 
                                         Command="{Binding DataContext.QuarantineSourceFileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
                                         Style="{StaticResource DangerActionButtonStyle}" Margin="0,0,10,0" Padding="16,8"/>
-                                <Button Content="✓ Çözüldü Olarak İşaretle" 
+                                <Button Content="Çözüldü Olarak İşaretle" 
                                         Command="{Binding DataContext.RemediateIncidentCommand, RelativeSource={RelativeSource AncestorType=Page}}"
                                         Style="{StaticResource SecondaryButtonStyle}" Padding="14,8"/>
                             </StackPanel>
@@ -177,7 +177,7 @@
                     <!-- Empty Placeholder when no incident is selected -->
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20"
                                 Visibility="{Binding SelectedIncident, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}">
-                        <TextBlock Text="🔍" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                        <ui:SymbolIcon Symbol="Search24" FontSize="36" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,0,0,8"/>
                         <TextBlock Text="İncelemek için soldaki listeden bir güvenlik olayı seçin." 
                                    Style="{StaticResource SectionHeadingStyle}" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" TextAlignment="Center"/>
                     </StackPanel>

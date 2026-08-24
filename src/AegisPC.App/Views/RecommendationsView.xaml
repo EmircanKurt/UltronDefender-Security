@@ -1,4 +1,4 @@
-﻿<Page x:Class="AegisPC.App.Views.RecommendationsView"
+<Page x:Class="AegisPC.App.Views.RecommendationsView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -78,7 +78,7 @@
             <!-- Empty State Overlay -->
             <Border Background="{DynamicResource BrushAppBg}" Visibility="{Binding HasNoRecommendations, Converter={StaticResource BoolToVis}}">
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <TextBlock Text="🌟" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                    <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="48" Foreground="{DynamicResource BrushStatusSafe}" HorizontalAlignment="Center" Margin="0,0,0,12"/>
                     <TextBlock Text="Sisteminiz optimize durumda!" FontSize="18" FontWeight="SemiBold" 
                                HorizontalAlignment="Center" Foreground="{DynamicResource BrushTextPrimary}"/>
                     <TextBlock Text="Şu anda bekleyen herhangi bir optimizasyon veya güvenlik önerisi bulunmuyor." 

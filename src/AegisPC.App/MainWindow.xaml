@@ -180,13 +180,13 @@
 
                 <ui:NavigationView.FooterMenuItems>
                     <!-- License / Protection Tier Badge Card -->
-                    <Border Margin="12,4,12,8" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                    <Border Margin="12,4,12,8" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="10,8">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Width="28" Height="28" CornerRadius="14" Background="{DynamicResource BrushStatusSafeBg}" Margin="0,0,8,0" VerticalAlignment="Center">
+                            <Border Grid.Column="0" Width="28" Height="28" CornerRadius="4" Background="{DynamicResource BrushStatusSafeBg}" Margin="0,0,8,0" VerticalAlignment="Center">
                                 <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -201,7 +201,7 @@
                         </Grid>
                     </Border>
 
-                    <ui:NavigationViewItem x:Name="NavThemeToggle" Content="🌙 Gece Modu" Click="OnThemeToggleClicked">
+                    <ui:NavigationViewItem x:Name="NavThemeToggle" Content="Gece Modu" Click="OnThemeToggleClicked">
                         <ui:NavigationViewItem.Icon>
                             <ui:SymbolIcon x:Name="NavThemeIcon" Symbol="WeatherMoon24" FontSize="16"/>
                         </ui:NavigationViewItem.Icon>

@@ -42,7 +42,7 @@
 
             <!-- Crash Events List (Strict DataTableStyle: Pure Sans-Serif) -->
             <Grid Grid.Column="0" Margin="0,0,16,0">
-                <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10">
+                <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6">
                     <ui:DataGrid ItemsSource="{Binding Crashes}" 
                                  SelectedItem="{Binding SelectedCrash}"
                                  AutoGenerateColumns="False" 
@@ -82,10 +82,10 @@
                 </Border>
 
                 <!-- Empty State Overlay -->
-                <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10" 
+                <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" 
                         Visibility="{Binding HasNoCrashes, Converter={StaticResource BoolToVis}}">
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="24">
-                        <TextBlock Text="✅" FontSize="44" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                        <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="44" Foreground="{DynamicResource BrushStatusSafe}" HorizontalAlignment="Center" Margin="0,0,0,12"/>
                         <TextBlock Text="Uygulama çökmesi tespit edilmedi" Style="{StaticResource SectionHeadingStyle}" HorizontalAlignment="Center"/>
                         <TextBlock Text="Son 7 günde herhangi bir uygulama çökmesi kaydedilmedi." 
                                    Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
@@ -101,7 +101,7 @@
 
                         <StackPanel Visibility="{Binding SelectedCrashReport, Converter={StaticResource BoolToVis}}">
                             <!-- Incident Summary Header -->
-                            <Border Background="{DynamicResource BrushBrandMinimal}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,16">
+                            <Border Background="{DynamicResource BrushBrandMinimal}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,16">
                                 <StackPanel>
                                     <TextBlock Text="{Binding SelectedCrashReport.Summary}" Style="{StaticResource SectionHeadingStyle}" FontSize="14" TextWrapping="Wrap"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
