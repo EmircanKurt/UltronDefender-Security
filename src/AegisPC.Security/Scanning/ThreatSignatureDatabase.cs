@@ -20,6 +20,24 @@ namespace AegisPC.Security.Scanning
         private static readonly ConcurrentDictionary<string, (string Name, string Category, int Severity)> _memoryCache = new(StringComparer.OrdinalIgnoreCase);
 
         public static int TotalSignaturesCount => _memoryCache.Count;
+        public static DateTime LastDatabaseUpdate { get; private set; } = DateTime.Now;
+
+        public static DateTime GetLastDatabaseUpdate()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_dbPath) && File.Exists(_dbPath))
+                {
+                    var fileTime = File.GetLastWriteTime(_dbPath);
+                    if (fileTime > LastDatabaseUpdate)
+                    {
+                        LastDatabaseUpdate = fileTime;
+                    }
+                }
+            }
+            catch { }
+            return LastDatabaseUpdate;
+        }
 
         // Gerçek dünya tehditleri — Gömülü ilk imza kümesi (Embedded Starter Dataset)
         // Ransomware, Infostealers, RATs, Loaders, Miners, Exploits

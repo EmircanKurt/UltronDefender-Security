@@ -86,7 +86,7 @@
             </Border>
 
             <!-- ══════════════════════════════════════════════════════
-                 2. ENTERPRISE TELEMETRY STATS STRIP (Bilgi Yoğunluğu & Aktif Metrikler)
+                 2. ENTERPRISE TELEMETRY STATS STRIP (Gerçek Veriye Bağlı Kompakt 4 İstatistik Kartı)
             ══════════════════════════════════════════════════════ -->
             <Grid Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
@@ -102,42 +102,42 @@
                         <TextBlock Text="BUGÜN TARANAN DOSYA" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <ui:SymbolIcon Symbol="DocumentSearch24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding FilesScannedCount, StringFormat='{}{0:N0}'}" Style="{StaticResource SectionHeadingStyle}" FontSize="14" FontWeight="Bold"/>
-                            <TextBlock Text=" nesne" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Bottom" Margin="3,0,0,1"/>
+                            <TextBlock Text="{Binding FilesScannedCount, StringFormat='{}{0:N0}'}" Style="{StaticResource SectionHeadingStyle}" FontSize="13.5" FontWeight="Bold"/>
+                            <TextBlock Text=" dosya" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Bottom" Margin="3,0,0,1"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
-                <!-- Stat 2: Blocked Threats -->
+                <!-- Stat 2: Blocked Threats This Month (QuarantineService Real Data) -->
                 <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="14,10">
                     <StackPanel>
-                        <TextBlock Text="ENGELLENEN TEHDİT (24S)" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
+                        <TextBlock Text="BU AY ENGELLENEN TEHDİT" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <ui:SymbolIcon Symbol="ShieldDismiss24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding ThreatsBocked24h}" Style="{StaticResource SectionHeadingStyle}" FontSize="14" FontWeight="Bold"/>
-                            <TextBlock Text=" tehdit nötralize" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Bottom" Margin="3,0,0,1"/>
+                            <TextBlock Text="{Binding ThreatsBlockedThisMonth}" Style="{StaticResource SectionHeadingStyle}" FontSize="13.5" FontWeight="Bold"/>
+                            <TextBlock Text=" tehdit" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Bottom" Margin="3,0,0,1"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
-                <!-- Stat 3: Signature DB Version -->
+                <!-- Stat 3: Signature DB Last Update Time -->
                 <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="14,10">
                     <StackPanel>
-                        <TextBlock Text="İMZA VERİTABANI" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
+                        <TextBlock Text="SON İMZA GÜNCELLEMESİ" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <ui:SymbolIcon Symbol="ArrowSyncCircle24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding SignatureDbVersion}" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding LastDatabaseUpdateFormatted}" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
-                <!-- Stat 4: Engine Status -->
+                <!-- Stat 4: Real-Time Protection Uptime (Koruma Süresi) -->
                 <Border Grid.Column="3" Style="{StaticResource MetricCardStyle}" Margin="0" Padding="14,10">
                     <StackPanel>
-                        <TextBlock Text="GÜVENLİK MOTORU" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
+                        <TextBlock Text="KORUMA SÜRESİ" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="CheckmarkCircle24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding EngineArchitectureText}" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold"/>
+                            <ui:SymbolIcon Symbol="Timer24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ProtectionUptimeText}" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
