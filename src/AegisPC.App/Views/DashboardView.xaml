@@ -97,47 +97,47 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Stat 1: Today Scanned Files -->
-                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="14,10">
+                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="16,13">
                     <StackPanel>
-                        <TextBlock Text="BUGÜN TARANAN DOSYA" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
+                        <TextBlock Text="BUGÜN TARANAN DOSYA" Style="{StaticResource StatLabelStyle}" Margin="0,0,0,6"/>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="DocumentSearch24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding FilesScannedCount, StringFormat='{}{0:N0}'}" Style="{StaticResource SectionHeadingStyle}" FontSize="13.5" FontWeight="Bold"/>
-                            <TextBlock Text=" dosya" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Bottom" Margin="3,0,0,1"/>
+                            <ui:SymbolIcon Symbol="DocumentSearch24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding FilesScannedCount, StringFormat='{}{0:N0}'}" Style="{StaticResource StatNumberStyle}"/>
+                            <TextBlock Text=" dosya" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Bottom" Margin="4,0,0,3"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
                 <!-- Stat 2: Blocked Threats This Month (QuarantineService Real Data) -->
-                <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="14,10">
+                <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="16,13">
                     <StackPanel>
-                        <TextBlock Text="BU AY ENGELLENEN TEHDİT" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
+                        <TextBlock Text="BU AY ENGELLENEN TEHDİT" Style="{StaticResource StatLabelStyle}" Margin="0,0,0,6"/>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="ShieldDismiss24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding ThreatsBlockedThisMonth}" Style="{StaticResource SectionHeadingStyle}" FontSize="13.5" FontWeight="Bold"/>
-                            <TextBlock Text=" tehdit" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Bottom" Margin="3,0,0,1"/>
+                            <ui:SymbolIcon Symbol="ShieldDismiss24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ThreatsBlockedThisMonth}" Style="{StaticResource StatNumberStyle}"/>
+                            <TextBlock Text=" tehdit" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Bottom" Margin="4,0,0,3"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
                 <!-- Stat 3: Signature DB Last Update Time -->
-                <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="14,10">
+                <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="16,13">
                     <StackPanel>
-                        <TextBlock Text="SON İMZA GÜNCELLEMESİ" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
+                        <TextBlock Text="SON İMZA GÜNCELLEMESİ" Style="{StaticResource StatLabelStyle}" Margin="0,0,0,6"/>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="ArrowSyncCircle24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding LastDatabaseUpdateFormatted}" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold"/>
+                            <ui:SymbolIcon Symbol="ArrowSyncCircle24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding LastDatabaseUpdateFormatted}" Style="{StaticResource StatNumberStyle}" FontSize="18"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
                 <!-- Stat 4: Real-Time Protection Uptime (Koruma Süresi) -->
-                <Border Grid.Column="3" Style="{StaticResource MetricCardStyle}" Margin="0" Padding="14,10">
+                <Border Grid.Column="3" Style="{StaticResource MetricCardStyle}" Margin="0" Padding="16,13">
                     <StackPanel>
-                        <TextBlock Text="KORUMA SÜRESİ" Style="{StaticResource CaptionTextStyle}" FontSize="9.5" FontWeight="Bold" Margin="0,0,0,2"/>
+                        <TextBlock Text="KORUMA SÜRESİ" Style="{StaticResource StatLabelStyle}" Margin="0,0,0,6"/>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="Timer24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding ProtectionUptimeText}" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold"/>
+                            <ui:SymbolIcon Symbol="Timer24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ProtectionUptimeText}" Style="{StaticResource StatNumberStyle}" FontSize="18"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
