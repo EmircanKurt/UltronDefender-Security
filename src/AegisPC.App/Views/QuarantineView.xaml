@@ -141,7 +141,7 @@
                             </Grid>
                             <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,2">
                                 <TextBox Text="{Binding SelectedItem.OriginalPath, Mode=OneWay}" IsReadOnly="True" BorderThickness="0" Background="Transparent" 
-                                         TextWrapping="Wrap" Style="{StaticResource DataMonospaceStyle}"/>
+                                         TextWrapping="Wrap" Style="{StaticResource DataMonospaceTextBoxStyle}"/>
                             </Border>
 
                             <!-- SHA-256 Hash -->
@@ -152,7 +152,7 @@
                             </Grid>
                             <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,2">
                                 <TextBox Text="{Binding SelectedItem.SHA256, Mode=OneWay}" IsReadOnly="True" BorderThickness="0" Background="Transparent" 
-                                         TextWrapping="Wrap" Style="{StaticResource DataMonospaceStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
+                                         TextWrapping="Wrap" Style="{StaticResource DataMonospaceTextBoxStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
                             </Border>
 
                             <!-- Reason Box -->

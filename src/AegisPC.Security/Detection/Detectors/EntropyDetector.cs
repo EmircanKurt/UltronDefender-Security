@@ -24,8 +24,17 @@ namespace AegisPC.Security.Detection.Detectors
             }
 
             var ext = Path.GetExtension(context.FilePath).ToLowerInvariant();
-            // Yalnızca ikili yürütülebilirler veya uzantısız/şüpheli dosyalar için entropi hesapla
-            if (!string.IsNullOrEmpty(ext) && AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(context.FilePath))
+            
+            // Geliştirme kütüphaneleri ve bilinen güvenli yolları entropi anomalisi taramasından muaf tut
+            if (AegisPC.Core.Helpers.PathHelper.IsDevelopmentOrPackageDirectory(context.FilePath) ||
+                AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(context.FilePath))
+            {
+                return list;
+            }
+
+            // Yalnızca PE ikili yürütülebilirleri (.exe, .dll, .sys, .scr, .ocx, .cpl, .efi) veya uzantısız dosyalar için entropi hesapla
+            bool isPeExecutable = ext == ".exe" || ext == ".dll" || ext == ".sys" || ext == ".scr" || ext == ".ocx" || ext == ".cpl" || ext == ".efi" || string.IsNullOrEmpty(ext);
+            if (!isPeExecutable)
             {
                 return list;
             }

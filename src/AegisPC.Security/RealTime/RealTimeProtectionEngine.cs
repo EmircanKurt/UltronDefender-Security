@@ -458,6 +458,9 @@ namespace AegisPC.Security.RealTime
                 if (path.Contains(marker, StringComparison.OrdinalIgnoreCase)) return;
             }
 
+            // ── SELF-PROTECTION: Kendi imza/veritabanı/log/config dizinlerindeki olayları yok say ──
+            if (FileScannerService.IsSelfOwnedPath(path)) return;
+
             var ext = Path.GetExtension(path).ToLowerInvariant();
             if (!DangerousExtensions.Contains(ext)) return;
 

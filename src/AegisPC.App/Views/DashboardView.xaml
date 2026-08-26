@@ -276,7 +276,7 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="Activity24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <ui:SymbolIcon Symbol="PulseSquare24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
                             <TextBlock Text="Canlı Güvenlik Akışı" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                             <TextBlock Text="— Arka planda taranan ve korunan son olaylar" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center"/>
                         </StackPanel>

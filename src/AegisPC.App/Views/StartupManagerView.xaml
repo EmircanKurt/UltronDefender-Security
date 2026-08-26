@@ -141,7 +141,7 @@
 
                             <TextBlock Text="Çalıştırılabilir Dosya / Komut:" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,8,0,2"/>
                             <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,0,0,8">
-                                <TextBox Text="{Binding SelectedItem.FilePath}" Style="{StaticResource DataMonospaceStyle}" TextWrapping="Wrap" IsReadOnly="True" BorderThickness="0" Background="Transparent"/>
+                                <TextBox Text="{Binding SelectedItem.FilePath}" Style="{StaticResource DataMonospaceTextBoxStyle}" TextWrapping="Wrap" IsReadOnly="True" BorderThickness="0" Background="Transparent"/>
                             </Border>
 
                             <TextBlock Text="Açılış Etki Seviyesi:" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,8,0,2"/>

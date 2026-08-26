@@ -63,6 +63,30 @@ public static class PathHelper
         return false;
     }
 
+    private static readonly string[] DevelopmentPackageMarkers = new[]
+    {
+        @"\site-packages\", @"\dist-packages\", @"\.venv\", @"\venv\", @"\env\",
+        @"\.conda\", @"\conda-meta\", @"\node_modules\", @"\.nuget\packages\",
+        @"\.cargo\registry\", @"\.rustup\", @"\lib\python", @"\programs\python\",
+        @"\appdata\roaming\python\", @"\appdata\local\programs\python\",
+        @"\pip-wheel-metadata\", @"\.gradle\caches\", @"\.m2\repository\"
+    };
+
+    /// <summary>
+    /// Verilen dosya yolunun meşru bir geliştirme kütüphanesi veya paket yöneticisi dizininde
+    /// (Python site-packages, venv, conda, node_modules, nuget, cargo vb.) bulunup bulunmadığını doğrular.
+    /// </summary>
+    public static bool IsDevelopmentOrPackageDirectory(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var lower = path.ToLowerInvariant();
+        foreach (var marker in DevelopmentPackageMarkers)
+        {
+            if (lower.Contains(marker, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
     public static string ExtractExecutablePath(string rawCommand)
     {
         if (string.IsNullOrWhiteSpace(rawCommand)) return string.Empty;

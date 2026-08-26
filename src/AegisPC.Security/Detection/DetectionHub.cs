@@ -210,6 +210,9 @@ namespace AegisPC.Security.Detection
                 (AegisPC.Core.Helpers.GameCrackClassifier.IsGameCrackOrEmulator(context.FilePath) || 
                  AegisPC.Core.Helpers.PathHelper.IsGameOrRepackDirectory(context.FilePath));
 
+            bool isDevelopmentOrPackageDirectory = !string.IsNullOrEmpty(context.FilePath) &&
+                AegisPC.Core.Helpers.PathHelper.IsDevelopmentOrPackageDirectory(context.FilePath);
+
             if (!hasExplicitMalwareSignature)
             {
                 if (isMicrosoftOrSystem)
@@ -227,6 +230,12 @@ namespace AegisPC.Security.Detection
                 else if (isGameCrackOrEmulator)
                 {
                     // Zararsız Oyun Crack / Steam Emülatörü / Mod Dosyası: Gerçek malware imzası taşımıyorsa puanı sıfırla (Temiz)
+                    contextModifier = 0.0;
+                }
+                else if (isDevelopmentOrPackageDirectory)
+                {
+                    // Meşru Geliştirme Paketleri (Python site-packages, astropy, scipy, venv, node_modules, nuget):
+                    // Açık bir zararlı imza (hash/signature) taşımıyorsa, kütüphane kodundaki genel string/entropi anomalilerini sıfırla
                     contextModifier = 0.0;
                 }
             }

@@ -19,7 +19,7 @@ namespace AegisPC.Security.Detection.Detectors
 
         private static readonly HashSet<string> ScriptExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
-            ".ps1", ".bat", ".cmd", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".csv", ".tsv", ".py", ".pyw"
+            ".ps1", ".bat", ".cmd", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".csv", ".tsv"
         };
 
         private static string Dec(string b64) => Encoding.UTF8.GetString(Convert.FromBase64String(b64));
@@ -44,6 +44,13 @@ namespace AegisPC.Security.Detection.Detectors
         {
             var list = new List<SecurityEvidence>();
             if (string.IsNullOrEmpty(context.FilePath) || !File.Exists(context.FilePath))
+            {
+                return list;
+            }
+
+            // Geliştirme kütüphaneleri (site-packages, venv, node_modules) veya güvenli yolları betik heuristiğinden muaf tut
+            if (AegisPC.Core.Helpers.PathHelper.IsDevelopmentOrPackageDirectory(context.FilePath) ||
+                AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(context.FilePath))
             {
                 return list;
             }

@@ -82,9 +82,12 @@ namespace AegisPC.Security.Scanning
             ".pc", ".jbeam", ".cda", ".bik", ".bk2",
             // Metin, Yapılandırma ve Veri Dosyaları (Yürütülemez — 2 Milyon Dosyada Mikro-saniye Atlama)
             ".txt", ".log", ".ini", ".cfg", ".conf", ".xml", ".json", ".csv", ".tsv", ".md", ".inf",
-            ".htm", ".html", ".css", ".scss", ".sass", ".less", ".map", ".sql", ".sqlite", ".db-shm",
+            ".htm", ".html", ".css", ".scss", ".sass", ".less", ".map", ".sql", ".sqlite", ".db", ".db-shm",
             ".db-wal", ".yml", ".yaml", ".toml", ".properties", ".nfo", ".diz", ".mo", ".po", ".pot",
-            ".cache", ".idx", ".dict", ".sub", ".srt", ".vtt", ".ass"
+            ".cache", ".idx", ".dict", ".sub", ".srt", ".vtt", ".ass",
+            // Bilimsel Veri, Makine Öğrenimi ve Python Önbellek Dosyaları (Yürütülemez Veri Bloğu)
+            ".fits", ".fit", ".fts", ".npy", ".npz", ".h5", ".hdf5", ".parquet", ".pkl", ".pickle",
+            ".pyc", ".pyo", ".whl", ".whl.metadata", ".ipynb", ".rst", ".po", ".pot"
         };
 
         public FileScannerService(
@@ -105,6 +108,55 @@ namespace AegisPC.Security.Scanning
             _detectionHub = detectionHub ?? DetectionHubFactory.CreateDefault(hashService, signatureVerifier);
             _archiveScanner = archiveScanner ?? new ArchiveSafetyScanner();
             _logger = logger;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════════════
+        // SELF-PROTECTION: Uygulamanın kendi dizin/dosyalarını tarama dışı bırakan
+        // merkezi kontrol. Quick Scan, Full Scan ve Real-Time tarama motorları bu
+        // listeyi kontrol ederek kendi imza DB, log, config ve vault dosyalarını atlar.
+        // ══════════════════════════════════════════════════════════════════════════════
+        private static readonly Lazy<string[]> SelfExcludedPaths = new(() =>
+        {
+            var paths = new List<string>();
+            try
+            {
+                // %ProgramData%\UltronDefender  (signatures, logs, config)
+                string programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                if (!string.IsNullOrEmpty(programData))
+                    paths.Add(Path.Combine(programData, "UltronDefender") + Path.DirectorySeparatorChar);
+
+                // %AppData%\AegisPC  (allowlist.json, scan cache, vault.key)
+                string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                if (!string.IsNullOrEmpty(appData))
+                    paths.Add(Path.Combine(appData, "AegisPC") + Path.DirectorySeparatorChar);
+
+                // %LocalAppData%\AegisPC  (fallback DB path)
+                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (!string.IsNullOrEmpty(localAppData))
+                    paths.Add(Path.Combine(localAppData, "AegisPC") + Path.DirectorySeparatorChar);
+
+                // Uygulamanın kendi çalışma dizini (exe, dll'ler)
+                string? processDir = Path.GetDirectoryName(Environment.ProcessPath);
+                if (!string.IsNullOrEmpty(processDir))
+                    paths.Add(processDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
+            }
+            catch { }
+            return paths.ToArray();
+        });
+
+        /// <summary>
+        /// Verilen dosya yolunun uygulamanın kendi veri/imza/log/config dizinlerinden
+        /// birine ait olup olmadığını kontrol eder. True dönerse dosya taranmamalıdır.
+        /// </summary>
+        public static bool IsSelfOwnedPath(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath)) return false;
+            foreach (var excludedPath in SelfExcludedPaths.Value)
+            {
+                if (filePath.StartsWith(excludedPath, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -186,6 +238,9 @@ namespace AegisPC.Security.Scanning
         public async Task<SecurityFinding?> ScanFileAsync(string path, CancellationToken cancellationToken = default)
         {
             if (!File.Exists(path)) return null;
+
+            // ── SELF-PROTECTION: Uygulamanın kendi imza/veritabanı/log/config dosyalarını asla tarama ──
+            if (IsSelfOwnedPath(path)) return null;
 
             try
             {
@@ -269,8 +324,9 @@ namespace AegisPC.Security.Scanning
 
                 var detectionResult = await _detectionHub.EvaluateAsync(context, cancellationToken);
 
-                // 5. Eşik Değeri ve Risk Kararı Haritalaması (Oyun klasörlerinde güvenli emülatörler için 85 eşik, genel sistemde 50 eşik)
-                int minThreshold = isGameDir ? 85 : 50;
+                // 5. Eşik Değeri ve Risk Kararı Haritalaması (Oyun ve geliştirici paket klasörlerinde 85 eşik, genel sistemde 50 eşik)
+                bool isDevDir = PathHelper.IsDevelopmentOrPackageDirectory(path);
+                int minThreshold = (isGameDir || isDevDir) ? 85 : 50;
                 bool hasExplicitSignature = detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.StaticSignature && e.ScoreContribution >= 80);
 
                 if ((detectionResult.Verdict >= DetectionVerdict.Suspicious && detectionResult.RiskScore >= minThreshold) || hasExplicitSignature)
@@ -366,7 +422,21 @@ namespace AegisPC.Security.Scanning
             "node_modules",
             "Package Cache",
             "AegisPC_BrowserStress_Tests",
-            "AegisLabSuite"
+            "AegisLabSuite",
+            // ── DEVELOPMENT & PACKAGE LIBRARIES (Geliştirici Kütüphane / Paket Önbellekleri) ──
+            "site-packages",
+            "dist-packages",
+            ".venv",
+            "venv",
+            ".conda",
+            "conda-meta",
+            "pip-wheel-metadata",
+            ".cargo",
+            ".rustup",
+            ".nuget",
+            // ── SELF-PROTECTION: Uygulamanın kendi veri/imza/log dizinleri tarama dışı ──
+            "UltronDefender",       // %ProgramData%\UltronDefender (signatures, logs, config)
+            "AegisPC"               // %AppData%\AegisPC (allowlist.json, scan stats, vault)
         };
 
         public async Task<ScanResult> ScanDirectoryAsync(

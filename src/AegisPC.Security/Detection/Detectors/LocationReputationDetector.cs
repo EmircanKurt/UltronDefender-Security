@@ -93,10 +93,11 @@ namespace AegisPC.Security.Detection.Detectors
             catch { }
 
             // 2. High-Risk Location Checks (ONLY for binaries/scripts)
-            // 2. High-Risk Location Checks (ONLY for binaries/scripts, skip if inside legitimate game/repack folder)
+            // 2. High-Risk Location Checks (ONLY for binaries/scripts, skip if inside legitimate game/repack or development environment)
             bool isGameDir = PathHelper.IsGameOrRepackDirectory(path);
+            bool isDevDir = PathHelper.IsDevelopmentOrPackageDirectory(path);
 
-            if (isBinaryOrScript && !isGameDir)
+            if (isBinaryOrScript && !isGameDir && !isDevDir)
             {
                 if (PathHelper.IsTempPath(path) || path.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase))
                 {
@@ -163,8 +164,8 @@ namespace AegisPC.Security.Detection.Detectors
                 }
             }
 
-            // 4. PUP / Keygen / Crack Pattern (Skipped for recognized game folders per user directive)
-            if (!isSigned && isBinaryOrScript && !isGameDir)
+            // 4. PUP / Keygen / Crack Pattern (Skipped for recognized game and dev library folders)
+            if (!isSigned && isBinaryOrScript && !isGameDir && !isDevDir)
             {
                 var fileNameOnly = Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant();
                 var tokens = fileNameOnly.Split(new[] { '.', '-', '_', ' ' }, StringSplitOptions.RemoveEmptyEntries);
