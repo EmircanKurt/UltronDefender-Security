@@ -61,7 +61,7 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty] private string shortSummary = "Cihazınız ve kişisel verileriniz Ultron Defender tarafından gerçek zamanlı korunuyor.";
         [ObservableProperty] private string protectionStatusText = "GÜVENDESİNİZ";
         [ObservableProperty] private string protectionBadgeText = "GERÇEK ZAMANLI KORUMA AKTİF";
-        [ObservableProperty] private string protectionStatusColor = "#10B981"; // Emerald Green
+        [ObservableProperty] private string protectionStatusColor = "#4CAF50"; // Bitdefender Safe Green
         [ObservableProperty] private string protectionStatusSymbol = "ShieldCheckmark24";
         [ObservableProperty] private bool hasThreatsDetected = false;
         [ObservableProperty] private string threatActionText = "🚨 Tehditleri İncele";
@@ -182,10 +182,10 @@ namespace AegisPC.App.ViewModels
                         };
                         StartupSweepBadgeColor = p.Status switch
                         {
-                            StartupSweepStatus.ThreatsFound => "#FF5C5C",
-                            StartupSweepStatus.Scanning => "#4CC9F0",
-                            StartupSweepStatus.Preparing => "#F5B942",
-                            _ => "#35D07F"
+                            StartupSweepStatus.ThreatsFound => "#C41E1E",
+                            StartupSweepStatus.Scanning => "#2196F3",
+                            StartupSweepStatus.Preparing => "#F5A623",
+                            _ => "#4CAF50"
                         };
                         StartupSweepFilesRatio = $"{p.ScannedFiles:N0} / {p.TotalFiles:N0}";
                         StartupSweepProgressPercent = p.ProgressPercent;
@@ -211,7 +211,7 @@ namespace AegisPC.App.ViewModels
                         HasThreatsDetected = true;
                         ProtectionStatusText = "TEHDİT TESPİT EDİLDİ";
                         ProtectionBadgeText = $"🚨 {f.FileName} ({f.Verdict})";
-                        ProtectionStatusColor = "#EF4444";
+                        ProtectionStatusColor = "#C41E1E";
                         ProtectionStatusSymbol = "ShieldAlert24";
 
                         LiveActivities.Insert(0, new AegisPC.Security.RealTime.RealTimeActivityEvent
@@ -238,7 +238,7 @@ namespace AegisPC.App.ViewModels
                     {
                         IsStartupSweepRunning = false;
                         StartupSweepStatusText = res.ThreatsCount > 0 ? $"{res.ThreatsCount} TEHDİT" : "TEMİZ";
-                        StartupSweepBadgeColor = res.ThreatsCount > 0 ? "#EF4444" : "#10B981";
+                        StartupSweepBadgeColor = res.ThreatsCount > 0 ? "#C41E1E" : "#4CAF50";
                         _ = RefreshMonthlyQuarantineCountAsync();
                     });
                 };
@@ -276,7 +276,7 @@ namespace AegisPC.App.ViewModels
                             HasThreatsDetected = true;
                             ProtectionStatusText = "TEHDİT ENGELLENDİ";
                             ProtectionBadgeText = $"🚨 {act.FileName} Karantinaya Alındı";
-                            ProtectionStatusColor = "#EF4444";
+                            ProtectionStatusColor = "#C41E1E";
                             ProtectionStatusSymbol = "ShieldAlert24";
                             TriggerThreatToast(act.FileName);
                         }
@@ -289,7 +289,7 @@ namespace AegisPC.App.ViewModels
                     {
                         RealTimeHealthStatus = healthy ? "PROTECTED" : "DEGRADED";
                         RealTimeHealthMessage = msg;
-                        RealTimeHealthColor = healthy ? "#35D07F" : "#FF5C5C";
+                        RealTimeHealthColor = healthy ? "#4CAF50" : "#C41E1E";
                         WatcherStatusText = healthy ? "RUNNING" : "DEGRADED";
                         IsRealTimeProtectionActive = healthy;
                         UpdateProtectionUptime();
@@ -317,7 +317,7 @@ namespace AegisPC.App.ViewModels
                         QuickScanButtonText = "DURDUR";
                         ProtectionStatusText = "SİSTEM TARANIYOR...";
                         ProtectionBadgeText = "HIZLI TARAMA ÇALIŞIYOR";
-                        ProtectionStatusColor = "#0284C7";
+                        ProtectionStatusColor = "#2196F3";
                     });
                 };
 
@@ -331,7 +331,7 @@ namespace AegisPC.App.ViewModels
                         IncrementDailyScanned(result.ScannedFiles);
                         ProtectionStatusText = result.Findings.Count > 0 ? "TEHDİT BULUNDU" : "GÜVENDESİNİZ";
                         ProtectionBadgeText = result.Findings.Count > 0 ? $"{result.Findings.Count} ŞÜPHELİ BULGU" : "GERÇEK ZAMANLI KORUMA AKTİF";
-                        ProtectionStatusColor = result.Findings.Count > 0 ? "#EF4444" : "#10B981";
+                        ProtectionStatusColor = result.Findings.Count > 0 ? "#C41E1E" : "#4CAF50";
                         QuickScanButtonText = "TEKRAR TARA";
                         PendingFindingsCount = result.Findings.Count;
 
@@ -359,7 +359,7 @@ namespace AegisPC.App.ViewModels
                     QuickScanButtonText = "DURDUR";
                     ProtectionStatusText = "SİSTEM TARANIYOR...";
                     ProtectionBadgeText = "HIZLI TARAMA ÇALIŞIYOR";
-                    ProtectionStatusColor = "#0284C7";
+                    ProtectionStatusColor = "#2196F3";
                 }
             }
 
@@ -471,7 +471,7 @@ namespace AegisPC.App.ViewModels
                 QuickScanButtonText = "TARAMAYI BAŞLAT";
                 ProtectionStatusText = "GÜVENDESİNİZ";
                 ProtectionBadgeText = "GERÇEK ZAMANLI KORUMA AKTİF";
-                ProtectionStatusColor = "#10B981";
+                ProtectionStatusColor = "#4CAF50";
                 TriggerToast("Hızlı tarama kullanıcı tarafından durduruldu.", "Info");
                 return;
             }
@@ -483,7 +483,7 @@ namespace AegisPC.App.ViewModels
             QuickScanButtonText = "DURDUR";
             ProtectionStatusText = "SİSTEM TARANIYOR...";
             ProtectionBadgeText = "HIZLI TARAMA ÇALIŞIYOR";
-            ProtectionStatusColor = "#0284C7";
+            ProtectionStatusColor = "#2196F3";
 
             TriggerToast("Hızlı sistem taraması başlatıldı...", "Info");
 
@@ -526,7 +526,7 @@ namespace AegisPC.App.ViewModels
                     IsRealTimeProtectionActive = false;
                     ProtectionStatusText = "KORUMA DEVRE DIŞI";
                     ProtectionBadgeText = "GERÇEK ZAMANLI KORUMA KAPALI";
-                    ProtectionStatusColor = "#EF4444"; // Red
+                    ProtectionStatusColor = "#C41E1E"; // Danger Red
                     TriggerToast("⚠️ Gerçek Zamanlı Koruma kullanıcı tarafından kapatıldı!", "Warning");
                     UpdateProtectionUptime();
                 }
@@ -536,7 +536,7 @@ namespace AegisPC.App.ViewModels
                 IsRealTimeProtectionActive = true;
                 ProtectionStatusText = "GÜVENDESİNİZ";
                 ProtectionBadgeText = "GERÇEK ZAMANLI KORUMA AKTİF";
-                ProtectionStatusColor = "#10B981"; // Emerald Green
+                ProtectionStatusColor = "#4CAF50"; // Bitdefender Safe Green
                 TriggerToast("🛡️ Gerçek Zamanlı Koruma başarıyla etkinleştirildi.", "Success");
                 UpdateProtectionUptime();
             }

@@ -315,9 +315,9 @@
                         <ContentPresenter Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center"/>
                     </Grid>
                     <ControlTemplate.Triggers>
-                        <!-- Checked / Active: Brand Orange -->
+                        <!-- Checked / Active: Safe Green -->
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource BrushBrandPrimary}"/>
+                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource BrushStatusSafe}"/>
                             <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
                             <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0"/>
                         </Trigger>
@@ -380,10 +380,21 @@
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
+    <!-- Warning / Suspicious Badge (Technical Amber #F5A623 - SADECE dikkat durumları) -->
+    <Style x:Key="BadgeWarningStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource BrushStatusWarningBg}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushStatusWarningBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="8,3"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
     <!-- Legacy Compatibility Badge Aliases -->
     <Style x:Key="BadgeGreenStyle" TargetType="Border" BasedOn="{StaticResource BadgeSafeStyle}"/>
     <Style x:Key="BadgeRedStyle" TargetType="Border" BasedOn="{StaticResource BadgeDangerStyle}"/>
-    <Style x:Key="BadgeAmberStyle" TargetType="Border" BasedOn="{StaticResource BadgeProgressStyle}"/>
+    <Style x:Key="BadgeAmberStyle" TargetType="Border" BasedOn="{StaticResource BadgeWarningStyle}"/>
     <Style x:Key="BadgeBlueStyle" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource BrushStatusInfoBg}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BrushStatusInfoBorder}"/>

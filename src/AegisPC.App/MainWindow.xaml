@@ -192,7 +192,7 @@
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="PRO LİSANS" FontSize="10.5" FontWeight="Black" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                    <Border Background="{DynamicResource BrushBrandPrimary}" CornerRadius="3" Padding="4,1" Margin="5,0,0,0">
+                                    <Border Background="{DynamicResource BrushStatusSafe}" CornerRadius="3" Padding="4,1" Margin="5,0,0,0">
                                         <TextBlock Text="AKTİF" FontSize="8" FontWeight="Bold" Foreground="#FFFFFF"/>
                                     </Border>
                                 </StackPanel>

@@ -13,17 +13,17 @@ namespace AegisPC.App.Converters
     /// </summary>
     public class SecurityStatusToColorConverter : IValueConverter
     {
-        private static readonly SolidColorBrush EmeraldStroke = new(Color.FromRgb(0x10, 0xB9, 0x81));
-        private static readonly SolidColorBrush EmeraldFill = new(Color.FromRgb(0xEC, 0xFD, 0xF5));
+        private static readonly SolidColorBrush EmeraldStroke = new(Color.FromRgb(0x4C, 0xAF, 0x50));
+        private static readonly SolidColorBrush EmeraldFill = new(Color.FromRgb(0x12, 0x2A, 0x1C));
 
-        private static readonly SolidColorBrush RedStroke = new(Color.FromRgb(0xEF, 0x44, 0x44));
-        private static readonly SolidColorBrush RedFill = new(Color.FromRgb(0xFE, 0xF2, 0xF2));
+        private static readonly SolidColorBrush RedStroke = new(Color.FromRgb(0xC4, 0x1E, 0x1E));
+        private static readonly SolidColorBrush RedFill = new(Color.FromRgb(0x2A, 0x12, 0x15));
 
-        private static readonly SolidColorBrush OrangeStroke = new(Color.FromRgb(0xF5, 0x9E, 0x0B));
-        private static readonly SolidColorBrush OrangeFill = new(Color.FromRgb(0xFF, 0xFB, 0xEB));
+        private static readonly SolidColorBrush AmberStroke = new(Color.FromRgb(0xF5, 0xA6, 0x23));
+        private static readonly SolidColorBrush AmberFill = new(Color.FromRgb(0x2D, 0x20, 0x0E));
 
-        private static readonly SolidColorBrush BlueStroke = new(Color.FromRgb(0x02, 0x84, 0xC7));
-        private static readonly SolidColorBrush BlueFill = new(Color.FromRgb(0xF0, 0xF9, 0xFF));
+        private static readonly SolidColorBrush BlueStroke = new(Color.FromRgb(0x21, 0x96, 0xF3));
+        private static readonly SolidColorBrush BlueFill = new(Color.FromRgb(0x11, 0x23, 0x38));
 
         static SecurityStatusToColorConverter()
         {
@@ -31,8 +31,8 @@ namespace AegisPC.App.Converters
             EmeraldFill.Freeze();
             RedStroke.Freeze();
             RedFill.Freeze();
-            OrangeStroke.Freeze();
-            OrangeFill.Freeze();
+            AmberStroke.Freeze();
+            AmberFill.Freeze();
             BlueStroke.Freeze();
             BlueFill.Freeze();
         }
@@ -83,7 +83,7 @@ namespace AegisPC.App.Converters
                 strValue.Contains("SUSPICIOUS", StringComparison.OrdinalIgnoreCase) ||
                 strValue.Contains("HAZIRLANIYOR", StringComparison.OrdinalIgnoreCase))
             {
-                return isBg ? OrangeFill : OrangeStroke;
+                return isBg ? AmberFill : AmberStroke;
             }
 
             if (strValue.Contains("TARANIYOR", StringComparison.OrdinalIgnoreCase) ||
