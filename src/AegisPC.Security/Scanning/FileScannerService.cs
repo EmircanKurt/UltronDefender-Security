@@ -85,6 +85,8 @@ namespace AegisPC.Security.Scanning
             ".htm", ".html", ".css", ".scss", ".sass", ".less", ".map", ".sql", ".sqlite", ".db", ".db-shm",
             ".db-wal", ".yml", ".yaml", ".toml", ".properties", ".nfo", ".diz", ".mo", ".po", ".pot",
             ".cache", ".idx", ".dict", ".sub", ".srt", ".vtt", ".ass",
+            // Program Hata Ayıklama Veritabanı ve Derleyici Çıktıları (.pdb — Asla taranmaz)
+            ".pdb", ".idb", ".ilk", ".exp", ".lib",
             // Bilimsel Veri, Makine Öğrenimi ve Python Önbellek Dosyaları (Yürütülemez Veri Bloğu)
             ".fits", ".fit", ".fts", ".npy", ".npz", ".h5", ".hdf5", ".parquet", ".pkl", ".pickle",
             ".pyc", ".pyo", ".whl", ".whl.metadata", ".ipynb", ".rst", ".po", ".pot"
@@ -113,35 +115,69 @@ namespace AegisPC.Security.Scanning
         // ══════════════════════════════════════════════════════════════════════════════
         // SELF-PROTECTION: Uygulamanın kendi dizin/dosyalarını tarama dışı bırakan
         // merkezi kontrol. Quick Scan, Full Scan ve Real-Time tarama motorları bu
-        // listeyi kontrol ederek kendi imza DB, log, config ve vault dosyalarını atlar.
+        // listeyi kontrol ederek kendi imza DB, log, config, pdb ve vault dosyalarını atlar.
         // ══════════════════════════════════════════════════════════════════════════════
         private static readonly Lazy<string[]> SelfExcludedPaths = new(() =>
         {
             var paths = new List<string>();
             try
             {
-                // %ProgramData%\UltronDefender  (signatures, logs, config)
+                // %ProgramData%\UltronDefender & %ProgramData%\Ultron Defender Total Security
                 string programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
                 if (!string.IsNullOrEmpty(programData))
+                {
                     paths.Add(Path.Combine(programData, "UltronDefender") + Path.DirectorySeparatorChar);
+                    paths.Add(Path.Combine(programData, "Ultron Defender Total Security") + Path.DirectorySeparatorChar);
+                    paths.Add(Path.Combine(programData, "AegisPC") + Path.DirectorySeparatorChar);
+                }
 
-                // %AppData%\AegisPC  (allowlist.json, scan cache, vault.key)
+                // %ProgramFiles%\Ultron Defender Total Security & %ProgramFiles%\UltronDefender
+                string progFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+                if (!string.IsNullOrEmpty(progFiles))
+                {
+                    paths.Add(Path.Combine(progFiles, "UltronDefender") + Path.DirectorySeparatorChar);
+                    paths.Add(Path.Combine(progFiles, "Ultron Defender Total Security") + Path.DirectorySeparatorChar);
+                    paths.Add(Path.Combine(progFiles, "AegisPC") + Path.DirectorySeparatorChar);
+                }
+
+                // %ProgramFiles(x86)%
+                string progFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+                if (!string.IsNullOrEmpty(progFilesX86))
+                {
+                    paths.Add(Path.Combine(progFilesX86, "UltronDefender") + Path.DirectorySeparatorChar);
+                    paths.Add(Path.Combine(progFilesX86, "Ultron Defender Total Security") + Path.DirectorySeparatorChar);
+                    paths.Add(Path.Combine(progFilesX86, "AegisPC") + Path.DirectorySeparatorChar);
+                }
+
+                // %AppData%\AegisPC & %AppData%\UltronDefender
                 string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
                 if (!string.IsNullOrEmpty(appData))
+                {
                     paths.Add(Path.Combine(appData, "AegisPC") + Path.DirectorySeparatorChar);
+                    paths.Add(Path.Combine(appData, "UltronDefender") + Path.DirectorySeparatorChar);
+                    paths.Add(Path.Combine(appData, "Ultron Defender Total Security") + Path.DirectorySeparatorChar);
+                }
 
-                // %LocalAppData%\AegisPC  (fallback DB path)
+                // %LocalAppData%\AegisPC & %LocalAppData%\UltronDefender
                 string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 if (!string.IsNullOrEmpty(localAppData))
+                {
                     paths.Add(Path.Combine(localAppData, "AegisPC") + Path.DirectorySeparatorChar);
+                    paths.Add(Path.Combine(localAppData, "UltronDefender") + Path.DirectorySeparatorChar);
+                    paths.Add(Path.Combine(localAppData, "Ultron Defender Total Security") + Path.DirectorySeparatorChar);
+                }
 
-                // Uygulamanın kendi çalışma dizini (exe, dll'ler)
+                // Uygulamanın kendi çalışma dizini (exe, dll'ler, pdb'ler, AppDomain BaseDirectory)
                 string? processDir = Path.GetDirectoryName(Environment.ProcessPath);
                 if (!string.IsNullOrEmpty(processDir))
                     paths.Add(processDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
+
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                if (!string.IsNullOrEmpty(baseDir))
+                    paths.Add(baseDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
             }
             catch { }
-            return paths.ToArray();
+            return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         });
 
         /// <summary>
@@ -434,9 +470,18 @@ namespace AegisPC.Security.Scanning
             ".cargo",
             ".rustup",
             ".nuget",
-            // ── SELF-PROTECTION: Uygulamanın kendi veri/imza/log dizinleri tarama dışı ──
-            "UltronDefender",       // %ProgramData%\UltronDefender (signatures, logs, config)
-            "AegisPC"               // %AppData%\AegisPC (allowlist.json, scan stats, vault)
+            // ── SELF-PROTECTION: Uygulamanın kendi veri/imza/log dizinleri ve derleme çıktıları tarama dışı ──
+            "UltronDefender",
+            "Ultron Defender Total Security",
+            "Ultron Defender",
+            "AegisPC",
+            "AegisPC_App",
+            "bin",
+            "obj",
+            "Debug",
+            "Release",
+            "x64",
+            "x86"
         };
 
         public async Task<ScanResult> ScanDirectoryAsync(

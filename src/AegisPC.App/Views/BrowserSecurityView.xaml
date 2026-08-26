@@ -103,10 +103,10 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
-                        <DataGridTemplateColumn Header="Eklenti ID" Width="*">
+                        <DataGridTemplateColumn Header="Eklenti ID" Width="*" MinWidth="180">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding Id}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Id}" Padding="6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding Id}" Style="{StaticResource DataMonospaceStyle}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding Id}" Padding="6,0" VerticalAlignment="Center"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>

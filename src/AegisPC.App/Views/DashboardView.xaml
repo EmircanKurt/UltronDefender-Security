@@ -66,21 +66,37 @@
                     </StackPanel>
 
                     <!-- Primary Action Buttons -->
-                    <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="16,0,0,0">
                         <!-- Direct Review Threats Action when threats exist (Crimson Red Danger Button) -->
-                        <Button Style="{StaticResource DangerActionButtonStyle}" Content="{Binding ThreatActionText, FallbackValue='Tehditleri İncele'}" 
-                                Command="{Binding ReviewThreatsCommand}" Margin="0,0,0,6" MinWidth="150"
+                        <Button Style="{StaticResource DangerActionButtonStyle}" 
+                                Content="{Binding ThreatActionText, FallbackValue='Tehditleri İncele'}" 
+                                Command="{Binding ReviewThreatsCommand}" 
+                                Padding="12,6" 
+                                Margin="0,0,0,6" 
+                                Width="160"
                                 Visibility="{Binding HasThreatsDetected, Converter={StaticResource BoolToVis}}"/>
 
                         <!-- Standard Quick Scan Action (Brand Red Primary Button) -->
-                        <Button Style="{StaticResource PrimaryActionButtonStyle}" Content="Hızlı Tarama Başlat" 
-                                Command="{Binding StartQuickScanCommand}" Margin="0,0,0,6" MinWidth="150"
+                        <Button Style="{StaticResource PrimaryActionButtonStyle}" 
+                                Content="Hızlı Tarama Başlat" 
+                                Command="{Binding StartQuickScanCommand}" 
+                                Padding="12,6" 
+                                Margin="0,0,0,6" 
+                                Width="160"
                                 Visibility="{Binding HasThreatsDetected, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"/>
 
-                        <Button Style="{StaticResource SecondaryActionButtonStyle}" Content="{Binding ThemeButtonText, FallbackValue='Gece Modu'}" 
-                                Command="{Binding ToggleThemeCommand}" Margin="0,0,0,6" MinWidth="150"/>
-                        <Button Style="{StaticResource SecondaryActionButtonStyle}" Content="Korumayı Yönet" 
-                                Command="{Binding NavigateToTargetCommand}" CommandParameter="security" MinWidth="150"/>
+                        <Button Style="{StaticResource SecondaryActionButtonStyle}" 
+                                Content="{Binding ThemeButtonText, FallbackValue='Gece Modu'}" 
+                                Command="{Binding ToggleThemeCommand}" 
+                                Padding="12,6" 
+                                Margin="0,0,0,6" 
+                                Width="160"/>
+                        <Button Style="{StaticResource SecondaryActionButtonStyle}" 
+                                Content="Korumayı Yönet" 
+                                Command="{Binding NavigateToTargetCommand}" 
+                                CommandParameter="security" 
+                                Padding="12,6" 
+                                Width="160"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -315,11 +331,45 @@
                                   MaxHeight="150"
                                   HeadersVisibility="Column">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="ZAMAN" Binding="{Binding TimestampFormatted}" Width="75"/>
-                                <DataGridTextColumn Header="DOSYA / HEDEF" Binding="{Binding FileName}" Width="160"/>
-                                <DataGridTextColumn Header="DİZİN &amp; AŞAMA" Binding="{Binding StageDetails}" Width="*"/>
-                                <DataGridTextColumn Header="RİSK" Binding="{Binding ScoreBadge}" Width="70"/>
-                                <DataGridTextColumn Header="MÜDAHALE" Binding="{Binding ActionTaken}" Width="130"/>
+                                <DataGridTemplateColumn Header="ZAMAN" Width="75">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding TimestampFormatted}" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Padding="6,0"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="DOSYA / HEDEF" Width="160">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding FileName}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}" VerticalAlignment="Center" Padding="6,0"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="DİZİN &amp; AŞAMA" Width="*" MinWidth="180">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding StageDetails}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding StageDetails}" VerticalAlignment="Center" Padding="6,0"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="RİSK" Width="70">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding ScoreBadge}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" VerticalAlignment="Center" Padding="6,0"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="MÜDAHALE" Width="130">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding ActionTaken}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ActionTaken}" VerticalAlignment="Center" Padding="6,0"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>
