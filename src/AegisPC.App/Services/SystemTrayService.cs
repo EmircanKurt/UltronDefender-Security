@@ -46,29 +46,36 @@ namespace AegisPC.App.Services
                 var altIconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "Images", "ultron_shield.ico");
                 var rootIconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
 
+                Icon? loadedIcon = null;
+
                 if (File.Exists(iconPath))
                 {
-                    _notifyIcon.Icon = new Icon(iconPath);
+                    loadedIcon = new Icon(iconPath);
                 }
                 else if (File.Exists(altIconPath))
                 {
-                    _notifyIcon.Icon = new Icon(altIconPath);
+                    loadedIcon = new Icon(altIconPath);
                 }
                 else if (File.Exists(rootIconPath))
                 {
-                    _notifyIcon.Icon = new Icon(rootIconPath);
+                    loadedIcon = new Icon(rootIconPath);
                 }
                 else
                 {
                     var streamInfo = Application.GetResourceStream(new Uri("pack://application:,,,/Resources/Images/app.ico"));
                     if (streamInfo != null)
                     {
-                        _notifyIcon.Icon = new Icon(streamInfo.Stream);
+                        loadedIcon = new Icon(streamInfo.Stream);
                     }
-                    else
-                    {
-                        _notifyIcon.Icon = SystemIcons.Shield;
-                    }
+                }
+
+                if (loadedIcon != null)
+                {
+                    _notifyIcon.Icon = new Icon(loadedIcon, SystemInformation.SmallIconSize);
+                }
+                else
+                {
+                    _notifyIcon.Icon = SystemIcons.Shield;
                 }
             }
             catch

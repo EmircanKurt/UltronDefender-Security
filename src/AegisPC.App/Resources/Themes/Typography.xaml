@@ -11,8 +11,8 @@
          ══════════════════════════════════════════════════════════════════════════════════ -->
 
     <!-- ── 1. FONT FAMILY DEFINITIONS ── -->
-    <!-- Brand Handwritten Font (RESTRICTED: Logo Only) -->
-    <FontFamily x:Key="FontBrand">Caveat, Kalam, Segoe Print, Ink Free, MV Boli, Segoe UI</FontFamily>
+    <!-- Brand Authoritative Font (Modern High-Tech Display Sans) -->
+    <FontFamily x:Key="FontBrand">Segoe UI Variable Display, Inter, Segoe UI, Aptos, Arial, sans-serif</FontFamily>
 
     <!-- Headings & Prominent Titles (Crisp Semibold Authority) -->
     <FontFamily x:Key="FontHeading">Segoe UI Variable Display, Inter, Segoe UI, Aptos, -apple-system, sans-serif</FontFamily>
@@ -25,12 +25,12 @@
 
     <!-- ── 2. TYPOGRAPHY STYLES ── -->
 
-    <!-- [1] Brand Title: Large Casual/Handwritten (RESTRICTED ONLY FOR LOGO / BRAND AREA) -->
+    <!-- [1] Brand Title: Authoritative Bold Display for ULTRON Logo -->
     <Style x:Key="BrandTitleStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontBrand}"/>
-        <Setter Property="FontSize" Value="24"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+        <Setter Property="FontSize" Value="23"/>
+        <Setter Property="FontWeight" Value="ExtraBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource BrushBrandPrimary}"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
         <Setter Property="VerticalAlignment" Value="Center"/>

@@ -26,12 +26,12 @@
                      Title="Ultron Defender Total Security (Antivirüs Programı)" 
                      Foreground="{DynamicResource BrushTextPrimary}" 
                      Background="{DynamicResource BrushAppBg}"
-                     FontSize="14.5"
-                     FontWeight="Bold"
+                     FontSize="14"
+                     FontWeight="SemiBold"
                      Height="40"
                      Padding="6,0,0,0">
             <ui:TitleBar.Icon>
-                <ui:ImageIcon Source="pack://application:,,,/Resources/Images/ultron_logo.png" Width="20" Height="20" Margin="4,0,8,0" RenderOptions.BitmapScalingMode="HighQuality"/>
+                <ui:ImageIcon Source="pack://application:,,,/Resources/Images/app.ico" Width="20" Height="20" Margin="4,0,8,0" RenderOptions.BitmapScalingMode="HighQuality"/>
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 
@@ -76,21 +76,20 @@
                     </Style>
                 </ui:NavigationView.Resources>
                 
-                <!-- Sidebar Pane Header with Brand Logo & Badge -->
+                <!-- Sidebar Pane Header with Generous Breathing Space & Authoritative Brand Logo -->
                 <ui:NavigationView.PaneHeader>
-                    <Border Padding="18,16,18,16" Margin="0,0,0,8" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource BrushSidebarBorder}" Background="{DynamicResource BrushSidebarHeader}">
-                        <Grid>
+                    <Border Padding="18,22,18,20" Margin="0,0,0,12" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource BrushSidebarBorder}" Background="{DynamicResource BrushSidebarHeader}">
+                        <Grid VerticalAlignment="Center">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
+                            <!-- 52px Large Shield Icon (+70% larger than 32-40px) -->
                             <Image Grid.Column="0" Source="pack://application:,,,/Resources/Images/ultron_logo.png" 
-                                   Width="40" Height="40" Margin="0,0,12,0" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                   Width="52" Height="52" Margin="0,0,14,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="ULTRON" FontFamily="{StaticResource FontBrand}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource BrushBrandPrimary}"/>
-                                <Border Background="{DynamicResource BrushBrandPrimary}" CornerRadius="3" Padding="6,1.5" Margin="0,2,0,0" HorizontalAlignment="Left">
-                                    <TextBlock Text="TOTAL SECURITY" FontSize="8.5" FontWeight="Bold" Foreground="#FFFFFF"/>
-                                </Border>
+                                <TextBlock Text="ULTRON" FontFamily="{StaticResource FontBrand}" FontSize="23" FontWeight="ExtraBold" Foreground="{DynamicResource BrushBrandPrimary}" LineHeight="25" TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType"/>
+                                <TextBlock Text="TOTAL SECURITY" FontFamily="{StaticResource FontHeading}" FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource BrushTextSecondary}" Margin="1,4,0,0" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"/>
                             </StackPanel>
                         </Grid>
                     </Border>
