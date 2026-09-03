@@ -12,7 +12,7 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
     </Page.Resources>
 
-    <Grid Margin="28,20,28,28">
+    <Grid Margin="28,20,28,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>

@@ -13,59 +13,21 @@
 
     <Page.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
-
-        <Style x:Key="TabHeaderStyle" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}"/>
-            <Setter Property="Margin" Value="0,0,24,0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-        </Style>
-
-        <Style x:Key="ActiveTabHeaderStyle" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Foreground" Value="{DynamicResource BrushBrandPrimary}"/>
-            <Setter Property="Margin" Value="0,0,24,0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-        </Style>
     </Page.Resources>
 
     <ScrollViewer x:Name="RootScrollViewer" 
-                  Margin="28,20,28,28" 
+                  Margin="28,20,28,24" 
                   Focusable="False" 
+                  CanContentScroll="False"
                   VerticalScrollBarVisibility="Auto" 
                   HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="0,0,0,20">
 
-            <!-- ══════════════════════════════════════════════════════
-                 1. TOP TAB NAVIGATION BAR (Tarayıcı | Zamanlayıcı | Raporlar)
-            ══════════════════════════════════════════════════════ -->
-            <Border Style="{StaticResource MetricCardStyle}" Padding="18,12" Margin="0,0,0,18">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                        <ui:SymbolIcon Symbol="Target24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="Tarayıcı" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,28,0" VerticalAlignment="Center"/>
-
-                        <!-- Tabs -->
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <StackPanel Margin="0,0,24,0">
-                                <TextBlock Text="Tarayıcı" Style="{StaticResource ActiveTabHeaderStyle}"/>
-                                <Rectangle Height="2" Fill="{DynamicResource BrushBrandPrimary}" Margin="0,4,0,0" RadiusX="1" RadiusY="1"/>
-                            </StackPanel>
-                            <TextBlock Text="Zamanlayıcı" Style="{StaticResource TabHeaderStyle}"/>
-                            <TextBlock Text="Raporlar" Style="{StaticResource TabHeaderStyle}"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Grid>
-            </Border>
+            <!-- 1. Header -->
+            <StackPanel Margin="0,0,0,20">
+                <TextBlock Style="{StaticResource PageHeadingStyle}" Text="Virüs ve Zararlı Yazılım Taraması" Margin="0,0,0,4"/>
+                <TextBlock Text="Sisteminizi hızlı, tam veya özel klasör seçenekleriyle derinlemesine analiz edin." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
+            </StackPanel>
 
             <!-- ══════════════════════════════════════════════════════
                  2. SCAN MODE SELECTION CARDS

@@ -100,21 +100,7 @@ namespace AegisPC.Security.Safety
                 }
             }
 
-            // 2. Windows Kernel & Boot Core (ntoskrnl, hal.dll, csrss, lsass, winlogon...)
-            if (CriticalCoreBinaries.Contains(fileName) && canonical.StartsWith(_windowsDir, StringComparison.OrdinalIgnoreCase))
-            {
-                return new ProtectedPathEvaluation
-                {
-                    OriginalPath = path,
-                    CanonicalPath = canonical,
-                    IsProtected = true,
-                    IsCriticalSystemCore = true,
-                    Category = ProtectedPathCategory.WindowsKernelAndBoot,
-                    Reason = $"Kritik Windows Çekirdek / Önyükleme Bileşeni ({fileName}) korumalıdır."
-                };
-            }
-
-            // 3. Kritik Dosya Sistemi & Çekirdek Sürücüleri
+            // 2. Kritik Dosya Sistemi & Çekirdek Sürücüleri
             if (CriticalDrivers.Contains(fileName) && canonical.StartsWith(_driversDir, StringComparison.OrdinalIgnoreCase))
             {
                 return new ProtectedPathEvaluation
@@ -126,6 +112,30 @@ namespace AegisPC.Security.Safety
                     Category = ProtectedPathCategory.WindowsDrivers,
                     Reason = $"Kritik Windows Çekirdek Sürücüsü ({fileName}) korumalıdır."
                 };
+            }
+
+            // 3. Windows Kernel & Boot Core + General System32 / SysWOW64 binaries & Drivers
+            string sysWow64Dir = Path.Combine(_windowsDir, "SysWOW64");
+            if (canonical.StartsWith(_system32Dir, StringComparison.OrdinalIgnoreCase) ||
+                canonical.StartsWith(sysWow64Dir, StringComparison.OrdinalIgnoreCase))
+            {
+                var ext = Path.GetExtension(canonical).ToLowerInvariant();
+                bool isSystemBinary = ext is ".exe" or ".dll" or ".sys" or ".cpl" or ".ocx" or ".msc" or ".drv";
+                bool isHostsOrTask = canonical.Contains(@"\drivers\etc\hosts", StringComparison.OrdinalIgnoreCase) ||
+                                     canonical.Contains(@"\System32\Tasks", StringComparison.OrdinalIgnoreCase);
+
+                if (isSystemBinary || isHostsOrTask || CriticalCoreBinaries.Contains(fileName))
+                {
+                    return new ProtectedPathEvaluation
+                    {
+                        OriginalPath = path,
+                        CanonicalPath = canonical,
+                        IsProtected = true,
+                        IsCriticalSystemCore = true,
+                        Category = ProtectedPathCategory.WindowsKernelAndBoot,
+                        Reason = $"Kritik Windows Sistem Dosyası / Bileşeni ({fileName}) korumalıdır."
+                    };
+                }
             }
 
             // 4. Windows Component Store (WinSxS)
@@ -156,22 +166,18 @@ namespace AegisPC.Security.Safety
                 };
             }
 
-            // 6. AegisPC / Ultron Defender Self-Protection (Yalnızca kritik çekirdek ikilileri ve anahtar dosyaları)
-            if (canonical.StartsWith(_aegisAppDataDir, StringComparison.OrdinalIgnoreCase))
+            // 6. AegisPC / Ultron Defender Self-Protection (Tüm kurulum, ProgramData, AppData ve BaseDirectory dizinleri)
+            if (Scanning.FileScannerService.IsSelfOwnedPath(canonical) || canonical.StartsWith(_aegisAppDataDir, StringComparison.OrdinalIgnoreCase))
             {
-                var ext = Path.GetExtension(canonical).ToLowerInvariant();
-                if (ext is ".exe" or ".dll" or ".sys" || fileName.Equals("vault.key", StringComparison.OrdinalIgnoreCase))
+                return new ProtectedPathEvaluation
                 {
-                    return new ProtectedPathEvaluation
-                    {
-                        OriginalPath = path,
-                        CanonicalPath = canonical,
-                        IsProtected = true,
-                        IsCriticalSystemCore = false,
-                        Category = ProtectedPathCategory.AegisSecuritySelfProtection,
-                        Reason = "AegisPC Öz-Koruma (Self-Protection) aktif."
-                    };
-                }
+                    OriginalPath = path,
+                    CanonicalPath = canonical,
+                    IsProtected = true,
+                    IsCriticalSystemCore = false,
+                    Category = ProtectedPathCategory.AegisSecuritySelfProtection,
+                    Reason = "Ultron Defender / AegisPC Öz-Koruma (Self-Protection) aktif."
+                };
             }
 
             // Korunan yol değil
@@ -182,7 +188,7 @@ namespace AegisPC.Security.Safety
                 IsProtected = false,
                 IsCriticalSystemCore = false,
                 Category = ProtectedPathCategory.None,
-                Reason = "Korumasız kullanıcı / uygulama alanı."
+                Reason = "Yol güvenlik kısıtlaması altında değil."
             };
         }
     }

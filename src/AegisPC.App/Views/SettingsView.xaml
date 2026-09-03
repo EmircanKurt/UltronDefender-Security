@@ -16,7 +16,7 @@
     </Page.Resources>
 
     <ScrollViewer x:Name="RootScrollViewer" 
-                  Margin="28,20,28,28"
+                  Margin="28,20,28,24"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
                   CanContentScroll="False"
@@ -80,7 +80,7 @@
                     <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="🎮 Oyun &amp; Crack Koruma Kalkanı (Sandbox Watchdog)" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                                <TextBlock Text="Oyun &amp; Crack Koruma Kalkanı (Sandbox Watchdog)" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
                                 <Border Style="{StaticResource BadgeSafeStyle}" Padding="6,1" Margin="8,0,0,0">
                                     <TextBlock Text="AKILLI" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusSafeText}"/>
                                 </Border>
@@ -155,6 +155,7 @@
                         </StackPanel>
                         <ComboBox ItemsSource="{Binding ScanHours}" 
                                   SelectedItem="{Binding SelectedScanHourString}" 
+                                  IsEnabled="{Binding ScanScheduleEnabled}"
                                   Width="150" Height="34" HorizontalAlignment="Right" VerticalAlignment="Center"
                                   Style="{DynamicResource DefaultComboBoxStyle}"/>
                     </Grid>
@@ -166,6 +167,7 @@
                         </StackPanel>
                         <ComboBox ItemsSource="{Binding ScanPeriods}" 
                                   SelectedItem="{Binding SelectedScanPeriod}" 
+                                  IsEnabled="{Binding ScanScheduleEnabled}"
                                   Width="240" Height="34" HorizontalAlignment="Right" VerticalAlignment="Center"
                                   Style="{DynamicResource DefaultComboBoxStyle}"/>
                     </Grid>
@@ -186,7 +188,112 @@
                 </StackPanel>
             </Border>
 
-            <!-- 6. Appearance & Updates -->
+            <!-- 6. Görünüm ve Tema Seçimi -->
+            <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <ui:SymbolIcon Symbol="DarkTheme24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Görünüm ve Tema Tercihi" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <TextBlock Text="Ultron Defender arayüz temasını kullanım tercihinize veya ortam ışığına göre yapılandırın:" 
+                               Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,0,16"/>
+
+                    <UniformGrid Columns="3" Margin="0,0,0,4">
+                        <!-- Option 1: Light Theme -->
+                        <RadioButton GroupName="ThemeGroup" 
+                                     IsChecked="{Binding IsLightThemeSelected}" 
+                                     Command="{Binding SetLightThemeCommand}"
+                                     Cursor="Hand" Margin="0,0,8,0">
+                            <RadioButton.Template>
+                                <ControlTemplate TargetType="RadioButton">
+                                    <Border x:Name="ThemeBorder" 
+                                            Background="{DynamicResource BrushAppBg}" 
+                                            BorderBrush="{DynamicResource BrushCardBorder}" 
+                                            BorderThickness="1.5" CornerRadius="8" Padding="14,12">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <ui:SymbolIcon Symbol="WeatherSunny24" FontSize="24" Foreground="{DynamicResource BrushStatusWarning}" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                            <TextBlock Text="Açık Tema" Style="{StaticResource DataTableStyle}" FontWeight="Bold" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Gündüz için aydınlık" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter TargetName="ThemeBorder" Property="BorderBrush" Value="{DynamicResource BrushBrandPrimary}"/>
+                                            <Setter TargetName="ThemeBorder" Property="Background" Value="{DynamicResource BrushBrandMinimal}"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="ThemeBorder" Property="BorderBrush" Value="{DynamicResource BrushCardBorderHover}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </RadioButton.Template>
+                        </RadioButton>
+
+                        <!-- Option 2: Dark Theme -->
+                        <RadioButton GroupName="ThemeGroup" 
+                                     IsChecked="{Binding IsDarkThemeSelected}" 
+                                     Command="{Binding SetDarkThemeCommand}"
+                                     Cursor="Hand" Margin="4,0,4,0">
+                            <RadioButton.Template>
+                                <ControlTemplate TargetType="RadioButton">
+                                    <Border x:Name="ThemeBorder" 
+                                            Background="{DynamicResource BrushAppBg}" 
+                                            BorderBrush="{DynamicResource BrushCardBorder}" 
+                                            BorderThickness="1.5" CornerRadius="8" Padding="14,12">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <ui:SymbolIcon Symbol="WeatherMoon24" FontSize="24" Foreground="{DynamicResource BrushBrandPrimary}" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                            <TextBlock Text="Koyu Tema" Style="{StaticResource DataTableStyle}" FontWeight="Bold" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Göz yormayan obsidyen" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter TargetName="ThemeBorder" Property="BorderBrush" Value="{DynamicResource BrushBrandPrimary}"/>
+                                            <Setter TargetName="ThemeBorder" Property="Background" Value="{DynamicResource BrushBrandMinimal}"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="ThemeBorder" Property="BorderBrush" Value="{DynamicResource BrushCardBorderHover}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </RadioButton.Template>
+                        </RadioButton>
+
+                        <!-- Option 3: System Theme -->
+                        <RadioButton GroupName="ThemeGroup" 
+                                     IsChecked="{Binding IsSystemThemeSelected}" 
+                                     Command="{Binding SetSystemThemeCommand}"
+                                     Cursor="Hand" Margin="8,0,0,0">
+                            <RadioButton.Template>
+                                <ControlTemplate TargetType="RadioButton">
+                                    <Border x:Name="ThemeBorder" 
+                                            Background="{DynamicResource BrushAppBg}" 
+                                            BorderBrush="{DynamicResource BrushCardBorder}" 
+                                            BorderThickness="1.5" CornerRadius="8" Padding="14,12">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <ui:SymbolIcon Symbol="Desktop24" FontSize="24" Foreground="{DynamicResource BrushStatusInfo}" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                            <TextBlock Text="Sistemi Takip Et" Style="{StaticResource DataTableStyle}" FontWeight="Bold" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Windows ayarıyla uyumlu" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter TargetName="ThemeBorder" Property="BorderBrush" Value="{DynamicResource BrushBrandPrimary}"/>
+                                            <Setter TargetName="ThemeBorder" Property="Background" Value="{DynamicResource BrushBrandMinimal}"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="ThemeBorder" Property="BorderBrush" Value="{DynamicResource BrushCardBorderHover}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </RadioButton.Template>
+                        </RadioButton>
+                    </UniformGrid>
+                </StackPanel>
+            </Border>
+
+            <!-- 7. Updates & General -->
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,24" Padding="20">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">

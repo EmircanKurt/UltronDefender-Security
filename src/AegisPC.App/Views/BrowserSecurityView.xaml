@@ -17,7 +17,7 @@
         <conv:BoolToStatusTextConverter x:Key="BoolToStatus"/>
     </Page.Resources>
 
-    <Grid Margin="28,20,28,28">
+    <Grid Margin="28,20,28,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -68,6 +68,9 @@
                              BorderThickness="0"
                              Background="Transparent"
                              RowHeaderWidth="0"
+                             ScrollViewer.CanContentScroll="False"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              GridLinesVisibility="Horizontal"
                              HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
                     <ui:DataGrid.Columns>
@@ -116,7 +119,7 @@
 
             <!-- Detail Panel -->
             <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
                     <StackPanel Margin="4">
                         <TextBlock Text="Eklenti Güvenlik İncelemesi" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,16"/>
 

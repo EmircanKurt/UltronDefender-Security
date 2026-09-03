@@ -13,7 +13,7 @@ namespace AegisPC.Security.Scanning
     /// Microsoft Antimalware Scan Interface (AMSI) Win32 API Sarmalayıcısı.
     /// Bellek içi PowerShell, VBScript, Macro ve dinamik betikleri amsi.dll üzerinden analiz eder.
     /// </summary>
-    public class AmsiScanService : IAmsiScanService
+    public class AmsiScanService : IAmsiScanService, IDisposable
     {
         private readonly ILogger<AmsiScanService>? _logger;
         private IntPtr _amsiContext = IntPtr.Zero;

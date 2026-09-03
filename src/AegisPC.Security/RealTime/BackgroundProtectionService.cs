@@ -123,12 +123,26 @@ namespace AegisPC.Security.RealTime
                         {
                             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
                             IncludeSubdirectories = false,
+                            InternalBufferSize = 65536,
                             EnableRaisingEvents = true
                         };
 
                         watcher.Created += OnFileCreatedOrChanged;
                         watcher.Changed += OnFileCreatedOrChanged;
                         watcher.Renamed += (s, e) => OnFileCreatedOrChanged(s, new FileSystemEventArgs(WatcherChangeTypes.Created, Path.GetDirectoryName(e.FullPath) ?? "", e.Name ?? ""));
+                        watcher.Error += (s, e) =>
+                        {
+                            _logger?.LogWarning(e.GetException(), "Watcher buffer overflow or I/O error on {Dir}. Re-enabling...", dir);
+                            try
+                            {
+                                if (s is FileSystemWatcher fsw)
+                                {
+                                    fsw.EnableRaisingEvents = false;
+                                    fsw.EnableRaisingEvents = true;
+                                }
+                            }
+                            catch { }
+                        };
 
                         _watchers.Add(watcher);
                     }

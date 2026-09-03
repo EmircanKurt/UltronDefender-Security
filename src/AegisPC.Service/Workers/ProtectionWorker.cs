@@ -44,15 +44,38 @@ namespace AegisPC.Service.Workers
 
                 if (_settingsService.Current.IsFileProtectionEnabled)
                 {
-                    _logger.LogInformation("Starting Real-Time Progressive Protection Engine...");
-                    _realTimeProtectionEngine.Start();
-                    _fileProtectionService.StartProtection();
+                    try
+                    {
+                        _logger.LogInformation("Starting Real-Time Progressive Protection Engine...");
+                        _realTimeProtectionEngine.Start();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to start Real-Time Protection Engine.");
+                    }
+
+                    try
+                    {
+                        _logger.LogInformation("Starting File Protection Service...");
+                        _fileProtectionService.StartProtection();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to start File Protection Service.");
+                    }
                 }
 
                 if (_settingsService.Current.IsRansomwareShieldEnabled)
                 {
-                    _logger.LogInformation("Starting Ransomware Canary Shield subsystem...");
-                    _ransomwareEngine.StartShield();
+                    try
+                    {
+                        _logger.LogInformation("Starting Ransomware Canary Shield subsystem...");
+                        _ransomwareEngine.StartShield();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to start Ransomware Shield.");
+                    }
                 }
 
                 _logger.LogInformation("AegisPC Protection Service is active and monitoring.");
@@ -76,8 +99,9 @@ namespace AegisPC.Service.Workers
             finally
             {
                 _logger.LogInformation("Stopping protection engines during service shutdown.");
-                _fileProtectionService.StopProtection();
-                _ransomwareEngine.StopShield();
+                try { _realTimeProtectionEngine?.Stop(); } catch { }
+                try { _fileProtectionService?.StopProtection(); } catch { }
+                try { _ransomwareEngine?.StopShield(); } catch { }
             }
         }
     }

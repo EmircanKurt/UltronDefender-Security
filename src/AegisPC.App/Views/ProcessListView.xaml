@@ -16,7 +16,7 @@
         <conv:NullToBoolConverter x:Key="NullToBool"/>
     </Page.Resources>
 
-    <Grid Margin="28,20,28,28">
+    <Grid Margin="28,20,28,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -55,7 +55,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- Process DataGrid (Strict DataTableStyle: Pure Sans-Serif, Tabular Numerals) -->
-            <Border Grid.Column="0" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="10" Margin="0,0,16,0">
+            <Border Grid.Column="0" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Margin="0,0,16,0">
                 <ui:DataGrid ItemsSource="{Binding Processes}" 
                              SelectedItem="{Binding SelectedProcess}"
                              AutoGenerateColumns="False" 
@@ -64,6 +64,8 @@
                              BorderThickness="0"
                              Background="Transparent"
                              RowHeaderWidth="0"
+                             ScrollViewer.CanContentScroll="False"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
                              GridLinesVisibility="Horizontal"
                              HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
                     <ui:DataGrid.Columns>
@@ -112,7 +114,7 @@
 
             <!-- Process Detail Panel -->
             <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
                     <StackPanel Margin="4">
                         <TextBlock Text="Süreç Detayı" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,16"/>
 

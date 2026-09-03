@@ -147,7 +147,7 @@ namespace AegisPC.Security.Scanning
                 {
                     if (cancellationToken.IsCancellationRequested) break;
 
-                    if (!File.Exists(file.FullName))
+                    if (!File.Exists(file.FullName) || FileScannerService.IsSelfOwnedPath(file.FullName))
                     {
                         continue;
                     }
@@ -205,12 +205,12 @@ namespace AegisPC.Security.Scanning
                             ProcessStartTime = hasProc ? procInfo.StartTime : null
                         };
 
-                        // Terminate process if running
-                        if (hasProc)
+                        // Terminate process if running (Guard against critical Windows processes)
+                        if (hasProc && !AegisPC.Core.Constants.CriticalProcesses.IsCriticalProcess(procInfo.ProcessName))
                         {
                             try
                             {
-                                var p = Process.GetProcessById(procInfo.ProcessId);
+                                using var p = Process.GetProcessById(procInfo.ProcessId);
                                 p.Kill(entireProcessTree: true);
                             }
                             catch { }
@@ -377,7 +377,13 @@ namespace AegisPC.Security.Scanning
                             ObjectName = f.FileName,
                             ObjectPath = f.FilePath,
                             RiskScore = f.RiskScore,
-                            RiskLevel = f.RiskScore >= 85 ? RiskLevel.ConfirmedMalicious : RiskLevel.HighRisk,
+                            RiskLevel = f.RiskScore switch
+                            {
+                                >= 85 => RiskLevel.ConfirmedMalicious,
+                                >= 70 => RiskLevel.HighRisk,
+                                >= 50 => RiskLevel.Suspicious,
+                                _ => RiskLevel.Clean
+                            },
                             Title = $"Başlangıç Tehdidi: {f.FileName}",
                             Description = string.Join("; ", f.Evidences),
                             Status = f.IsQuarantined ? FindingStatus.Resolved : FindingStatus.Active
@@ -426,6 +432,8 @@ namespace AegisPC.Security.Scanning
             if (string.IsNullOrWhiteSpace(dirPath)) return;
             string fullPath = Path.GetFullPath(dirPath);
 
+            if (FileScannerService.IsSelfOwnedPath(fullPath)) return;
+
             if (File.Exists(fullPath))
             {
                 try
@@ -446,6 +454,10 @@ namespace AegisPC.Security.Scanning
                 var currentDir = stack.Pop();
                 if (!Directory.Exists(currentDir)) continue;
 
+                var dirName = Path.GetFileName(currentDir);
+                if (FileScannerService.ExcludedDirectoryNames.Contains(dirName) || FileScannerService.IsSelfOwnedPath(currentDir))
+                    continue;
+
                 try
                 {
                     var files = Directory.GetFiles(currentDir, "*");
@@ -453,6 +465,8 @@ namespace AegisPC.Security.Scanning
                     {
                         try
                         {
+                            if (FileScannerService.IsSelfOwnedPath(filePath)) continue;
+
                             var ext = Path.GetExtension(filePath);
                             var fileName = Path.GetFileName(filePath);
                             if (RiskyExtensions.Contains(ext) || fileName.Count(c => c == '.') > 1)
@@ -544,6 +558,10 @@ namespace AegisPC.Security.Scanning
                         }
                     }
                     catch { }
+                    finally
+                    {
+                        proc.Dispose();
+                    }
                 }
             }
             catch { }

@@ -156,7 +156,7 @@ namespace AegisPC.Security.Scanning
                             {
                                 ObjectPath = $@"HKLM\{ifeoPath}\{subKeyName}\Debugger -> {debugger}",
                                 ObjectName = subKeyName,
-                                RiskLevel = RiskLevel.HighRisk,
+                                RiskLevel = RiskLevel.ConfirmedMalicious,
                                 RiskScore = 95,
                                 Category = FindingCategory.SuspiciousPersistence,
                                 Title = $"MRT: IFEO Hata Ayıklayıcı Kaçırması ({subKeyName})",
@@ -194,7 +194,7 @@ namespace AegisPC.Security.Scanning
                     {
                         ObjectPath = $@"HKLM\{winlogonPath}\Shell -> {shell}",
                         ObjectName = "Winlogon Shell",
-                        RiskLevel = RiskLevel.HighRisk,
+                        RiskLevel = RiskLevel.ConfirmedMalicious,
                         RiskScore = 90,
                         Category = FindingCategory.SuspiciousPersistence,
                         Title = "MRT: Winlogon Shell Kaçırması Tespit Edildi",
@@ -226,7 +226,7 @@ namespace AegisPC.Security.Scanning
                         {
                             ObjectPath = $@"HKLM\{winlogonPath}\Userinit -> {userinit}",
                             ObjectName = "Winlogon Userinit",
-                            RiskLevel = RiskLevel.HighRisk,
+                            RiskLevel = RiskLevel.ConfirmedMalicious,
                             RiskScore = 95,
                             Category = FindingCategory.SuspiciousPersistence,
                             Title = "MRT: Winlogon Userinit Ekstra Yük Tespit Edildi",
@@ -263,7 +263,7 @@ namespace AegisPC.Security.Scanning
                     {
                         ObjectPath = $@"HKLM\{winPath}\AppInit_DLLs -> {appInit}",
                         ObjectName = "AppInit_DLLs",
-                        RiskLevel = RiskLevel.HighRisk,
+                        RiskLevel = RiskLevel.ConfirmedMalicious,
                         RiskScore = 88,
                         Category = FindingCategory.SystemModification,
                         Title = "MRT: Global DLL Enjeksiyonu (AppInit_DLLs)",
@@ -315,7 +315,7 @@ namespace AegisPC.Security.Scanning
                     {
                         ObjectPath = hostsPath,
                         ObjectName = "hosts",
-                        RiskLevel = RiskLevel.HighRisk,
+                        RiskLevel = RiskLevel.ConfirmedMalicious,
                         RiskScore = 90,
                         Category = FindingCategory.SystemModification,
                         Title = "MRT: Hosts Dosyası Güvenlik Engellemesi Tespit Edildi",
@@ -360,7 +360,7 @@ namespace AegisPC.Security.Scanning
                             {
                                 ObjectPath = serviceDll,
                                 ObjectName = serviceName,
-                                RiskLevel = RiskLevel.HighRisk,
+                                RiskLevel = RiskLevel.ConfirmedMalicious,
                                 RiskScore = 92,
                                 Category = FindingCategory.SuspiciousLocation,
                                 Title = $"MRT: Şüpheli Servis DLL Konumu ({serviceName})",
@@ -406,7 +406,7 @@ namespace AegisPC.Security.Scanning
                             {
                                 ObjectPath = taskFile,
                                 ObjectName = Path.GetFileName(taskFile),
-                                RiskLevel = RiskLevel.HighRisk,
+                                RiskLevel = RiskLevel.ConfirmedMalicious,
                                 RiskScore = 94,
                                 Category = FindingCategory.SuspiciousPersistence,
                                 Title = $"MRT: Zararlı Zamanlanmış Görev ({Path.GetFileName(taskFile)})",
@@ -440,9 +440,9 @@ namespace AegisPC.Security.Scanning
 
                     try
                     {
-                        if (proc.Id <= 4) continue;
+                        if (proc.Id <= 4 || proc.Id == Environment.ProcessId) continue;
                         string mainModule = proc.MainModule?.FileName ?? string.Empty;
-                        if (string.IsNullOrEmpty(mainModule)) continue;
+                        if (string.IsNullOrEmpty(mainModule) || FileScannerService.IsSelfOwnedPath(mainModule)) continue;
 
                         string lower = mainModule.ToLowerInvariant();
                         if (lower.Contains(@"\appdata\local\temp\") || lower.Contains(@"\windows\temp\"))
@@ -451,7 +451,7 @@ namespace AegisPC.Security.Scanning
                             {
                                 ObjectPath = mainModule,
                                 ObjectName = proc.ProcessName,
-                                RiskLevel = RiskLevel.HighRisk,
+                                RiskLevel = RiskLevel.ConfirmedMalicious,
                                 RiskScore = 88,
                                 Category = FindingCategory.MalwareSuspicion,
                                 Title = $"MRT: Geçici Dizinden Çalışan Aktif Süreç (PID {proc.Id})",
@@ -469,6 +469,10 @@ namespace AegisPC.Security.Scanning
                         }
                     }
                     catch { }
+                    finally
+                    {
+                        proc.Dispose();
+                    }
                 }
             }
             catch { }
@@ -535,7 +539,7 @@ namespace AegisPC.Security.Scanning
                                 {
                                     ObjectPath = $"{hiveLabel}\\{valueName} -> {rawValue}",
                                     ObjectName = valueName,
-                                    RiskLevel = RiskLevel.HighRisk,
+                                    RiskLevel = RiskLevel.ConfirmedMalicious,
                                     RiskScore = 91,
                                     Category = FindingCategory.SuspiciousPersistence,
                                     Title = $"MRT: Şüpheli Başlangıç (Autorun) Kaydı ({valueName})",

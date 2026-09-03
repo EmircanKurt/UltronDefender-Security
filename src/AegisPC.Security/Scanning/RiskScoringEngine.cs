@@ -13,12 +13,19 @@ namespace AegisPC.Security.Scanning
 {
     public class RiskScoringEngine : IRiskScoringEngine
     {
-        private static readonly HashSet<string> ExactPupKeywords = new(StringComparer.OrdinalIgnoreCase)
+        // Bilinen İstenmeyen Program (PUP) ve Hacktool SHA-256 Hash Veritabanı
+        private static readonly HashSet<string> KnownPupHashes = new(StringComparer.OrdinalIgnoreCase)
         {
-            "crack", "keygen", "activator", "repack", "hacktool", "trainer", 
-            "cheat", "kmsauto", "kmspico", "hwidgen", "injector", "spoofer"
+            "E186411FB272847B3E39FCE160B5B110B6343585F84AE8BE98E9B9735F646C0B", // KMSAuto Net
+            "02D39620BB9396349F579051833501A74808C78A4BA14C5D76C68564F7986B74", // KMSPico
+            "FA01C312DA95D1E168341517454944BA7F27CE2B68DC99F26E650DA90E8F0EF1", // HWIDGen
+            "99B2319A56E215BAE99F98822B7853A90DE670498F4F5234D3C579E7802D310C"  // Universal Keygen
         };
 
+        // TR: Bu metod; dosyanın dijital imza, konum, PE entropi, şüpheli API göstergeleri ve bilinen
+        //     zararlı veritabanı eşleşmelerine göre 0-100 arası ağırlıklı risk skorunu ve kategorisini hesaplar.
+        // EN: This method calculates the weighted risk score (0-100) and classification for a file based on
+        //     digital signatures, location heuristics, PE entropy, suspicious API indicators, and known threat databases.
         public async Task<(int score, RiskLevel level, List<string> reasons)> CalculateRiskScoreAsync(
             FileAnalysisResult result,
             CancellationToken cancellationToken = default)
@@ -28,6 +35,8 @@ namespace AegisPC.Security.Scanning
 
             bool isGameOrRepack = PathHelper.IsGameOrRepackDirectory(result.FilePath) || GameCrackClassifier.IsGameCrackOrEmulator(result.FilePath);
 
+            // TR: Aşama 1: Dijital imza geçerliliği, güvenilir sistem dizini (System32/Program Files) ve oyun muafiyeti kontrolleri.
+            // EN: Stage 1: Verified digital signature, trusted system directories (System32/Program Files), and gamer protection exemptions.
             // 1. Digital Signature & Known Location Safe Modifiers
             if (result.IsSigned && result.SignatureValid)
             {
@@ -50,22 +59,49 @@ namespace AegisPC.Security.Scanning
                 reasons.Add("-25 Oyun/Repack/Emülatör Güvenlik Muafiyeti (Gamer Protection Shield)");
             }
 
-            // 2. PUP / Crack / Keygen Pattern Heuristics (ONLY for unsigned files outside known safe/game locations)
+            // TR: Aşama 2: Kural 7.1 uyumlu PUP/Hacktool tespiti; dosya adına bakılmaksızın sadece SHA-256 hash
+            //     ve imzasız ikililerde kullanıcı çalışma alanı anomalileriyle belirlenir.
+            // EN: Stage 2: Rule 7.1-compliant PUP/Hacktool detection; determined purely via SHA-256 hash lookup
+            //     and unsigned binary workspace anomalies without inspecting file names.
+            // 2. PUP / Hacktool Detection via Digital Trust, PE Behavior & Known Hashes (Rule 7.1 Compliant - No Magic String)
             if (!result.IsSigned && !result.IsKnownLocation && !isGameOrRepack)
             {
-                var fileNameOnly = Path.GetFileNameWithoutExtension(result.FileName).ToLowerInvariant();
-                var tokens = fileNameOnly.Split(new[] { '.', '-', '_', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                bool isPup = false;
+                string pupReason = string.Empty;
 
-                bool isPupPattern = tokens.Any(t => ExactPupKeywords.Contains(t)) ||
-                                    ExactPupKeywords.Any(k => fileNameOnly.Equals(k, StringComparison.OrdinalIgnoreCase));
+                // Kriter 3: Bilinen Hash Eşleşmesi
+                if (!string.IsNullOrEmpty(result.SHA256) && KnownPupHashes.Contains(result.SHA256))
+                {
+                    isPup = true;
+                    pupReason = "+50 Bilinen İstenmeyen Program / Hacktool imzası (Hash Veritabanı Eşleşmesi)";
+                }
 
-                if (isPupPattern)
+                // Kriter 1 & 2: Dijital İmza Durumu (İmzasız) + Belirli Davranış Kalıpları
+                if (!isPup && result.IsExecutable)
+                {
+                    bool isUserWorkArea = PathHelper.IsUserDownloadsPath(result.FilePath) ||
+                                          result.FilePath.Contains(@"\Documents\", StringComparison.OrdinalIgnoreCase) ||
+                                          result.FilePath.Contains(@"\Belgeler\", StringComparison.OrdinalIgnoreCase) ||
+                                          result.FilePath.Contains(@"\Desktop\", StringComparison.OrdinalIgnoreCase) ||
+                                          result.FilePath.Contains(@"\Masaüstü\", StringComparison.OrdinalIgnoreCase);
+
+                    // İmzasız, kullanıcı indirme/çalışma alanında ve şüpheli PE entropisi/packer anomalisi taşıyan ikili
+                    if (isUserWorkArea && (result.Entropy >= 6.0 || result.IsPacked))
+                    {
+                        isPup = true;
+                        pupReason = "+50 Potansiyel İstenmeyen / Korsan Yazılım (PUP/Crack/Keygen) davranış kalıbı (İmzasız, Kullanıcı Alanı ve PE Entropi/Paket Anomalisi)";
+                    }
+                }
+
+                if (isPup)
                 {
                     score += 50;
-                    reasons.Add("+50 Potansiyel İstenmeyen / Korsan Yazılım (PUP/Crack/Keygen) deseni");
+                    reasons.Add(pupReason);
                 }
             }
 
+            // TR: Aşama 3: Yüksek riskli geçici çalışma alanları (Temp dizinleri ve izole AppData klasörleri) kontrolü.
+            // EN: Stage 3: High-risk staging location checks (Temp folders and isolated AppData drop paths).
             // 3. High-Risk Location Checks (Temp, Hidden Drop Zones)
             var path = result.FilePath;
             bool isInstalledAppFolder = path.Contains(@"\AppData\Local\Programs\", StringComparison.OrdinalIgnoreCase) ||
@@ -87,6 +123,8 @@ namespace AegisPC.Security.Scanning
                 reasons.Add("+10 İmzasız dosya İndirilenler (Downloads) klasöründe");
             }
 
+            // TR: Aşama 4: Shannon entropi ve paketleyici (packer) analizi; şifreli veya sıkıştırılmış PE bölümlerini tespit eder.
+            // EN: Stage 4: Shannon entropy and packer heuristics; detects encrypted or compressed PE payload sections.
             // 4. Shannon Entropy & Packer Heuristics (Calibrated for Cracks/Packers)
             // NOT: Yüksek entropi ve bilinen packer'lar (UPX, Themida, VMProtect) tek başına dosyayı ConfirmedMalicious yapmaz.
             if (!isGameOrRepack)
@@ -109,6 +147,8 @@ namespace AegisPC.Security.Scanning
                 }
             }
 
+            // TR: Aşama 5: Çift uzantı kamuflaj kontrolü (örn. .pdf.exe veya .docx.scr gibi kullanıcıyı aldatmaya yönelik uzantılar).
+            // EN: Stage 5: Double extension disguise detection (e.g., .pdf.exe or .docx.scr disguise patterns).
             // 5. File extension disguise check (e.g. .pdf.exe or .docx.scr)
             if (result.FileName.Count(c => c == '.') > 1)
             {
@@ -121,6 +161,8 @@ namespace AegisPC.Security.Scanning
                 }
             }
 
+            // TR: Aşama 6: İmzasız çalıştırılabilir dosya risk cezası (yalnızca güvenilir olmayan yollardaki ikililer için).
+            // EN: Stage 6: Unsigned executable risk penalty (only applied to binaries outside trusted system/app folders).
             // 6. Unsigned Executable Penalty (Only outside of known system/installed app/game directories)
             if (!result.IsSigned && result.IsExecutable && !result.IsKnownLocation && !isInstalledAppFolder && !isGameOrRepack)
             {
@@ -128,20 +170,41 @@ namespace AegisPC.Security.Scanning
                 reasons.Add("+10 Yürütülebilir dosya dijital olarak imzalanmamış");
             }
 
+            // TR: Aşama 7: Çoklu sinyalli şüpheli Win32 API ve davranışsal gösterge analizi (Bellek Enjeksiyonu, Process Hollowing).
+            // EN: Stage 7: Multi-signal suspicious Win32 API and behavioral indicator analysis (Process Injection, Process Hollowing).
             // 7. Multi-Signal Suspicious Win32 API & Behavioral Indicators (Only for unsigned binaries in untrusted paths)
             bool isKnownSafe = result.IsKnownLocation || PathHelper.IsKnownSafePath(result.FilePath);
             if (!result.IsSigned && !isKnownSafe && !string.IsNullOrEmpty(result.FilePath) && File.Exists(result.FilePath))
             {
                 var apis = await MalwareSignatureDatabase.ScanApiIndicatorsAsync(result.FilePath, cancellationToken);
+                bool hasInjectionOrHollowing = false;
                 foreach (var api in apis)
                 {
                     // Oyun ve crack dosyalarında bellek hook'lama (VirtualAllocEx, SetWindowsHookEx) doğal olduğundan ağırlık hafifletilir
                     int effectiveWeight = isGameOrRepack ? Math.Max(2, api.Weight / 4) : api.Weight;
                     score += effectiveWeight;
                     reasons.Add($"+{effectiveWeight} API Göstergesi: {api.Description}" + (isGameOrRepack ? " (Oyun Modu İndirimi)" : ""));
+
+                    if (api.ApiName.Contains("VirtualAlloc", StringComparison.OrdinalIgnoreCase) ||
+                        api.ApiName.Contains("WriteProcessMemory", StringComparison.OrdinalIgnoreCase) ||
+                        api.ApiName.Contains("NtUnmapViewOfSection", StringComparison.OrdinalIgnoreCase) ||
+                        api.ApiName.Contains("CreateRemoteThread", StringComparison.OrdinalIgnoreCase) ||
+                        api.ApiName.Contains("QueueUserAPC", StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasInjectionOrHollowing = true;
+                    }
+                }
+
+                // PE Davranışsal Göstergeler: İmzasız ikilide bellek enjeksiyonu veya process hollowing tespiti
+                if (hasInjectionOrHollowing && !isGameOrRepack && !reasons.Any(r => r.Contains("PUP")))
+                {
+                    score += 20;
+                    reasons.Add("+20 PE Davranışsal Gösterge: Bellek enjeksiyonu veya Process Hollowing API tespiti");
                 }
             }
 
+            // TR: Aşama 8: Microsoft imzalı güvenilir ikililer için LOLBin koruması ve skorun 0-100 aralığına sınırlandırılması.
+            // EN: Stage 8: LOLBin mitigation for Microsoft-signed binaries and score clamping between 0 and 100.
             // Microsoft or trusted OS binaries: zero risk ONLY IF in legitimate system/program directories.
             // If placed in Temp/Downloads/untrusted drop zones, reduce risk but do not zero it (prevents LOLBin staging).
             if (result.IsSigned && result.SignatureValid && result.SignaturePublisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true)
@@ -163,6 +226,8 @@ namespace AegisPC.Security.Scanning
             // Clamp score between 0 and 100
             score = Math.Clamp(score, 0, 100);
 
+            // TR: Kalibre edilmiş risk seviyesi bantları (0-49: Temiz, 50-69: Şüpheli, 70-84: Yüksek Risk/PUP, 85-100: Kesin Zararlı).
+            // EN: Calibrated risk level thresholds (0-49: Clean, 50-69: Suspicious, 70-84: HighRisk/PUP, 85-100: ConfirmedMalicious).
             // Calibrated Levels:
             // 0-49: Clean
             // 50-69: Suspicious (Medium)

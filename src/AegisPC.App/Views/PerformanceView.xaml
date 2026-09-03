@@ -18,147 +18,85 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
     </Page.Resources>
 
-    <ScrollViewer x:Name="RootScrollViewer" Margin="28,20,28,28" 
+    <ScrollViewer x:Name="RootScrollViewer" Margin="28,20,28,24" 
                   VerticalScrollBarVisibility="Auto" 
                   HorizontalScrollBarVisibility="Disabled" 
                   CanContentScroll="False"
                   Focusable="True"
                   PreviewMouseWheel="OnPagePreviewMouseWheel">
-        <StackPanel>
-            <!-- 1. Header -->
-            <Grid Margin="0,0,0,20">
+        <StackPanel MaxWidth="1500" HorizontalAlignment="Left">
+            <!-- ═══════════════════════════════════════════════════════════
+                 BAŞLIK & YENİLEME ÇUBUĞU
+            ═══════════════════════════════════════════════════════════ -->
+            <Grid Margin="0,0,0,16">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0">
                     <TextBlock Style="{StaticResource PageHeadingStyle}" Text="Donanım ve Performans Teşhis Merkezi" Margin="0,0,0,2"/>
-                    <TextBlock Text="Gerçek zamanlı donanım telemetrisi, CPU, RAM ve GPU süreç tüketimleri." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
+                    <TextBlock Text="Gerçek zamanlı donanım telemetrisi, canlı kaynak trendleri ve süreç tüketimleri." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
                 </StackPanel>
                 <Button Grid.Column="1" Style="{StaticResource SecondaryButtonStyle}" 
-                        Content="Yenile" Command="{Binding RefreshDataCommand}" VerticalAlignment="Center" Padding="12,4"/>
+                        Content="Yenile" Command="{Binding RefreshDataCommand}" VerticalAlignment="Center" Padding="14,6"/>
             </Grid>
 
             <!-- ═══════════════════════════════════════════════════════════
-                 2. REAL HARDWARE PROFILE SUMMARY (MOTHERBOARD, GPU, CPU, RAM)
+                 1. BÖLGE: ULTRON DEFENDER ÖZ KAYNAK KORUMA ŞERİDİ (BİRİNCİ ÖNCELİK)
             ═══════════════════════════════════════════════════════════ -->
-            <TextBlock Text="SİSTEM DONANIM PROFİLİ" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,10"/>
-            <UniformGrid Columns="4" Margin="0,0,0,20">
-                <!-- Processor Card -->
-                <Border Style="{StaticResource MetricCardStyle}" Height="135" Margin="0,0,12,0" Padding="16">
-                    <StackPanel VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <ui:SymbolIcon Symbol="DeveloperBoard24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0"/>
-                            <TextBlock Text="İŞLEMCİ (CPU)" Style="{StaticResource CaptionTextStyle}" FontWeight="Bold"/>
-                        </StackPanel>
-                        <TextBlock Text="{Binding Cpu.Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="13" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding CpuSummary}" Style="{StaticResource CaptionTextStyle}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding Cpu.MaxClockSpeedMhz, StringFormat='Taban Hız: \{0\} MHz'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,0"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- GPU Card -->
-                <Border Style="{StaticResource MetricCardStyle}" Height="135" Margin="0,0,12,0" Padding="16">
-                    <StackPanel VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <ui:SymbolIcon Symbol="Tv24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0"/>
-                            <TextBlock Text="EKRAN KARTI (GPU)" Style="{StaticResource CaptionTextStyle}" FontWeight="Bold"/>
-                        </StackPanel>
-                        <TextBlock Text="{Binding PrimaryGpu.Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="13" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding GpuSummary}" Style="{StaticResource CaptionTextStyle}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding PrimaryGpu.DriverVersion, StringFormat='Sürücü: \{0\}'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Motherboard Card -->
-                <Border Style="{StaticResource MetricCardStyle}" Height="135" Margin="0,0,12,0" Padding="16">
-                    <StackPanel VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <ui:SymbolIcon Symbol="Desktop24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="18" Margin="0,0,8,0"/>
-                            <TextBlock Text="ANAKART (BASEBOARD)" Style="{StaticResource CaptionTextStyle}" FontWeight="Bold"/>
-                        </StackPanel>
-                        <TextBlock Text="{Binding MotherboardSummary}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="13" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding Motherboard.SerialNumber, StringFormat='Seri No: \{0\}'}" Style="{StaticResource CaptionTextStyle}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding Motherboard.Version, StringFormat='Sürüm: \{0\}'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,0"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- RAM Card -->
-                <Border Style="{StaticResource MetricCardStyle}" Height="135" Margin="0" Padding="16">
-                    <StackPanel VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <ui:SymbolIcon Symbol="AppsListDetail24" Foreground="{DynamicResource BrushStatusWarning}" FontSize="18" Margin="0,0,8,0"/>
-                            <TextBlock Text="SİSTEM BELLEĞİ (RAM)" Style="{StaticResource CaptionTextStyle}" FontWeight="Bold"/>
-                        </StackPanel>
-                        <TextBlock Text="{Binding TotalRamGb, StringFormat='\{0\} GB Toplam Kapasite'}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="13"/>
-                        <TextBlock Text="{Binding RamSummary}" Style="{StaticResource CaptionTextStyle}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="Çift Kanal (Dual Channel) Aktif" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushStatusSafeDark}" Margin="0,2,0,0"/>
-                    </StackPanel>
-                </Border>
-            </UniformGrid>
-
-            <!-- ═══════════════════════════════════════════════════════════
-                 3. ULTRON DEFENDER ÖZ KAYNAK TÜKETİMİ & CANLI TELEMETRİ
-            ═══════════════════════════════════════════════════════════ -->
-            <TextBlock Text="ULTRON DEFENDER CANLI SİSTEM KAYNAK TÜKETİMİ" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,10"/>
-            <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,24" Padding="20">
+            <Border Style="{StaticResource HeroCardStyle}" Margin="0,0,0,16" Padding="18,14">
                 <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-                    <!-- Header -->
-                    <Grid Grid.Row="0" Margin="0,0,0,16">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="22" Margin="0,0,10,0"/>
-                            <TextBlock Text="Ultron Defender Süreç ve Güvenlik Metrikleri" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
-                            <Border Style="{StaticResource BadgeSafeStyle}" Margin="12,0,0,0">
-                                <TextBlock Text="{Binding UltronStatus}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusSafeText}"/>
-                            </Border>
+                    <!-- Sol Başlık & Güven Rozeti -->
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,24,0">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="22" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Ultron Defender Motoru" Style="{StaticResource SectionHeadingStyle}" FontSize="15" FontWeight="Bold" VerticalAlignment="Center"/>
                         </StackPanel>
+                        <Border Style="{StaticResource BadgeSafeStyle}" Padding="8,2" HorizontalAlignment="Left">
+                            <TextBlock Text="{Binding UltronStatus}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusSafeText}"/>
+                        </Border>
+                    </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding UltronPid, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,14,0"/>
-                            <TextBlock Text="{Binding UltronUptime, StringFormat='Çalışma Süresi: \{0\}'}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" Foreground="{DynamicResource BrushStatusSafeText}"/>
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- 4 Live Stats -->
-                    <UniformGrid Grid.Row="1" Columns="4">
+                    <!-- Sağ 4 Kompakt Metrik -->
+                    <UniformGrid Grid.Column="1" Columns="4" VerticalAlignment="Center">
                         <!-- CPU -->
-                        <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,10,0">
+                        <Border Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,8,0">
                             <StackPanel>
-                                <TextBlock Text="İşlemci (CPU) Kullanımı" Style="{StaticResource CaptionTextStyle}" Margin="0,0,0,4"/>
-                                <TextBlock Text="{Binding UltronCpuUsage}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                <TextBlock Text="Sıfır etki / Arka plan optimizasyonu" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusSafeDark}" Margin="0,2,0,0"/>
+                                <TextBlock Text="İşlemci (CPU)" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}"/>
+                                <TextBlock Text="{Binding UltronCpuUsage}" Style="{StaticResource MetricValueStyle}" FontSize="18" FontWeight="Bold" Margin="0,2,0,0"/>
+                                <TextBlock Text="Sıfır sistem yükü" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusSafeDark}" FontSize="10"/>
                             </StackPanel>
                         </Border>
 
-                        <!-- RAM Working Set -->
-                        <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,10,0">
+                        <!-- RAM -->
+                        <Border Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,8,0">
                             <StackPanel>
-                                <TextBlock Text="Fiziksel Bellek (RAM)" Style="{StaticResource CaptionTextStyle}" Margin="0,0,0,4"/>
-                                <TextBlock Text="{Binding UltronRamUsage}" Style="{StaticResource MetricValueStyle}"/>
-                                <TextBlock Text="Çalışma Kümesi (WorkingSet)" Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Private Memory -->
-                        <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,10,0">
-                            <StackPanel>
-                                <TextBlock Text="Özel Bellek (Private Commit)" Style="{StaticResource CaptionTextStyle}" Margin="0,0,0,4"/>
-                                <TextBlock Text="{Binding UltronPrivateMemory}" Style="{StaticResource MetricValueStyle}"/>
-                                <TextBlock Text="Ayrılmış bellek havuzu" Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                                <TextBlock Text="Fiziksel RAM" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}"/>
+                                <TextBlock Text="{Binding UltronRamUsage}" Style="{StaticResource MetricValueStyle}" FontSize="18" FontWeight="Bold" Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding UltronPrivateMemory, StringFormat='Özel: \{0\}'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" FontSize="10"/>
                             </StackPanel>
                         </Border>
 
                         <!-- Threads & Handles -->
-                        <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0">
+                        <Border Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,8,0">
                             <StackPanel>
-                                <TextBlock Text="İş Parçacıkları ve Tanıtıcılar" Style="{StaticResource CaptionTextStyle}" Margin="0,0,0,4"/>
-                                <TextBlock Text="{Binding UltronThreadCount, StringFormat='\{0\} Thread'}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushStatusWarning}"/>
-                                <TextBlock Text="{Binding UltronHandleCount, StringFormat='\{0\} Handle aktif'}" Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                                <TextBlock Text="İş Parçacıkları" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}"/>
+                                <TextBlock Text="{Binding UltronThreadCount, StringFormat='\{0\} Thread'}" Style="{StaticResource MetricValueStyle}" FontSize="18" FontWeight="Bold" Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding UltronHandleCount, StringFormat='\{0\} Handle aktif'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" FontSize="10"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- PID & Uptime -->
+                        <Border Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="12,8">
+                            <StackPanel>
+                                <TextBlock Text="Süreç Kimliği (PID)" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}"/>
+                                <TextBlock Text="{Binding UltronPid, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" FontSize="17" FontWeight="Bold" Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding UltronUptime, StringFormat='Süre: \{0\}'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusSafeText}" FontSize="10"/>
                             </StackPanel>
                         </Border>
                     </UniformGrid>
@@ -166,140 +104,314 @@
             </Border>
 
             <!-- ═══════════════════════════════════════════════════════════
-                 4. STORAGE PARTITIONS & HARD DRIVES
+                 2. BÖLGE: SİSTEM DONANIM PROFİLİ (KOMPAKT TEK SATIR ŞERİT)
             ═══════════════════════════════════════════════════════════ -->
-            <TextBlock Text="SÜRÜCÜ VE DEPOLAMA DURUMU" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,10"/>
-            <ItemsControl ItemsSource="{Binding Drives}" Margin="0,0,0,24">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Style="{StaticResource MetricCardStyle}" Width="280" Height="135" Margin="0,0,16,16" Padding="16">
-                            <StackPanel VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <ui:SymbolIcon Symbol="HardDrive24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="20" Margin="0,0,8,0"/>
-                                    <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="15"/>
-                                    <TextBlock Text="{Binding VolumeLabel, StringFormat=' ({0})'}" Style="{StaticResource CaptionTextStyle}" FontSize="13"/>
-                                </StackPanel>
-                                <ProgressBar Value="{Binding UsagePercent, Mode=OneWay}" Height="7" Margin="0,4" 
-                                             Foreground="{Binding UsagePercent, Converter={StaticResource PercentColorConverter}}" Background="{DynamicResource BrushCardBorder}"/>
-                                <Grid Margin="0,8,0,0">
-                                    <TextBlock Text="{Binding FreeBytes, Converter={StaticResource BytesConverter}, StringFormat='\{0\} boş'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushStatusSafeDark}" FontWeight="SemiBold" HorizontalAlignment="Left"/>
-                                    <TextBlock Text="{Binding TotalBytes, Converter={StaticResource BytesConverter}, StringFormat='\{0\} toplam'}" Style="{StaticResource CaptionTextStyle}" HorizontalAlignment="Right"/>
-                                </Grid>
-                            </StackPanel>
+            <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="14,10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- CPU -->
+                    <Grid Grid.Column="0" Margin="0,0,12,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="32" Height="32" Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Margin="0,0,10,0">
+                            <ui:SymbolIcon Symbol="DeveloperBoard24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="İŞLEMCİ (CPU)" Style="{StaticResource CaptionTextStyle}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextSecondary}"/>
+                            <TextBlock Text="{Binding Cpu.Name}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Cpu.MaxClockSpeedMhz, StringFormat='\{0\} MHz Taban'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" FontSize="10"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- GPU -->
+                    <Grid Grid.Column="1" Margin="0,0,12,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="32" Height="32" Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Margin="0,0,10,0">
+                            <ui:SymbolIcon Symbol="Tv24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="EKRAN KARTI (GPU)" Style="{StaticResource CaptionTextStyle}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextSecondary}"/>
+                            <TextBlock Text="{Binding PrimaryGpu.Name}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding GpuSummary}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" FontSize="10" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- RAM -->
+                    <Grid Grid.Column="2" Margin="0,0,12,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="32" Height="32" Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Margin="0,0,10,0">
+                            <ui:SymbolIcon Symbol="AppsListDetail24" Foreground="{DynamicResource BrushStatusWarning}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="SİSTEM BELLEĞİ (RAM)" Style="{StaticResource CaptionTextStyle}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextSecondary}"/>
+                            <TextBlock Text="{Binding TotalRamGb, StringFormat='\{0:0\} GB Toplam RAM'}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" FontSize="12"/>
+                            <TextBlock Text="{Binding RamSummary}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" FontSize="10" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Motherboard (Gizlenebilir) -->
+                    <Grid Grid.Column="3" Visibility="{Binding HasMotherboard, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="32" Height="32" Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Margin="0,0,10,0">
+                            <ui:SymbolIcon Symbol="Desktop24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="ANAKART (BASEBOARD)" Style="{StaticResource CaptionTextStyle}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextSecondary}"/>
+                            <TextBlock Text="{Binding MotherboardDisplay}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Motherboard.Version, StringFormat='Rev: \{0\}'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" FontSize="10"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
 
             <!-- ═══════════════════════════════════════════════════════════
-                 5. TOP RESOURCE CONSUMERS (CPU, MEMORY, AND GPU) - STRICT TABULAR
+                 3. BÖLGE: CANLI TELEMETRİ VE TREND GRAFİĞİ (SON 60 SANİYE)
             ═══════════════════════════════════════════════════════════ -->
-            <Grid>
+            <Grid Margin="0,0,0,16">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Top CPU Column -->
-                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="16">
-                    <StackPanel>
-                        <TextBlock Text="EN ÇOK CPU KULLANANLAR" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,12"/>
-                        <ItemsControl ItemsSource="{Binding TopCpuProcesses}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,6">
-                                        <Grid>
-                                             <Grid.ColumnDefinitions>
-                                                 <ColumnDefinition Width="Auto"/>
-                                                 <ColumnDefinition Width="*"/>
-                                                 <ColumnDefinition Width="Auto"/>
-                                             </Grid.ColumnDefinitions>
-                                             <Border Grid.Column="0" Width="26" Height="26" Background="{DynamicResource BrushStatusDangerBg}" CornerRadius="5" Margin="0,0,8,0">
-                                                 <ui:SymbolIcon Symbol="DeveloperBoard24" Foreground="{DynamicResource BrushStatusDanger}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                             </Border>
-                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                 <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                                                 <TextBlock Text="{Binding PID, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" FontSize="10" Foreground="{DynamicResource BrushTextSecondary}"/>
-                                             </StackPanel>
-                                             <Border Grid.Column="2" Style="{StaticResource BadgeDangerStyle}" Padding="6,2" VerticalAlignment="Center">
-                                                 <TextBlock Text="{Binding CpuPercent, StringFormat='\{0:0.0\} %'}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource BrushStatusDangerText}"/>
-                                             </Border>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
+                <!-- Panel A: Sistem Toplam CPU & RAM Yükü -->
+                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="16,14">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header -->
+                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ui:SymbolIcon Symbol="PulseSquare24" Foreground="{DynamicResource BrushStatusDanger}" FontSize="16" Margin="0,0,8,0"/>
+                                <TextBlock Text="Genel Sistem Yükü (Son 60 Sn)" Style="{StaticResource SectionHeadingStyle}" FontSize="13" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock Text="CPU: " Foreground="{DynamicResource BrushStatusDanger}" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock Text="{Binding SystemCpuCurrentText}" Style="{StaticResource DataMonospaceStyle}" FontSize="11" FontWeight="Bold" Margin="0,0,12,0"/>
+                                <TextBlock Text="RAM: " Foreground="{DynamicResource BrushStatusInfo}" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock Text="{Binding SystemRamCurrentText}" Style="{StaticResource DataMonospaceStyle}" FontSize="11" FontWeight="Bold"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Sparkline Canvas -->
+                        <Border Grid.Row="1" Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Height="65" ClipToBounds="True">
+                            <Grid>
+                                <!-- Izgara Çizgileri -->
+                                <Line X1="0" Y1="16" X2="1000" Y2="16" Stroke="{DynamicResource BrushCardBorder}" StrokeDashArray="2,3" StrokeThickness="1"/>
+                                <Line X1="0" Y1="33" X2="1000" Y2="33" Stroke="{DynamicResource BrushCardBorder}" StrokeDashArray="2,3" StrokeThickness="1"/>
+                                <Line X1="0" Y1="49" X2="1000" Y2="49" Stroke="{DynamicResource BrushCardBorder}" StrokeDashArray="2,3" StrokeThickness="1"/>
+
+                                <!-- Canlı Çizgiler -->
+                                <Polyline Points="{Binding SystemCpuPoints}" Stroke="{DynamicResource BrushStatusDanger}" StrokeThickness="2" StrokeLineJoin="Round" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                                <Polyline Points="{Binding SystemRamPoints}" Stroke="{DynamicResource BrushStatusInfo}" StrokeThickness="2" StrokeLineJoin="Round" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Legend / Bilgi -->
+                        <Grid Grid.Row="2" Margin="0,8,0,0">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                <Border Width="8" Height="8" Background="{DynamicResource BrushStatusDanger}" CornerRadius="2" Margin="0,0,4,0"/>
+                                <TextBlock Text="İşlemci (CPU) %" Style="{StaticResource CaptionTextStyle}" FontSize="10" Margin="0,0,12,0"/>
+                                <Border Width="8" Height="8" Background="{DynamicResource BrushStatusInfo}" CornerRadius="2" Margin="0,0,4,0"/>
+                                <TextBlock Text="Fiziksel RAM (Bellek) %" Style="{StaticResource CaptionTextStyle}" FontSize="10"/>
+                            </StackPanel>
+                            <TextBlock Text="60 sn önce ─────────── Şimdi" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" FontSize="9.5" HorizontalAlignment="Right"/>
+                        </Grid>
+                    </Grid>
                 </Border>
 
-                <!-- Top Memory Column -->
-                <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="8,0,8,0" Padding="16">
-                    <StackPanel>
-                        <TextBlock Text="EN ÇOK BELLEK KULLANANLAR" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,12"/>
-                        <ItemsControl ItemsSource="{Binding TopMemoryProcesses}">
+                <!-- Panel B: Ultron Defender Tüketim Trendi -->
+                <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="8,0,0,0" Padding="16,14">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header -->
+                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ui:SymbolIcon Symbol="Shield24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="16" Margin="0,0,8,0"/>
+                                <TextBlock Text="Ultron Motor Trendi (Son 60 Sn)" Style="{StaticResource SectionHeadingStyle}" FontSize="13" FontWeight="Bold"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding UltronCurrentSummaryText}" Style="{StaticResource DataMonospaceStyle}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushStatusSafeText}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <!-- Sparkline Canvas -->
+                        <Border Grid.Row="1" Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Height="65" ClipToBounds="True">
+                            <Grid>
+                                <!-- Izgara Çizgileri -->
+                                <Line X1="0" Y1="16" X2="1000" Y2="16" Stroke="{DynamicResource BrushCardBorder}" StrokeDashArray="2,3" StrokeThickness="1"/>
+                                <Line X1="0" Y1="33" X2="1000" Y2="33" Stroke="{DynamicResource BrushCardBorder}" StrokeDashArray="2,3" StrokeThickness="1"/>
+                                <Line X1="0" Y1="49" X2="1000" Y2="49" Stroke="{DynamicResource BrushCardBorder}" StrokeDashArray="2,3" StrokeThickness="1"/>
+
+                                <!-- Canlı Çizgi -->
+                                <Polyline Points="{Binding UltronCpuPoints}" Stroke="{DynamicResource BrushStatusSafe}" StrokeThickness="2" StrokeLineJoin="Round" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Legend / Bilgi -->
+                        <Grid Grid.Row="2" Margin="0,8,0,0">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                <Border Width="8" Height="8" Background="{DynamicResource BrushStatusSafe}" CornerRadius="2" Margin="0,0,4,0"/>
+                                <TextBlock Text="Ultron Defender CPU Yükü (Stabil)" Style="{StaticResource CaptionTextStyle}" FontSize="10"/>
+                            </StackPanel>
+                            <TextBlock Text="Maksimum Tüketim &lt; %0.5" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusSafeDark}" FontSize="9.5" HorizontalAlignment="Right"/>
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ═══════════════════════════════════════════════════════════
+                 4. BÖLGE: SEKMELİ SÜREÇ LİSTESİ & DEPOLAMA BİRİMLERİ
+            ═══════════════════════════════════════════════════════════ -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="340"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Sol: Sekmeli Süreç Listesi -->
+                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Margin="0,0,16,0" Padding="18,16">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Tab Buttons & Header -->
+                        <Grid Grid.Row="0" Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Text="EN ÇOK KAYNAK TÜKETEN SÜREÇLER" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold"/>
+                                <TextBlock Text="{Binding ActiveTabTitle}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,0"/>
+                            </StackPanel>
+
+                            <!-- Tab Selection Buttons -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="🔥 İşlemci (CPU)" Style="{StaticResource SecondaryButtonStyle}" 
+                                        Command="{Binding SelectProcessTabCommand}" CommandParameter="0" Margin="0,0,6,0" Padding="12,5"/>
+                                <Button Content="💾 Bellek (RAM)" Style="{StaticResource SecondaryButtonStyle}" 
+                                        Command="{Binding SelectProcessTabCommand}" CommandParameter="1" Margin="0,0,6,0" Padding="12,5"/>
+                                <Button Content="🎮 Ekran Kartı (GPU)" Style="{StaticResource SecondaryButtonStyle}" 
+                                        Command="{Binding SelectProcessTabCommand}" CommandParameter="2" Padding="12,5"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Process Items List -->
+                        <ItemsControl Grid.Row="1" ItemsSource="{Binding ActiveProcesses}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,6">
+                                    <Border Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,6">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="90"/>
+                                                <ColumnDefinition Width="130"/>
                                             </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Width="26" Height="26" Background="{DynamicResource BrushStatusInfoBg}" CornerRadius="5" Margin="0,0,8,0">
-                                                <ui:SymbolIcon Symbol="AppsListDetail24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+                                            <!-- Process Icon -->
+                                            <Border Grid.Column="0" Width="28" Height="28" Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="5" Margin="0,0,10,0">
+                                                <ui:SymbolIcon Symbol="Apps24" Foreground="{DynamicResource BrushTextSecondary}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Border>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding PID, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" FontSize="10" Foreground="{DynamicResource BrushTextSecondary}"/>
+
+                                            <!-- Name & PID -->
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="12.5" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding PID, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" FontSize="10" Foreground="{DynamicResource BrushTextMuted}"/>
                                             </StackPanel>
-                                            <Border Grid.Column="2" Style="{StaticResource BadgeSafeStyle}" Padding="6,2" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding MemoryBytes, Converter={StaticResource BytesConverter}}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource BrushStatusSafeText}"/>
+
+                                            <!-- Category Badge -->
+                                            <Border Grid.Column="2" Style="{DynamicResource BadgeNeutralStyle}" Padding="6,2" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                <TextBlock Text="{Binding Category}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10"/>
                                             </Border>
+
+                                            <!-- Metric Value & Mini Bar -->
+                                            <StackPanel Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Right" Width="120">
+                                                <TextBlock Text="{Binding ValueText}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="12" HorizontalAlignment="Right"/>
+                                                <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Height="4" Margin="0,3,0,0" 
+                                                             Foreground="{Binding ProgressPercent, Converter={StaticResource PercentColorConverter}}" Background="{DynamicResource BrushCardBorder}"/>
+                                            </StackPanel>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                    </StackPanel>
+                    </Grid>
                 </Border>
 
-                <!-- Top GPU Column -->
-                <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Margin="8,0,0,0" Padding="16">
-                    <StackPanel>
-                        <TextBlock Text="EN ÇOK EKRAN KARTI (GPU) KULLANANLAR" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,12"/>
-                        <ItemsControl ItemsSource="{Binding TopGpuProcesses}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,6">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Width="26" Height="26" Background="{DynamicResource BrushStatusSafeBg}" CornerRadius="5" Margin="0,0,8,0">
-                                                <ui:SymbolIcon Symbol="Tv24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding PID, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" FontSize="10" Foreground="{DynamicResource BrushTextSecondary}"/>
+                <!-- Sağ: Depolama Sürücüleri (İnce Zarif Çubuklar) -->
+                <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Padding="18,16">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Text="DEPOLAMA BİRİMLERİ" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold" Margin="0,0,0,14"/>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding Drives}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="14,12" Margin="0,0,0,10">
+                                            <StackPanel>
+                                                <!-- Sürücü Adı & Türü -->
+                                                <Grid Margin="0,0,0,6">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <ui:SymbolIcon Symbol="HardDrive24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="16" Margin="0,0,6,0"/>
+                                                        <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="14"/>
+                                                        <TextBlock Text="{Binding VolumeLabel, StringFormat=' ({0})'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" TextTrimming="CharacterEllipsis" MaxWidth="110"/>
+                                                    </StackPanel>
+                                                    <Border Style="{DynamicResource BadgeNeutralStyle}" Padding="6,1" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding DriveFormat}" Style="{StaticResource BadgeTextStyle}" FontSize="9"/>
+                                                    </Border>
+                                                </Grid>
+
+                                                <!-- Zarif İnce ProgressBar (4px) -->
+                                                <ProgressBar Value="{Binding UsagePercent, Mode=OneWay}" Height="4" Margin="0,4" 
+                                                             Foreground="{Binding UsagePercent, Converter={StaticResource PercentColorConverter}}" Background="{DynamicResource BrushCardBorder}"/>
+
+                                                <!-- Doluluk ve Boş Alan -->
+                                                <Grid Margin="0,4,0,0">
+                                                    <TextBlock Text="{Binding UsagePercent, StringFormat='%\{0:0\} dolu'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" FontSize="10.5" HorizontalAlignment="Left"/>
+                                                    <TextBlock Text="{Binding FreeBytes, Converter={StaticResource BytesConverter}, StringFormat='\{0\} boş'}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" FontSize="11" Foreground="{DynamicResource BrushTextPrimary}" HorizontalAlignment="Right"/>
+                                                </Grid>
+
+                                                <TextBlock Text="{Binding DriveTypeDisplay}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" FontSize="9.5" Margin="0,2,0,0"/>
                                             </StackPanel>
-                                            <Border Grid.Column="2" Style="{StaticResource BadgeSafeStyle}" Padding="6,2" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding GpuPercent, StringFormat='\{0:0.0\} %'}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource BrushStatusSafeText}"/>
-                                            </Border>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
                 </Border>
             </Grid>
         </StackPanel>

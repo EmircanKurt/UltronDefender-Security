@@ -81,6 +81,13 @@ namespace AegisPC.Security.RealTime
         {
             if (e == null) return;
 
+            // Self-Protection Guard: Never monitor or contain Ultron Defender's own processes and binaries
+            if (e.ProcessId == Environment.ProcessId || 
+                (!string.IsNullOrEmpty(e.ExecutablePath) && Scanning.FileScannerService.IsSelfOwnedPath(e.ExecutablePath)))
+            {
+                return;
+            }
+
             _lineageTracker.RegisterProcess(new AegisPC.Contracts.Behavior.ProcessNode
             {
                 Pid = e.ProcessId,
@@ -325,6 +332,12 @@ namespace AegisPC.Security.RealTime
             List<BehaviorEvidence> evidences,
             CancellationToken cancellationToken)
         {
+            if (session.RootPid == Environment.ProcessId || 
+                (!string.IsNullOrEmpty(session.RootExecutablePath) && Scanning.FileScannerService.IsSelfOwnedPath(session.RootExecutablePath)))
+            {
+                return;
+            }
+
             var timeline = new List<string>();
             timeline.Add($"[{session.StartedAt:HH:mm:ss}] Süreç başlatıldı: {session.RootProcessName} (PID {session.RootPid})");
 
@@ -339,7 +352,10 @@ namespace AegisPC.Security.RealTime
             {
                 try
                 {
+                    if (pid <= 4 || pid == Environment.ProcessId) continue;
                     using var proc = Process.GetProcessById(pid);
+                    if (AegisPC.Core.Constants.CriticalProcesses.IsCriticalProcess(proc.ProcessName)) continue;
+
                     if (!proc.HasExited)
                     {
                         proc.Kill(entireProcessTree: true);

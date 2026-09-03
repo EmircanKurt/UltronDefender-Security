@@ -45,7 +45,14 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 
-## Scratch & Local Publish Folders
 scratch/
 AegisPC_App/
+UltronDefenderSetup.exe
 UltronDefender_Setup_*.exe
+all_tests.txt
+
+## AI Assistant Memory & Internal Guidelines (Rule 9.3)
+knowledge/
+memory-bank/
+AI_GUIDELINES.md
+

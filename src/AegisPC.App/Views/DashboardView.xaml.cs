@@ -10,6 +10,10 @@ namespace AegisPC.App.Views
     {
         public DashboardViewModel ViewModel { get; }
 
+        public DashboardView() : this(new DashboardViewModel())
+        {
+        }
+
         public DashboardView(DashboardViewModel viewModel)
         {
             ViewModel = viewModel;

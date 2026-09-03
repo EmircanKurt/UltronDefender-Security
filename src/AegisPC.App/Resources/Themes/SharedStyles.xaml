@@ -7,91 +7,9 @@
          Ultra-High Contrast ClearType Rendering
     ═══════════════════════════════════════════════════════════ -->
 
-    <!-- Core Color Tokens -->
-    <Color x:Key="ColorAppBg">#EEF2F6</Color>
-    <Color x:Key="ColorCardBg">#FFFFFF</Color>
-    <Color x:Key="ColorCardBgAlt">#F8FAFC</Color>
-    <Color x:Key="ColorCardBorder">#E2E8F0</Color>
-    <Color x:Key="ColorCardBorderHover">#CBD5E1</Color>
-
-    <Color x:Key="ColorSidebarBg">#0A0F1D</Color>
-    <Color x:Key="ColorSidebarHeader">#0F172A</Color>
-    <Color x:Key="ColorSidebarBorder">#1E293B</Color>
-    <Color x:Key="ColorSidebarHover">#1E293B</Color>
-    <Color x:Key="ColorSidebarActive">#2563EB</Color>
-
-    <Color x:Key="ColorAccent">#2563EB</Color>
-    <Color x:Key="ColorAccentHover">#1D4ED8</Color>
-    <Color x:Key="ColorAccentLight">#EFF6FF</Color>
-
-    <Color x:Key="ColorStatusGreen">#10B981</Color>
-    <Color x:Key="ColorStatusGreenDark">#059669</Color>
-    <Color x:Key="ColorStatusGreenBg">#ECFDF5</Color>
-
-    <Color x:Key="ColorStatusBlue">#2563EB</Color>
-    <Color x:Key="ColorStatusBlueBg">#EFF6FF</Color>
-
-    <Color x:Key="ColorStatusAmber">#F59E0B</Color>
-    <Color x:Key="ColorStatusAmberDark">#D97706</Color>
-    <Color x:Key="ColorStatusAmberBg">#FFFBEB</Color>
-
-    <Color x:Key="ColorStatusRed">#EF4444</Color>
-    <Color x:Key="ColorStatusRedDark">#DC2626</Color>
-    <Color x:Key="ColorStatusRedBg">#FEF2F2</Color>
-
-    <Color x:Key="ColorTextPrimary">#0F172A</Color>
-    <Color x:Key="ColorTextSecondary">#475569</Color>
-    <Color x:Key="ColorTextMuted">#64748B</Color>
-    <Color x:Key="ColorTextOnDark">#FFFFFF</Color>
-
-    <!-- Solid Brushes -->
-    <SolidColorBrush x:Key="BrushAppBg" Color="{StaticResource ColorAppBg}"/>
-    <SolidColorBrush x:Key="BrushCardBg" Color="{StaticResource ColorCardBg}"/>
-    <SolidColorBrush x:Key="BrushCardBorder" Color="{StaticResource ColorCardBorder}"/>
-    <SolidColorBrush x:Key="BrushSidebarBg" Color="{StaticResource ColorSidebarBg}"/>
-    <SolidColorBrush x:Key="BrushSidebarBorder" Color="{StaticResource ColorSidebarBorder}"/>
-    <SolidColorBrush x:Key="BrushAccent" Color="{StaticResource ColorAccent}"/>
-    <SolidColorBrush x:Key="BrushStatusGreen" Color="{StaticResource ColorStatusGreen}"/>
-    <SolidColorBrush x:Key="BrushStatusRed" Color="{StaticResource ColorStatusRed}"/>
-    <SolidColorBrush x:Key="BrushTextPrimary" Color="{StaticResource ColorTextPrimary}"/>
-    <SolidColorBrush x:Key="BrushTextSecondary" Color="{StaticResource ColorTextSecondary}"/>
-    <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource ColorTextMuted}"/>
-    <SolidColorBrush x:Key="BrushTextOnDark" Color="{StaticResource ColorTextOnDark}"/>
-
-    <!-- TitleBar High Contrast Button Brushes (Deep Charcoal Icons on Light Theme) -->
-    <SolidColorBrush x:Key="TitleBarButtonForeground" Color="#0F172A"/>
-    <SolidColorBrush x:Key="TitleBarButtonPointerOverForeground" Color="#0F172A"/>
-    <SolidColorBrush x:Key="TitleBarButtonPointerOverBackground" Color="#E2E8F0"/>
-    <SolidColorBrush x:Key="TitleBarButtonPressedForeground" Color="#0F172A"/>
-    <SolidColorBrush x:Key="TitleBarButtonPressedBackground" Color="#CBD5E1"/>
-    <SolidColorBrush x:Key="TitleBarCloseButtonPointerOverBackground" Color="#DC2626"/>
-    <SolidColorBrush x:Key="TitleBarCloseButtonPointerOverForeground" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="TitleBarCloseButtonPressedBackground" Color="#B91C1C"/>
-    <SolidColorBrush x:Key="TitleBarCloseButtonPressedForeground" Color="#FFFFFF"/>
-
-    <!-- Global WPF-UI Fallbacks to Guarantee 100% High Contrast on Light Background -->
-    <SolidColorBrush x:Key="CardBackgroundSolidColorBrush" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="CardBorderSolidColorBrush" Color="#E2E8F0"/>
-    <SolidColorBrush x:Key="TextFillColorPrimaryBrush" Color="#0F172A"/>
-    <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#475569"/>
-    <SolidColorBrush x:Key="TextFillColorTertiaryBrush" Color="#64748B"/>
-    <SolidColorBrush x:Key="SystemAccentColorPrimaryBrush" Color="#2563EB"/>
-
-    <!-- Global NavigationView Overrides for Executive Obsidian Sidebar -->
-    <SolidColorBrush x:Key="NavigationViewPaneBackground" Color="#0A0F1D"/>
-    <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#0A0F1D"/>
-    <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="#0A0F1D"/>
-    <SolidColorBrush x:Key="NavigationViewContentBackground" Color="#F5FEFD"/>
-    <SolidColorBrush x:Key="NavigationViewContentGridBackground" Color="#F5FEFD"/>
-    <SolidColorBrush x:Key="NavigationViewItemForeground" Color="#94A3B8"/>
-    <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOver" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="NavigationViewItemForegroundPressed" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="NavigationViewItemHeaderForeground" Color="#64748B"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="#1E293B"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#334155"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="#2563EB"/>
-    <SolidColorBrush x:Key="NavigationViewItemSelectedBackground" Color="#2563EB"/>
+    <!-- ═══════════════════════════════════════════════════════════
+         SHARED STYLES & CONTROLS (Theme-Adaptive Resources)
+         ═══════════════════════════════════════════════════════════ -->
 
     <!-- ═══ CARD STYLES (DYNAMIC RESOURCE FOR DARK & LIGHT THEMES) ═══ -->
 
@@ -169,15 +87,7 @@
 
     <!-- ═══ TYPOGRAPHY (HIGH CONTRAST & CLEAR READABILITY) ═══ -->
 
-    <Style x:Key="PageHeaderStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="22"/>
-        <Setter Property="FontWeight" Value="Bold"/>
-        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
-        <Setter Property="FontFamily" Value="Segoe UI, Inter, Arial"/>
-        <Setter Property="Margin" Value="0,0,0,4"/>
-        <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
-        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
-    </Style>
+    <Style x:Key="PageHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource PageHeadingStyle}"/>
 
     <Style x:Key="PageSubtitleStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="13"/>
@@ -226,31 +136,6 @@
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
 
-    <!-- ═══ STATUS BADGES ═══ -->
-
-    <Style x:Key="BadgeGreenStyle" TargetType="Border">
-        <Setter Property="Background" Value="#ECFDF5"/>
-        <Setter Property="BorderBrush" Value="#A7F3D0"/>
-        <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="4"/>
-        <Setter Property="Padding" Value="8,3"/>
-    </Style>
-
-    <Style x:Key="BadgeRedStyle" TargetType="Border">
-        <Setter Property="Background" Value="#FEF2F2"/>
-        <Setter Property="BorderBrush" Value="#FECACA"/>
-        <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="4"/>
-        <Setter Property="Padding" Value="8,3"/>
-    </Style>
-
-    <Style x:Key="BadgeBlueStyle" TargetType="Border">
-        <Setter Property="Background" Value="#EFF6FF"/>
-        <Setter Property="BorderBrush" Value="#BFDBFE"/>
-        <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="4"/>
-        <Setter Property="Padding" Value="8,3"/>
-    </Style>
 
     <!-- ═══ BUTTON STYLES ═══ -->
 

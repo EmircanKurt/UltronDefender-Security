@@ -51,7 +51,7 @@ namespace AegisPC.Security.Scanning
             // LockBit 3.0 / Black
             ("c1294c6ac693dcdb8e5e7a246bcdc9a1d11b5eebce2db1599388b97ebbd9b8b6", "Ransomware.LockBit3.Black", "Ransomware", 100),
             ("8d4e2f6c7d382a2a9a8d65f066b925d8f6ae2d48ec3c51a848cd169a1df16538", "Ransomware.LockBit2.Red", "Ransomware", 100),
-            ("3e77041772658ce61530965d822a9f5e", "Ransomware.LockBit.Builder", "Ransomware", 100),
+            ("5b89a8449bf30ed7cdfa7a88484e588efebda5ebccfb8a156ad6cf08db33cf37", "Ransomware.LockBit.Builder", "Ransomware", 100),
             ("518d6e32d56a3ad0697a2dfcd6ec33c3ba299c855b38031d2efeeae817ef1e88", "Ransomware.LockBit.Payload", "Ransomware", 100),
             // BlackCat / ALPHV
             ("1a6296cc295d43e5ec77a6aa87ab6b6e4e84b80b7c938b813735b5a2bf836166", "Ransomware.BlackCat.ALPHV", "Ransomware", 100),
@@ -132,7 +132,7 @@ namespace AegisPC.Security.Scanning
 
             // --- TEST ZARARLILARI (EICAR) ---
             ("275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f", "EICAR-Standard-AV-Test-File", "TestMalware", 100),
-            ("44d88612fea8a8f36de82e1278abb02f", "EICAR-Standard-MD5-Test", "TestMalware", 100)
+            ("131f95c51cc819465fa1797f6ccacf9d494aaaff46fa3eac73ae63ffbcf18291", "EICAR-Standard-AV-Test-CRLF", "TestMalware", 100)
         };
 
         public static void Initialize()

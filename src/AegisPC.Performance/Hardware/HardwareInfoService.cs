@@ -9,10 +9,14 @@ namespace AegisPC.Performance.Hardware
 {
     public class MotherboardInfo
     {
-        public string Manufacturer { get; set; } = "Bilinmiyor";
-        public string Product { get; set; } = "Bilinmiyor";
-        public string SerialNumber { get; set; } = "Bilinmiyor";
+        public string Manufacturer { get; set; } = string.Empty;
+        public string Product { get; set; } = string.Empty;
+        public string SerialNumber { get; set; } = string.Empty;
         public string Version { get; set; } = "1.0";
+        public bool IsValid => !string.IsNullOrWhiteSpace(Manufacturer) && 
+                               !Manufacturer.Equals("Bilinmiyor", StringComparison.OrdinalIgnoreCase) &&
+                               !Manufacturer.Equals("Default string", StringComparison.OrdinalIgnoreCase) &&
+                               !Manufacturer.Equals("To be filled by O.E.M.", StringComparison.OrdinalIgnoreCase);
     }
 
     public class GpuInfo
@@ -98,17 +102,22 @@ namespace AegisPC.Performance.Hardware
 
                     try
                     {
-                        // 1. Motherboard (Win32_BaseBoard)
+                        // 1. Motherboard (Win32_BaseBoard with Registry Fallback)
                         using (var searcher = new ManagementObjectSearcher("SELECT Manufacturer, Product, SerialNumber, Version FROM Win32_BaseBoard"))
                         {
                             foreach (ManagementObject obj in searcher.Get())
                             {
+                                string mfg = obj["Manufacturer"]?.ToString()?.Trim() ?? "";
+                                string prod = obj["Product"]?.ToString()?.Trim() ?? "";
+                                string sn = obj["SerialNumber"]?.ToString()?.Trim() ?? "";
+                                string ver = obj["Version"]?.ToString()?.Trim() ?? "1.0";
+
                                 profile.Motherboard = new MotherboardInfo
                                 {
-                                    Manufacturer = obj["Manufacturer"]?.ToString()?.Trim() ?? "Bilinmiyor",
-                                    Product = obj["Product"]?.ToString()?.Trim() ?? "Anakart",
-                                    SerialNumber = obj["SerialNumber"]?.ToString()?.Trim() ?? "N/A",
-                                    Version = obj["Version"]?.ToString()?.Trim() ?? "1.0"
+                                    Manufacturer = mfg,
+                                    Product = prod,
+                                    SerialNumber = (sn.Equals("Default string", StringComparison.OrdinalIgnoreCase) || sn.Equals("To be filled by O.E.M.", StringComparison.OrdinalIgnoreCase)) ? "" : sn,
+                                    Version = ver
                                 };
                                 break;
                             }
@@ -117,6 +126,29 @@ namespace AegisPC.Performance.Hardware
                     catch (Exception ex)
                     {
                         _logger?.LogTrace(ex, "WMI Motherboard query failed");
+                    }
+
+                    // Direct Registry fallback if WMI returned incomplete or generic data
+                    if (!profile.Motherboard.IsValid)
+                    {
+                        try
+                        {
+                            using var biosKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\BIOS");
+                            if (biosKey != null)
+                            {
+                                string mfg = biosKey.GetValue("BaseBoardManufacturer")?.ToString()?.Trim() ?? "";
+                                string prod = biosKey.GetValue("BaseBoardProduct")?.ToString()?.Trim() ?? "";
+                                string ver = biosKey.GetValue("BaseBoardVersion")?.ToString()?.Trim() ?? "1.0";
+
+                                if (!string.IsNullOrWhiteSpace(mfg))
+                                {
+                                    profile.Motherboard.Manufacturer = mfg;
+                                    profile.Motherboard.Product = prod;
+                                    profile.Motherboard.Version = ver;
+                                }
+                            }
+                        }
+                        catch { }
                     }
 
                     try

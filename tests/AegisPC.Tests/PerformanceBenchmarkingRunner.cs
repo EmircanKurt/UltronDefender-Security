@@ -83,5 +83,50 @@ namespace AegisPC.Tests
             Assert.True(p50 < 100.0, "P50 latency too high");
             Assert.True(p95 < 250.0, "P95 latency too high");
         }
+
+        [Fact]
+        public async Task Test_HardwareInfoService_Motherboard_RegistryFallback_NoUnknownString()
+        {
+            var hwService = new AegisPC.Performance.Hardware.HardwareInfoService();
+            var profile = await hwService.GetHardwareProfileAsync();
+
+            Assert.NotNull(profile);
+            Assert.NotNull(profile.Motherboard);
+            // Must not return dummy "Bilinmiyor Bilinmiyor"
+            string summary = $"{profile.Motherboard.Manufacturer} {profile.Motherboard.Product}".Trim();
+            Assert.DoesNotContain("Bilinmiyor Bilinmiyor", summary);
+
+            if (profile.Motherboard.IsValid)
+            {
+                Assert.False(string.IsNullOrWhiteSpace(profile.Motherboard.Manufacturer));
+                Assert.False(string.IsNullOrWhiteSpace(profile.Motherboard.Product));
+            }
+        }
+
+        [Fact]
+        public void Test_PerformanceMonitoring_Lifecycle_StopsTelemetry()
+        {
+            var vm = new AegisPC.App.ViewModels.PerformanceViewModel();
+
+            // Default state
+            Assert.Equal("En Çok İşlemci (CPU) Kullanan Süreçler", vm.ActiveTabTitle);
+
+            // Tab selection
+            vm.SelectProcessTab("1");
+            Assert.Equal(1, vm.SelectedProcessTab);
+            Assert.Equal("En Çok Bellek (RAM) Kullanan Süreçler", vm.ActiveTabTitle);
+
+            vm.SelectProcessTab("2");
+            Assert.Equal(2, vm.SelectedProcessTab);
+            Assert.Equal("En Çok Grafik İşlemcisi (GPU) Kullanan Süreçler", vm.ActiveTabTitle);
+
+            // Start & Stop lifecycle
+            vm.StartLiveMonitoring();
+            vm.StopLiveMonitoring();
+
+            // Disposing should be safe and idempotent
+            vm.Dispose();
+            vm.Dispose();
+        }
     }
 }

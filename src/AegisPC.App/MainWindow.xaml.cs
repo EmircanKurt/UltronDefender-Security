@@ -145,13 +145,13 @@ namespace AegisPC.App
             {
                 if (AegisPC.App.Services.AppThemeManager.IsDarkMode)
                 {
-                    NavThemeToggle.Content = "Gündüz Modu";
-                    NavThemeIcon.Symbol = SymbolRegular.WeatherSunny24;
+                    NavThemeToggle.Content = "Açık Tema";
+                    NavThemeIcon.Symbol = SymbolRegular.DarkTheme24;
                 }
                 else
                 {
-                    NavThemeToggle.Content = "Gece Modu";
-                    NavThemeIcon.Symbol = SymbolRegular.WeatherMoon24;
+                    NavThemeToggle.Content = "Koyu Tema";
+                    NavThemeIcon.Symbol = SymbolRegular.DarkTheme24;
                 }
             }
         }

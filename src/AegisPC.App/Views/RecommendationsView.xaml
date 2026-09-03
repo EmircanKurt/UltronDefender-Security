@@ -10,7 +10,7 @@
         <conv:RiskLevelToColorConverter x:Key="RiskColorConverter"/>
     </Page.Resources>
 
-    <Grid Margin="24">
+    <Grid Margin="28,20,28,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -19,13 +19,13 @@
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <TextBlock Grid.Row="0" Style="{StaticResource PageHeaderStyle}" Text="Sistem İyileştirme ve Güvenlik Tavsiyeleri" />
+        <TextBlock Grid.Row="0" Style="{StaticResource PageHeadingStyle}" Text="Sistem İyileştirme ve Güvenlik Tavsiyeleri" />
 
         <!-- Toolbar -->
         <Grid Grid.Row="1" Margin="0,0,0,16">
-            <TextBlock Text="Sisteminizin sağlığını, hızını ve gizliliğini korumak için önerilen adımlar:" Foreground="Gray" VerticalAlignment="Center"/>
-            <ui:Button HorizontalAlignment="Right" Content="Yenile" Icon="{ui:SymbolIcon ArrowClockwise24}" 
-                       Command="{Binding LoadRecommendationsCommand}"/>
+            <TextBlock Text="Sisteminizin sağlığını, hızını ve gizliliğini korumak için önerilen adımlar:" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center"/>
+            <Button HorizontalAlignment="Right" Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
+                    Command="{Binding LoadRecommendationsCommand}" Padding="14,6"/>
         </Grid>
 
         <!-- Content Area -->
@@ -45,8 +45,8 @@
                                     <!-- Left Content -->
                                     <StackPanel Grid.Column="0">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                            <Border Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
-                                                <TextBlock Text="{Binding Category}" FontSize="11" FontWeight="Bold" Foreground="#2563EB"/>
+                                            <Border Background="{DynamicResource BrushStatusInfoBg}" BorderBrush="{DynamicResource BrushStatusInfoBorder}" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                                                <TextBlock Text="{Binding Category}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushStatusInfoText}"/>
                                             </Border>
                                             <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
                                         </StackPanel>
@@ -55,18 +55,18 @@
 
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="Neden önemli: " Foreground="{DynamicResource BrushTextMuted}" FontSize="12" FontWeight="SemiBold"/>
-                                            <TextBlock Text="{Binding Reasoning}" TextWrapping="Wrap" Foreground="#D97706" FontSize="12"/>
+                                            <TextBlock Text="{Binding Reasoning}" TextWrapping="Wrap" Foreground="{DynamicResource BrushStatusWarningText}" FontSize="12"/>
                                         </StackPanel>
                                     </StackPanel>
 
                                     <!-- Action Buttons -->
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                                        <ui:Button Content="Uygula" Appearance="Primary" Margin="0,0,8,0"
-                                                   Command="{Binding DataContext.ApplyRecommendationCommand, RelativeSource={RelativeSource AncestorType=Page}}"
-                                                   CommandParameter="{Binding}"/>
-                                        <ui:Button Content="Yoksay" Appearance="Secondary"
-                                                   Command="{Binding DataContext.DismissRecommendationCommand, RelativeSource={RelativeSource AncestorType=Page}}"
-                                                   CommandParameter="{Binding}"/>
+                                        <Button Content="Uygula" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" Padding="14,6"
+                                                Command="{Binding DataContext.ApplyRecommendationCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="Yoksay" Style="{StaticResource SecondaryButtonStyle}" Padding="14,6"
+                                                Command="{Binding DataContext.DismissRecommendationCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                                CommandParameter="{Binding}"/>
                                     </StackPanel>
                                 </Grid>
                             </Border>
@@ -88,7 +88,7 @@
         </Grid>
 
         <!-- Status Bar -->
-        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="Gray" FontSize="12" Margin="0,8,0,0"/>
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextMuted}" FontSize="12" Margin="0,8,0,0"/>
     </Grid>
 </Page>
 

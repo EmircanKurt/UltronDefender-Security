@@ -16,7 +16,7 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
     </Page.Resources>
 
-    <ScrollViewer x:Name="RootScrollViewer" Margin="28,20,28,28">
+    <ScrollViewer x:Name="RootScrollViewer" Margin="28,20,28,24">
         <StackPanel MaxWidth="880" HorizontalAlignment="Left">
             <!-- 1. Header -->
             <StackPanel Margin="0,0,0,20">
@@ -60,12 +60,12 @@
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsSelected" Value="True">
-                                                    <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource BrushPrimary}"/>
+                                                    <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource BrushBrandPrimary}"/>
                                                     <Setter TargetName="ItemBorder" Property="BorderThickness" Value="1.5"/>
                                                     <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource BrushCardBg}"/>
                                                 </Trigger>
                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource BrushPrimary}"/>
+                                                    <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource BrushBrandPrimary}"/>
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
@@ -104,7 +104,7 @@
                     <!-- Quick DNS Change Buttons -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <TextBlock Text="Seçili Bağdaştırıcıya Güvenli DNS Uygula:" Style="{StaticResource SectionHeadingStyle}" FontSize="12" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding SelectedAdapter.Name, StringFormat=' ({0})', FallbackValue=' (Bağdaştırıcı seçilmedi)'}" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource BrushPrimary}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding SelectedAdapter.Name, StringFormat=' ({0})', FallbackValue=' (Bağdaştırıcı seçilmedi)'}" Style="{StaticResource SectionHeadingStyle}" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource BrushBrandPrimary}" VerticalAlignment="Center"/>
                     </StackPanel>
                     <WrapPanel Margin="0,0,0,4">
                         <Button Content="Quad9 Zararlı Engelleyici (9.9.9.9)" Command="{Binding SetDnsQuad9Command}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" Padding="12,6"/>

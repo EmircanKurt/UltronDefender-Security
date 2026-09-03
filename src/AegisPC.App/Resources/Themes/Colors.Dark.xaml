@@ -7,16 +7,16 @@
          ══════════════════════════════════════════════════════════════════════════════════ -->
 
     <!-- ── 1. BACKGROUND & SURFACE TOKENS ── -->
-    <Color x:Key="ColorAppBg">#1B2532</Color>
-    <Color x:Key="ColorCardBg">#232E3D</Color>
-    <Color x:Key="ColorCardBgAlt">#2B384A</Color>
-    <Color x:Key="ColorCardBorder">#324155</Color>
-    <Color x:Key="ColorCardBorderHover">#445770</Color>
+    <Color x:Key="ColorAppBg">#0F141C</Color>
+    <Color x:Key="ColorCardBg">#161D27</Color>
+    <Color x:Key="ColorCardBgAlt">#1C2432</Color>
+    <Color x:Key="ColorCardBorder">#253142</Color>
+    <Color x:Key="ColorCardBorderHover">#3B4D66</Color>
 
-    <Color x:Key="ColorSidebarBg">#17202B</Color>
-    <Color x:Key="ColorSidebarHeader">#141C26</Color>
-    <Color x:Key="ColorSidebarBorder">#232E3D</Color>
-    <Color x:Key="ColorSidebarHover">#202B3A</Color>
+    <Color x:Key="ColorSidebarBg">#0A0D14</Color>
+    <Color x:Key="ColorSidebarHeader">#080B10</Color>
+    <Color x:Key="ColorSidebarBorder">#1E2634</Color>
+    <Color x:Key="ColorSidebarHover">#171F2C</Color>
     <Color x:Key="ColorSidebarActive">#C41E1E</Color>
 
     <!-- ── 2. PRIMARY BRAND ACCENT TOKENS (BITDEFENDER BRAND RED #C41E1E) ── -->
@@ -37,40 +37,40 @@
     <Color x:Key="ColorAccentLight">#1FC41E1E</Color>
 
     <!-- ── 3. TYPOGRAPHY TOKENS (CALM HIGH-CONTRAST NEUTRALS) ── -->
-    <Color x:Key="ColorTextPrimary">#FFFFFF</Color>
-    <Color x:Key="ColorTextSecondary">#8B95A3</Color>
-    <Color x:Key="ColorTextMuted">#5E6978</Color>
+    <Color x:Key="ColorTextPrimary">#F8FAFC</Color>
+    <Color x:Key="ColorTextSecondary">#94A3B8</Color>
+    <Color x:Key="ColorTextMuted">#64748B</Color>
     <Color x:Key="ColorTextOnAccent">#FFFFFF</Color>
     <Color x:Key="ColorTextOnDark">#FFFFFF</Color>
 
     <!-- ── 4. SEMANTIC STATUS TOKENS (BITDEFENDER ENTERPRISE PALETTE) ── -->
     <!-- Safe / Clean (Bitdefender Emerald Green) -->
-    <Color x:Key="ColorStatusSafe">#4CAF50</Color>
-    <Color x:Key="ColorStatusSafeDark">#388E3C</Color>
-    <Color x:Key="ColorStatusSafeBg">#122A1C</Color>
-    <Color x:Key="ColorStatusSafeBorder">#1E4D2B</Color>
-    <Color x:Key="ColorStatusSafeText">#4CAF50</Color>
+    <Color x:Key="ColorStatusSafe">#22C55E</Color>
+    <Color x:Key="ColorStatusSafeDark">#16A34A</Color>
+    <Color x:Key="ColorStatusSafeBg">#0E2918</Color>
+    <Color x:Key="ColorStatusSafeBorder">#1A532C</Color>
+    <Color x:Key="ColorStatusSafeText">#4ADE80</Color>
 
-    <!-- Warning / Suspicious (Technical Amber #F5A623 - SADECE kritik olmayan dikkat durumları için) -->
-    <Color x:Key="ColorStatusWarning">#F5A623</Color>
-    <Color x:Key="ColorStatusWarningDark">#D98206</Color>
-    <Color x:Key="ColorStatusWarningBg">#2D200E</Color>
-    <Color x:Key="ColorStatusWarningBorder">#664410</Color>
-    <Color x:Key="ColorStatusWarningText">#F5A623</Color>
+    <!-- Warning / Suspicious (Technical Amber) -->
+    <Color x:Key="ColorStatusWarning">#F59E0B</Color>
+    <Color x:Key="ColorStatusWarningDark">#D97706</Color>
+    <Color x:Key="ColorStatusWarningBg">#2D1E08</Color>
+    <Color x:Key="ColorStatusWarningBorder">#5C3C0F</Color>
+    <Color x:Key="ColorStatusWarningText">#FBBF24</Color>
 
-    <!-- Danger / Critical (Marka Kırmızıyla Bütünleşik Tehdit Tonu #C41E1E) -->
-    <Color x:Key="ColorStatusDanger">#C41E1E</Color>
-    <Color x:Key="ColorStatusDangerDark">#A81717</Color>
-    <Color x:Key="ColorStatusDangerBg">#2A1215</Color>
-    <Color x:Key="ColorStatusDangerBorder">#6B1B1F</Color>
-    <Color x:Key="ColorStatusDangerText">#FF5252</Color>
+    <!-- Danger / Critical (Marka Kırmızıyla Bütünleşik Tehdit Tonu) -->
+    <Color x:Key="ColorStatusDanger">#EF4444</Color>
+    <Color x:Key="ColorStatusDangerDark">#DC2626</Color>
+    <Color x:Key="ColorStatusDangerBg">#2B0E12</Color>
+    <Color x:Key="ColorStatusDangerBorder">#611C23</Color>
+    <Color x:Key="ColorStatusDangerText">#F87171</Color>
 
     <!-- Info (Cobalt Blue) -->
-    <Color x:Key="ColorStatusInfo">#2196F3</Color>
-    <Color x:Key="ColorStatusInfoDark">#1976D2</Color>
-    <Color x:Key="ColorStatusInfoBg">#112338</Color>
-    <Color x:Key="ColorStatusInfoBorder">#194B7A</Color>
-    <Color x:Key="ColorStatusInfoText">#42A5F5</Color>
+    <Color x:Key="ColorStatusInfo">#38BDF8</Color>
+    <Color x:Key="ColorStatusInfoDark">#0284C7</Color>
+    <Color x:Key="ColorStatusInfoBg">#0C2338</Color>
+    <Color x:Key="ColorStatusInfoBorder">#15456E</Color>
+    <Color x:Key="ColorStatusInfoText">#38BDF8</Color>
 
     <!-- Purple (Quarantine / Vault) -->
     <Color x:Key="ColorStatusPurple">#8B5CF6</Color>
@@ -80,14 +80,14 @@
     <Color x:Key="ColorStatusPurpleText">#A78BFA</Color>
 
     <!-- Compatibility Status Aliases -->
-    <Color x:Key="ColorStatusGreen">#4CAF50</Color>
-    <Color x:Key="ColorStatusGreenBg">#122A1C</Color>
-    <Color x:Key="ColorStatusAmber">#F5A623</Color>
-    <Color x:Key="ColorStatusAmberBg">#2D200E</Color>
-    <Color x:Key="ColorStatusRed">#C41E1E</Color>
-    <Color x:Key="ColorStatusRedBg">#2A1215</Color>
-    <Color x:Key="ColorStatusBlue">#2196F3</Color>
-    <Color x:Key="ColorStatusBlueBg">#112338</Color>
+    <Color x:Key="ColorStatusGreen">#22C55E</Color>
+    <Color x:Key="ColorStatusGreenBg">#0E2918</Color>
+    <Color x:Key="ColorStatusAmber">#F59E0B</Color>
+    <Color x:Key="ColorStatusAmberBg">#2D1E08</Color>
+    <Color x:Key="ColorStatusRed">#EF4444</Color>
+    <Color x:Key="ColorStatusRedBg">#2B0E12</Color>
+    <Color x:Key="ColorStatusBlue">#38BDF8</Color>
+    <Color x:Key="ColorStatusBlueBg">#0C2338</Color>
 
     <!-- ══════════════════════════════════════════════════════════════════════════════════
          SOLID COLOR BRUSHES (FOR DynamicResource BINDING)
@@ -163,14 +163,14 @@
     <SolidColorBrush x:Key="BrushStatusBlue" Color="{StaticResource ColorStatusInfo}"/>
 
     <!-- ── 5. TITLEBAR HIGH CONTRAST BRUSHES (DARK) ── -->
-    <SolidColorBrush x:Key="TitleBarButtonForeground" Color="#F5F5F5"/>
+    <SolidColorBrush x:Key="TitleBarButtonForeground" Color="#F8FAFC"/>
     <SolidColorBrush x:Key="TitleBarButtonPointerOverForeground" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="TitleBarButtonPointerOverBackground" Color="#232E3D"/>
+    <SolidColorBrush x:Key="TitleBarButtonPointerOverBackground" Color="#161D27"/>
     <SolidColorBrush x:Key="TitleBarButtonPressedForeground" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="TitleBarButtonPressedBackground" Color="#324155"/>
-    <SolidColorBrush x:Key="TitleBarCloseButtonPointerOverBackground" Color="#C41E1E"/>
+    <SolidColorBrush x:Key="TitleBarButtonPressedBackground" Color="#253142"/>
+    <SolidColorBrush x:Key="TitleBarCloseButtonPointerOverBackground" Color="#EF4444"/>
     <SolidColorBrush x:Key="TitleBarCloseButtonPointerOverForeground" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="TitleBarCloseButtonPressedBackground" Color="#A81717"/>
+    <SolidColorBrush x:Key="TitleBarCloseButtonPressedBackground" Color="#DC2626"/>
     <SolidColorBrush x:Key="TitleBarCloseButtonPressedForeground" Color="#FFFFFF"/>
 
     <!-- ── 6. WPF-UI NATIVE CONTROL TOKEN BRIDGE (DARK) ── -->
@@ -183,20 +183,20 @@
     <SolidColorBrush x:Key="SystemAccentColorSecondaryBrush" Color="{StaticResource ColorBrandHover}"/>
     <SolidColorBrush x:Key="SystemAccentColorTertiaryBrush" Color="{StaticResource ColorBrandPressed}"/>
 
-    <!-- NavigationView Control Brushes (Bitdefender %15-20 Red Selected State) -->
+    <!-- NavigationView Control Brushes (Deep Charcoal Sidebar with Crimson Active) -->
     <SolidColorBrush x:Key="NavigationViewPaneBackground" Color="{StaticResource ColorSidebarBg}"/>
     <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="{StaticResource ColorSidebarBg}"/>
     <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="{StaticResource ColorSidebarBg}"/>
     <SolidColorBrush x:Key="NavigationViewContentBackground" Color="{StaticResource ColorAppBg}"/>
     <SolidColorBrush x:Key="NavigationViewContentGridBackground" Color="{StaticResource ColorAppBg}"/>
-    <SolidColorBrush x:Key="NavigationViewItemForeground" Color="#8B95A3"/>
+    <SolidColorBrush x:Key="NavigationViewItemForeground" Color="#94A3B8"/>
     <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOver" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="NavigationViewItemForegroundPressed" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="NavigationViewItemHeaderForeground" Color="#5E6978"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="#202B3A"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#2B384A"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="{StaticResource ColorBrandSubtle}"/>
-    <SolidColorBrush x:Key="NavigationViewItemSelectedBackground" Color="{StaticResource ColorBrandSubtle}"/>
+    <SolidColorBrush x:Key="NavigationViewItemHeaderForeground" Color="#64748B"/>
+    <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="#171F2C"/>
+    <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#1C2432"/>
+    <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="#2A1215"/>
+    <SolidColorBrush x:Key="NavigationViewItemSelectedBackground" Color="#2A1215"/>
 
 </ResourceDictionary>

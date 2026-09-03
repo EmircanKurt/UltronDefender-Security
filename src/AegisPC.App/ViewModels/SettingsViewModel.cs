@@ -28,6 +28,18 @@ namespace AegisPC.App.ViewModels
         private bool isDarkMode = false;
 
         [ObservableProperty]
+        private ThemeMode selectedThemeMode = ThemeMode.Light;
+
+        [ObservableProperty]
+        private bool isLightThemeSelected = true;
+
+        [ObservableProperty]
+        private bool isDarkThemeSelected = false;
+
+        [ObservableProperty]
+        private bool isSystemThemeSelected = false;
+
+        [ObservableProperty]
         private bool isRealTimeMonitoringEnabled = true;
 
         [ObservableProperty]
@@ -130,15 +142,67 @@ namespace AegisPC.App.ViewModels
             _ransomwareProtectionEngine = ransomwareProtectionEngine;
             _auditLogService = auditLogService;
             _toastNotificationService = toastNotificationService;
+            AppThemeManager.ThemeChanged += OnAppThemeChanged;
             LoadSettings();
         }
 
+        private void OnAppThemeChanged(ThemeMode mode)
+        {
+            if (SelectedThemeMode != mode)
+            {
+                SelectedThemeMode = mode;
+                IsLightThemeSelected = mode == ThemeMode.Light;
+                IsDarkThemeSelected = mode == ThemeMode.Dark;
+                IsSystemThemeSelected = mode == ThemeMode.System;
+                IsDarkMode = AppThemeManager.IsDarkMode;
+            }
+        }
+
+        public void SelectTheme(ThemeMode mode)
+        {
+            SelectedThemeMode = mode;
+            IsLightThemeSelected = mode == ThemeMode.Light;
+            IsDarkThemeSelected = mode == ThemeMode.Dark;
+            IsSystemThemeSelected = mode == ThemeMode.System;
+            IsDarkMode = AppThemeManager.IsDarkMode;
+
+            AppThemeManager.ApplyTheme(mode);
+            if (_settingsService != null)
+            {
+                _settingsService.Current.Theme = mode;
+                _ = _settingsService.SaveAsync();
+            }
+
+            StatusMessage = mode switch
+            {
+                ThemeMode.Light => "Açık tema uygulandı.",
+                ThemeMode.Dark => "Koyu tema uygulandı.",
+                ThemeMode.System => "Sistem teması takip ediliyor.",
+                _ => "Tema güncellendi."
+            };
+        }
+
+        [RelayCommand]
+        public void SetLightTheme() => SelectTheme(ThemeMode.Light);
+
+        [RelayCommand]
+        public void SetDarkTheme() => SelectTheme(ThemeMode.Dark);
+
+        [RelayCommand]
+        public void SetSystemTheme() => SelectTheme(ThemeMode.System);
+
         private void LoadSettings()
         {
+            var currentTheme = _settingsService?.Current?.Theme ?? AppThemeManager.CurrentTheme;
+            SelectedThemeMode = currentTheme;
+            IsLightThemeSelected = currentTheme == ThemeMode.Light;
+            IsDarkThemeSelected = currentTheme == ThemeMode.Dark;
+            IsSystemThemeSelected = currentTheme == ThemeMode.System;
+            IsDarkMode = AppThemeManager.IsDarkMode;
+
             if (_settingsService != null)
             {
                 var s = _settingsService.Current;
-                IsDarkMode = s.Theme == ThemeMode.Dark;
                 IsRealTimeMonitoringEnabled = s.IsRealTimeMonitoringEnabled;
                 NotificationsEnabled = s.NotificationsEnabled;
                 ScanScheduleEnabled = s.ScanScheduleEnabled;
@@ -185,15 +249,6 @@ namespace AegisPC.App.ViewModels
                 IsProtectionWarningVisible = false;
                 ProtectionWarningText = string.Empty;
             }
-        }
-
-        partial void OnIsDarkModeChanged(bool value)
-        {
-            try
-            {
-                ApplicationThemeManager.Apply(value ? ApplicationTheme.Dark : ApplicationTheme.Light);
-            }
-            catch { }
         }
 
         partial void OnIsFileProtectionEnabledChanged(bool value)
@@ -278,7 +333,7 @@ namespace AegisPC.App.ViewModels
             if (_settingsService == null) return;
 
             var s = _settingsService.Current;
-            s.Theme = IsDarkMode ? ThemeMode.Dark : ThemeMode.Light;
+            s.Theme = SelectedThemeMode;
             s.IsRealTimeMonitoringEnabled = IsRealTimeMonitoringEnabled;
             s.NotificationsEnabled = NotificationsEnabled;
             s.ScanScheduleEnabled = ScanScheduleEnabled;

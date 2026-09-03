@@ -45,10 +45,23 @@ namespace AegisPC.Security.RealTime
                     _hostsWatcher = new FileSystemWatcher(etcDir, "hosts")
                     {
                         NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
+                        InternalBufferSize = 16384,
                         EnableRaisingEvents = true
                     };
 
                     _hostsWatcher.Changed += (s, e) => OnHostsFileModified?.Invoke("Windows Hosts dosyası değiştirildi!");
+                    _hostsWatcher.Error += (s, e) =>
+                    {
+                        try
+                        {
+                            if (s is FileSystemWatcher fsw)
+                            {
+                                fsw.EnableRaisingEvents = false;
+                                fsw.EnableRaisingEvents = true;
+                            }
+                        }
+                        catch { }
+                    };
                 }
             }
             catch (Exception ex)

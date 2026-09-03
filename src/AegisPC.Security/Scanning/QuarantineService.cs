@@ -156,6 +156,15 @@ namespace AegisPC.Security.Scanning
                 }
 
                 var canonicalPath = Path.GetFullPath(path);
+
+                // Hosts and System32 Tasks Guard: Never delete the critical Windows hosts file or system tasks
+                if (canonicalPath.Contains(@"\drivers\etc\hosts", StringComparison.OrdinalIgnoreCase) ||
+                    canonicalPath.Contains(@"\System32\Tasks", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger?.LogWarning("Refusing quarantine of critical Windows network configuration or system tasks: {Path}", canonicalPath);
+                    return false;
+                }
+
                 var fileInfo = new FileInfo(canonicalPath);
                 long originalFileSize = fileInfo.Length;
                 string originalFileName = fileInfo.Name;
@@ -168,6 +177,7 @@ namespace AegisPC.Security.Scanning
 
                 var quarantineFileName = $"vault_{id}_{Guid.NewGuid():N}.quar";
                 var quarantineFilePath = Path.Combine(_quarantineDir, quarantineFileName);
+                var tempQuarantineFilePath = quarantineFilePath + ".tmp";
 
                 // 1. Encrypt with AES-256-CBC using DPAPI protected Master Key (Streaming — no full RAM load)
                 using var aes = Aes.Create();
@@ -175,8 +185,8 @@ namespace AegisPC.Security.Scanning
                 aes.GenerateIV();
                 var sha256 = await _hashService.ComputeSha256Async(canonicalPath, cancellationToken);
 
-                // 2. Write Container (Magic + IV + SHA256 + Encrypted Data) via streaming
-                using (var fsOut = new FileStream(quarantineFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
+                // 2. Write Container (Magic + IV + SHA256 + Encrypted Data) via streaming to .tmp file first (Atomic Stage)
+                using (var fsOut = new FileStream(tempQuarantineFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
                 using (var bw = new BinaryWriter(fsOut, Encoding.UTF8, leaveOpen: true))
                 {
                     bw.Write(QuarantineMagicHeader);
@@ -203,7 +213,10 @@ namespace AegisPC.Security.Scanning
                     fsOut.Position = fsOut.Length; // seek back to end
                 }
 
-                // 4. Terminate any running process locking the target file
+                // 3. Atomically commit the encrypted vault file
+                File.Move(tempQuarantineFilePath, quarantineFilePath, overwrite: true);
+
+                // 4. Terminate any running process locking the target file (Disposing all Process instances)
                 try
                 {
                     var processes = Process.GetProcesses();
@@ -218,11 +231,15 @@ namespace AegisPC.Security.Scanning
                             }
                         }
                         catch { }
+                        finally
+                        {
+                            proc.Dispose();
+                        }
                     }
                 }
                 catch { }
 
-                // 5. Safely wipe original file attributes and delete/zero out
+                // 5. Safely wipe original file attributes and delete
                 bool deleted = false;
                 for (int attempt = 0; attempt < 25; attempt++)
                 {
@@ -243,22 +260,9 @@ namespace AegisPC.Security.Scanning
                 {
                     try
                     {
-                        // If delete was blocked by lingering handle, truncate file to 0 bytes
-                        using (var fsTruncate = new FileStream(canonicalPath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
-                        {
-                            fsTruncate.SetLength(0);
-                        }
-                        File.Delete(canonicalPath);
-                        deleted = true;
+                        MoveFileEx(canonicalPath, null, MOVEFILE_DELAY_UNTIL_REBOOT);
                     }
-                    catch
-                    {
-                        try
-                        {
-                            MoveFileEx(canonicalPath, null, MOVEFILE_DELAY_UNTIL_REBOOT);
-                        }
-                        catch { }
-                    }
+                    catch { }
                 }
 
                 var entry = new QuarantineEntry

@@ -17,7 +17,15 @@ namespace AegisPC.App.Services
             "theme_settings.json");
 
         public static ThemeMode CurrentTheme { get; private set; } = ThemeMode.Light;
-        public static bool IsDarkMode => CurrentTheme == ThemeMode.Dark;
+        public static bool IsDarkMode
+        {
+            get
+            {
+                if (CurrentTheme == ThemeMode.Dark) return true;
+                if (CurrentTheme == ThemeMode.System) return DetectWindowsSystemTheme() == ThemeMode.Dark;
+                return false;
+            }
+        }
 
         public static event Action<ThemeMode>? ThemeChanged;
 
@@ -96,10 +104,18 @@ namespace AegisPC.App.Services
             {
                 try
                 {
-                    bool dark = theme == ThemeMode.Dark;
+                    bool isSystemDark = DetectWindowsSystemTheme() == ThemeMode.Dark;
+                    bool dark = (theme == ThemeMode.Dark) || (theme == ThemeMode.System && isSystemDark);
                     var appResources = Application.Current.Resources;
 
-                    // 1. Swap Color Token Dictionary in MergedDictionaries
+                    // 1. Apply WPF-UI Native Theme Engine first so custom tokens take precedence
+                    try
+                    {
+                        ApplicationThemeManager.Apply(dark ? ApplicationTheme.Dark : ApplicationTheme.Light);
+                    }
+                    catch { }
+
+                    // 2. Swap Color Token Dictionary in MergedDictionaries
                     string themeSource = dark 
                         ? "Resources/Themes/Colors.Dark.xaml" 
                         : "Resources/Themes/Colors.Light.xaml";
@@ -131,19 +147,20 @@ namespace AegisPC.App.Services
                         appResources.MergedDictionaries.Add(newThemeDict);
                     }
 
-                    // 2. Direct override update on Application.Current.Resources for all keys
+                    // 3. Direct override update on Application.Current.Resources for all custom keys
                     foreach (var key in newThemeDict.Keys)
                     {
                         appResources[key] = newThemeDict[key];
                     }
 
-                    // 3. Update WPF-UI Native Controls Palette & TitleBar
+                    // 4. Update WPF-UI Native Controls Palette, TitleBar, and Sidebar
                     var textPrimary = appResources["BrushTextPrimary"] as Brush;
                     var textSecondary = appResources["BrushTextSecondary"] as Brush;
                     var textMuted = appResources["BrushTextMuted"] as Brush;
                     var cardBg = appResources["BrushCardBg"] as Brush;
                     var cardBorder = appResources["BrushCardBorder"] as Brush;
                     var appBg = appResources["BrushAppBg"] as Brush;
+                    var sidebarBg = appResources["BrushSidebarBg"] as Brush;
 
                     if (textPrimary != null)
                     {
@@ -179,8 +196,12 @@ namespace AegisPC.App.Services
                         appResources["NavigationViewContentGridBackground"] = appBg;
                     }
 
-                    // 4. Apply WPF-UI Native Theme Engine
-                    ApplicationThemeManager.Apply(dark ? ApplicationTheme.Dark : ApplicationTheme.Light);
+                    if (sidebarBg != null)
+                    {
+                        appResources["NavigationViewPaneBackground"] = sidebarBg;
+                        appResources["NavigationViewDefaultPaneBackground"] = sidebarBg;
+                        appResources["NavigationViewExpandedPaneBackground"] = sidebarBg;
+                    }
                 }
                 catch { }
 

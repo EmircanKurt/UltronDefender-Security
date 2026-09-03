@@ -10,15 +10,24 @@ namespace AegisPC.App.Views
     {
         public PerformanceViewModel ViewModel { get; }
 
+        public PerformanceView() : this(new PerformanceViewModel())
+        {
+        }
+
         public PerformanceView(PerformanceViewModel viewModel)
         {
             ViewModel = viewModel;
             DataContext = ViewModel;
             InitializeComponent();
 
-            Loaded += async (s, e) =>
+            Loaded += (s, e) =>
             {
-                await ViewModel.LoadAsync();
+                ViewModel.StartLiveMonitoring();
+            };
+
+            Unloaded += (s, e) =>
+            {
+                ViewModel.StopLiveMonitoring();
             };
         }
 

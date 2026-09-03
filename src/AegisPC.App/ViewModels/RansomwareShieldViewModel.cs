@@ -147,6 +147,10 @@ namespace AegisPC.App.ViewModels
                     FilePath = e.OffendingFilePath,
                     Action = e.ProcessTerminated ? "Süreç Durduruldu ve Engellendi" : "Erişim Engellendi"
                 });
+                while (RecentEvents.Count > 50)
+                {
+                    RecentEvents.RemoveAt(RecentEvents.Count - 1);
+                }
 
                 _toastService?.ShowToast(
                     e.ProcessTerminated ? "🛑 Fidye Saldırısı Durduruldu!" : "⚠️ Korunan Klasör İhlali Engellendi!",

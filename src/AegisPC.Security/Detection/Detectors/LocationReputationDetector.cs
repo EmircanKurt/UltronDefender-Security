@@ -20,10 +20,14 @@ namespace AegisPC.Security.Detection.Detectors
         public int Priority => 5; // Fast path
         public bool IsEnabled { get; set; } = true;
 
-        private static readonly HashSet<string> ExactPupKeywords = new(
-            new[] { "Y3JhY2s=", "a2V5Z2Vu", "YWN0aXZhdG9y", "cmVwYWNr", "aGFja3Rvb2w=", "dHJhaW5lcg==", "Y2hlYXQ=", "a21zYXV0bw==", "a21zcGljbw==", "aHdpZGdlbg==", "aW5qZWN0b3I=", "c3Bvb2Zlcg==" }
-            .Select(b => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(b))),
-            StringComparer.OrdinalIgnoreCase);
+        // Bilinen İstenmeyen Program (PUP) ve Hacktool SHA-256 Hash Veritabanı
+        private static readonly HashSet<string> KnownPupHashes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "E186411FB272847B3E39FCE160B5B110B6343585F84AE8BE98E9B9735F646C0B", // KMSAuto Net
+            "02D39620BB9396349F579051833501A74808C78A4BA14C5D76C68564F7986B74", // KMSPico
+            "FA01C312DA95D1E168341517454944BA7F27CE2B68DC99F26E650DA90E8F0EF1", // HWIDGen
+            "99B2319A56E215BAE99F98822B7853A90DE670498F4F5234D3C579E7802D310C"  // Universal Keygen
+        };
 
         private static readonly HashSet<string> ExecutableAndScriptExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -164,14 +168,22 @@ namespace AegisPC.Security.Detection.Detectors
                 }
             }
 
-            // 4. PUP / Keygen / Crack Pattern (Skipped for recognized game and dev library folders)
+            // 4. PUP / Hacktool Pattern via Known Hashes & Untrusted User Ingestion (Skipped for recognized game and dev library folders)
             if (!isSigned && isBinaryOrScript && !isGameDir && !isDevDir)
             {
-                var fileNameOnly = Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant();
-                var tokens = fileNameOnly.Split(new[] { '.', '-', '_', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                bool isPup = false;
+                string pupDesc = "Potansiyel İstenmeyen / Şüpheli Yazılım (PUP) davranış kalıbı";
 
-                bool isPup = tokens.Any(t => ExactPupKeywords.Contains(t)) ||
-                             ExactPupKeywords.Any(k => fileNameOnly.Equals(k, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrEmpty(context.SHA256) && KnownPupHashes.Contains(context.SHA256))
+                {
+                    isPup = true;
+                    pupDesc = "Bilinen İstenmeyen Program / Hacktool imzası (Hash Veritabanı Eşleşmesi)";
+                }
+                else if (PathHelper.IsUserDownloadsPath(path) || PathHelper.IsTempPath(path) || path.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase))
+                {
+                    isPup = true;
+                    pupDesc = "Potansiyel İstenmeyen / Şüpheli Yazılım (PUP) kalıbı: İmzasız İndirme/Geçici İkili";
+                }
 
                 if (isPup)
                 {
@@ -179,8 +191,8 @@ namespace AegisPC.Security.Detection.Detectors
                     {
                         Category = EvidenceCategory.LocationReputation,
                         SourceDetector = DisplayName,
-                        RuleName = "Reputation.PUP.CrackKeygenPattern",
-                        Description = "Potansiyel İstenmeyen / Korsan Yazılım (PUP/Crack/Keygen) deseni",
+                        RuleName = "Reputation.PUP.BehaviorPattern",
+                        Description = pupDesc,
                         ScoreContribution = 50,
                         Confidence = EvidenceConfidence.Medium,
                         FilePath = path,

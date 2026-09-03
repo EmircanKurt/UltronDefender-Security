@@ -26,7 +26,12 @@ namespace AegisPC.Security.Scanning
                 var hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
                 return Convert.ToHexString(hashBytes).ToLowerInvariant();
             }
-            catch
+            catch (IOException ex) when (ex.HResult == unchecked((int)0x800700E1) || ex.Message.Contains("virüs", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("virus", StringComparison.OrdinalIgnoreCase))
+            {
+                // Windows Win32 ERROR_VIRUS_INFECTED (0x800700E1): Dosya işletim sistemi/Defender tarafından virüs içerdiği gerekçesiyle kilitlendi
+                return "VIRUS_INFECTED_OS_BLOCKED";
+            }
+            catch (Exception)
             {
                 return string.Empty;
             }

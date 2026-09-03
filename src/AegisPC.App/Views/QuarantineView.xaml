@@ -13,9 +13,10 @@
     <Page.Resources>
         <conv:BytesToHumanReadableConverter x:Key="BytesConverter"/>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+
     </Page.Resources>
 
-    <Grid Margin="28,20,28,28">
+    <Grid Margin="28,20,28,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -23,25 +24,101 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- 1. Header -->
-        <TextBlock Grid.Row="0" Style="{StaticResource PageHeadingStyle}" Text="Karantina Kasası" Margin="0,0,0,4"/>
+        <!-- 1. Header & Toolbar -->
+        <Grid Grid.Row="0" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
 
-        <!-- 2. Info & Toolbar -->
-        <Grid Grid.Row="1" Margin="0,0,0,16">
-            <TextBlock Text="Karantinaya alınan dosyalar AES-256 ile şifrelenerek etkisizleştirilir ve zararlı çalışması engellenir." 
-                       Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center"/>
-            <Button HorizontalAlignment="Right" Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
-                    Command="{Binding LoadItemsCommand}" Padding="12,4"/>
+            <StackPanel Grid.Column="0">
+                <TextBlock Style="{StaticResource PageHeadingStyle}" Text="Karantina &amp; Olaylar" Margin="0,0,0,4"/>
+                <TextBlock Text="Karantinaya alınan şüpheli/zararlı dosyaları yönetin ve EDR güvenlik olay geçmişini inceleyin." 
+                           Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
+            </StackPanel>
+
+            <Button Grid.Column="1" HorizontalAlignment="Right" Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
+                    Command="{Binding RefreshAllDataCommand}" VerticalAlignment="Center" Padding="14,6"/>
         </Grid>
 
-        <!-- 3. Main Content: Table + Side Action Card -->
-        <Grid Grid.Row="2">
+        <!-- 2. Segmented Tab Selector -->
+        <Border Grid.Row="1" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="4" HorizontalAlignment="Left" Margin="0,0,0,16">
+            <StackPanel Orientation="Horizontal">
+                <Button Command="{Binding SelectQuarantineTabCommand}" Cursor="Hand" Padding="16,8" BorderThickness="0">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="TabBorder" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                            <Setter Property="FontSize" Value="13"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsQuarantineTabActive}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource BrushBrandPrimary}"/>
+                                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="FolderZip24" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Karantina Kasası" VerticalAlignment="Center"/>
+                        <Border Background="{DynamicResource BrushCardBorder}" CornerRadius="10" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding QuarantinedItems.Count}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
+                        </Border>
+                    </StackPanel>
+                </Button>
+
+                <Button Command="{Binding SelectIncidentsTabCommand}" Cursor="Hand" Padding="16,8" BorderThickness="0" Margin="6,0,0,0">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="TabBorder" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                            <Setter Property="FontSize" Value="13"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsIncidentsTabActive}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource BrushBrandPrimary}"/>
+                                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Warning24" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Tehdit ve Olay Geçmişi (EDR)" VerticalAlignment="Center"/>
+                        <Border Background="{DynamicResource BrushStatusDangerBg}" BorderBrush="{DynamicResource BrushStatusDangerBorder}" BorderThickness="1" CornerRadius="10" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Incidents.Count}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushStatusDangerText}"/>
+                        </Border>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- 3. TAB CONTENT AREA -->
+        <!-- TAB 1: Karantina Kasası -->
+        <Grid Grid.Row="2" Visibility="{Binding IsQuarantineTabActive, Converter={StaticResource BoolToVis}}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="340"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Quarantine Grid (STRICT DataTableStyle: Sans-Serif, Tabular Numerals) -->
+            <!-- Quarantine Grid -->
             <Grid Grid.Column="0" Margin="0,0,16,0">
                 <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6">
                     <ui:DataGrid ItemsSource="{Binding QuarantinedItems}" 
@@ -52,10 +129,13 @@
                                  BorderThickness="0"
                                  Background="Transparent"
                                  RowHeaderWidth="0"
+                                 ScrollViewer.CanContentScroll="False"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  GridLinesVisibility="Horizontal"
                                  HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
                         <ui:DataGrid.Columns>
-                            <!-- Dosya Adı: Pure Sans-Serif Tabular Column -->
+                            <!-- Dosya Adı -->
                             <DataGridTemplateColumn Header="Dosya Adı" Width="200">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
@@ -69,7 +149,7 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
-                            <!-- Boyut: Tabular Numbers -->
+                            <!-- Boyut -->
                             <DataGridTemplateColumn Header="Boyut" Width="90">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
@@ -93,7 +173,7 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
-                            <!-- Sebep: Kırpma + ToolTip -->
+                            <!-- Sebep -->
                             <DataGridTemplateColumn Header="Sebep" Width="*">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
@@ -124,7 +204,7 @@
 
             <!-- Actions Side Panel -->
             <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
                     <StackPanel Margin="4">
                         <TextBlock Text="Karantina Yönetimi" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,14"/>
 
@@ -186,6 +266,152 @@
                         </TextBlock>
                     </StackPanel>
                 </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- TAB 2: Tehdit ve Olay Geçmişi (EDR) -->
+        <Grid Grid.Row="2" Visibility="{Binding IsIncidentsTabActive, Converter={StaticResource BoolToVis}}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="380"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT: Incident List -->
+            <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Margin="0,0,16,0" Padding="14">
+                <Grid>
+                    <ListBox ItemsSource="{Binding Incidents}" 
+                             SelectedItem="{Binding SelectedIncident}"
+                             Background="Transparent" BorderThickness="0"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.CanContentScroll="False">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="12" Margin="0,0,0,8">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        
+                                        <Grid Grid.Row="0">
+                                            <TextBlock Text="{Binding ThreatName}" Style="{StaticResource SectionHeadingStyle}" FontSize="13" TextTrimming="CharacterEllipsis" Margin="0,0,70,0"/>
+                                            <Border HorizontalAlignment="Right" Style="{StaticResource BadgeDangerStyle}" Padding="6,2">
+                                                <TextBlock Text="{Binding RiskScore, StringFormat='Risk: {0}'}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusDangerText}"/>
+                                            </Border>
+                                        </Grid>
+
+                                        <TextBlock Grid.Row="1" Text="{Binding RootProcessName, StringFormat='Süreç: {0}'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,0"/>
+                                        
+                                        <Grid Grid.Row="2" Margin="0,6,0,0">
+                                            <TextBlock Text="{Binding CreatedAt, StringFormat='\{0:HH:mm:ss\}'}" Style="{StaticResource CaptionTextStyle}"/>
+                                            <Border HorizontalAlignment="Right" Style="{StaticResource BadgeProgressStyle}" Padding="6,1">
+                                                <TextBlock Text="{Binding Status}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                                            </Border>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <!-- Empty State -->
+                    <Border Background="{DynamicResource BrushCardBg}" Visibility="{Binding HasNoIncidents, Converter={StaticResource BoolToVis}}">
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20">
+                            <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="40" Foreground="{DynamicResource BrushStatusSafe}" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                            <TextBlock Text="Aktif Tehdit Olayı Yok" Style="{StaticResource SectionHeadingStyle}" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Sisteminiz arka planda gerçek zamanlı korunuyor." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- RIGHT: Incident Details & Timeline -->
+            <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0" Padding="20">
+                <Grid>
+                    <!-- Detail Content -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  CanContentScroll="False"
+                                  Visibility="{Binding SelectedIncident, Converter={StaticResource BoolToVis}}">
+                        <StackPanel DataContext="{Binding SelectedIncident}">
+                            <!-- Incident Header -->
+                            <Grid Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Title}" Style="{StaticResource PageHeadingStyle}" FontSize="18"/>
+                                    <TextBlock Text="{Binding IncidentId, StringFormat='Olay Kimliği: {0}'}" Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Border HorizontalAlignment="Right" Background="{DynamicResource BrushStatusDanger}" CornerRadius="4" Padding="12,4" VerticalAlignment="Top">
+                                    <TextBlock Text="{Binding RiskScore, StringFormat='Risk Skoru: {0}/100'}" Style="{StaticResource ButtonTextStyle}" Foreground="#FFFFFF"/>
+                                </Border>
+                            </Grid>
+
+                            <!-- Key Metadata Grid -->
+                            <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,16">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Kök Süreç:" Style="{StaticResource CaptionTextStyle}"/>
+                                        <TextBlock Text="{Binding RootProcessName}" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                                        <TextBlock Text="Müdahale:" Style="{StaticResource CaptionTextStyle}" Margin="0,8,0,0"/>
+                                        <TextBlock Text="{Binding ActionTaken}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" Foreground="{DynamicResource BrushStatusSafeDark}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="PID / Süreç No:" Style="{StaticResource CaptionTextStyle}"/>
+                                        <TextBlock Text="{Binding RootPid}" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                                        <TextBlock Text="Durum:" Style="{StaticResource CaptionTextStyle}" Margin="0,8,0,0"/>
+                                        <TextBlock Text="{Binding Status}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- File Path -->
+                            <TextBlock Text="Zararlı Kaynak Dosya Yolu:" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,4"/>
+                            <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="10,6" Margin="0,0,0,16">
+                                <TextBlock Text="{Binding RootExecutablePath}" Style="{StaticResource DataMonospaceStyle}" TextWrapping="Wrap"/>
+                            </Border>
+
+                            <!-- Timeline -->
+                            <TextBlock Text="Kronolojik Saldırı Zaman Çizelgesi:" Style="{StaticResource SectionHeadingStyle}" FontSize="13" Margin="0,0,0,8"/>
+                            <ItemsControl ItemsSource="{Binding Timeline}" Margin="0,0,0,16">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="10,6" Margin="0,0,0,4">
+                                            <TextBlock Text="{Binding}" Style="{StaticResource DataTableStyle}" FontSize="11.5"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Plain Turkish Explanation -->
+                            <TextBlock Text="Güvenlik Analizi ve Açıklama:" Style="{StaticResource SectionHeadingStyle}" FontSize="13" Margin="0,0,0,8"/>
+                            <Border Background="{DynamicResource BrushStatusDangerBg}" BorderBrush="{DynamicResource BrushStatusDangerBorder}" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,16">
+                                <TextBlock Text="{Binding HumanExplanation}" Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushStatusDangerText}" TextWrapping="Wrap" LineHeight="18"/>
+                            </Border>
+
+                            <!-- Action Buttons -->
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="Kaynak Dosyayı Karantinaya Al" 
+                                        Command="{Binding DataContext.QuarantineSourceFileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                        Style="{StaticResource DangerActionButtonStyle}" Margin="0,0,10,0" Padding="16,8"/>
+                                <Button Content="Çözüldü Olarak İşaretle" 
+                                        Command="{Binding DataContext.RemediateIncidentCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                        Style="{StaticResource SecondaryButtonStyle}" Padding="14,8"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Empty Placeholder when no incident is selected -->
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20"
+                                Visibility="{Binding SelectedIncident, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}">
+                        <ui:SymbolIcon Symbol="Search24" FontSize="36" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                        <TextBlock Text="İncelemek için soldaki listeden bir güvenlik olayı seçin." 
+                                   Style="{StaticResource SectionHeadingStyle}" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
             </Border>
         </Grid>
 

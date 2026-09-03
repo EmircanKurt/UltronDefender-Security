@@ -43,12 +43,6 @@ namespace AegisPC.App
                 ServiceProvider = serviceCollection.BuildServiceProvider();
                 Log("2. Services registered successfully.");
 
-                // Apply Light theme for high-contrast dark TitleBar buttons and crisp controls
-                try
-                {
-                    Wpf.Ui.Appearance.ApplicationThemeManager.Apply(Wpf.Ui.Appearance.ApplicationTheme.Light);
-                }
-                catch { }
 
                 // Register Windows Startup entry & Antivirus Security Center Registration
                 try
@@ -324,12 +318,43 @@ namespace AegisPC.App
             }
         }
 
+        private static DateTime _lastDispatcherErrorTime = DateTime.MinValue;
+        private static int _consecutiveDispatcherErrors = 0;
+
         private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
-            Log($"Dispatcher Unhandled Exception: {e.Exception}");
-            MessageBox.Show($"Arayüz Hatası:\n{e.Exception.Message}\n\nDetay: {e.Exception.InnerException?.Message}", 
-                "Ultron Defender Total Security - Arayüz Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
-            e.Handled = true;
+            try
+            {
+                Log($"Dispatcher Unhandled Exception: {e.Exception}");
+                var now = DateTime.UtcNow;
+
+                // Anti-flood / anti-cascade guard: If errors occur rapidly in layout loops, debounce
+                if ((now - _lastDispatcherErrorTime).TotalSeconds < 3.0)
+                {
+                    _consecutiveDispatcherErrors++;
+                    if (_consecutiveDispatcherErrors == 3)
+                    {
+                        MessageBox.Show(
+                            "Arayüz bileşenlerinde ardışık hata tespit edildi. Diğer hata pencereleri engellendi ve ayrıntılar günlüğe (aegis_debug.log) yazıldı.",
+                            "Ultron Defender Total Security - Arayüz Bildirimi",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                    }
+                    e.Handled = true;
+                    return;
+                }
+
+                _lastDispatcherErrorTime = now;
+                _consecutiveDispatcherErrors = 1;
+
+                MessageBox.Show($"Arayüz Hatası:\n{e.Exception?.Message}\n\nDetay: {e.Exception?.InnerException?.Message}", 
+                    "Ultron Defender Total Security - Arayüz Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            catch { }
+            finally
+            {
+                e.Handled = true;
+            }
         }
     }
 }

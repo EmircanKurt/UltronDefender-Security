@@ -28,17 +28,17 @@
                      Background="{DynamicResource BrushAppBg}"
                      FontSize="14"
                      FontWeight="SemiBold"
-                     Height="40"
-                     Padding="6,0,0,0">
+                     Height="44"
+                     Padding="8,0,0,0">
             <ui:TitleBar.Icon>
-                <ui:ImageIcon Source="pack://application:,,,/Resources/Images/app.ico" Width="20" Height="20" Margin="4,0,8,0" RenderOptions.BitmapScalingMode="HighQuality"/>
+                <ui:ImageIcon Source="pack://application:,,,/Resources/Images/ultron_logo.png" Width="26" Height="26" Margin="6,0,10,0" RenderOptions.BitmapScalingMode="HighQuality"/>
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 
         <!-- Main Body: 2 Columns with Dynamic Theme-Adaptive Left Sidebar -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260"/>
+                <ColumnDefinition Width="275"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
@@ -48,7 +48,7 @@
             <!-- Main Shell Navigation -->
             <ui:NavigationView Grid.ColumnSpan="2" x:Name="RootNavigation" 
                                PaneDisplayMode="Left" 
-                               OpenPaneLength="260"
+                               OpenPaneLength="275"
                                IsBackButtonVisible="Collapsed"
                                IsPaneToggleVisible="False"
                                HeaderVisibility="Collapsed"
@@ -56,10 +56,10 @@
                                Background="Transparent">
 
                 <ui:NavigationView.Resources>
-                    <!-- Force Left Pane Background to Transparent to inherit Sidebar Background -->
-                    <SolidColorBrush x:Key="NavigationViewPaneBackground" Color="Transparent"/>
-                    <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="Transparent"/>
-                    <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="Transparent"/>
+                    <!-- Left Pane Background bound to theme sidebar brush -->
+                    <SolidColorBrush x:Key="NavigationViewPaneBackground" Color="{DynamicResource ColorSidebarBg}"/>
+                    <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="{DynamicResource ColorSidebarBg}"/>
+                    <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="{DynamicResource ColorSidebarBg}"/>
                     
                     <Style TargetType="{x:Type ui:NavigationViewItem}">
                         <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
@@ -84,12 +84,12 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <!-- 52px Large Shield Icon (+70% larger than 32-40px) -->
+                            <!-- 62px Large High-Res Shield Icon -->
                             <Image Grid.Column="0" Source="pack://application:,,,/Resources/Images/ultron_logo.png" 
-                                   Width="52" Height="52" Margin="0,0,14,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                   Width="62" Height="62" Margin="0,0,12,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="ULTRON" FontFamily="{StaticResource FontBrand}" FontSize="23" FontWeight="ExtraBold" Foreground="{DynamicResource BrushBrandPrimary}" LineHeight="25" TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType"/>
-                                <TextBlock Text="TOTAL SECURITY" FontFamily="{StaticResource FontHeading}" FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource BrushTextSecondary}" Margin="1,4,0,0" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"/>
+                                <TextBlock Text="ULTRON" FontFamily="{StaticResource FontBrand}" FontSize="26" FontWeight="Black" Foreground="{DynamicResource BrushBrandPrimary}" LineHeight="28" TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType"/>
+                                <TextBlock Text="TOTAL SECURITY" FontFamily="{StaticResource FontHeading}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushTextSecondary}" Margin="1,4,0,0" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"/>
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -108,47 +108,9 @@
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 
-                    <ui:NavigationViewItem Content="Fidye Kalkanı" TargetPageType="{x:Type views:RansomwareShieldView}">
-                        <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="LockClosed24" FontSize="16"/>
-                        </ui:NavigationViewItem.Icon>
-                    </ui:NavigationViewItem>
-
-                    <ui:NavigationViewItem Content="Ağ ve Web Koruması" TargetPageType="{x:Type views:NetworkProtectionView}">
-                        <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="Globe24" FontSize="16"/>
-                        </ui:NavigationViewItem.Icon>
-                    </ui:NavigationViewItem>
-
-                    <ui:NavigationViewItem Content="Karantina Kasası" TargetPageType="{x:Type views:QuarantineView}">
+                    <ui:NavigationViewItem Content="Karantina &amp; Olaylar" TargetPageType="{x:Type views:QuarantineView}">
                         <ui:NavigationViewItem.Icon>
                             <ui:SymbolIcon Symbol="FolderZip24" FontSize="16"/>
-                        </ui:NavigationViewItem.Icon>
-                    </ui:NavigationViewItem>
-
-                    <ui:NavigationViewItem Content="Tehdit &amp; Olay Merkezi" TargetPageType="{x:Type views:IncidentCenterView}">
-                        <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="AlertBadge24" FontSize="16"/>
-                        </ui:NavigationViewItem.Icon>
-                    </ui:NavigationViewItem>
-
-                    <ui:NavigationViewItemHeader Text="SİSTEM &amp; ANALİZ" />
-
-                    <ui:NavigationViewItem Content="Performans &amp; Donanım" TargetPageType="{x:Type views:PerformanceView}">
-                        <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="TopSpeed24" FontSize="16"/>
-                        </ui:NavigationViewItem.Icon>
-                    </ui:NavigationViewItem>
-
-                    <ui:NavigationViewItem Content="Süreç Yöneticisi" TargetPageType="{x:Type views:ProcessListView}">
-                        <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="TasklistSquareRtl24" FontSize="16"/>
-                        </ui:NavigationViewItem.Icon>
-                    </ui:NavigationViewItem>
-
-                    <ui:NavigationViewItem Content="Başlangıç Yöneticisi" TargetPageType="{x:Type views:StartupManagerView}">
-                        <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="Play24" FontSize="16"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 
@@ -158,21 +120,15 @@
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 
-                    <ui:NavigationViewItem Content="Ebeveyn Denetimi" TargetPageType="{x:Type views:ParentalControlsView}">
+                    <ui:NavigationViewItem Content="Süreç Yöneticisi" TargetPageType="{x:Type views:ProcessListView}">
                         <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="PersonFeedback24" FontSize="16"/>
+                            <ui:SymbolIcon Symbol="TasklistSquareRtl24" FontSize="16"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 
                     <ui:NavigationViewItem Content="Çökme &amp; Olay Analizi" TargetPageType="{x:Type views:CrashAnalysisView}">
                         <ui:NavigationViewItem.Icon>
                             <ui:SymbolIcon Symbol="Warning24" FontSize="16"/>
-                        </ui:NavigationViewItem.Icon>
-                    </ui:NavigationViewItem>
-
-                    <ui:NavigationViewItem Content="Güvenlik Geçmişi" TargetPageType="{x:Type views:HistoryView}">
-                        <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="History24" FontSize="16"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
                 </ui:NavigationView.MenuItems>
@@ -202,7 +158,7 @@
 
                     <ui:NavigationViewItem x:Name="NavThemeToggle" Content="Gece Modu" Click="OnThemeToggleClicked">
                         <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon x:Name="NavThemeIcon" Symbol="WeatherMoon24" FontSize="16"/>
+                            <ui:SymbolIcon x:Name="NavThemeIcon" Symbol="DarkTheme24" FontSize="16"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 

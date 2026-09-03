@@ -50,6 +50,10 @@ namespace AegisPC.App.ViewModels
                         if (!Incidents.Any(i => i.IncidentId == incident.IncidentId))
                         {
                             Incidents.Insert(0, incident);
+                            while (Incidents.Count > 100)
+                            {
+                                Incidents.RemoveAt(Incidents.Count - 1);
+                            }
                             HasNoIncidents = Incidents.Count == 0;
                             ActiveIncidentCount = Incidents.Count(i => i.Status == "Active" || i.Status == "Contained");
                             if (SelectedIncident == null) SelectedIncident = incident;

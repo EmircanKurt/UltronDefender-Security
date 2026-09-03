@@ -75,10 +75,11 @@ namespace AegisPC.App.ViewModels
         // Interactive Feature 1: Ransomware Remediation Banner
         [ObservableProperty] private bool isRansomwareEnabled = false;
         [ObservableProperty] private bool showRansomwareDetails = false;
-        [ObservableProperty] private string ransomwareActionText = "ETKİNLEŞTİR";
-        [ObservableProperty] private string ransomwareStatusText = "1/1";
-        [ObservableProperty] private string ransomwareTitle = "FİDYE YAZILIMI İYİLEŞTİRME VE AKTİF KORUMA ÖNERİSİ";
-        [ObservableProperty] private string ransomwareDescription = "Önemli belgelerinizi ve fotoğraflarınızı kaybetmeyin. Fidye yazılımlarının şifreleme girişimlerini engellemek için Fidye Kalkanını devrede tutun.";
+        [ObservableProperty] private string ransomwareActionText = "Korumalı";
+        [ObservableProperty] private string ransomwareStatusText = "Açık";
+        [ObservableProperty] private string ransomwareStatusColor = "#4CAF50";
+        [ObservableProperty] private string ransomwareTitle = "Fidye Kalkanı Devrede (Tam Koruma)";
+        [ObservableProperty] private string ransomwareDescription = "Belgelerinizi ve resimlerinizi şifreleme girişimlerine karşı korur.";
 
         // Interactive Feature 2: Quick Scan Live State
         [ObservableProperty] private bool isScanning = false;
@@ -137,6 +138,8 @@ namespace AegisPC.App.ViewModels
         private readonly AegisPC.Security.RealTime.IRealTimeProtectionEngine? _realTimeEngine;
         private readonly AegisPC.Contracts.Services.IStartupSecuritySweepService? _startupSweepService;
         private readonly IQuarantineService? _quarantineService;
+        private readonly AegisPC.Security.RealTime.IRansomwareProtectionEngine? _ransomwareEngine;
+        private readonly AegisPC.Infrastructure.Configuration.SettingsService? _settingsService;
 
         public DashboardViewModel(
             IPerformanceMonitor? performanceMonitor = null,
@@ -150,7 +153,9 @@ namespace AegisPC.App.ViewModels
             AegisPC.ServiceContracts.IServiceIpcClient? ipcClient = null,
             AegisPC.Security.RealTime.IRealTimeProtectionEngine? realTimeEngine = null,
             AegisPC.Contracts.Services.IStartupSecuritySweepService? startupSweepService = null,
-            IQuarantineService? quarantineService = null)
+            IQuarantineService? quarantineService = null,
+            AegisPC.Security.RealTime.IRansomwareProtectionEngine? ransomwareEngine = null,
+            AegisPC.Infrastructure.Configuration.SettingsService? settingsService = null)
         {
             _performanceMonitor = performanceMonitor;
             _processMonitor = processMonitor;
@@ -163,6 +168,33 @@ namespace AegisPC.App.ViewModels
             _realTimeEngine = realTimeEngine;
             _startupSweepService = startupSweepService;
             _quarantineService = quarantineService;
+            _ransomwareEngine = ransomwareEngine;
+            _settingsService = settingsService;
+
+            // Initialize ransomware protection state
+            if (_settingsService != null)
+            {
+                isRansomwareEnabled = _settingsService.Current.IsRansomwareShieldEnabled;
+            }
+            else if (_ransomwareEngine != null)
+            {
+                isRansomwareEnabled = _ransomwareEngine.IsShieldActive;
+            }
+            else
+            {
+                isRansomwareEnabled = true;
+            }
+
+            if (isRansomwareEnabled && _ransomwareEngine != null && !_ransomwareEngine.IsShieldActive)
+            {
+                try
+                {
+                    _ransomwareEngine.StartShield();
+                }
+                catch { }
+            }
+
+            UpdateRansomwareStateTexts(isRansomwareEnabled);
 
             if (_startupSweepService != null)
             {
@@ -398,576 +430,46 @@ namespace AegisPC.App.ViewModels
             });
         }
 
-        private void OnPerformanceSampleCollected(object? sender, PerformanceSample sample)
+        partial void OnIsRansomwareEnabledChanged(bool value)
         {
-            Application.Current?.Dispatcher?.InvokeAsync(() =>
+            if (value)
             {
-                CpuUsage = sample.CpuPercent;
-                MemoryUsage = sample.MemoryTotalBytes > 0
-                    ? Math.Round(((double)sample.MemoryUsedBytes / sample.MemoryTotalBytes) * 100.0, 1)
-                    : 0.0;
-                DiskUsage = sample.DiskUsagePercent;
-                NetworkUsage = Math.Round((sample.NetworkDownBps + sample.NetworkUpBps) / (1024.0 * 1024.0), 2);
-                ActiveProcessCount = sample.ActiveProcesses;
-
-                UpdateHealthScore();
-            });
-        }
-
-        private void UpdateHealthScore()
-        {
-            int perfDeduction = 0;
-            if (CpuUsage > 85) perfDeduction += 15;
-            else if (CpuUsage > 70) perfDeduction += 5;
-
-            if (MemoryUsage > 90) perfDeduction += 15;
-            else if (MemoryUsage > 80) perfDeduction += 5;
-
-            PerformanceScore = Math.Clamp(100 - perfDeduction, 20, 100);
-            OverallHealthScore = (int)Math.Round((SecurityScore * 0.35) + (PerformanceScore * 0.25) + (StabilityScore * 0.15) + (StartupScore * 0.15) + (BrowserSecurityScore * 0.10));
-        }
-
-        // ═══════════════════════════════════════════════
-        // INTERACTIVE COMMAND 1: RANSOMWARE REMEDIATION
-        // ═══════════════════════════════════════════════
-        [RelayCommand]
-        public void ToggleRansomwareDetails()
-        {
-            ShowRansomwareDetails = !ShowRansomwareDetails;
-        }
-
-        [RelayCommand]
-        public void EnableRansomwareAction()
-        {
-            if (!IsRansomwareEnabled)
-            {
-                IsRansomwareEnabled = true;
-                RansomwareActionText = "İNCELE";
-                RansomwareStatusText = "AKTİF";
-                RansomwareTitle = "FİDYE KALKANI DEVREDE (TAM KORUMA)";
-                RansomwareDescription = "Canary tuzak dosyaları ve aktif şifreleme izleme motoru arka planda çalışıyor. Dosyalarınız güvende.";
-                TriggerToast("Fidye Kalkanı başarıyla etkinleştirildi! Dosya şifreleme tuzakları ve otomatik kurtarma devrede.", "Success");
+                _ransomwareEngine?.StartShield();
+                UpdateRansomwareStateTexts(true);
+                TriggerToast("Fidye Kalkanı Devrede! Canary yem tuzakları ve dosya şifreleme izleme motoru aktif.", "Success");
             }
             else
             {
-                // Navigate to Ransomware Shield Page
-                AppNavigation.NavigateTo(typeof(RansomwareShieldView));
+                _ransomwareEngine?.StopShield();
+                UpdateRansomwareStateTexts(false);
+                TriggerToast("Fidye Kalkanı Devre Dışı Bırakıldı.", "Warning");
+            }
+
+            if (_settingsService != null)
+            {
+                _settingsService.Current.IsRansomwareShieldEnabled = value;
+                _ = _settingsService.SaveAsync();
             }
         }
 
-        // ═══════════════════════════════════════════════
-        // INTERACTIVE COMMAND 2: QUICK SCAN
-        // ═══════════════════════════════════════════════
-        [RelayCommand]
-        public async Task StartQuickScanAsync()
+        private void UpdateRansomwareStateTexts(bool active)
         {
-            if (_scanCoordinator == null) return;
-
-            if (_scanCoordinator.IsScanning)
+            if (active)
             {
-                // Stop/Cancel Scan
-                _scanCoordinator.CancelScan();
-                IsScanning = false;
-                QuickScanButtonText = "TARAMAYI BAŞLAT";
-                ProtectionStatusText = "GÜVENDESİNİZ";
-                ProtectionBadgeText = "GERÇEK ZAMANLI KORUMA AKTİF";
-                ProtectionStatusColor = "#4CAF50";
-                TriggerToast("Hızlı tarama kullanıcı tarafından durduruldu.", "Info");
-                return;
-            }
-
-            IsScanning = true;
-            ScanProgress = 0;
-            ScanScannedCount = 0;
-            ScanThreatCount = 0;
-            QuickScanButtonText = "DURDUR";
-            ProtectionStatusText = "SİSTEM TARANIYOR...";
-            ProtectionBadgeText = "HIZLI TARAMA ÇALIŞIYOR";
-            ProtectionStatusColor = "#2196F3";
-
-            TriggerToast("Hızlı sistem taraması başlatıldı...", "Info");
-
-            try
-            {
-                var scanVm = App.ServiceProvider?.GetService<ScanViewModel>();
-                if (scanVm != null)
-                {
-                    Views.ActiveScanWindow.ShowScanWindow(scanVm);
-                }
-
-                await _scanCoordinator.StartScanAsync(AegisPC.Core.Enums.ScanType.Quick);
-            }
-            catch (Exception ex)
-            {
-                TriggerToast($"Tarama sırasında hata: {ex.Message}", "Warning");
-                IsScanning = false;
-                QuickScanButtonText = "TARAMAYI BAŞLAT";
-            }
-        }
-
-
-
-
-
-        [RelayCommand]
-        public void ToggleRealTimeProtection()
-        {
-            if (IsRealTimeProtectionActive)
-            {
-                // Admin Elevation / Warning Confirmation Prompt before turning off
-                var res = MessageBox.Show(
-                    "⚠️ DİKKAT: Gerçek Zamanlı Korumayı kapatmak bilgisayarınızı virüslere, fidye yazılımlarına ve korsan saldırılara karşı savunmasız bırakır.\n\nBu işlem Yönetici Onayı gerektirir. Yine de korumayı devre dışı bırakmak istiyor musunuz?",
-                    "Ultron Defender - Yönetici Koruma Uyarısı",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning);
-
-                if (res == MessageBoxResult.Yes)
-                {
-                    IsRealTimeProtectionActive = false;
-                    ProtectionStatusText = "KORUMA DEVRE DIŞI";
-                    ProtectionBadgeText = "GERÇEK ZAMANLI KORUMA KAPALI";
-                    ProtectionStatusColor = "#C41E1E"; // Danger Red
-                    TriggerToast("⚠️ Gerçek Zamanlı Koruma kullanıcı tarafından kapatıldı!", "Warning");
-                    UpdateProtectionUptime();
-                }
+                RansomwareStatusText = "Açık";
+                RansomwareActionText = "Korumalı";
+                RansomwareStatusColor = "#4CAF50";
+                RansomwareTitle = "Fidye Kalkanı Devrede (Tam Koruma)";
+                RansomwareDescription = "Belgelerinizi ve resimlerinizi şifreleme girişimlerine karşı korur.";
             }
             else
             {
-                IsRealTimeProtectionActive = true;
-                ProtectionStatusText = "GÜVENDESİNİZ";
-                ProtectionBadgeText = "GERÇEK ZAMANLI KORUMA AKTİF";
-                ProtectionStatusColor = "#4CAF50"; // Bitdefender Safe Green
-                TriggerToast("🛡️ Gerçek Zamanlı Koruma başarıyla etkinleştirildi.", "Success");
-                UpdateProtectionUptime();
+                RansomwareStatusText = "Kapalı";
+                RansomwareActionText = "Devre Dışı";
+                RansomwareStatusColor = "#94A3B8";
+                RansomwareTitle = "Fidye Kalkanı Kapalı";
+                RansomwareDescription = "Belgelerinizi ve resimlerinizi şifreleme girişimlerine karşı korur.";
             }
-        }
-
-        // ═══════════════════════════════════════════════
-        // INTERACTIVE COMMAND 5: DEVICE / LICENSE MODAL
-        // ═══════════════════════════════════════════════
-        [RelayCommand]
-        public void ToggleDeviceModal()
-        {
-            ShowDeviceModal = !ShowDeviceModal;
-        }
-
-        [RelayCommand]
-        public void CopyLicenseKey()
-        {
-            try
-            {
-                Clipboard.SetText(LicenseKey);
-                TriggerToast("Lisans anahtarı panoya kopyalandı!", "Success");
-            }
-            catch
-            {
-                TriggerToast($"Lisans: {LicenseKey}", "Info");
-            }
-        }
-
-        // ═══════════════════════════════════════════════
-        // INTERACTIVE COMMAND 6: QUICK ACTION SELECTOR (+)
-        // ═══════════════════════════════════════════════
-        [RelayCommand]
-        public void ToggleQuickActionModal()
-        {
-            ShowQuickActionModal = !ShowQuickActionModal;
-        }
-
-        [RelayCommand]
-        public void NavigateToTarget(string target)
-        {
-            ShowQuickActionModal = false;
-            ShowDeviceModal = false;
-
-            switch (target?.ToLowerInvariant())
-            {
-                case "scan":
-                case "tara":
-                    AppNavigation.NavigateTo(typeof(ScanView));
-                    break;
-                case "security":
-                case "guvenlik":
-                    AppNavigation.NavigateTo(typeof(SecurityView));
-                    break;
-                case "ransomware":
-                case "fidye":
-                    AppNavigation.NavigateTo(typeof(RansomwareShieldView));
-                    break;
-                case "network":
-                case "ag":
-                    AppNavigation.NavigateTo(typeof(NetworkProtectionView));
-                    break;
-                case "performance":
-                case "performans":
-                    AppNavigation.NavigateTo(typeof(PerformanceView));
-                    break;
-                case "quarantine":
-                case "karantina":
-                    AppNavigation.NavigateTo(typeof(QuarantineView));
-                    break;
-                case "startup":
-                case "baslangic":
-                    AppNavigation.NavigateTo(typeof(StartupManagerView));
-                    break;
-                case "settings":
-                case "ayarlar":
-                    AppNavigation.NavigateTo(typeof(SettingsView));
-                    break;
-                default:
-                    AppNavigation.NavigateTo(typeof(SecurityView));
-                    break;
-            }
-        }
-
-        // ═══════════════════════════════════════════════
-        // TOAST NOTIFICATION HELPER
-        // ═══════════════════════════════════════════════
-        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _threatNotificationQueue = new();
-        private System.Threading.Timer? _threatNotificationTimer;
-        private int _isFlushingThreats;
-
-        public void TriggerThreatToast(string threatName)
-        {
-            _threatNotificationQueue.Enqueue(threatName);
-            _threatNotificationTimer ??= new System.Threading.Timer(_ => FlushThreatToast(), null, Timeout.Infinite, Timeout.Infinite);
-            _threatNotificationTimer.Change(600, Timeout.Infinite);
-        }
-
-        private void FlushThreatToast()
-        {
-            if (Interlocked.Exchange(ref _isFlushingThreats, 1) == 1) return;
-            try
-            {
-                var list = new System.Collections.Generic.List<string>();
-                while (_threatNotificationQueue.TryDequeue(out var item))
-                {
-                    list.Add(item);
-                }
-                if (list.Count == 0) return;
-
-                if (list.Count == 1)
-                {
-                    TriggerToast($"Ultron Defender (Antivirüs Programı): '{list[0]}' engellendi ve karantinaya alındı.", "Danger");
-                }
-                else
-                {
-                    TriggerToast($"Ultron Defender (Antivirüs Programı): {list.Count} adet zararlı tehdit engellendi ve karantinaya alındı.", "Danger");
-                }
-            }
-            finally
-            {
-                Interlocked.Exchange(ref _isFlushingThreats, 0);
-            }
-        }
-
-        public void TriggerToast(string message, string type = "Success")
-        {
-            Application.Current?.Dispatcher?.InvokeAsync(() =>
-            {
-                ToastMessage = message;
-                ToastType = type;
-                ShowToast = true;
-
-                // Auto hide after 3.5 seconds
-                Task.Delay(3500).ContinueWith(_ =>
-                {
-                    Application.Current?.Dispatcher?.InvokeAsync(() =>
-                    {
-                        ShowToast = false;
-                    });
-                });
-            });
-        }
-
-        [RelayCommand]
-        public void DismissToast()
-        {
-            ShowToast = false;
-        }
-
-        // ═══════════════════════════════════════════════
-        // REAL-TIME STATS TRACKING & PERSISTENCE
-        // ═══════════════════════════════════════════════
-        private readonly DateTime _protectionStartTime = DateTime.Now;
-        private System.Threading.Timer? _uptimeTimer;
-        private System.Threading.Timer? _dailyStatsDebounceTimer;
-        private readonly string _dailyStatsFilePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "UltronDefender", "daily_scan_stats.json");
-
-        private void UpdateProtectionUptime()
-        {
-            if (!IsRealTimeProtectionActive)
-            {
-                Application.Current?.Dispatcher?.InvokeAsync(() =>
-                {
-                    ProtectionUptimeText = "Durduruldu";
-                });
-                return;
-            }
-
-            var elapsed = DateTime.Now - _protectionStartTime;
-            string text;
-            if (elapsed.TotalDays >= 1)
-            {
-                text = $"{(int)elapsed.TotalDays}g {elapsed.Hours}sa {elapsed.Minutes}dk";
-            }
-            else if (elapsed.TotalHours >= 1)
-            {
-                text = $"{elapsed.Hours} sa {elapsed.Minutes} dk";
-            }
-            else if (elapsed.TotalMinutes >= 1)
-            {
-                text = $"{elapsed.Minutes} dk {elapsed.Seconds} sn";
-            }
-            else
-            {
-                text = $"{Math.Max(1, elapsed.Seconds)} sn";
-            }
-
-            Application.Current?.Dispatcher?.InvokeAsync(() =>
-            {
-                ProtectionUptimeText = text;
-            });
-        }
-
-        private void LoadDailyScanStats()
-        {
-            try
-            {
-                if (File.Exists(_dailyStatsFilePath))
-                {
-                    var json = File.ReadAllText(_dailyStatsFilePath);
-                    using var doc = System.Text.Json.JsonDocument.Parse(json);
-                    if (doc.RootElement.TryGetProperty("Date", out var dateProp) &&
-                        dateProp.GetString() == DateTime.UtcNow.ToString("yyyy-MM-dd") &&
-                        doc.RootElement.TryGetProperty("ScannedCount", out var countProp))
-                    {
-                        var loaded = countProp.GetInt32();
-                        if (loaded > 0)
-                        {
-                            Application.Current?.Dispatcher?.InvokeAsync(() =>
-                            {
-                                FilesScannedCount = loaded;
-                            });
-                            return;
-                        }
-                    }
-                }
-            }
-            catch { }
-
-            // If empty or new day, initialize baseline from running system processes + baseline verified files
-            var baseline = Math.Max(1280, ActiveProcessCount * 12);
-            Application.Current?.Dispatcher?.InvokeAsync(() =>
-            {
-                FilesScannedCount = baseline;
-            });
-            SaveDailyScanStats();
-        }
-
-        private void IncrementDailyScanned(int count = 1)
-        {
-            FilesScannedCount += count;
-            ScheduleDailyStatsSave();
-        }
-
-        private void ScheduleDailyStatsSave()
-        {
-            _dailyStatsDebounceTimer ??= new System.Threading.Timer(_ => SaveDailyScanStats(), null, Timeout.Infinite, Timeout.Infinite);
-            _dailyStatsDebounceTimer.Change(3000, Timeout.Infinite);
-        }
-
-        private void SaveDailyScanStats()
-        {
-            try
-            {
-                var dir = Path.GetDirectoryName(_dailyStatsFilePath);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
-
-                var stats = new
-                {
-                    Date = DateTime.UtcNow.ToString("yyyy-MM-dd"),
-                    ScannedCount = FilesScannedCount,
-                    LastSavedUtc = DateTime.UtcNow
-                };
-
-                File.WriteAllText(_dailyStatsFilePath, System.Text.Json.JsonSerializer.Serialize(stats));
-            }
-            catch { }
-        }
-
-        private async Task RefreshMonthlyQuarantineCountAsync()
-        {
-            if (_quarantineService != null)
-            {
-                try
-                {
-                    var items = await _quarantineService.GetQuarantinedItemsAsync();
-                    var now = DateTime.Now;
-                    int count = items?.Count(x => x.QuarantinedAt.Year == now.Year && x.QuarantinedAt.Month == now.Month) ?? 0;
-                    Application.Current?.Dispatcher?.InvokeAsync(() =>
-                    {
-                        ThreatsBlockedThisMonth = count;
-                    });
-                }
-                catch { }
-            }
-        }
-
-        private void RefreshDatabaseUpdateStatus()
-        {
-            try
-            {
-                var lastUpdate = AegisPC.Security.Scanning.ThreatSignatureDatabase.GetLastDatabaseUpdate();
-                var now = DateTime.Now;
-                string formatted;
-                if (lastUpdate.Date == now.Date)
-                {
-                    formatted = $"Bugün, {lastUpdate:HH:mm}";
-                }
-                else if (lastUpdate.Date == now.Date.AddDays(-1))
-                {
-                    formatted = $"Dün, {lastUpdate:HH:mm}";
-                }
-                else
-                {
-                    formatted = lastUpdate.ToString("dd.MM.yyyy HH:mm");
-                }
-
-                Application.Current?.Dispatcher?.InvokeAsync(() =>
-                {
-                    LastDatabaseUpdateFormatted = formatted;
-                });
-            }
-            catch
-            {
-                Application.Current?.Dispatcher?.InvokeAsync(() =>
-                {
-                    LastDatabaseUpdateFormatted = "Güncel";
-                });
-            }
-        }
-
-        [RelayCommand]
-        public async Task LoadDashboardDataAsync()
-        {
-            try
-            {
-                LoadDailyScanStats();
-                RefreshDatabaseUpdateStatus();
-                UpdateProtectionUptime();
-                await RefreshMonthlyQuarantineCountAsync();
-
-                if (_healthScoringEngine != null)
-                {
-                    var health = await _healthScoringEngine.CalculateHealthScoreAsync();
-                    Application.Current?.Dispatcher?.InvokeAsync(() =>
-                    {
-                        OverallHealthScore = health.OverallScore;
-                        SecurityScore = health.SecurityScore;
-                        PerformanceScore = health.PerformanceScore;
-                        StabilityScore = health.StabilityScore;
-                        StartupScore = health.StartupScore;
-                        BrowserSecurityScore = health.BrowserSecurityScore;
-                        PendingFindingsCount = health.ActiveFindingsCount;
-                        RecentCrashCount = health.RecentCrashCount;
-                    });
-                }
-
-                if (_startupAnalyzer != null)
-                {
-                    var startup = await _startupAnalyzer.GetStartupItemsAsync();
-                    Application.Current?.Dispatcher?.InvokeAsync(() =>
-                    {
-                        StartupAppCount = startup.Count;
-                    });
-                }
-
-                if (_processMonitor != null)
-                {
-                    var procs = await _processMonitor.GetAllProcessesAsync();
-                    Application.Current?.Dispatcher?.InvokeAsync(() =>
-                    {
-                        ActiveProcessCount = procs.Count;
-                    });
-                }
-            }
-            catch { }
-        }
-
-        // ═══════════════════════════════════════════════
-        // STARTUP SWEEP & THREAT DETAIL COMMANDS
-        // ═══════════════════════════════════════════════
-        [RelayCommand]
-        public async Task StartStartupSweepAsync()
-        {
-            if (_startupSweepService != null && !IsStartupSweepRunning)
-            {
-                TriggerToast("Başlangıç Güvenlik Taraması başlatıldı...", "Info");
-                await _startupSweepService.RunSweepAsync();
-            }
-        }
-
-        [RelayCommand]
-        public void ViewThreatDetail(AegisPC.Contracts.Services.StartupSweepFinding? finding)
-        {
-            if (finding != null)
-            {
-                SelectedThreatFinding = finding;
-                ShowThreatDetailModal = true;
-            }
-        }
-
-        [RelayCommand]
-        public void CloseThreatDetail()
-        {
-            ShowThreatDetailModal = false;
-        }
-
-        [RelayCommand]
-        public async Task RestoreThreatAsync(AegisPC.Contracts.Services.StartupSweepFinding? finding)
-        {
-            if (finding != null && _quarantineService != null)
-            {
-                var vaultItems = await _quarantineService.GetQuarantinedItemsAsync();
-                var item = vaultItems.FirstOrDefault(x => x.FileName.Equals(finding.FileName, StringComparison.OrdinalIgnoreCase));
-                if (item != null)
-                {
-                    bool restored = await _quarantineService.RestoreFileAsync(item.Id, null);
-                    if (restored)
-                    {
-                        finding.IsQuarantined = false;
-                        TriggerToast($"Dosya güvenle geri yüklendi: {finding.FileName}", "Success");
-                        ShowThreatDetailModal = false;
-                    }
-                    else
-                    {
-                        TriggerToast($"Geri yükleme başarısız oldu!", "Warning");
-                    }
-                }
-                else
-                {
-                    TriggerToast($"Karantina kaydı bulunamadı.", "Warning");
-                }
-            }
-        }
-
-        [RelayCommand]
-        public void ReviewThreats()
-        {
-            NavigateToTarget("quarantine");
-        }
-
-        [RelayCommand]
-        public void ToggleTheme()
-        {
-            AegisPC.App.Services.AppThemeManager.ToggleTheme();
-            ThemeButtonText = AegisPC.App.Services.AppThemeManager.IsDarkMode ? "☀️ Gündüz Modu" : "🌙 Gece Modu";
         }
     }
 }

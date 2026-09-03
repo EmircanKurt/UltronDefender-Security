@@ -1,4 +1,4 @@
-﻿<Page x:Class="AegisPC.App.Views.ApplicationsView"
+<Page x:Class="AegisPC.App.Views.ApplicationsView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -17,7 +17,7 @@
         <conv:NullToBoolConverter x:Key="NullToBool"/>
     </Page.Resources>
 
-    <Grid Margin="24">
+    <Grid Margin="28,20,28,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -26,7 +26,7 @@
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <TextBlock Grid.Row="0" Style="{StaticResource PageHeaderStyle}" Text="Yüklü Uygulamalar ve Programlar" />
+        <TextBlock Grid.Row="0" Style="{StaticResource PageHeadingStyle}" Text="Yüklü Uygulamalar ve Programlar" />
 
         <!-- Toolbar -->
         <Grid Grid.Row="1" Margin="0,0,0,16">
@@ -40,12 +40,11 @@
                         Icon="{ui:SymbolIcon Search24}" Margin="0,0,12,0"/>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <ui:Button Content="Yenile" Icon="{ui:SymbolIcon ArrowClockwise24}" 
-                           Command="{Binding LoadApplicationsCommand}" Margin="0,0,8,0"/>
-                <ui:Button Content="Uygulamayı Kaldır" Icon="{ui:SymbolIcon Delete24}" 
-                           Appearance="Danger"
-                           Command="{Binding UninstallApplicationCommand}"
-                           IsEnabled="{Binding SelectedApp, Converter={StaticResource NullToBool}}"/>
+                <Button Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
+                        Command="{Binding LoadApplicationsCommand}" Margin="0,0,8,0" Padding="14,6"/>
+                <Button Content="Uygulamayı Kaldır" Style="{StaticResource DangerButtonStyle}" 
+                        Command="{Binding UninstallApplicationCommand}"
+                        IsEnabled="{Binding SelectedApp, Converter={StaticResource NullToBool}}" Padding="14,6"/>
             </StackPanel>
         </Grid>
 
@@ -79,25 +78,25 @@
                         <StackPanel Visibility="{Binding SelectedApp, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="{Binding SelectedApp.DisplayName}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" TextWrapping="Wrap"/>
 
-                            <TextBlock Text="Yayımcı:" FontWeight="SemiBold" Foreground="Gray" Margin="0,8,0,2"/>
+                            <TextBlock Text="Yayımcı:" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,8,0,2"/>
                             <TextBlock Text="{Binding SelectedApp.Publisher, TargetNullValue='Bilinmiyor'}" TextWrapping="Wrap" Margin="0,0,0,8"/>
 
-                            <TextBlock Text="Sürüm:" FontWeight="SemiBold" Foreground="Gray" Margin="0,8,0,2"/>
+                            <TextBlock Text="Sürüm:" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,8,0,2"/>
                             <TextBlock Text="{Binding SelectedApp.Version, TargetNullValue='Bilinmiyor'}" Margin="0,0,0,8"/>
 
-                            <TextBlock Text="Kurulum Konumu:" FontWeight="SemiBold" Foreground="Gray" Margin="0,8,0,2"/>
+                            <TextBlock Text="Kurulum Konumu:" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,8,0,2"/>
                             <TextBlock Text="{Binding SelectedApp.InstallLocation, TargetNullValue='N/A'}" TextWrapping="Wrap" Margin="0,0,0,8" FontFamily="Consolas"/>
 
-                            <TextBlock Text="Kayıt Kaynağı:" FontWeight="SemiBold" Foreground="Gray" Margin="0,8,0,2"/>
+                            <TextBlock Text="Kayıt Kaynağı:" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,8,0,2"/>
                             <TextBlock Text="{Binding SelectedApp.RegistrySource}" TextWrapping="Wrap" Margin="0,0,0,8" FontSize="11" Foreground="{DynamicResource BrushTextMuted}"/>
 
-                            <ui:Button Content="Windows ile Kaldır" Margin="0,16,0,0" 
-                                       Appearance="Danger"
-                                       Command="{Binding UninstallApplicationCommand}" HorizontalAlignment="Stretch"/>
+                            <Button Content="Windows ile Kaldır" Margin="0,16,0,0" 
+                                   Style="{StaticResource DangerButtonStyle}"
+                                   Command="{Binding UninstallApplicationCommand}" HorizontalAlignment="Stretch" Padding="12,8"/>
                         </StackPanel>
 
                         <TextBlock Text="Detayları görüntülemek ve kaldırmak için soldaki listeden bir program seçin."
-                                   Foreground="Gray" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap"
                                    Visibility="{Binding SelectedApp, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"/>
                     </StackPanel>
                 </ScrollViewer>
@@ -105,7 +104,7 @@
         </Grid>
 
         <!-- Status Footer -->
-        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="Gray" Margin="0,8,0,0"/>
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,8,0,0"/>
     </Grid>
 </Page>
 

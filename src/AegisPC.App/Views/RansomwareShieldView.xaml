@@ -18,7 +18,7 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
     </Page.Resources>
 
-    <ScrollViewer x:Name="RootScrollViewer" Margin="28,20,28,28"
+    <ScrollViewer x:Name="RootScrollViewer" Margin="28,20,28,24"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
                   CanContentScroll="False"
@@ -201,7 +201,7 @@
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <ui:SymbolIcon Symbol="ShieldError20" Foreground="{DynamicResource BrushStatusDanger}" FontSize="24" Grid.Column="0" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                        <ui:SymbolIcon Symbol="ShieldDismiss24" Foreground="{DynamicResource BrushStatusDanger}" FontSize="24" Grid.Column="0" Margin="0,0,12,0" VerticalAlignment="Center"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding ProcessName}" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource BrushStatusDangerText}"/>
                                             <TextBlock Text="{Binding FilePath}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis"/>

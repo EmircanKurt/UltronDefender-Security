@@ -134,10 +134,8 @@ namespace AegisPC.App.Startup
             services.AddSingleton<DashboardViewModel>();
             services.AddSingleton<SecurityViewModel>();
             services.AddSingleton<ScanViewModel>();
-            services.AddSingleton<RealTimeMonitorViewModel>();
             services.AddSingleton<ProcessListViewModel>();
             services.AddSingleton<PerformanceViewModel>();
-            services.AddSingleton<NetworkViewModel>();
             services.AddSingleton<StartupManagerViewModel>();
             services.AddSingleton<ApplicationsViewModel>();
             services.AddSingleton<BrowserSecurityViewModel>();
@@ -156,10 +154,8 @@ namespace AegisPC.App.Startup
             services.AddTransient<DashboardView>();
             services.AddTransient<SecurityView>();
             services.AddTransient<ScanView>();
-            services.AddTransient<RealTimeMonitorView>();
             services.AddTransient<ProcessListView>();
             services.AddTransient<PerformanceView>();
-            services.AddTransient<NetworkView>();
             services.AddTransient<StartupManagerView>();
             services.AddTransient<ApplicationsView>();
             services.AddTransient<BrowserSecurityView>();
@@ -170,6 +166,7 @@ namespace AegisPC.App.Startup
             services.AddTransient<HistoryView>();
             services.AddTransient<SettingsView>();
             services.AddTransient<RansomwareShieldView>();
+            services.AddTransient<RansomwareSettingsWindow>();
             services.AddTransient<NetworkProtectionView>();
             services.AddTransient<ParentalControlsView>();
             services.AddTransient<IncidentCenterView>();

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using AegisPC.App.Startup;
 using AegisPC.App.ViewModels;
@@ -32,10 +32,8 @@ namespace AegisPC.Tests
                 typeof(DashboardViewModel),
                 typeof(SecurityViewModel),
                 typeof(ScanViewModel),
-                typeof(RealTimeMonitorViewModel),
                 typeof(ProcessListViewModel),
                 typeof(PerformanceViewModel),
-                typeof(NetworkViewModel),
                 typeof(StartupManagerViewModel),
                 typeof(ApplicationsViewModel),
                 typeof(BrowserSecurityViewModel),

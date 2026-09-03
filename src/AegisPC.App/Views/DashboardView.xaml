@@ -24,8 +24,8 @@
         </Style>
     </Page.Resources>
 
-    <ScrollViewer x:Name="RootScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
-        <StackPanel Margin="28,18,28,24">
+    <ScrollViewer x:Name="RootScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Focusable="False">
+        <StackPanel Margin="28,20,28,24" MaxWidth="1500" HorizontalAlignment="Left">
 
             <!-- ══════════════════════════════════════════════════════
                  1. DYNAMIC HERO STATUS BANNER (Güvendesiniz / Tehdit Durumu)
@@ -86,15 +86,9 @@
                                 Visibility="{Binding HasThreatsDetected, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"/>
 
                         <Button Style="{StaticResource SecondaryActionButtonStyle}" 
-                                Content="{Binding ThemeButtonText, FallbackValue='Gece Modu'}" 
-                                Command="{Binding ToggleThemeCommand}" 
-                                Padding="12,6" 
-                                Margin="0,0,0,6" 
-                                Width="160"/>
-                        <Button Style="{StaticResource SecondaryActionButtonStyle}" 
                                 Content="Korumayı Yönet" 
                                 Command="{Binding NavigateToTargetCommand}" 
-                                CommandParameter="security" 
+                                CommandParameter="settings" 
                                 Padding="12,6" 
                                 Width="160"/>
                     </StackPanel>
@@ -173,11 +167,21 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Large Colored Icon Box (6px Corner Radius) -->
-                        <Border Grid.Row="0" Width="42" Height="42" HorizontalAlignment="Left" CornerRadius="6"
-                                Background="{DynamicResource BrushStatusInfoBg}" BorderBrush="{DynamicResource BrushStatusInfoBorder}" BorderThickness="1" Margin="0,0,0,12">
-                            <ui:SymbolIcon Symbol="Shield24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <!-- Monochromatic Icon Box (6px Corner Radius) & Status Pill -->
+                        <Grid Grid.Row="0" Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="42" Height="42" CornerRadius="6"
+                                    Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+                                <ui:SymbolIcon Symbol="Shield24" Foreground="{DynamicResource BrushTextPrimary}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushStatusSafe}" Margin="0,0,5,0"/>
+                                <TextBlock Text="Hazır" Style="{StaticResource CaptionTextStyle}"/>
+                            </StackPanel>
+                        </Grid>
 
                         <!-- Title -->
                         <TextBlock Grid.Row="1" Text="Virüs Taraması" Style="{StaticResource SectionHeadingStyle}" FontSize="14.5" FontWeight="Bold" Margin="0,0,0,4"/>
@@ -192,7 +196,7 @@
                     </Grid>
                 </Border>
 
-                <!-- Tile 2: Real-Time Shield (Green Accent) -->
+                <!-- Tile 2: Real-Time Shield (Monochromatic with Status Indicator) -->
                 <Border Style="{StaticResource ModuleCardStyle}">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -202,11 +206,21 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Large Colored Icon Box (6px Corner Radius) -->
-                        <Border Grid.Row="0" Width="42" Height="42" HorizontalAlignment="Left" CornerRadius="6"
-                                Background="{DynamicResource BrushStatusSafeBg}" BorderBrush="{DynamicResource BrushStatusSafeBorder}" BorderThickness="1" Margin="0,0,0,12">
-                            <ui:SymbolIcon Symbol="Flash24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <!-- Monochromatic Icon Box & Status Pill -->
+                        <Grid Grid.Row="0" Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="42" Height="42" CornerRadius="6"
+                                    Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+                                <ui:SymbolIcon Symbol="Flash24" Foreground="{DynamicResource BrushTextPrimary}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushStatusSafe}" Margin="0,0,5,0"/>
+                                <TextBlock Text="Aktif" Style="{StaticResource CaptionTextStyle}"/>
+                            </StackPanel>
+                        </Grid>
 
                         <!-- Title -->
                         <TextBlock Grid.Row="1" Text="Gerçek Zamanlı Kalkan" Style="{StaticResource SectionHeadingStyle}" FontSize="14.5" FontWeight="Bold" Margin="0,0,0,4"/>
@@ -217,11 +231,11 @@
 
                         <!-- Action Button -->
                         <Button Grid.Row="3" Content="Durumu İncele" Style="{StaticResource SecondaryActionButtonStyle}" 
-                                Command="{Binding NavigateToTargetCommand}" CommandParameter="security" HorizontalAlignment="Stretch" Padding="0,7" FontSize="11.5"/>
+                                Command="{Binding NavigateToTargetCommand}" CommandParameter="settings" HorizontalAlignment="Stretch" Padding="0,7" FontSize="11.5"/>
                     </Grid>
                 </Border>
 
-                <!-- Tile 3: Ransomware Protection (Amber Accent) -->
+                <!-- Tile 3: Ransomware Protection (Live Interactive Toggle & Modal Link) -->
                 <Border Style="{StaticResource ModuleCardStyle}">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -231,26 +245,43 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Large Colored Icon Box (6px Corner Radius) -->
-                        <Border Grid.Row="0" Width="42" Height="42" HorizontalAlignment="Left" CornerRadius="6"
-                                Background="{DynamicResource BrushStatusWarningBg}" BorderBrush="{DynamicResource BrushStatusWarningBorder}" BorderThickness="1" Margin="0,0,0,12">
-                            <ui:SymbolIcon Symbol="LockClosed24" Foreground="{DynamicResource BrushStatusWarning}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <!-- Icon Box & Dynamic Status Pill -->
+                        <Grid Grid.Row="0" Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="42" Height="42" CornerRadius="6"
+                                    Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+                                <ui:SymbolIcon Symbol="LockClosed24" Foreground="{DynamicResource BrushTextPrimary}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <Ellipse Width="6" Height="6" Fill="{Binding RansomwareStatusColor}" Margin="0,0,5,0"/>
+                                <TextBlock Text="{Binding RansomwareStatusText}" Style="{StaticResource CaptionTextStyle}"/>
+                            </StackPanel>
+                        </Grid>
 
                         <!-- Title -->
                         <TextBlock Grid.Row="1" Text="Fidye Kalkanı" Style="{StaticResource SectionHeadingStyle}" FontSize="14.5" FontWeight="Bold" Margin="0,0,0,4"/>
 
                         <!-- Description -->
-                        <TextBlock Grid.Row="2" Text="Belgelerim ve resimlerinizi fidye yazılımlarının şifreleme girişimine karşı kilitler." 
+                        <TextBlock Grid.Row="2" Text="Belgelerinizi ve resimlerinizi şifreleme girişimlerine karşı korur." 
                                    Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11.5" Margin="0,0,0,12"/>
 
-                        <!-- Action Button -->
-                        <Button Grid.Row="3" Content="Klasör Koruması" Style="{StaticResource SecondaryActionButtonStyle}" 
-                                Command="{Binding NavigateToTargetCommand}" CommandParameter="ransomware" HorizontalAlignment="Stretch" Padding="0,7" FontSize="11.5"/>
+                        <!-- Action Controls: Real ToggleSwitch + Modal Settings Button -->
+                        <Grid Grid.Row="3">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <ui:ToggleSwitch Grid.Column="0" IsChecked="{Binding IsRansomwareEnabled, Mode=TwoWay}" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="Ayarları Yönet" Style="{StaticResource SecondaryActionButtonStyle}" 
+                                    Command="{Binding OpenRansomwareSettingsCommand}" HorizontalAlignment="Right" Padding="10,6" FontSize="11.5"/>
+                        </Grid>
                     </Grid>
                 </Border>
 
-                <!-- Tile 4: Quarantine Vault (Purple Accent) -->
+                <!-- Tile 4: Quarantine Vault (Monochromatic with Status Indicator) -->
                 <Border Style="{StaticResource ModuleCardStyle}" Margin="0">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -260,21 +291,31 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Large Colored Icon Box (6px Corner Radius) -->
-                        <Border Grid.Row="0" Width="42" Height="42" HorizontalAlignment="Left" CornerRadius="6"
-                                Background="{DynamicResource BrushStatusPurpleBg}" BorderBrush="{DynamicResource BrushStatusPurpleBorder}" BorderThickness="1" Margin="0,0,0,12">
-                            <ui:SymbolIcon Symbol="Archive24" Foreground="{DynamicResource BrushStatusPurple}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <!-- Monochromatic Icon Box & Status Pill -->
+                        <Grid Grid.Row="0" Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="42" Height="42" CornerRadius="6"
+                                    Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
+                                <ui:SymbolIcon Symbol="Archive24" Foreground="{DynamicResource BrushTextPrimary}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushStatusSafe}" Margin="0,0,5,0"/>
+                                <TextBlock Text="Kilitli" Style="{StaticResource CaptionTextStyle}"/>
+                            </StackPanel>
+                        </Grid>
 
                         <!-- Title -->
-                        <TextBlock Grid.Row="1" Text="Karantina Kasası" Style="{StaticResource SectionHeadingStyle}" FontSize="14.5" FontWeight="Bold" Margin="0,0,0,4"/>
+                        <TextBlock Grid.Row="1" Text="Karantina &amp; Olaylar" Style="{StaticResource SectionHeadingStyle}" FontSize="14.5" FontWeight="Bold" Margin="0,0,0,4"/>
 
                         <!-- Description -->
-                        <TextBlock Grid.Row="2" Text="Yalıtılmış ve AES-256 ile şifrelenmiş şüpheli/zararlı dosyaları güvenle saklar." 
+                        <TextBlock Grid.Row="2" Text="Karantinadaki yalıtılmış dosyaları ve EDR güvenlik olay geçmişini yönetin." 
                                    Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11.5" Margin="0,0,0,12"/>
 
                         <!-- Action Button -->
-                        <Button Grid.Row="3" Content="Kasayı Aç" Style="{StaticResource SecondaryActionButtonStyle}" 
+                        <Button Grid.Row="3" Content="Karantina &amp; Olayları Aç" Style="{StaticResource SecondaryActionButtonStyle}" 
                                 Command="{Binding NavigateToTargetCommand}" CommandParameter="quarantine" HorizontalAlignment="Stretch" Padding="0,7" FontSize="11.5"/>
                     </Grid>
                 </Border>
