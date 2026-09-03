@@ -1,15 +1,15 @@
-# 🛡️ Ultron Defender Total Security (v3.2.0-Alpha)
+# 🛡️ Ultron Defender Total Security (v3.2.0)
 
-> [!WARNING]
-> **⚠️ ÖNEMLİ BİLDİRİM / ALFA SÜRÜMÜ (ALPHA PREVIEW):**
-> Bu yazılım şu an **aktif geliştirme aşamasında bir ALFA (v3.2.0-Alpha)** sürümüdür. Güvenlik araştırmacıları, geliştiriciler ve açık kaynak topluluğunun test etmesi, geri bildirimde bulunması ve katkı sağlaması amacıyla paylaşılmıştır. Henüz ticari antivirüslerin yerini alacak nihai sürüm değildir; deneysel ve eğitim amaçlıdır.
+> [!NOTE]
+> **Açık Kaynak Uç Nokta Güvenlik ve Antivirüs Savunma Platformu**  
+> Güvenlik araştırmacıları, geliştiriciler ve bireysel kullanıcılar için Windows Internals, heuristik tarama ve proaktif siber savunma kalkanı.
 
-[![Status](https://img.shields.io/badge/status-ALPHA%20v3.2.0-orange.svg)](#)
-[![Build & Test Status](https://img.shields.io/badge/tests-230%20passed%20(100%25)-brightgreen.svg)](#testing)
+[![Status](https://img.shields.io/badge/status-v3.2.0%20Release%20Ready-brightgreen.svg)](#)
+[![Build & Test Status](https://img.shields.io/badge/tests-246%20passed%20(100%25)-brightgreen.svg)](#testing)
 [![Target Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-blue.svg)](#supported-windows-versions)
 [![Framework](https://img.shields.io/badge/.NET-8.0%20WPF-purple.svg)](#build-from-source)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/Setup-v3.2.0%20Alpha%20Ready-success.svg)](UltronDefender_Setup_v3.2.exe)
+[![Setup](https://img.shields.io/badge/Setup-UltronDefenderSetup.exe-success.svg)](UltronDefenderSetup.exe)
 
 **Ultron Defender Total Security** is a high-performance, open-source Windows endpoint protection and advanced malware defense platform written in **C# (.NET 8), WPF XAML, Native Win32 APIs, SQLite, and 13 modular detection plugins**.
 
@@ -51,26 +51,30 @@ Bu tecrübeyi fırsata dönüştürerek Windows Internals, Minifilter mimarisi, 
 
 ## 🚀 Öne Çıkan Özellikler (Key Highlights)
 
-* 🎯 **Özel Animasyonlu Tarayıcı Penceresi:** Sol tarafta lazer taramalı cihaz animasyonu, ortada 5 aşamalı yeşil onay listesi ve canlı sayaçlar.
+* 🌙 **Kurumsal Koyu & Açık Tema Motoru:** Derin obsidyen siyahı (`#0F141C`) ve antrasit palet; Ayarlar sayfasından *"Açık Tema"*, *"Koyu Tema"* veya *"Sistemi Takip Et"* seçenekleriyle tek tıkla anlık dinamik tema değişimi.
+* 🛡️ **Gelişmiş Fidye Kalkanı (Ransomware Shield):** Korumalı klasör kapıları (Protected Folders), canlı bal küpü (canary trap) dosya yemleri, MFT entropi patlaması tespiti ve şifreleme yapan zararlı süreçleri milisaniyeler içinde zorla sonlandırma (`Process.Kill`).
+* 📦 **Birleşik Karantina & Olay Merkezi:** Karantina Kasası ile EDR Olay Geçmişini tek bir arayüzde sekmeli olarak sunar; DPAPI AES-256 ile şifrelenmiş tehditleri güvenle inceler, siler veya tek tıkla geri yükler.
+* ⚡ **Bağımsız Başlangıç Yöneticisi:** Süreç Yöneticisi üzerinden bağımsız pencere olarak çalışan başlangıç programları denetimi ve autorun optimizasyonu.
+* 🖱️ **Pürüzsüz Fare Kaydırma (Smooth Scrolling):** Tüm sayfalarda, tablolarda, detay panellerinde ve salt okunur hash/yol kutularında donmayan akıcı fare tekerleği desteği (`BubbleScrollHelper`).
+* 🎯 **Özel Animasyonlu Tarayıcı Penceresi:** Sol tarafta lazer taramalı cihaz animasyonu, ortada aşamalı yeşil onay listesi ve canlı sayaçlar.
 * 🖱️ **Windows 11 Sağ Tık Menüsü:** Herhangi bir dosyaya veya klasöre sağ tıklayıp *"🛡️ Ultron Defender ile Tara"* seçeneğiyle anında analiz.
-* 🔕 **Sessiz ESET Tarzı Kayan Bildirimler:** Rahatsız edici sistem sesleri olmadan, ekranın sağ altında açılan modern kırmızı uyarı kartı.
-* 🎮 **Akıllı Oyun & Crack Koruması:** `BeamNG.drive`, `FitGirl`, `DODI` vb. oyun motoru varlıklarını (`.lua`, `.json`, `.so`) güvenle tanır; sadece gerçek trojan/fidye yazılımlarını karantinaya alır.
-* 🔒 **DPAPI AES-256 Karantina Kasası:** Bulunan zararlıları şifreleyerek tamamen zararsız hale getirir ve güvenli kasaya kilitler.
-* 📦 **Tek Tıkla Kurulum & Kaldırma:** `UltronDefender_Setup_v3.2.exe` kurulum sihirbazı ve veda mesajlı `Uninstall.exe` aracı.
+* 🔕 **Sessiz Kayan Bildirimler:** Rahatsız edici sistem sesleri olmadan, ekranın sağ altında açılan modern kırmızı uyarı kartı.
+* 🎮 **Akıllı Oyun & Yazılım Koruması:** `BeamNG.drive`, oyun motoru varlıkları (`.lua`, `.json`, `.so`) ve geliştirici dosyalarını güvenle tanır; sadece gerçek trojan/fidye yazılımlarını karantinaya alır.
+* 📦 **Tek Tıkla Kurulum & Kaldırma:** `UltronDefenderSetup.exe` kurulum sihirbazı ve veda mesajlı `Uninstall.exe` aracı.
 
 ---
 
 ## 🧪 Canlı Test ve Doğrulama (Live Test Suite)
 
-Tüm modüller 230 birim testi ve gerçek disk simülasyonu ile test edilmiştir:
+Tüm modüller 246 otomatik birim ve entegrasyon testi ile test edilmiştir:
 
 ```bash
 dotnet test tests/AegisPC.Tests/AegisPC.Tests.csproj -c Release
 ```
 
-```
+```text
 Toplam 1 test dosyası belirtilen desenle eşleşti.
-Başarılı!  - Başarısız: 0, Başarılı: 230, Atlanan: 0, Toplam: 230 (Süre: 26 s)
+Başarılı!  - Başarısız: 0, Başarılı: 246, Atlanan: 0, Toplam: 246
 ```
 
 | Senaryo | Dosya Türü | Tespit Türü | Sonuç |
@@ -92,16 +96,20 @@ Başarılı!  - Başarısız: 0, Başarılı: 230, Atlanan: 0, Toplam: 230 (Sür
 
 ```powershell
 # 1. Depoyu klonlayın
-git clone https://github.com/KULLANICI_ADINIZ/UltronDefender.git
-cd UltronDefender
+git clone https://github.com/EmircanKurt/UltronDefender-Security.git
+cd UltronDefender-Security
 
-# 2. Çözümü derleyin
-dotnet build AegisPC.sln -c Release
+# 2. Tek komutla derleyin, test edin ve kurulum paketini üretin:
+powershell -ExecutionPolicy Bypass -File .\build_and_deploy.ps1
+```
 
-# 3. Bağımsız sürümü yayınlayın
+Manuel adım adım derlemek isterseniz:
+
+```powershell
+# Bağımsız sürümü yayınlayın
 dotnet publish src/AegisPC.App/AegisPC.App.csproj -c Release -r win-x64 --self-contained true -o AegisPC_App
 
-# 4. Kurulum dosyasını oluşturun
+# Kurulum dosyasını derleyin
 & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 ```
 
