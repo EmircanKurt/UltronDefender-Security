@@ -68,7 +68,11 @@ namespace AegisPC.Tests
                 // 4. Test dosyasını masaüstünden temizle
                 if (File.Exists(testFilePath))
                 {
-                    File.Delete(testFilePath);
+                    try
+                    {
+                        File.Delete(testFilePath);
+                    }
+                    catch { }
                 }
             }
         }

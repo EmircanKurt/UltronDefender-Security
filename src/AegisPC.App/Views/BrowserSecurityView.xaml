@@ -31,7 +31,7 @@
         <!-- 2. Profile Selector / Toolbar -->
         <Grid Grid.Row="1" Margin="0,0,0,16" Panel.ZIndex="100">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="280"/>
+                <ColumnDefinition Width="360"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
@@ -39,10 +39,18 @@
             <ComboBox Grid.Column="0" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" Height="36" Style="{DynamicResource DefaultComboBoxStyle}">
                 <ComboBox.ItemTemplate>
                     <DataTemplate>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{Binding BrowserType}" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,8,0"/>
-                            <TextBlock Text="{Binding ProfileName}" Style="{StaticResource CaptionTextStyle}"/>
-                        </StackPanel>
+                        <Grid Margin="0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding BrowserType}" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="{Binding ProfileName, StringFormat='({0})'}" Style="{StaticResource CaptionTextStyle}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <Border Grid.Column="2" Style="{DynamicResource BadgeNeutralStyle}" Padding="6,2" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Extensions.Count, StringFormat='{}{0} Eklenti'}" Style="{StaticResource BadgeTextStyle}" FontSize="10"/>
+                            </Border>
+                        </Grid>
                     </DataTemplate>
                 </ComboBox.ItemTemplate>
             </ComboBox>
@@ -60,61 +68,71 @@
 
             <!-- Table (Strict DataTableStyle: Pure Sans-Serif) -->
             <Border Grid.Column="0" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Margin="0,0,16,0">
-                <ui:DataGrid ItemsSource="{Binding Extensions}" 
-                             SelectedItem="{Binding SelectedExtension}"
-                             AutoGenerateColumns="False" 
-                             IsReadOnly="True"
-                             SelectionMode="Single"
-                             BorderThickness="0"
-                             Background="Transparent"
-                             RowHeaderWidth="0"
-                             ScrollViewer.CanContentScroll="False"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             GridLinesVisibility="Horizontal"
-                             HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
-                    <ui:DataGrid.Columns>
-                        <DataGridTemplateColumn Header="Risk Seviyesi" Width="110">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding RiskLevel}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{Binding RiskLevel, Converter={StaticResource RiskColorConverter}}" Padding="6,0" VerticalAlignment="Center"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
+                <Grid>
+                    <ui:DataGrid ItemsSource="{Binding Extensions}" 
+                                 SelectedItem="{Binding SelectedExtension}"
+                                 AutoGenerateColumns="False" 
+                                 IsReadOnly="True"
+                                 SelectionMode="Single"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 RowHeaderWidth="0"
+                                 ScrollViewer.CanContentScroll="False"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 GridLinesVisibility="Horizontal"
+                                 HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
+                        <ui:DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Risk Seviyesi" Width="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding RiskLevel}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{Binding RiskLevel, Converter={StaticResource RiskColorConverter}}" Padding="6,0" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
 
-                        <DataGridTemplateColumn Header="Eklenti Adı" Width="180">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Padding="6,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Eklenti Adı" Width="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Padding="6,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
 
-                        <DataGridTemplateColumn Header="Sürüm" Width="80">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Version}" Style="{StaticResource DataTableStyle}" Padding="6,0" VerticalAlignment="Center"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Sürüm" Width="80">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Version}" Style="{StaticResource DataTableStyle}" Padding="6,0" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
 
-                        <DataGridTemplateColumn Header="Harici (Sideload)" Width="135">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding IsSideloaded, Converter={StaticResource BoolToStatus}, ConverterParameter=yesno}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" Padding="6,0" VerticalAlignment="Center"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Harici (Sideload)" Width="135">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding IsSideloaded, Converter={StaticResource BoolToStatus}, ConverterParameter=yesno}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" Padding="6,0" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
 
-                        <DataGridTemplateColumn Header="Eklenti ID" Width="*" MinWidth="180">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Id}" Style="{StaticResource DataMonospaceStyle}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding Id}" Padding="6,0" VerticalAlignment="Center"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-                    </ui:DataGrid.Columns>
-                </ui:DataGrid>
+                            <DataGridTemplateColumn Header="Eklenti ID" Width="*" MinWidth="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Id}" Style="{StaticResource DataMonospaceStyle}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding Id}" Padding="6,0" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </ui:DataGrid.Columns>
+                    </ui:DataGrid>
+
+                    <!-- Empty state placeholder when selected profile has 0 extensions -->
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="24"
+                                Visibility="{Binding HasNoExtensions, Converter={StaticResource BoolToVis}}">
+                        <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="36" Foreground="{DynamicResource BrushStatusSafe}" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                        <TextBlock Text="Bu tarayıcı profilinde yüklü eklenti bulunmuyor." Style="{StaticResource SectionHeadingStyle}" FontSize="14" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Eklentisi olan diğer tarayıcıları yukarıdaki açılır listeden inceleyebilirsiniz." Style="{StaticResource CaptionTextStyle}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Grid>
             </Border>
 
             <!-- Detail Panel -->

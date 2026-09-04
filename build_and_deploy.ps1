@@ -35,6 +35,9 @@ Write-Host "`n[2/4] Release ikilileri AegisPC_App klasorune yayimlaniyor..." -Fo
 $appDir = Join-Path $repoRoot "AegisPC_App"
 $helpersDir = Join-Path $appDir "Helpers"
 
+# Calisan uygulama varsa dosya kilitlerini onlemek icin nazikce durdur
+Stop-Process -Name "UltronDefender" -Force -ErrorAction SilentlyContinue
+
 & dotnet publish "src\AegisPC.App\AegisPC.App.csproj" -c Release -r win-x64 --self-contained true -o $appDir
 & dotnet publish "tools\AegisPC.ElevatedHelper\AegisPC.ElevatedHelper.csproj" -c Release -r win-x64 --self-contained true -o $helpersDir
 & dotnet publish "tools\AegisPC.Uninstaller\AegisPC.Uninstaller.csproj" -c Release -r win-x64 --self-contained true -o $appDir

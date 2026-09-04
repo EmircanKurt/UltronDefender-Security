@@ -49,9 +49,16 @@ namespace AegisPC.BrowserSecurity.Browser
 
                 // 5. Vivaldi
                 var vivaldiUserData = Path.Combine(localAppData, "Vivaldi", "User Data");
-                profiles.AddRange(ChromiumExtensionScanner.ScanChromiumProfiles(vivaldiUserData, BrowserType.Edge));
+                profiles.AddRange(ChromiumExtensionScanner.ScanChromiumProfiles(vivaldiUserData, BrowserType.Vivaldi));
 
-                // 6. Mozilla Firefox
+                // 6. Yandex Browser
+                var yandexUserData = Path.Combine(localAppData, "Yandex", "YandexBrowser", "User Data");
+                if (Directory.Exists(yandexUserData))
+                {
+                    profiles.AddRange(ChromiumExtensionScanner.ScanChromiumProfiles(yandexUserData, BrowserType.Yandex));
+                }
+
+                // 7. Mozilla Firefox
                 profiles.AddRange(FirefoxSecurityScanner.ScanFirefoxProfiles());
 
                 // Deduplicate and ensure at least an informative default entry if no browser profiles found
