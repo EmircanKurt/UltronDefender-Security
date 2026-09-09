@@ -83,7 +83,7 @@ namespace AegisPC.Security.Scanning
             ScanQueueCoordinator.ActiveResourceSummary = _activeProfile.SummaryText;
 
             _currentAllocatedSlots = _activeProfile.Concurrency;
-            _slotGate = new SemaphoreSlim(_currentAllocatedSlots, Math.Max(256, _logicalCores * 4));
+            _slotGate = new SemaphoreSlim(_currentAllocatedSlots, Math.Max(512, _logicalCores * 8));
 
             // Periodic 3-second evaluation loop for Auto mode adaptation
             _telemetryTimer = new Timer(_ =>

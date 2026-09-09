@@ -140,26 +140,21 @@ namespace AegisPC.Security.Scanning
         }
 
         /// <summary>
-        /// Hash'siz geçiş için güvenilir konum: Windows dizini + Program Files (yazma korumalı konumlar).
+        /// Hash'siz geçiş için güvenilir konum: Windows dizini, Program Files ve meşru yazılım kurulum dizinleri.
         /// </summary>
         private static bool IsTrustedLocation(string path)
         {
-            if (PathHelper.IsSystemPath(path)) return true;
-            var pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-            var pf86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-            return (!string.IsNullOrEmpty(pf) && path.StartsWith(pf, StringComparison.OrdinalIgnoreCase))
-                || (!string.IsNullOrEmpty(pf86) && path.StartsWith(pf86, StringComparison.OrdinalIgnoreCase));
+            return AegisPC.Security.Safety.TrustedSoftwarePolicy.IsLegitimateInstallLocation(path);
         }
 
         /// <summary>
-        /// Zincir doğrulaması geçmiş bir sertifikadaki yayıncı, güvenilir OS yayıncısı mı?
-        /// Yayın monkey adına bakılır; kural zincir güvenilirliği geçildikten SONRA uygulanır.
+        /// Zincir doğrulaması geçmiş bir sertifikadaki yayıncı, güvenilir OS veya ticari yayıncı mı?
         /// </summary>
-        private static bool IsTrustedOsPublisher(string? publisher)
+        private static bool IsTrustedPublisher(string? publisher)
         {
             if (string.IsNullOrEmpty(publisher)) return false;
-            return publisher.Contains("Microsoft", StringComparison.OrdinalIgnoreCase)
-                || publisher.Contains("Windows", StringComparison.OrdinalIgnoreCase);
+            return AegisPC.Security.Safety.TrustedSoftwarePolicy.IsTrustedOsPublisher(publisher)
+                || AegisPC.Security.Safety.TrustedSoftwarePolicy.IsTrustedCommercialPublisher(publisher);
         }
 
         public async Task<(string sha256, bool isAllowlisted, bool isMicrosoftBypassed)> EvaluateHashAndAllowlistAsync(string path, CancellationToken ct)
@@ -189,6 +184,11 @@ namespace AegisPC.Security.Scanning
                         }
                         if (!string.IsNullOrEmpty(cached.Sha256))
                         {
+                            if (await _allowlistService.IsAllowlistedAsync(cached.Sha256, ct))
+                            {
+                                SetCacheInternal(path, cached.FileSize, cached.LastWriteTimeUtc, null, cached.Sha256, true, false);
+                                return (cached.Sha256, true, false);
+                            }
                             return (cached.Sha256, false, false);
                         }
                     }
@@ -197,7 +197,7 @@ namespace AegisPC.Security.Scanning
             catch { }
 
             // 2. Fast-Path: Güvenilir sistem konumlarındaki (Windows/Program Files) dijital imzalı dosyaları
-            // diskten hash hesaplamadan ÖNCE kontrol et. Geçerli Microsoft/Windows imzası varsa hash'lemeyi atla.
+            // diskten hash hesaplamadan ÖNCE kontrol et. Geçerli Microsoft veya bilinen ticari yayımcı imzası varsa hash'lemeyi atla.
             try
             {
                 if (fileInfo != null && fileInfo.Exists && IsTrustedLocation(path))
@@ -221,7 +221,7 @@ namespace AegisPC.Security.Scanning
                     }
 
                     var sig = await _signatureVerifier.VerifySignatureAsync(path, ct);
-                    bool trusted = sig.IsSigned && sig.IsValid && IsTrustedOsPublisher(sig.Publisher);
+                    bool trusted = sig.IsSigned && sig.IsValid && IsTrustedPublisher(sig.Publisher);
 
                     if (_signatureCache.Count >= _maxSignatureCacheEntries && _signatureCacheQueue.TryDequeue(out var oldSigKey))
                     {

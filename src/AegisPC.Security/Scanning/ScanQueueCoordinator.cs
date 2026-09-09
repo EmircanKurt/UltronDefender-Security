@@ -157,9 +157,13 @@ namespace AegisPC.Security.Scanning
                         {
                             int curScn = Interlocked.Increment(ref scannedFiles);
                             int curSkp = Interlocked.Increment(ref skippedFiles);
-                            int curFail = Volatile.Read(ref failedFiles);
-                            int curTout = Volatile.Read(ref timedOutFiles);
-                            reportProgressWithCounters(filePath, curTot, curScn, curSkp, curFail, curTout);
+                            // Raporlama kilidi baskısını azaltmak için periyodik güncelle
+                            if (curTot % 20 == 0)
+                            {
+                                int curFail = Volatile.Read(ref failedFiles);
+                                int curTout = Volatile.Read(ref timedOutFiles);
+                                reportProgressWithCounters(filePath, curTot, curScn, curSkp, curFail, curTout);
+                            }
                             return;
                         }
 
@@ -196,8 +200,8 @@ namespace AegisPC.Security.Scanning
                 }
             }, cancellationToken);
 
-            // Tüketici İşçileri: Dinamik Concurrency Slot Gate ile yönetilir (Asgari 16 veya 2x çekirdek)
-            int maxParallelWorkers = Math.Max(16, Environment.ProcessorCount * 2);
+            // Tüketici İşçileri: Dinamik Concurrency Slot Gate ile yönetilir (Asgari 32 veya 4x çekirdek)
+            int maxParallelWorkers = Math.Max(32, Math.Max(Environment.ProcessorCount * 4, activeProfile.Concurrency * 2));
             var workerTasks = new List<Task>();
 
             for (int i = 0; i < maxParallelWorkers; i++)
@@ -256,8 +260,11 @@ namespace AegisPC.Security.Scanning
                                 int currentScanned = Interlocked.Increment(ref scannedFiles);
                                 fileProcessCounter++;
 
-                                // Kooperatif gecikme ve bellek temizliği
-                                await resourceManager.ApplyPacingAsync(fileProcessCounter, cancellationToken);
+                                // Kooperatif gecikme ve bellek temizliği (Yalnızca profil pacing gerektiriyorsa)
+                                if (activeProfile.DelayBetweenFilesMs > 0 || (activeProfile.YieldFrequency > 0 && (fileProcessCounter % activeProfile.YieldFrequency == 0)))
+                                {
+                                    await resourceManager.ApplyPacingAsync(fileProcessCounter, cancellationToken);
+                                }
 
                                 int curTot = Volatile.Read(ref totalFiles);
                                 int curSkp = Volatile.Read(ref skippedFiles);

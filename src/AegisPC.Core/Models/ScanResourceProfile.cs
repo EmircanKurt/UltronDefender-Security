@@ -66,23 +66,24 @@ namespace AegisPC.Core.Models
             {
                 case ScanResourceMode.VeryLow:
                     concurrency = 1;
-                    delayMs = 15;
-                    yieldFreq = 5;
+                    delayMs = 10;
+                    yieldFreq = 10;
                     memoryBudgetMb = Math.Min(128, Math.Max(64, ramMb / 16));
                     queueCapacity = 2048;
                     break;
 
                 case ScanResourceMode.Low:
-                    // 🌱 Sakin: ~1 GB RAM, düşük CPU
+                    // 🌱 Sakin: Düşük CPU / Pil tasarrufu
                     concurrency = Math.Max(2, Math.Min(4, cores / 2));
-                    delayMs = 5;
-                    yieldFreq = 25;
+                    delayMs = 2;
+                    yieldFreq = 50;
                     memoryBudgetMb = Math.Min(1024, Math.Max(256, ramMb / 4));
-                    queueCapacity = 4096;
+                    queueCapacity = 8192;
                     break;
 
                 case ScanResourceMode.High:
-                    concurrency = Math.Max(4, cores * 2);
+                    // 🚀 Yüksek: Modern çok çekirdekli sistemlerde agresif ama dengeli paralellik
+                    concurrency = Math.Max(8, cores * 3);
                     delayMs = 0;
                     yieldFreq = 0;
                     memoryBudgetMb = Math.Max(512, (long)(ramMb / 2.0));
@@ -90,8 +91,8 @@ namespace AegisPC.Core.Models
                     break;
 
                 case ScanResourceMode.Maximum:
-                    // 🚀 Tam Güç: Tüm çekirdekler ve yüksek RAM bütçesi
-                    concurrency = Math.Max(Environment.ProcessorCount, cores * 2);
+                    // 🚀 Tam Güç: NVMe SSD ve tüm çekirdek kapasitesini tam doyuran maksimum verim
+                    concurrency = Math.Max(16, cores * 4);
                     delayMs = 0;
                     yieldFreq = 0;
                     memoryBudgetMb = Math.Max(1024, (long)(ramMb * 0.75));
@@ -100,8 +101,8 @@ namespace AegisPC.Core.Models
 
                 case ScanResourceMode.Balanced:
                 default:
-                    // ⚖️ Dengeli: RAM'in 1/3'ü, dengeli CPU
-                    concurrency = Math.Max(2, cores);
+                    // ⚖️ Dengeli: Yeterli I/O doyumu (2x çekirdek), sıfır yapay gecikme
+                    concurrency = Math.Max(4, cores * 2);
                     delayMs = 0;
                     yieldFreq = 0;
                     memoryBudgetMb = Math.Max(256, (long)(ramMb / 3.0));
@@ -113,7 +114,7 @@ namespace AegisPC.Core.Models
             bool hddCapped = false;
             if (isHdd)
             {
-                // HDD'de disk I/O zaten darboğaz, ama CPU işlemleri paralel yapılabilir
+                // HDD'de disk I/O kafa atlamalarını önle
                 concurrency = Math.Max(2, Math.Min(concurrency, Math.Max(cores / 2, 2)));
                 delayMs = Math.Max(delayMs, 2);
                 hddCapped = true;

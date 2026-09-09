@@ -63,14 +63,30 @@ namespace AegisPC.Security.Scanning
 
             bool isVerifiedGameBinary = GameCrackClassifier.IsGameCrackOrEmulator(result.FilePath);
 
+            bool isKnownPup = IsKnownPupHash(result.SHA256);
+
+            // TR: Aşama 0: Merkezi Güven Politikası (TrustedSoftwarePolicy) değerlendirmesi
+            var trust = AegisPC.Security.Safety.TrustedSoftwarePolicy.EvaluateTrust(
+                result.FilePath,
+                result.SignaturePublisher,
+                result.IsSigned,
+                result.SignatureValid,
+                result.IsKnownLocation);
+
+            if (trust.IsFullyTrusted && !isKnownPup)
+            {
+                reasons.Add($"-100 {trust.Reason}");
+                return (0, RiskLevel.Clean, reasons);
+            }
+
             // TR: Aşama 1: Dijital imza geçerliliği ve güvenilir sistem dizini (System32/Program Files) kontrolleri.
             // EN: Stage 1: Verified digital signature and trusted system directories (System32/Program Files).
             // 1. Digital Signature & Known Location Safe Modifiers
             if (result.IsSigned && result.SignatureValid)
             {
-                // Verified trusted digital signature reduces risk significantly
-                score -= 40;
-                reasons.Add($"-40 Doğrulanmış dijital imza: '{result.SignaturePublisher ?? "Güvenilir Yayımcı"}'");
+                int discount = trust.TrustScoreDiscount < 0 ? trust.TrustScoreDiscount : -40;
+                score += discount;
+                reasons.Add($"{discount} {trust.Reason}");
             }
 
             if (result.IsKnownLocation)
@@ -80,19 +96,15 @@ namespace AegisPC.Security.Scanning
                 reasons.Add("-30 Güvenilir Windows sistem konumu (System32 / Program Files)");
             }
 
-            bool isKnownPup = IsKnownPupHash(result.SHA256);
-
             if (isVerifiedGameBinary && !isKnownPup)
             {
                 // Verified PE export proxy or known emulator hash documentation note (No arbitrary score discount to prevent bypass)
                 reasons.Add("Oyun/Emülatör PE Yapı Doğrulaması (Gamer Protection)");
             }
 
-            // TR: Aşama 2: Kural 7.1 uyumlu PUP/Hacktool tespiti; dosya adına bakılmaksızın sadece SHA-256 hash
-            //     ve imzasız ikililerde kullanıcı çalışma alanı anomalileriyle belirlenir.
-            // EN: Stage 2: Rule 7.1-compliant PUP/Hacktool detection; determined purely via SHA-256 hash lookup
-            //     and unsigned binary workspace anomalies without inspecting file names.
-            // 2. PUP / Hacktool Detection via Digital Trust, PE Behavior & Known Hashes (Rule 7.1 Compliant - No Magic String)
+            // TR: Aşama 2: Kural 7.1 uyumlu PUP/Hacktool tespiti; bilinen hash eşleşmesi veya açık hacktool/packer anomalisi
+            // EN: Stage 2: Rule 7.1-calibrated PUP/Hacktool detection via known hashes or verified hacktool/packer anomalies
+            // 2. PUP / Hacktool Detection via Digital Trust, PE Behavior & Known Hashes
             if (isKnownPup)
             {
                 score += 50;
@@ -103,21 +115,29 @@ namespace AegisPC.Security.Scanning
                 bool isPup = false;
                 string pupReason = string.Empty;
 
-                // Kriter 3: Bilinen Hash Eşleşmesi (Statik & Dinamik PUP Kütüphanesi) - HİÇBİR DURUMDA ATLANMAZ
-                // Kriter 1 & 2: Dijital İmza Durumu (İmzasız) + Belirli Davranış Kalıpları
                 if (!isPup && result.IsExecutable && !isVerifiedGameBinary)
                 {
                     bool isUserWorkArea = PathHelper.IsUserDownloadsPath(result.FilePath) ||
+                                          result.FilePath.Contains(@"\Downloads\", StringComparison.OrdinalIgnoreCase) ||
                                           result.FilePath.Contains(@"\Documents\", StringComparison.OrdinalIgnoreCase) ||
                                           result.FilePath.Contains(@"\Belgeler\", StringComparison.OrdinalIgnoreCase) ||
                                           result.FilePath.Contains(@"\Desktop\", StringComparison.OrdinalIgnoreCase) ||
                                           result.FilePath.Contains(@"\Masaüstü\", StringComparison.OrdinalIgnoreCase);
 
-                    // İmzasız, kullanıcı indirme/çalışma alanında ve şüpheli PE entropisi/packer anomalisi taşıyan ikili
-                    if (isUserWorkArea && (result.Entropy >= 6.0 || result.IsPacked))
+                    bool hasHacktoolIndicator = !string.IsNullOrEmpty(result.FileName) && (
+                        result.FileName.Contains("keygen", StringComparison.OrdinalIgnoreCase) ||
+                        result.FileName.Contains("crack", StringComparison.OrdinalIgnoreCase) ||
+                        result.FileName.Contains("kmsauto", StringComparison.OrdinalIgnoreCase) ||
+                        result.FileName.Contains("miner", StringComparison.OrdinalIgnoreCase) ||
+                        result.FileName.Contains("patcher", StringComparison.OrdinalIgnoreCase));
+
+                    // İmzasız, kullanıcı alanında; bilinen hacktool adı veya şüpheli packer + yüksek entropi anomalisi
+                    bool hasHighEntropyAnomaly = result.Entropy >= 7.6 || (result.IsPacked && result.Entropy >= 7.0);
+
+                    if (isUserWorkArea && (hasHacktoolIndicator || (hasHighEntropyAnomaly && result.IsPacked)))
                     {
                         isPup = true;
-                        pupReason = "+50 Potansiyel İstenmeyen / Korsan Yazılım (PUP/Crack/Keygen) davranış kalıbı (İmzasız, Kullanıcı Alanı ve PE Entropi/Paket Anomalisi)";
+                        pupReason = "+50 Potansiyel İstenmeyen / Korsan Yazılım (PUP/Crack/Keygen) davranış kalıbı (İmzasız, Kullanıcı Alanı ve Şüpheli Hacktool / Packer Anomalisi)";
                     }
                 }
 
@@ -145,7 +165,7 @@ namespace AegisPC.Security.Scanning
                 score += 10;
                 reasons.Add("+10 İmzasız dosya kullanıcı AppData\\Roaming dizininde");
             }
-            else if (PathHelper.IsUserDownloadsPath(path) && !result.IsSigned && !isVerifiedGameBinary)
+            else if ((PathHelper.IsUserDownloadsPath(path) || path.Contains(@"\Downloads\", StringComparison.OrdinalIgnoreCase)) && !result.IsSigned && !isVerifiedGameBinary)
             {
                 score += 10;
                 reasons.Add("+10 İmzasız dosya İndirilenler (Downloads) klasöründe");
@@ -235,9 +255,11 @@ namespace AegisPC.Security.Scanning
             // EN: Stage 8: LOLBin mitigation for Microsoft-signed binaries and score clamping between 0 and 100.
             // Microsoft or trusted OS binaries: zero risk ONLY IF in legitimate system/program directories.
             // If placed in Temp/Downloads/untrusted drop zones, reduce risk but do not zero it (prevents LOLBin staging).
-            if (!isKnownPup && result.IsSigned && result.SignatureValid && result.SignaturePublisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true)
+            if (!isKnownPup && result.IsSigned && result.SignatureValid && 
+                (result.SignaturePublisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true ||
+                 result.SignaturePublisher?.Contains("Windows", StringComparison.OrdinalIgnoreCase) == true))
             {
-                if (result.IsKnownLocation || PathHelper.IsKnownSafePath(result.FilePath))
+                if (result.IsKnownLocation || PathHelper.IsKnownSafePath(result.FilePath) || AegisPC.Security.Safety.TrustedSoftwarePolicy.IsLegitimateInstallLocation(result.FilePath))
                 {
                     score = 0;
                 }
