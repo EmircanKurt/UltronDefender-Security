@@ -137,12 +137,13 @@ namespace AegisPC.Security.RealTime
                 {
                     NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
                     IncludeSubdirectories = true,
-                    InternalBufferSize = 32768,
+                    InternalBufferSize = 65536,
                     EnableRaisingEvents = _isRunning
                 };
 
                 watcher.Created += (s, e) => EnqueueEvent(RealTimeEventType.Created, e.FullPath);
                 watcher.Changed += (s, e) => EnqueueEvent(RealTimeEventType.Modified, e.FullPath);
+                watcher.Deleted += (s, e) => EnqueueEvent(RealTimeEventType.Deleted, e.FullPath);
                 watcher.Renamed += (s, e) => EnqueueEvent(RealTimeEventType.Renamed, e.FullPath, e.OldFullPath);
                 watcher.Error += (s, e) =>
                 {

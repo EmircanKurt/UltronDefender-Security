@@ -173,15 +173,23 @@ namespace AegisPC.Security.Scanning
 
             // TR: Aşama 4: Shannon entropi ve paketleyici (packer) analizi; şifreli veya sıkıştırılmış PE bölümlerini tespit eder.
             // EN: Stage 4: Shannon entropy and packer heuristics; detects encrypted or compressed PE payload sections.
-            // 4. Shannon Entropy & Packer Heuristics (Calibrated for Cracks/Packers)
-            // NOT: Yüksek entropi ve bilinen packer'lar (UPX, Themida, VMProtect) tek başına dosyayı ConfirmedMalicious yapmaz.
+            // 4. Shannon Entropy & Packer Heuristics (Calibrated for Cracks/Packers as corroborating evidence)
             if (!isVerifiedGameBinary)
             {
                 if (result.IsPacked)
                 {
                     string pName = result.PackerName ?? "UPX/Themida/VMProtect";
-                    score += 20;
-                    reasons.Add($"+20 Paketlenmiş/Korunmuş Yürütülebilir ({pName}) — Bu durum crack ve korumalı yazılımlar için olağandır.");
+                    // Destekleyici kanıt kuralı: Bilinen packer tek başına dosya bloklamasın. Yalnızca tehdit/hacktool göstergesiyle birleştiğinde +20 eklenir.
+                    bool hasPriorThreatEvidence = isKnownPup || reasons.Any(r => r.Contains("Hacktool", StringComparison.OrdinalIgnoreCase) || r.Contains("PUP", StringComparison.OrdinalIgnoreCase) || r.Contains("kamuflaj", StringComparison.OrdinalIgnoreCase) || r.Contains("API", StringComparison.OrdinalIgnoreCase));
+                    if (hasPriorThreatEvidence)
+                    {
+                        score += 20;
+                        reasons.Add($"+20 Paketlenmiş/Korunmuş Yürütülebilir ({pName}) — Tehdit kalıbı ile birleşik korumalı yük");
+                    }
+                    else
+                    {
+                        reasons.Add($"Bilinen Paketleyici ({pName}) — Yalnızca sıkıştırma, bağımsız tehdit göstergesi saptanmadı");
+                    }
                 }
                 else if (result.Entropy >= 7.85)
                 {
@@ -204,8 +212,8 @@ namespace AegisPC.Security.Scanning
                 if ((lower.EndsWith(".exe") || lower.EndsWith(".scr") || lower.EndsWith(".vbs") || lower.EndsWith(".bat") || lower.EndsWith(".cmd") || lower.EndsWith(".ps1")) &&
                     (lower.Contains(".pdf.") || lower.Contains(".docx.") || lower.Contains(".xlsx.") || lower.Contains(".jpg.") || lower.Contains(".png.")))
                 {
-                    score += 75;
-                    reasons.Add("+75 Çift uzantı kamuflajı tespit edildi (Örn: .pdf.exe aldatmacası)");
+                    score += 85;
+                    reasons.Add("+85 Çift uzantı kamuflajı tespit edildi (Örn: .pdf.exe aldatmacası)");
                 }
             }
 
@@ -218,8 +226,8 @@ namespace AegisPC.Security.Scanning
                 reasons.Add("+10 Yürütülebilir dosya dijital olarak imzalanmamış");
             }
 
-            // TR: Aşama 7: Çoklu sinyalli şüpheli Win32 API ve davranışsal gösterge analizi (Bellek Enjeksiyonu, Process Hollowing).
-            // EN: Stage 7: Multi-signal suspicious Win32 API and behavioral indicator analysis (Process Injection, Process Hollowing).
+            // TR: Aşama 7: Çoklu sinyalli şüpheli Win32 API ve davranışsal gösterge analizi (Bellek Enjeksiyonu, Process Hollowing, Keylogger).
+            // EN: Stage 7: Multi-signal suspicious Win32 API and behavioral indicator analysis (Process Injection, Process Hollowing, Keylogger).
             // 7. Multi-Signal Suspicious Win32 API & Behavioral Indicators (Only for unsigned binaries in untrusted paths)
             bool isKnownSafe = result.IsKnownLocation || PathHelper.IsKnownSafePath(result.FilePath);
             if (!result.IsSigned && !isKnownSafe && !string.IsNullOrEmpty(result.FilePath) && File.Exists(result.FilePath))

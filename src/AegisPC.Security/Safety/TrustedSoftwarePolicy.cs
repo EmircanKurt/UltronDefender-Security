@@ -115,6 +115,26 @@ namespace AegisPC.Security.Safety
         }
 
         /// <summary>
+        /// Dosyanın Microsoft imzalı doğrulanmış bir Windows sistem bileşeni olup olmadığını kontrol eder.
+        /// </summary>
+        public static bool IsMicrosoftSignedSystem(string path, string? publisher, bool isSigned, bool isSignatureValid)
+        {
+            if (!isSigned || !isSignatureValid) return false;
+            if (!IsTrustedOsPublisher(publisher)) return false;
+            return PathHelper.IsSystemPath(path) || IsLegitimateInstallLocation(path);
+        }
+
+        /// <summary>
+        /// Dosyanın Program Files altında yer alan doğrulanmış ticari bir yayımcıya ait olup olmadığını kontrol eder.
+        /// </summary>
+        public static bool IsProgramFilesCommercialSigned(string path, string? publisher, bool isSigned, bool isSignatureValid)
+        {
+            if (!isSigned || !isSignatureValid) return false;
+            if (!IsTrustedCommercialPublisher(publisher)) return false;
+            return IsLegitimateInstallLocation(path);
+        }
+
+        /// <summary>
         /// Dijital imza, dosya konumu ve yayımcı bilgisine göre bütünleşik güven analizi yapar.
         /// </summary>
         public static TrustEvaluationResult EvaluateTrust(

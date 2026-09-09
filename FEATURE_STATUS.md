@@ -14,8 +14,8 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 - **MOCK:** Gerçek OS entegrasyonu yerine bellek içi simülasyon kullanan kod.
 
 > **Son Güncelleme:** 2026-09-09  
-> **Toplam Test Sayısı:** 601 Unit/Entegrasyon Testi (**601 Başarılı, 0 Atlanan, 0 Başarısız**)  
-> **Test Başarı Oranı:** %100 (Koşum Süresi: 1 dk 54 sn)
+> **Toplam Test Sayısı:** 616 Unit/Entegrasyon Testi (**616 Başarılı, 0 Atlanan, 0 Başarısız**)  
+> **Test Başarı Oranı:** %100 (Koşum Süresi: ~3 dk)
 
 ---
 

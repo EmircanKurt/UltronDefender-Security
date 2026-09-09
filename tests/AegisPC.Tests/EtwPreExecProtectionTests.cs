@@ -168,7 +168,10 @@ namespace AegisPC.Tests
             var service = new EtwPreExecProtectionService(
                 _detectionHub,
                 _riskScoringEngine,
-                _signatureVerifier);
+                _signatureVerifier)
+            {
+                ScanTimeout = TimeSpan.FromSeconds(5)
+            };
 
             service.OnThreatBlocked += alert => raisedAlert = alert;
 

@@ -102,6 +102,14 @@ namespace AegisPC.Security.Scanning
                             return true;
                         }
 
+                        // Stale finding koruması: Meşru kurulum klasöründe yer alan veya güvenilir konuma taşınmış dosyaların eski hatalı bulgularını temizle
+                        if (cached.Finding != null && AegisPC.Security.Safety.TrustedSoftwarePolicy.IsLegitimateInstallLocation(path))
+                        {
+                            _scanCache[path] = (cached.FileSize, cached.LastWriteTimeUtc, null, cached.Sha256, false, true);
+                            finding = null;
+                            return true;
+                        }
+
                         finding = cached.Finding;
                         return true;
                     }

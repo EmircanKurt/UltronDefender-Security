@@ -231,6 +231,7 @@ namespace AegisPC.Security.RealTime
 
         private void OnFileCreated(object sender, FileSystemEventArgs e)
         {
+            CheckControlledFolderAccess(e.FullPath, "Yeni dosya oluşturuldu");
             _entropyBurstDetector.CheckRansomwareBurst(e.FullPath, "Yeni dosya oluşturuldu", (path, reason, score) =>
                 EvaluateAndContainThreatAsync(path, reason, score));
         }
@@ -251,6 +252,8 @@ namespace AegisPC.Security.RealTime
                 return;
             }
 
+            CheckControlledFolderAccess(e.FullPath, "Dosya yeniden adlandırıldı");
+
             _entropyBurstDetector.CheckRansomwareBurst(e.FullPath, "Dosya yeniden adlandırıldı", (path, reason, score) =>
                 EvaluateAndContainThreatAsync(path, reason, score));
         }
@@ -263,11 +266,46 @@ namespace AegisPC.Security.RealTime
                 return;
             }
 
+            CheckControlledFolderAccess(e.FullPath, "Dosya değiştirildi");
+
             _ = _entropyBurstDetector.CheckEntropyDeltaAsync(e.FullPath, (path, reason, score) =>
                 EvaluateAndContainThreatAsync(path, reason, score));
 
             _entropyBurstDetector.CheckRansomwareBurst(e.FullPath, "Dosya değiştirildi", (path, reason, score) =>
                 EvaluateAndContainThreatAsync(path, reason, score));
+        }
+
+        private void CheckControlledFolderAccess(string path, string action)
+        {
+            try
+            {
+                if (!_folderGate.IsPathInsideProtectedDirectory(path)) return;
+                var pids = FileLockProcessResolver.FindLockingProcessIds(path);
+                foreach (var pid in pids)
+                {
+                    if (pid <= 4 || pid == Environment.ProcessId) continue;
+                    try
+                    {
+                        using var proc = System.Diagnostics.Process.GetProcessById(pid);
+                        if (proc.HasExited) continue;
+                        string procName = proc.ProcessName;
+                        string procPath = string.Empty;
+                        try { procPath = proc.MainModule?.FileName ?? string.Empty; } catch { }
+
+                        if (!_folderGate.IsApplicationAllowed(procName) && (string.IsNullOrEmpty(procPath) || !_folderGate.IsApplicationAllowed(procPath)))
+                        {
+                            _ = EvaluateAndContainThreatAsync(
+                                path,
+                                $"🚨 Korumalı Klasör İhlali: İzinli olmayan '{procName}' süreci ({action}) müdahalede bulundu!",
+                                riskScore: 90,
+                                pid: pid);
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
         }
 
         private void OnFileDeleted(object sender, FileSystemEventArgs e)

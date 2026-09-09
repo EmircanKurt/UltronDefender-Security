@@ -17,6 +17,7 @@ namespace AegisPC.Security.Kernel
         private readonly ILogger<KernelIpcService>? _logger;
         private readonly ConcurrentDictionary<ulong, TaskCompletionSource<KernelReplyMessage>> _pendingReplies = new();
         private bool _isConnected;
+        private IntPtr _portHandle = IntPtr.Zero;
         private KernelDriverStatus _driverStatus = KernelDriverStatus.NotInstalled;
         private CancellationTokenSource? _workerCts;
 
@@ -24,8 +25,36 @@ namespace AegisPC.Security.Kernel
         private static extern int FilterConnectCommunicationPort(
             string lpPortName, uint dwOptions, IntPtr lpContext, ushort wSizeOfContext, IntPtr lpSecurityAttributes, out IntPtr hPort);
 
+        [DllImport("fltLib.dll", SetLastError = true)]
+        private static extern int FilterReplyMessage(
+            IntPtr hPort,
+            IntPtr lpReplyBuffer,
+            uint dwReplyBufferSize);
+
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FilterReplyHeader
+        {
+            public int Status;
+            public int Reserved;
+            public ulong MessageId;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct KernelScanResponse
+        {
+            [MarshalAs(UnmanagedType.I1)]
+            public bool BlockAccess;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        private struct NativeKernelReplyPacket
+        {
+            public FilterReplyHeader Header;
+            public KernelScanResponse Response;
+        }
 
         public event Action<KernelIpcMessage>? OnMessageReceived;
         public bool IsConnected => _isConnected;
@@ -69,7 +98,7 @@ namespace AegisPC.Security.Kernel
                             int hr = FilterConnectCommunicationPort(port, 0, IntPtr.Zero, 0, IntPtr.Zero, out var hPort);
                             if (hr == 0 && hPort != IntPtr.Zero && hPort != (IntPtr)(-1))
                             {
-                                CloseHandle(hPort);
+                                _portHandle = hPort;
                                 _driverStatus = KernelDriverStatus.ActiveKernelPort;
                                 _isConnected = true;
                                 _logger?.LogInformation("Connected to live Kernel Minifilter Communication Port {Port}.", port);
@@ -111,6 +140,13 @@ namespace AegisPC.Security.Kernel
             _workerCts?.Dispose();
             _workerCts = null;
             _pendingReplies.Clear();
+
+            if (_portHandle != IntPtr.Zero && _portHandle != (IntPtr)(-1))
+            {
+                try { CloseHandle(_portHandle); } catch { }
+                _portHandle = IntPtr.Zero;
+            }
+
             _logger?.LogInformation("Disconnected from Kernel Minifilter Communication Port.");
             return Task.CompletedTask;
         }
@@ -122,6 +158,42 @@ namespace AegisPC.Security.Kernel
             if (_pendingReplies.TryRemove(reply.MessageId, out var tcs))
             {
                 tcs.TrySetResult(reply);
+            }
+
+            if (_portHandle != IntPtr.Zero && _portHandle != (IntPtr)(-1))
+            {
+                try
+                {
+                    var packet = new NativeKernelReplyPacket
+                    {
+                        Header = new FilterReplyHeader
+                        {
+                            Status = (int)reply.NtStatus,
+                            Reserved = 0,
+                            MessageId = reply.MessageId
+                        },
+                        Response = new KernelScanResponse
+                        {
+                            BlockAccess = reply.NtStatus != 0 || reply.GatingStatus == KernelGatingStatus.BlockedAccessDenied || reply.GatingStatus == KernelGatingStatus.BlockedSharingViolation
+                        }
+                    };
+
+                    int size = Marshal.SizeOf(packet);
+                    IntPtr ptr = Marshal.AllocHGlobal(size);
+                    try
+                    {
+                        Marshal.StructureToPtr(packet, ptr, false);
+                        FilterReplyMessage(_portHandle, ptr, (uint)size);
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(ptr);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogTrace(ex, "Failed to send native reply packet to kernel port.");
+                }
             }
 
             return Task.FromResult(true);

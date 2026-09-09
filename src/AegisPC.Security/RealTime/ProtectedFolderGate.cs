@@ -45,6 +45,11 @@ namespace AegisPC.Security.RealTime
         void RemoveAllowedApplication(string executablePath);
 
         /// <summary>
+        /// Belirtilen dosya veya dizin yolunun korumalı klasörlerden birinin altında olup olmadığını denetler.
+        /// </summary>
+        bool IsPathInsideProtectedDirectory(string path);
+
+        /// <summary>
         /// Belirtilen çalıştırılabilir dosyanın korumalı klasörlere erişim izni olup olmadığını denetler.
         /// </summary>
         bool IsApplicationAllowed(string executablePath);
@@ -258,6 +263,15 @@ namespace AegisPC.Security.RealTime
             {
                 _allowedApps.RemoveAll(a => a.ExecutablePath.Equals(executablePath, StringComparison.OrdinalIgnoreCase));
                 SaveAllowedAppsToDisk();
+            }
+        }
+
+        public bool IsPathInsideProtectedDirectory(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return false;
+            lock (_lock)
+            {
+                return _protectedDirs.Any(d => path.StartsWith(d, StringComparison.OrdinalIgnoreCase));
             }
         }
 

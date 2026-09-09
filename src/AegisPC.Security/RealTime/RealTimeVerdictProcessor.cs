@@ -256,11 +256,28 @@ namespace AegisPC.Security.RealTime
                     return result;
                 }
 
-                // STAGE 2: Digital Signature & Trusted Publisher
+                // STAGE 2: Digital Signature & Trusted Software Policy (Fast-Path Bypass)
                 var sigInfo = await _signatureVerifier.VerifySignatureAsync(filePath, ct);
-                if (sigInfo.IsValid && sigInfo.Publisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true && PathHelper.IsKnownSafePath(filePath))
+                var trust = AegisPC.Security.Safety.TrustedSoftwarePolicy.EvaluateTrust(
+                    filePath,
+                    sigInfo.Publisher,
+                    sigInfo.IsSigned,
+                    sigInfo.IsValid,
+                    PathHelper.IsKnownSafePath(filePath));
+
+                if (trust.IsFullyTrusted)
                 {
-                    if (!string.IsNullOrEmpty(sha256)) _verdictCache[cacheKey] = (sha256, RealTimeVerdict.Clean, RealTimePolicyAction.Allow, 0, RiskLevel.Clean, "Güvenilir Microsoft İmzalı Dosya", string.Empty, DateTime.UtcNow);
+                    result.Verdict = RealTimeVerdict.Clean;
+                    result.RecommendedPolicy = RealTimePolicyAction.Allow;
+                    result.RiskScore = 0;
+                    result.RiskLevel = RiskLevel.Clean;
+                    result.ThreatTitle = $"Doğrulanmış Güvenilir Yayımcı ({sigInfo.Publisher})";
+                    result.Evidences.Add(trust.Reason);
+
+                    if (!string.IsNullOrEmpty(sha256))
+                    {
+                        _verdictCache[cacheKey] = (sha256, RealTimeVerdict.Clean, RealTimePolicyAction.Allow, 0, RiskLevel.Clean, result.ThreatTitle, string.Empty, DateTime.UtcNow);
+                    }
                     fileInfo.Refresh();
                     _fileHashMatcher?.SetCache(filePath, fileInfo.Length, fileInfo.LastWriteTimeUtc, null);
                     result.ScanEndTime = DateTime.UtcNow;
