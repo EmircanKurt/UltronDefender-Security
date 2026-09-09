@@ -14,8 +14,8 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 - **MOCK:** Gerçek OS entegrasyonu yerine bellek içi simülasyon kullanan kod.
 
 > **Son Güncelleme:** 2026-09-09  
-> **Toplam Test Sayısı:** 586 Unit/Entegrasyon Testi (**586 Başarılı, 0 Atlanan, 0 Başarısız**)  
-> **Test Başarı Oranı:** %100 (Koşum Süresi: 1 dk 55 sn)
+> **Toplam Test Sayısı:** 594 Unit/Entegrasyon Testi (**594 Başarılı, 0 Atlanan, 0 Başarısız**)  
+> **Test Başarı Oranı:** %100 (Koşum Süresi: 1 dk 53 sn)
 
 ---
 
@@ -43,9 +43,9 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 | **18** | **AMSI Script Koruması (İstemci/Tüketici)** | `VERIFIED` | `amsi.dll` Win32 P/Invoke üzerinden canlı bellek içi PowerShell/VBS tespiti. |
 | **19** | **Ransomware Kalkanı** | `VERIFIED (PID-REUSE GUARD + DUAL CANARIES + RESTART MGR)` | Çift yönlü canary tuzakları (Alpha docx + Omega docx), Win32 Restart Manager (`rstrtmgr.dll`) kilitli süreç tespiti, StartTime tabanlı PID-reuse koruması, System32/WinSxS ve kritik süreç dokunulmazlığı; tarama motorundan canary'ler muaf tutulur (29 test). |
 | **20** | **Öz-Koruma (Self Protection)** | `VERIFIED (PROCESS DACL & SCM HARDENING) / READY (RING-0)` | Win32 Process DACL ve SCM Service DACL (`OpenSCManager`/`SetServiceObjectSecurity`) sıkılaştırması devrede. Sessiz hata yutma kaldırıldı; Win32 hata kodları açıkça loglanır. Ring-0 tarafında `ObRegisterCallbacks` ile handle access stripping sürücüde hazır. |
-| **21** | **Kernel Minifilter Sürücüsü** | `BUILD PIPELINE READY / WDK AUTOMATION` | `drivers/AegisFilter/` C kaynakları tamdır. `drivers/Test-DriverPrerequisites.ps1` tanı ve `drivers/Build-And-Sign-Driver.ps1` otomatik WDK derleme/imzalama/kurulum boru hattı sağlandı. |
-| **22** | **Kernel <-> User-Mode IPC** | `VERIFIED (NATIVE FLTLIB P/INVOKE & PACKET FRAMING)` | `KernelIpcService.cs` gerçek `fltlib.dll` (`FilterConnectCommunicationPort`, `FilterGetMessage`, `FilterReplyMessage`, `FilterSendMessage`) sarmalayıcısına, x64 16-bayt başlık hizalamasına ve 4 iş parçacıklı worker havuzuna sahiptir. Sürücü yoksa dürüstçe `NotInstalled/Degraded` raporlar. |
-| **23** | **Kernel Pre-Op Gating (4-Tier Decision Matrix)** | `VERIFIED (ALLOW / SUSPICIOUS / BLOCK / QUARANTINE)` | `KernelBridge.cs` 4 katmanlı karar matrisini uygular: Temiz (<40) İzin Verilir, Şüpheli (40-69) telemetri ve finding kaydıyla izlenir, Yüksek Risk (70-84) `STATUS_ACCESS_DENIED` ile engellenir, Kritik (>=85 veya ConfirmedMalicious) engellenir ve karantinaya alınır. |
+| **21** | **Kernel Minifilter Sürücüsü** | `BUILD PIPELINE READY / WDK AUTOMATION` | `drivers/AegisFilter/` C kaynakları tamdır. `drivers/Test-DriverPrerequisites.ps1` tanı ve `drivers/Build-And-Sign-Driver.ps1` (-Install, -Uninstall, -Verify, WDK version discovery) otomatik WDK derleme/imzalama/kurulum/doğrulama boru hattı sağlandı. |
+| **22** | **Kernel <-> User-Mode IPC** | `VERIFIED (NATIVE FLTLIB P/INVOKE & DUAL PORT SUPPORT)` | `KernelIpcService.cs` gerçek `fltlib.dll` sarmalayıcısına, x64 16-bayt başlık hizalamasına, `\AegisFilterPort` ve `\AegisFltPort` çift port desteğine ve 4 iş parçacıklı worker havuzuna sahiptir. Sürücü yoksa dürüstçe `NotInstalled/Degraded` raporlar (32 test). |
+| **23** | **Kernel Pre-Op Gating (4-Tier Decision Matrix)** | `VERIFIED (ALLOW / SUSPICIOUS / BLOCK / QUARANTINE)` | `KernelGatingEngine.cs` ve `KernelBridge.cs` 4 katmanlı karar matrisini uygular: Temiz (<40) İzin Verilir, Şüpheli (40-69) izlenir, Yüksek Risk (70-84) `STATUS_ACCESS_DENIED` ile engellenir, Kritik (>=85) engellenir ve karantinaya alınır. `TrustedSoftwarePolicy`, Canary/Öz-koruma bypass ve 500ms fail-open zaman aşımı güvencesi devrededir. |
 | **24** | **YARA Kural & Desen Motoru (YARA-X Mimarisi)** | `VERIFIED` | `IYaraEngine` ve `YaraDetector` (14. dedektör) devrede. abuse.ch standardında 3 varsayılan kural (EICAR, Mimikatz, CobaltStrike), bayt ofsetleri adli kaydı, 24 saatlik kural yenileme doğrulanmıştır (7 test). |
 | **25** | **Güvenlik Merkezi UI** | `IMPLEMENTED` | WPF UI Lepo tabanlı Dashboard, modül sağlık durumları mevcut. |
 | **26** | **İmza Veritabanı Bütünlüğü & Temizliği** | `VERIFIED` | 51 sahte hash temizlendi, 2 doğrulanmış EICAR hash'i gömülü tutulur; SQLite SHA-256 bütünlük kontrolü ve kurcalama (tampering) koruması devrede. |

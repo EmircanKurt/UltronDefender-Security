@@ -31,5 +31,6 @@ namespace AegisPC.Contracts.Kernel
         public string BlockReason { get; set; } = string.Empty;
         public int RiskScore { get; set; }
         public double ElapsedMs { get; set; }
+        public bool ShouldQuarantine { get; set; }
     }
 }

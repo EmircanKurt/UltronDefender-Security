@@ -10,6 +10,10 @@
     Target platform (default: x64)
 .PARAMETER Install
     If specified, installs and loads the driver via rundll32 and fltmc (requires elevation)
+.PARAMETER Uninstall
+    If specified, unloads and uninstalls the driver package (requires elevation)
+.PARAMETER Verify
+    If specified, verifies driver registration, altitude, and filter manager status
 .PARAMETER SkipBuild
     Skips compilation step (uses existing AegisFilter.sys)
 .PARAMETER SkipSign
@@ -21,6 +25,8 @@ param(
     [string]$Configuration = "Release",
     [string]$Platform = "x64",
     [switch]$Install,
+    [switch]$Uninstall,
+    [switch]$Verify,
     [switch]$SkipBuild,
     [switch]$SkipSign
 )
@@ -39,6 +45,66 @@ $certFriendlyName = "Ultron Defender Driver Test Signing Authority"
 
 if (-not (Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+}
+
+# -------------------------------------------------------------------------
+# UNINSTALL MODE
+# -------------------------------------------------------------------------
+if ($Uninstall) {
+    Write-Host "[*] UNINSTALL: Unloading and removing AegisFilter minifilter driver..." -ForegroundColor Yellow
+    try {
+        Write-Host "[*] Unloading driver via fltmc..." -ForegroundColor DarkCyan
+        & fltmc unload AegisFilter
+    } catch {
+        Write-Warning "[!] fltmc unload AegisFilter: $_"
+    }
+
+    $infPath = Join-Path $outputDir "AegisFilter.inf"
+    if (-not (Test-Path $infPath)) {
+        $infPath = Join-Path $driverDir "AegisFilter.inf"
+    }
+
+    if (Test-Path $infPath) {
+        Write-Host "[*] Executing INF uninstallation: rundll32.exe setupapi.dll,InstallHinfSection DefaultUninstall 132 `"$infPath`"" -ForegroundColor DarkCyan
+        Start-Process -FilePath "rundll32.exe" -ArgumentList "setupapi.dll,InstallHinfSection DefaultUninstall 132 `"$infPath`"" -Wait
+    }
+
+    try {
+        & sc.exe stop AegisFilter 2>$null
+        & sc.exe delete AegisFilter 2>$null
+    } catch {}
+
+    Write-Host "[+] AegisFilter driver uninstallation completed." -ForegroundColor Green
+    return
+}
+
+# -------------------------------------------------------------------------
+# VERIFY MODE
+# -------------------------------------------------------------------------
+if ($Verify) {
+    Write-Host "[*] VERIFY: Checking AegisFilter minifilter driver status and altitude..." -ForegroundColor Yellow
+
+    $fltOutput = & fltmc instances -f AegisFilter 2>&1 | Out-String
+    Write-Host $fltOutput -ForegroundColor Cyan
+
+    $isLoaded = $fltOutput -match "AegisFilter"
+    $hasAltitude = $fltOutput -match "320500"
+
+    if ($isLoaded -and $hasAltitude) {
+        Write-Host "[+] SUCCESS: AegisFilter is ACTIVE and attached with Altitude 320500 (FSFilter Anti-Virus)!" -ForegroundColor Green
+    } elseif ($isLoaded) {
+        Write-Host "[+] AegisFilter is loaded, but altitude differs from standard 320500." -ForegroundColor Yellow
+    } else {
+        Write-Host "[-] AegisFilter driver is NOT loaded in Windows Filter Manager." -ForegroundColor Red
+        Write-Host "[*] User-Mode Progressive Protection (ETW Pre-Exec + FileSystemWatcher) will run in DEGRADED mode." -ForegroundColor Yellow
+    }
+
+    $sysPath = Join-Path $outputDir "AegisFilter.sys"
+    if (Test-Path $sysPath) {
+        $sigStatus = Get-AuthenticodeSignature $sysPath
+        Write-Host "[*] Binary Authenticode status: $($sigStatus.Status) - $($sigStatus.SignerCertificate.Subject)" -ForegroundColor Cyan
+    }
+    return
 }
 
 # -------------------------------------------------------------------------
@@ -65,11 +131,22 @@ foreach ($c in $msBuildCandidates) {
 $wdkBin = $null
 $wdkCandidates = @(
     "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64",
+    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22631.0\x64",
     "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64",
     "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22000.0\x64",
     "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64",
     "C:\Program Files (x86)\Windows Kits\10\bin\x64"
 )
+
+if (Test-Path "C:\Program Files (x86)\Windows Kits\10\bin") {
+    $dynamicKits = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Directory -ErrorAction SilentlyContinue | 
+        Where-Object { $_.Name -like "10.*" } | 
+        Sort-Object Name -Descending | 
+        ForEach-Object { Join-Path $_.FullName "x64" }
+    if ($dynamicKits) {
+        $wdkCandidates = @($dynamicKits) + @($wdkCandidates)
+    }
+}
 
 foreach ($w in $wdkCandidates) {
     if (Test-Path "$w\signtool.exe") {

@@ -1,8 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using AegisPC.Contracts.Detection;
 using AegisPC.Contracts.Kernel;
+using AegisPC.Contracts.Services;
+using AegisPC.Core.Models;
 using AegisPC.Security.Kernel;
 using Xunit;
 
@@ -154,6 +158,204 @@ namespace AegisPC.Tests
             Assert.False(decision.IsBlocked);
             Assert.Equal(0x00000000u, decision.NtStatus); // STATUS_SUCCESS
             Assert.Equal(KernelGatingStatus.Allowed, decision.Status);
+            Assert.False(decision.ShouldQuarantine);
+        }
+
+        [Theory]
+        [InlineData(20, false, 0x00000000u, KernelGatingStatus.Allowed, false)]               // Tier 1: Clean (<40)
+        [InlineData(55, false, 0x00000000u, KernelGatingStatus.Allowed, false)]               // Tier 2: Suspicious (40-69)
+        [InlineData(78, true, 0xC0000022u, KernelGatingStatus.BlockedAccessDenied, false)]    // Tier 3: HighRisk (70-84)
+        [InlineData(95, true, 0xC0000022u, KernelGatingStatus.BlockedAccessDenied, true)]     // Tier 4: Critical (>=85)
+        public async Task Test_KernelGatingEngine_FourTierDecisionMatrix_AllTiersEvaluatedCorrectly(
+            int score, bool expectedBlocked, uint expectedNtStatus, KernelGatingStatus expectedStatus, bool expectedQuarantine)
+        {
+            var hub = new TestDetectionHub(score, $"TierTestThreat_Score_{score}");
+            var gatingEngine = new KernelGatingEngine(detectionHub: hub);
+
+            var sampleFile = Path.Combine(_sandboxDir, $"sample_{score}.dat");
+            await File.WriteAllTextAsync(sampleFile, "sample binary data");
+
+            var request = new KernelIpcMessage
+            {
+                MessageId = (ulong)(6000 + score),
+                OpCode = MinifilterOperationType.PreCreate,
+                ProcessId = 2000,
+                FilePath = sampleFile,
+                TimeoutMs = 500
+            };
+
+            var decision = await gatingEngine.EvaluatePreOpDecisionAsync(request);
+
+            Assert.Equal(expectedBlocked, decision.IsBlocked);
+            Assert.Equal(expectedNtStatus, decision.NtStatus);
+            Assert.Equal(expectedStatus, decision.Status);
+            Assert.Equal(expectedQuarantine, decision.ShouldQuarantine);
+            Assert.Equal(score, decision.RiskScore);
+        }
+
+        [Fact]
+        public async Task Test_KernelGatingEngine_TrustedSoftwarePolicy_FastPathBypass()
+        {
+            var testVerifier = new TestSignatureVerifier("Microsoft Windows Operating System", true);
+            var gatingEngine = new KernelGatingEngine(signatureVerifier: testVerifier);
+
+            var legitFile = Path.Combine(_sandboxDir, "signed_app.exe");
+            await File.WriteAllTextAsync(legitFile, "MZ-mock-legit-app");
+
+            var request = new KernelIpcMessage
+            {
+                MessageId = 7001,
+                OpCode = MinifilterOperationType.PreCreate,
+                ProcessId = 1234,
+                FilePath = legitFile,
+                TimeoutMs = 500
+            };
+
+            var decision = await gatingEngine.EvaluatePreOpDecisionAsync(request);
+
+            Assert.False(decision.IsBlocked);
+            Assert.Equal(0x00000000u, decision.NtStatus);
+            Assert.Equal(KernelGatingStatus.BypassedTrustedProcess, decision.Status);
+            Assert.False(decision.ShouldQuarantine);
+        }
+
+        [Fact]
+        public async Task Test_KernelGatingEngine_CanaryAndSelfProtection_FastPathBypass()
+        {
+            var gatingEngine = new KernelGatingEngine();
+
+            var canaryFile = Path.Combine(_sandboxDir, "!_ultron_shield_canary.docx");
+            await File.WriteAllTextAsync(canaryFile, "Canary bait content");
+
+            var requestCanary = new KernelIpcMessage
+            {
+                MessageId = 7002,
+                OpCode = MinifilterOperationType.PreCreate,
+                ProcessId = 1234,
+                FilePath = canaryFile,
+                TimeoutMs = 500
+            };
+
+            var decisionCanary = await gatingEngine.EvaluatePreOpDecisionAsync(requestCanary);
+            Assert.False(decisionCanary.IsBlocked);
+            Assert.Equal(0x00000000u, decisionCanary.NtStatus);
+            Assert.Equal(KernelGatingStatus.Allowed, decisionCanary.Status);
+            Assert.False(decisionCanary.ShouldQuarantine);
+
+            var requestSelf = new KernelIpcMessage
+            {
+                MessageId = 7003,
+                OpCode = MinifilterOperationType.PreCreate,
+                ProcessId = 1234,
+                FilePath = @"C:\Program Files\UltronDefender\UltronDefender.exe",
+                TimeoutMs = 500
+            };
+
+            var decisionSelf = await gatingEngine.EvaluatePreOpDecisionAsync(requestSelf);
+            Assert.False(decisionSelf.IsBlocked);
+            Assert.Equal(0x00000000u, decisionSelf.NtStatus);
+            Assert.Equal(KernelGatingStatus.Allowed, decisionSelf.Status);
+        }
+
+        [Fact]
+        public async Task Test_KernelGatingEngine_FailOpenTimeoutSafety_UnderCancellation()
+        {
+            var gatingEngine = new KernelGatingEngine();
+            var targetFile = Path.Combine(_sandboxDir, "timeout_test.bin");
+            await File.WriteAllTextAsync(targetFile, "content for timeout test");
+
+            using var cts = new CancellationTokenSource();
+            cts.Cancel(); // Pre-cancel token to simulate immediate timeout
+
+            var request = new KernelIpcMessage
+            {
+                MessageId = 7004,
+                OpCode = MinifilterOperationType.PreCreate,
+                ProcessId = 1234,
+                FilePath = targetFile,
+                TimeoutMs = 1
+            };
+
+            var decision = await gatingEngine.EvaluatePreOpDecisionAsync(request, cts.Token);
+
+            Assert.False(decision.IsBlocked);
+            Assert.Equal(0x00000000u, decision.NtStatus);
+            Assert.Equal(KernelGatingStatus.TimeoutFallbackAllowed, decision.Status);
+            Assert.False(decision.ShouldQuarantine);
+        }
+
+        [Fact]
+        public async Task Test_KernelIpcService_DualPortName_Compatibility()
+        {
+            using var ipc = new KernelIpcService();
+
+            // Production ports report NotInstalled when driver is not running
+            bool defaultPortResult = await ipc.ConnectAsync(IKernelIpcService.DefaultPortName);
+            Assert.False(defaultPortResult);
+            Assert.Equal(KernelDriverStatus.NotInstalled, ipc.DriverStatus);
+
+            bool legacyPortResult = await ipc.ConnectAsync(IKernelIpcService.LegacyPortName);
+            Assert.False(legacyPortResult);
+            Assert.Equal(KernelDriverStatus.NotInstalled, ipc.DriverStatus);
+
+            // Simulation / Test ports enter SimulatedMode
+            bool simResultDefault = await ipc.ConnectAsync("\\AegisFilterPort_Test");
+            Assert.True(simResultDefault);
+            Assert.Equal(KernelDriverStatus.SimulatedMode, ipc.DriverStatus);
+
+            await ipc.DisconnectAsync();
+
+            bool simResultLegacy = await ipc.ConnectAsync("\\AegisFltPort_Simulated");
+            Assert.True(simResultLegacy);
+            Assert.Equal(KernelDriverStatus.SimulatedMode, ipc.DriverStatus);
+        }
+
+        private class TestDetectionHub : IDetectionHub
+        {
+            private readonly int _score;
+            private readonly string _threatTitle;
+
+            public TestDetectionHub(int score, string threatTitle)
+            {
+                _score = score;
+                _threatTitle = threatTitle;
+            }
+
+            public IReadOnlyList<IDetectorPlugin> RegisteredDetectors => Array.Empty<IDetectorPlugin>();
+            public void RegisterDetector(IDetectorPlugin detector) { }
+            public bool UnregisterDetector(string detectorId) => true;
+
+            public Task<DetectionResult> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
+            {
+                return Task.FromResult(new DetectionResult
+                {
+                    RiskScore = _score,
+                    ThreatTitle = _threatTitle,
+                    Verdict = _score >= 85 ? DetectionVerdict.ConfirmedMalicious : (_score >= 70 ? DetectionVerdict.Suspicious : DetectionVerdict.Clean)
+                });
+            }
+        }
+
+        private class TestSignatureVerifier : ISignatureVerifier
+        {
+            private readonly string _publisher;
+            private readonly bool _isValid;
+
+            public TestSignatureVerifier(string publisher, bool isValid = true)
+            {
+                _publisher = publisher;
+                _isValid = isValid;
+            }
+
+            public Task<SignatureInfo> VerifySignatureAsync(string filePath, CancellationToken cancellationToken = default)
+            {
+                return Task.FromResult(new SignatureInfo
+                {
+                    IsSigned = true,
+                    IsValid = _isValid,
+                    Publisher = _publisher
+                });
+            }
         }
     }
 }

@@ -21,10 +21,13 @@ namespace AegisPC.Contracts.Kernel
 
     public interface IKernelIpcService : IDisposable
     {
+        public const string DefaultPortName = "\\AegisFilterPort";
+        public const string LegacyPortName = "\\AegisFltPort";
+
         event Action<KernelIpcMessage>? OnMessageReceived;
         bool IsConnected { get; }
         KernelDriverStatus DriverStatus { get; }
-        Task<bool> ConnectAsync(string portName = "\\AegisFltPort", CancellationToken cancellationToken = default);
+        Task<bool> ConnectAsync(string portName = DefaultPortName, CancellationToken cancellationToken = default);
         Task DisconnectAsync();
         Task<bool> SendReplyAsync(KernelReplyMessage reply, CancellationToken cancellationToken = default);
     }

@@ -38,10 +38,11 @@ namespace AegisPC.Security.Kernel
 
         /// <summary>
         /// Attempts to connect to the kernel minifilter communication port.
+        /// Supports both modern \AegisFilterPort and legacy \AegisFltPort.
         /// If connecting to a test or simulation port, enters SimulatedMode for test harnesses.
         /// If connecting to production port and the kernel driver is not loaded, accurately reports NotInstalled.
         /// </summary>
-        public Task<bool> ConnectAsync(string portName = "\\AegisFltPort", CancellationToken cancellationToken = default)
+        public Task<bool> ConnectAsync(string portName = IKernelIpcService.DefaultPortName, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -60,25 +61,30 @@ namespace AegisPC.Security.Kernel
                 // Check for live kernel communication port on Windows via fltLib
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
-                    try
+                    var portsToTry = new[] { portName, portName == IKernelIpcService.DefaultPortName ? IKernelIpcService.LegacyPortName : IKernelIpcService.DefaultPortName };
+                    foreach (var port in portsToTry)
                     {
-                        int hr = FilterConnectCommunicationPort(portName, 0, IntPtr.Zero, 0, IntPtr.Zero, out var hPort);
-                        if (hr == 0 && hPort != IntPtr.Zero && hPort != (IntPtr)(-1))
+                        try
                         {
-                            CloseHandle(hPort);
-                            _driverStatus = KernelDriverStatus.ActiveKernelPort;
-                            _isConnected = true;
-                            _logger?.LogInformation("Connected to live Kernel Minifilter Communication Port {Port}.", portName);
-                            return Task.FromResult(true);
+                            int hr = FilterConnectCommunicationPort(port, 0, IntPtr.Zero, 0, IntPtr.Zero, out var hPort);
+                            if (hr == 0 && hPort != IntPtr.Zero && hPort != (IntPtr)(-1))
+                            {
+                                CloseHandle(hPort);
+                                _driverStatus = KernelDriverStatus.ActiveKernelPort;
+                                _isConnected = true;
+                                _logger?.LogInformation("Connected to live Kernel Minifilter Communication Port {Port}.", port);
+                                return Task.FromResult(true);
+                            }
                         }
-                    }
-                    catch (DllNotFoundException)
-                    {
-                        // fltLib.dll unavailable in environment
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogDebug(ex, "FilterConnectCommunicationPort query completed.");
+                        catch (DllNotFoundException)
+                        {
+                            // fltLib.dll unavailable in environment
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogDebug(ex, "FilterConnectCommunicationPort query for {Port} completed.", port);
+                        }
                     }
                 }
 

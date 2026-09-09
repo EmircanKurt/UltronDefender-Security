@@ -38,19 +38,43 @@ Kritik **Masaüstü Tehdit Tespiti (Full Scan False Negative)** sorunu, **Çoklu
 
 **Sonuç:**
 ```text
-Başarılı!  - Başarısız: 0, Başarılı: 200, Atlanan: 0, Toplam: 200, Süre: 29 s - AegisPC.Tests.dll (net8.0)
+Başarılı!  - Başarısız: 0, Başarılı: 594, Atlanan: 0, Toplam: 594, Süre: 1 m 53 s - AegisPC.Tests.dll (net8.0)
 ```
 
 | Test Paketi | Test Sayısı | Durum |
 | :--- | :---: | :---: |
+| `KernelMinifilterTests` | 10 | **GEÇTİ** (4-Tier Gating, TrustedSoftwarePolicy bypass, Fail-open timeout, Dual ports, Paging I/O) |
+| `RansomwareShieldTests` | 9 | **GEÇTİ** (PID-reuse guard, Dual canaries Alpha/Omega, Restart Manager lock detection, Scanner exclusion) |
 | `DesktopFullScanTests` | 3 | **GEÇTİ** (Masaüstü tehdidi, Content-over-extension, Hata toleransı) |
 | `KeyloggerDetectionTests` | 1 | **GEÇTİ** (SetWindowsHookEx / GetKeyboardState açıklanabilir kanıt) |
-| `NotificationAggregatorTests` | 3 | **GEÇTİ** (Kritik anında bildirim, 5s rutin gruplama, tekil flush) |
+| `NotificationAggregatorTests` | 4 | **GEÇTİ** (Kritik anında bildirim, 5s rutin gruplama, tekil flush) |
 | `MultiLayerScanCacheTests` | 7 | **GEÇTİ** (L1 RAM + L2 SQLite) |
 | `ZipBombArchiveSafetyTests` | 6 | **GEÇTİ** (Kota, derinlik, oran kontrolleri) |
 | `DeepPeAnalyzerTests` | 12 | **GEÇTİ** (Rich Header, TLS, W+X) |
-| Diğer Güvenlik Testleri | 168 | **GEÇTİ** |
-| **TOPLAM** | **200** | **%100 BAŞARILI** |
+| Diğer Güvenlik Testleri | 542 | **GEÇTİ** |
+| **TOPLAM** | **594** | **%100 BAŞARILI** |
+
+---
+
+## 🚀 Faz 4 — Kernel Minifilter Pre-Op Gating ve Sürücü Pipeline
+
+1. **4 Kademeli Karar Matrisi (`KernelGatingEngine`):**
+   - **Kademe 1 (Temiz <40):** Erişim serbest bırakılır (`STATUS_SUCCESS`, `Allowed`, `ShouldQuarantine = false`).
+   - **Kademe 2 (Şüpheli 40-69):** Sistem kilitlenmez, telemetri loglanır ve `SecurityFinding` olarak kaydedilir (`STATUS_SUCCESS`, `Allowed`, `ShouldQuarantine = false`).
+   - **Kademe 3 (Yüksek Risk 70-84):** Dosya I/O anlık kesilir ve erişim reddedilir (`STATUS_ACCESS_DENIED`, `BlockedAccessDenied`, `ShouldQuarantine = false`).
+   - **Kademe 4 (Kritik >=85):** Dosya I/O anlık engellenir ve arka planda güvenli karantina işletilir (`STATUS_ACCESS_DENIED`, `BlockedAccessDenied`, `ShouldQuarantine = true`).
+
+2. **Güvenilir Yazılım Politikası (`TrustedSoftwarePolicy`) & Öz-Koruma:**
+   - Microsoft Windows çekirdek ve doğrulanmış ticari yayımcılar (Google, Valve, NVIDIA, Mozilla vb.) doğrudan bypass alır (`KernelGatingStatus.BypassedTrustedProcess`).
+   - Antivirüsün kendi dosyaları ve Canary tuzakları (`!_ultron_shield_canary.docx` vb.) kernel gating tarafından engellenmeden serbest bırakılır.
+
+3. **Fail-Open Güvenlik Garantisi:**
+   - 200–500ms zaman aşımı pencereli Linked CancellationToken mekanizması ile yanıt verilemediğinde sistem kilitlenmesini önlemek için `TimeoutFallbackAllowed` ile fail-open işletilir.
+
+4. **Sürücü Derleme ve Yönetim Otomasyonu (`Build-And-Sign-Driver.ps1`):**
+   - `-Install`, `-Uninstall`, `-Verify` parametreleri eklendi.
+   - Çoklu WDK sürüm tespiti (10.0.26100.0, 10.0.22631.0, 10.0.22621.0 ve dinamik katalog taraması) sağlandı.
+   - Sürücü yüklü olmadığında dürüstçe `DEGRADED (USER-MODE ONLY)` durumu raporlanır.
 
 ---
 
