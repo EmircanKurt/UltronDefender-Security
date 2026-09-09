@@ -111,7 +111,13 @@ if ($AutoFindBinaries -or ($files.Count -eq 0)) {
     $searchPaths = @(
         "$rootDir\drivers\bin\x64\Release\AegisFilter.sys",
         "$rootDir\drivers\bin\x64\Release\AegisFilter.cat",
+        "$rootDir\drivers\bin\x64\Debug\AegisFilter.sys",
+        "$rootDir\drivers\bin\x64\Debug\AegisFilter.cat",
         "$rootDir\tools\AmsiProvider\bin\Release\AmsiProvider.dll",
+        "$rootDir\tools\AmsiProvider\bin\x64\Release\AmsiProvider.dll",
+        "$rootDir\tools\AmsiProvider\bin\x64\Debug\AmsiProvider.dll",
+        "$rootDir\bin\Release\AmsiProvider.dll",
+        "$rootDir\bin\Debug\AmsiProvider.dll",
         "$rootDir\src\AegisPC.Service\bin\Release\net8.0-windows\AegisPC.Service.exe",
         "$rootDir\src\AegisPC.Service\bin\Debug\net8.0-windows\AegisPC.Service.exe",
         "$rootDir\src\AegisPC.App\bin\Release\net8.0-windows\UltronDefender.exe",

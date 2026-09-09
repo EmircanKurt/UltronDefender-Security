@@ -14,8 +14,8 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 - **MOCK:** Gerçek OS entegrasyonu yerine bellek içi simülasyon kullanan kod.
 
 > **Son Güncelleme:** 2026-09-09  
-> **Toplam Test Sayısı:** 594 Unit/Entegrasyon Testi (**594 Başarılı, 0 Atlanan, 0 Başarısız**)  
-> **Test Başarı Oranı:** %100 (Koşum Süresi: 1 dk 53 sn)
+> **Toplam Test Sayısı:** 597 Unit/Entegrasyon Testi (**597 Başarılı, 0 Atlanan, 0 Başarısız**)  
+> **Test Başarı Oranı:** %100 (Koşum Süresi: 2 dk 01 sn)
 
 ---
 
@@ -40,7 +40,7 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 | **15** | **Saldırı Zinciri Korelasyonu** | `VERIFIED` | 60s kayan pencere, MITRE ATT&CK aşama korelasyonu. |
 | **16** | **Süreç Enjeksiyonu Tespiti** | `VERIFIED` | Process Hollowing, Early Bird APC, Remote Thread tespiti. |
 | **17** | **Anti-Evasion & Bellek Tarayıcı** | `VERIFIED` | Indirect Syscall (`4C 8B D1 B8 .. 0F 05 C3`), CobaltStrike / Meterpreter stager tespiti. |
-| **18** | **AMSI Script Koruması (İstemci/Tüketici)** | `VERIFIED` | `amsi.dll` Win32 P/Invoke üzerinden canlı bellek içi PowerShell/VBS tespiti. |
+| **18** | **AMSI Script Koruması (İstemci/Tüketici)** | `VERIFIED (IN-PROCESS SCANNER + BUFFER + SCRIPT HEURISTICS)` | `amsi.dll` Win32 P/Invoke ve derin metin/tampon sezgisel analizi üzerinden canlı bellek içi PowerShell/VBS tespiti (13 test). |
 | **19** | **Ransomware Kalkanı** | `VERIFIED (PID-REUSE GUARD + DUAL CANARIES + RESTART MGR)` | Çift yönlü canary tuzakları (Alpha docx + Omega docx), Win32 Restart Manager (`rstrtmgr.dll`) kilitli süreç tespiti, StartTime tabanlı PID-reuse koruması, System32/WinSxS ve kritik süreç dokunulmazlığı; tarama motorundan canary'ler muaf tutulur (29 test). |
 | **20** | **Öz-Koruma (Self Protection)** | `VERIFIED (PROCESS DACL & SCM HARDENING) / READY (RING-0)` | Win32 Process DACL ve SCM Service DACL (`OpenSCManager`/`SetServiceObjectSecurity`) sıkılaştırması devrede. Sessiz hata yutma kaldırıldı; Win32 hata kodları açıkça loglanır. Ring-0 tarafında `ObRegisterCallbacks` ile handle access stripping sürücüde hazır. |
 | **21** | **Kernel Minifilter Sürücüsü** | `BUILD PIPELINE READY / WDK AUTOMATION` | `drivers/AegisFilter/` C kaynakları tamdır. `drivers/Test-DriverPrerequisites.ps1` tanı ve `drivers/Build-And-Sign-Driver.ps1` (-Install, -Uninstall, -Verify, WDK version discovery) otomatik WDK derleme/imzalama/kurulum/doğrulama boru hattı sağlandı. |
@@ -52,7 +52,7 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 | **27** | **MalwareBazaar Tehdit Beslemesi** | `VERIFIED` | abuse.ch MalwareBazaar JSON API bağlantısı (`Auth-Key` HTTP başlığı, 30s timeout), ilk açılışta bootstrap modu (limit=1000 + tag=exe,rat,ransomware,stealer), 24 saatlik nezaket rate-limit kontrolü, Linux/Mac filtreleme ve SQLite aktarımı doğrulandı. |
 | **28** | **Windows Güvenlik Merkezi (WSC) Koruması** | `DISABLED / GUARDED` | `EnableWscRegistration = false` feature flag ile Windows Defender'ı yetkisiz devre dışı bırakma engellendi. |
 | **29** | **ETW Tabanlı Pre-Exec Koruma Katmanı** | `IMPLEMENTED` | `Microsoft-Windows-Kernel-Process` ETW sağlayıcısı, `NtSuspendProcess` ile yürütme öncesi dondurma, 500ms tarama penceresi, Microsoft dijital imza & kritik süreç hızlı beyaz liste, zararlıda süreç ağacı sonlandırma ve karantina (12 test). |
-| **30** | **AMSI Sağlayıcı & İmzalı Dağıtım Boru Hattı** | `AUTOMATED SIGNING PIPELINE READY` | `tools/AmsiProvider/` C++ COM DLL (`IAmsiProvider`) ve `tools/Sign-Binaries.ps1` SHA256 Authenticode + RFC 3161 zaman damgası imzalama betiği hazırlandı. |
+| **30** | **AMSI Sağlayıcı & İmzalı Dağıtım Boru Hattı** | `VERIFIED (COM CLSID REGISTRATION & UNIFIED SIGNING PIPELINE)` | `tools/AmsiProvider/` C++ COM DLL (`IAmsiProvider`), `Register-AmsiProvider.ps1` (-Verify, -Unregister, 64-bit & WOW6432Node dual support) ve `tools/Sign-Binaries.ps1` SHA256 Authenticode + RFC 3161 zaman damgası imzalama ve doğrulama boru hattı hazırlandı ve doğrulandı. |
 | **31** | **Fast-Path Dijital İmza Bypass & Önbellek** | `VERIFIED` | Microsoft/Windows/Google imzalı sistem dosyaları hash hesaplamadan önce temiz-geçiş alır; 100k FIFO SignatureVerifier önbelleği ve Pre-hash ScanCache devrededir. |
 | **32** | **Paralel Dizin Gezgini (Multi-Walker)** | `VERIFIED` | 2–4 eşzamanlı gezgin işçisi ve ConcurrentDictionary deduplication ile NVMe/SSD sürücülerde 8192 kapasiteli kanal kuyruğu tam doygunluğa ulaştırılır; BelowNormal öncelik korunur. |
 | **33** | **Kayan Ortalama ETA & UI İlerleme Göstergesi** | `VERIFIED` | Son 10 raporun dosya/sn hızına dayalı hareketli ortalama ETA (kalanDosya / hız), saat devretmeli süre biçimlendirmesi ve gerçek yüzdelik oran UI satırı bağlandı. |

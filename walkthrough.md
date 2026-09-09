@@ -38,21 +38,22 @@ Kritik **Masaüstü Tehdit Tespiti (Full Scan False Negative)** sorunu, **Çoklu
 
 **Sonuç:**
 ```text
-Başarılı!  - Başarısız: 0, Başarılı: 594, Atlanan: 0, Toplam: 594, Süre: 1 m 53 s - AegisPC.Tests.dll (net8.0)
+Başarılı!  - Başarısız: 0, Başarılı: 597, Atlanan: 0, Toplam: 597, Süre: 2 m 01 s - AegisPC.Tests.dll (net8.0)
 ```
 
 | Test Paketi | Test Sayısı | Durum |
 | :--- | :---: | :---: |
 | `KernelMinifilterTests` | 10 | **GEÇTİ** (4-Tier Gating, TrustedSoftwarePolicy bypass, Fail-open timeout, Dual ports, Paging I/O) |
 | `RansomwareShieldTests` | 9 | **GEÇTİ** (PID-reuse guard, Dual canaries Alpha/Omega, Restart Manager lock detection, Scanner exclusion) |
+| `AmsiAndWscTests` | 8 | **GEÇTİ** (String/Buffer EICAR tespiti, Benign script onayı, Obfuscated bypass engelleme, CLSID tutarlılığı, WSC emniyeti) |
 | `DesktopFullScanTests` | 3 | **GEÇTİ** (Masaüstü tehdidi, Content-over-extension, Hata toleransı) |
 | `KeyloggerDetectionTests` | 1 | **GEÇTİ** (SetWindowsHookEx / GetKeyboardState açıklanabilir kanıt) |
 | `NotificationAggregatorTests` | 4 | **GEÇTİ** (Kritik anında bildirim, 5s rutin gruplama, tekil flush) |
 | `MultiLayerScanCacheTests` | 7 | **GEÇTİ** (L1 RAM + L2 SQLite) |
 | `ZipBombArchiveSafetyTests` | 6 | **GEÇTİ** (Kota, derinlik, oran kontrolleri) |
 | `DeepPeAnalyzerTests` | 12 | **GEÇTİ** (Rich Header, TLS, W+X) |
-| Diğer Güvenlik Testleri | 542 | **GEÇTİ** |
-| **TOPLAM** | **594** | **%100 BAŞARILI** |
+| Diğer Güvenlik Testleri | 537 | **GEÇTİ** |
+| **TOPLAM** | **597** | **%100 BAŞARILI** |
 
 ---
 
@@ -75,6 +76,19 @@ Başarılı!  - Başarısız: 0, Başarılı: 594, Atlanan: 0, Toplam: 594, Sür
    - `-Install`, `-Uninstall`, `-Verify` parametreleri eklendi.
    - Çoklu WDK sürüm tespiti (10.0.26100.0, 10.0.22631.0, 10.0.22621.0 ve dinamik katalog taraması) sağlandı.
    - Sürücü yüklü olmadığında dürüstçe `DEGRADED (USER-MODE ONLY)` durumu raporlanır.
+
+---
+
+## 🛡️ Faz 5 — AMSI Sağlayıcı ve Birleşik İmzalı Dağıtım Boru Hattı
+
+1. **AMSI Provider COM Kayıt ve Kaldırma (`tools/AmsiProvider/Register-AmsiProvider.ps1`):**
+   - Windows AMSI Sağlayıcı CLSID `{638DC8E4-1B1C-4328-8C67-DF52445EFA10}` hem 64-bit (`HKLM:\SOFTWARE\Microsoft\AMSI\Providers`) hem 32-bit (`WOW6432Node`) kayıt defteri altına çift mimari destekli olarak bağlandı.
+   - `-Verify` anahtarı eklendi: Yönetici yetkisi gerektirmeden kayıt durumunu, DLL varlığını ve dijital imza durumunu sorgular.
+   - `-Unregister` anahtarı ile hem yerel hem WOW64 anahtarları temizlenir.
+   - DLL mevcut olmadığında kullanıcı modu in-process fallback tarayıcısı (`AmsiScanService`) kesintisiz koruma sunar.
+
+2. **Birleşik İmzalı Dağıtım Boru Hattı (`tools/Sign-Binaries.ps1`):**
+   - Otomatik ikili tarama kapsamı genişletildi: Sürücüler (`AegisFilter.sys`), kataloglar (`.cat`), AMSI COM DLL (`AmsiProvider.dll`), Antivirüs Servisi (`AegisPC.Service.exe`) ve Kullanıcı Modu Uygulaması (`UltronDefender.exe`) tek adımda SHA256 Authenticode ve RFC 3161 zaman damgasıyla imzalanabilir ve doğrulanabilir.
 
 ---
 

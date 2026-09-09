@@ -72,6 +72,59 @@ namespace AegisPC.Tests
             Assert.Null(exception);
         }
 
+        [Fact]
+        public async Task Test_AmsiScanService_ScanBufferAsync_DetectsEicarPayload()
+        {
+            var eicarBytes = System.Text.Encoding.UTF8.GetBytes("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*");
+            var result = await _amsiService.ScanBufferAsync(eicarBytes, "MemoryEicar.bin");
+
+            Assert.NotNull(result);
+            Assert.True(result.IsMalicious);
+            Assert.Equal(AmsiDetectionResult.Malicious, result.Result);
+        }
+
+        [Fact]
+        public async Task Test_AmsiScanService_ScanBufferAsync_AllowsBenignPayload()
+        {
+            var benignBytes = System.Text.Encoding.UTF8.GetBytes("Write-Output 'Hello from benign memory stream'");
+            var result = await _amsiService.ScanBufferAsync(benignBytes, "BenignMemory.bin");
+
+            Assert.NotNull(result);
+            Assert.False(result.IsMalicious);
+            Assert.Equal(AmsiDetectionResult.Clean, result.Result);
+        }
+
+        [Fact]
+        public void Test_AmsiProvider_RegistrationScript_And_Clsid_Consistency()
+        {
+            string? repoRoot = AppContext.BaseDirectory;
+            while (!string.IsNullOrEmpty(repoRoot) && 
+                   !System.IO.File.Exists(System.IO.Path.Combine(repoRoot, "AegisPC.sln")) && 
+                   !System.IO.Directory.Exists(System.IO.Path.Combine(repoRoot, ".git")))
+            {
+                repoRoot = System.IO.Path.GetDirectoryName(repoRoot);
+            }
+
+            Assert.NotNull(repoRoot);
+
+            var scriptPath = System.IO.Path.GetFullPath(System.IO.Path.Combine(repoRoot, "tools/AmsiProvider/Register-AmsiProvider.ps1"));
+            var headerPath = System.IO.Path.GetFullPath(System.IO.Path.Combine(repoRoot, "tools/AmsiProvider/AmsiProvider.h"));
+
+            Assert.True(System.IO.File.Exists(scriptPath), $"AMSI registration script must exist: {scriptPath}");
+            Assert.True(System.IO.File.Exists(headerPath), $"AMSI provider header must exist: {headerPath}");
+
+            var scriptContent = System.IO.File.ReadAllText(scriptPath);
+            var headerContent = System.IO.File.ReadAllText(headerPath);
+
+            const string expectedClsid = "{638DC8E4-1B1C-4328-8C67-DF52445EFA10}";
+
+            Assert.Contains(expectedClsid, scriptContent, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(expectedClsid, headerContent, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("-Verify", scriptContent);
+            Assert.Contains("-Unregister", scriptContent);
+            Assert.Contains("-DllPath", scriptContent);
+        }
+
         public void Dispose()
         {
             _amsiService.Dispose();
