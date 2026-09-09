@@ -46,7 +46,7 @@ namespace AegisPC.Security.RealTime
         void RemoveAllowedApplication(string executablePath);
         bool IsApplicationAllowed(string executablePath);
         void CleanupCanaryFiles();
-        Task<RansomwareDamageAssessment?> EvaluateAndContainThreatAsync(string offendingPath, string reason, int riskScore, int pid = 0);
+        Task<RansomwareDamageAssessment?> EvaluateAndContainThreatAsync(string offendingPath, string reason, int riskScore, int pid = 0, DateTime? incidentTimestamp = null);
         event EventHandler<RansomwareAlertEventArgs>? OnRansomwareAttemptDetected;
         event Action<string, string, string>? OnNotificationRaised;
     }
@@ -224,9 +224,9 @@ namespace AegisPC.Security.RealTime
             return _folderGate.IsApplicationAllowed(executablePath);
         }
 
-        public Task<RansomwareDamageAssessment?> EvaluateAndContainThreatAsync(string offendingPath, string reason, int riskScore, int pid = 0)
+        public Task<RansomwareDamageAssessment?> EvaluateAndContainThreatAsync(string offendingPath, string reason, int riskScore, int pid = 0, DateTime? incidentTimestamp = null)
         {
-            return _enforcementHandler.EvaluateAndContainThreatAsync(offendingPath, reason, riskScore, pid, IsApplicationAllowed);
+            return _enforcementHandler.EvaluateAndContainThreatAsync(offendingPath, reason, riskScore, pid, IsApplicationAllowed, incidentTimestamp);
         }
 
         private void OnFileCreated(object sender, FileSystemEventArgs e)
@@ -245,7 +245,7 @@ namespace AegisPC.Security.RealTime
                 return;
             }
 
-            if (_canaryManager.IsCanaryPath(e.OldFullPath))
+            if (_canaryManager.IsCanaryPath(e.OldFullPath) || _canaryManager.IsCanaryPath(e.FullPath))
             {
                 _ = EvaluateAndContainThreatAsync(e.FullPath, "🚨 Kritik Tuzak İhlali: Kalkan Canary (yem) dosyası yeniden adlandırıldı veya şifreleniyor!", riskScore: 100);
                 return;

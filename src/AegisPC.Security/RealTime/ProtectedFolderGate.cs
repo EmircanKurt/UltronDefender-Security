@@ -122,15 +122,24 @@ namespace AegisPC.Security.RealTime
 
                 // Initialize default user folders (Controlled Folder Access)
                 var user = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                var defaults = new[]
+                var candidateFolders = new List<string>
                 {
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyMusic),
                     Path.Combine(user, "Documents"),
                     Path.Combine(user, "Desktop"),
                     Path.Combine(user, "Pictures"),
                     Path.Combine(user, "Videos"),
                     Path.Combine(user, "Music"),
                     Path.Combine(user, "Downloads")
-                }.Where(Directory.Exists);
+                };
+
+                var defaults = candidateFolders
+                    .Where(p => !string.IsNullOrWhiteSpace(p) && Directory.Exists(p))
+                    .Distinct(StringComparer.OrdinalIgnoreCase);
 
                 _protectedDirs.Clear();
                 foreach (var d in defaults) _protectedDirs.Add(d);

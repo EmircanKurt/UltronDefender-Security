@@ -84,18 +84,25 @@ namespace AegisPC.Security.RealTime
                 if (File.Exists(fullPath))
                 {
                     var ext = Path.GetExtension(fullPath).ToLowerInvariant();
-                    if (ext is ".docx" or ".xlsx" or ".pdf" or ".txt" or ".jpg")
+                    if (ext is ".docx" or ".xlsx" or ".pdf" or ".txt" or ".jpg" or ".csv" or ".rtf" or ".png")
                     {
                         var currentEntropy = await EntropyCalculator.CalculateEntropyAsync(fullPath);
                         if (_fileEntropyCache.TryGetValue(fullPath, out var previousEntropy))
                         {
-                            if (currentEntropy - previousEntropy > 2.8 && currentEntropy > 7.5)
+                            if (currentEntropy - previousEntropy > 2.5 && currentEntropy > 7.4)
                             {
                                 await onThreatDetected(
                                     fullPath,
                                     $"⚠️ Anormal Yüksek Entropi Sıçraması ({previousEntropy:F2} -> {currentEntropy:F2}). Şifreleme saldırısı şüphesi!",
                                     85);
                             }
+                        }
+                        else if (currentEntropy > 7.92 && ext is ".txt" or ".csv" or ".rtf")
+                        {
+                            await onThreatDetected(
+                                fullPath,
+                                $"⚠️ Anormal Yüksek Entropi Tespiti ({currentEntropy:F2}/8.0). Düz metin dosyasında şifrelenmiş veri tespit edildi!",
+                                85);
                         }
                         _fileEntropyCache[fullPath] = currentEntropy;
                     }
@@ -123,7 +130,7 @@ namespace AegisPC.Security.RealTime
                 _globalRapidChanges.Clear();
                 _ = onThreatDetected(
                     path,
-                    $"🚨 Kitle Dosya Modifikasyon Anomalisi (2.5 saniyede 20+ dosya işlem gördü)!",
+                    $"🚨 Anormal dosya değişim sıklığı / kitle modifikasyon anomalisi (2.5 saniyede 20+ dosya işlem gördü)!",
                     90);
             }
         }

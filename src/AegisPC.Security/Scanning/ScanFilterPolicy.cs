@@ -161,6 +161,17 @@ namespace AegisPC.Security.Scanning
         });
 
         /// <summary>
+        /// Fidye kalkanına ait canary tuzak dosyalarını tespit eder.
+        /// </summary>
+        public static bool IsCanaryFile(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath)) return false;
+            string fileName = Path.GetFileName(filePath);
+            return fileName.Contains("_ultron_shield_canary", StringComparison.OrdinalIgnoreCase) ||
+                   fileName.Contains("_ultron_canary", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// Verilen dosya yolunun uygulamanın kendi veri/imza/log/config dizinlerinden
         /// veya bileşenlerinden birine ait olup olmadığını kontrol eder. True dönerse dosya asla taranmaz.
         /// </summary>
@@ -172,6 +183,9 @@ namespace AegisPC.Security.Scanning
 
             try
             {
+                // 0. Canary Tuzak Dosyaları: Asla taranmaz
+                if (IsCanaryFile(filePath)) return true;
+
                 // 1. Dosya adı denetimi: Ultron Defender veya AegisPC'ye ait hiçbir ikili/sembol/ayar taranmaz
                 string fileName = Path.GetFileName(filePath);
                 if (fileName.StartsWith("AegisPC", StringComparison.OrdinalIgnoreCase) ||

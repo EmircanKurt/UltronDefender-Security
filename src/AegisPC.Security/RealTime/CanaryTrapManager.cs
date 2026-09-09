@@ -49,6 +49,13 @@ namespace AegisPC.Security.RealTime
     public class CanaryTrapManager : ICanaryTrapManager
     {
         public const string CanaryFileName = "!_ultron_shield_canary.docx";
+        public const string SecondaryCanaryFileName = "~z_ultron_shield_canary.docx";
+
+        public static readonly string[] CanaryFileNames = new[]
+        {
+            CanaryFileName,
+            SecondaryCanaryFileName
+        };
 
         private const string CanaryDecoyContent =
 @"🛡️ ULTRON DEFENDER TOTAL SECURITY — GİZLİ GÜVENLİK VE FİDYE KORUMA AJANI (CANARY DECOY)
@@ -94,17 +101,20 @@ silinmemesi ve kalması önerilir. Ultron Defender devrede olduğu sürece güve
                     {
                         if (!Directory.Exists(dir)) continue;
 
-                        var canaryPath = Path.Combine(dir, CanaryFileName);
-                        if (!File.Exists(canaryPath))
+                        foreach (var name in CanaryFileNames)
                         {
-                            File.WriteAllText(canaryPath, CanaryDecoyContent, Encoding.UTF8);
-                            File.SetAttributes(canaryPath, FileAttributes.Hidden | FileAttributes.System);
+                            var canaryPath = Path.Combine(dir, name);
+                            if (!File.Exists(canaryPath))
+                            {
+                                File.WriteAllText(canaryPath, CanaryDecoyContent, Encoding.UTF8);
+                                File.SetAttributes(canaryPath, FileAttributes.Hidden | FileAttributes.System);
+                            }
+                            else
+                            {
+                                File.SetAttributes(canaryPath, FileAttributes.Hidden | FileAttributes.System);
+                            }
+                            _canaryFiles.Add(canaryPath);
                         }
-                        else
-                        {
-                            File.SetAttributes(canaryPath, FileAttributes.Hidden | FileAttributes.System);
-                        }
-                        _canaryFiles.Add(canaryPath);
                     }
                     catch { }
                 }
@@ -142,7 +152,10 @@ silinmemesi ve kalması önerilir. Ultron Defender devrede olduğu sürece güve
         public bool IsCanaryPath(string path)
         {
             if (string.IsNullOrWhiteSpace(path)) return false;
-            return path.EndsWith(CanaryFileName, StringComparison.OrdinalIgnoreCase);
+            var fileName = Path.GetFileName(path);
+            return CanaryFileNames.Any(c => string.Equals(c, fileName, StringComparison.OrdinalIgnoreCase))
+                || fileName.Contains("_ultron_shield_canary", StringComparison.OrdinalIgnoreCase)
+                || fileName.Contains("_ultron_canary", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

@@ -39,7 +39,8 @@ namespace AegisPC.Security.RealTime
             string reason,
             int riskScore,
             int pid = 0,
-            Func<string, bool>? isAppAllowed = null);
+            Func<string, bool>? isAppAllowed = null,
+            DateTime? incidentTimestamp = null);
     }
 
     /// <summary>
@@ -77,75 +78,185 @@ namespace AegisPC.Security.RealTime
             string reason,
             int riskScore,
             int pid = 0,
-            Func<string, bool>? isAppAllowed = null)
+            Func<string, bool>? isAppAllowed = null,
+            DateTime? incidentTimestamp = null)
         {
+            var incidentTime = incidentTimestamp ?? DateTime.UtcNow;
             Interlocked.Increment(ref _totalBlockedCount);
 
-            int targetPid = pid;
+            int targetPid = 0;
             string targetProcName = "Bilinmeyen Süreç";
             string targetProcPath = string.Empty;
             bool processTerminated = false;
 
-            // 1. Identify offending process locking the file or recent processes
-            try
+            // 1. PID Adaylarını Belirle:
+            // A. Eğer arayan doğrudan PID verdiyse onu değerlendir
+            // B. Eğer pid verilmediyse (0 ise) Restart Manager ile dosyayı kilitleyen süreci bul
+            var candidatePids = new List<int>();
+            if (pid > 0)
             {
-                var processes = Process.GetProcesses();
-                foreach (var p in processes)
+                candidatePids.Add(pid);
+            }
+            else if (!string.IsNullOrWhiteSpace(offendingPath))
+            {
+                try
                 {
+                    var lockingPids = FileLockProcessResolver.FindLockingProcessIds(offendingPath);
+                    if (lockingPids.Count > 0)
+                    {
+                        candidatePids.AddRange(lockingPids);
+                    }
+                }
+                catch { }
+            }
+
+            // 2. Aday Süreçleri Güvenlik Kalkanı ve PID-Reuse Filtresinden Geçir
+            foreach (var candPid in candidatePids)
+            {
+                // Kritik PID Kontrolü (System Idle Process, System, vb.)
+                if (candPid <= 4 || candPid == Environment.ProcessId)
+                {
+                    _logger?.LogDebug("Skipping PID {Pid}: Core system or current process.", candPid);
+                    continue;
+                }
+
+                try
+                {
+                    using var proc = Process.GetProcessById(candPid);
+                    if (proc.HasExited)
+                    {
+                        _logger?.LogDebug("Skipping PID {Pid}: Process has already exited.", candPid);
+                        continue;
+                    }
+
+                    string procName = proc.ProcessName;
+
+                    // Kritik Süreç İsim Filtresi (explorer, svchost, csrss, dwm, etc.)
+                    if (CriticalProcesses.IsCriticalProcess(procName))
+                    {
+                        _logger?.LogWarning("Threat associated with critical process '{Proc}' (PID: {Pid}). Termination blocked for system stability.", procName, candPid);
+                        targetProcName = procName;
+                        continue;
+                    }
+
+                    // Süreç Dosya Yolu Alımı
+                    string procPath = string.Empty;
                     try
                     {
-                        if (p.Id <= 4 || p.Id == Environment.ProcessId || CriticalProcesses.IsCriticalProcess(p.ProcessName)) continue;
-                        if (isAppAllowed != null && (isAppAllowed(p.ProcessName) || isAppAllowed(p.MainModule?.FileName ?? ""))) continue;
+                        procPath = proc.MainModule?.FileName ?? string.Empty;
+                    }
+                    catch { }
 
-                        if (targetPid > 0 && p.Id == targetPid)
-                        {
-                            targetProcName = p.ProcessName;
-                            targetProcPath = p.MainModule?.FileName ?? "";
-                            break;
-                        }
+                    // Öz-Koruma: Antivirüs ve koruma süreçleri asla öldürülmez
+                    if (!string.IsNullOrEmpty(procPath) && FileScannerService.IsSelfOwnedPath(procPath))
+                    {
+                        _logger?.LogDebug("Skipping PID {Pid}: Self-owned protection binary.", candPid);
+                        continue;
+                    }
 
-                        if (string.Equals(p.MainModule?.FileName, offendingPath, StringComparison.OrdinalIgnoreCase))
+                    // İzinli / Güvenilir Uygulama Filtresi (Controlled Folder Access Allowlist)
+                    if (isAppAllowed != null && (isAppAllowed(procName) || (!string.IsNullOrEmpty(procPath) && isAppAllowed(procPath))))
+                    {
+                        _logger?.LogInformation("Skipping PID {Pid}: Application '{Proc}' is allowed to access protected folders.", candPid, procName);
+                        continue;
+                    }
+
+                    // PID-Reuse Koruması (StartTime Check):
+                    // Süreç, olay tespit zamanından sonra başlamışsa bu PID işletim sistemi tarafından başka bir sürece atanmış demektir.
+                    try
+                    {
+                        var procStartTime = proc.StartTime.ToUniversalTime();
+                        if (procStartTime > incidentTime.AddSeconds(2))
                         {
-                            targetPid = p.Id;
-                            targetProcName = p.ProcessName;
-                            targetProcPath = p.MainModule?.FileName ?? "";
-                            break;
+                            _logger?.LogWarning("PID reuse guard tripped! Process '{Proc}' (PID: {Pid}) started at {Start}, which is after incident time {Incident}. Termination aborted.",
+                                procName, candPid, procStartTime, incidentTime);
+                            continue;
                         }
                     }
                     catch { }
-                    finally
+
+                    // Windows Sistem Dizinleri Koruması (System32, SysWOW64, WinSxS)
+                    if (!string.IsNullOrEmpty(procPath))
                     {
-                        p.Dispose();
+                        string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+                        string sys32 = Path.Combine(winDir, "System32");
+                        string syswow = Path.Combine(winDir, "SysWOW64");
+                        string winsxs = Path.Combine(winDir, "WinSxS");
+
+                        bool isSystemBinary = procPath.StartsWith(sys32, StringComparison.OrdinalIgnoreCase) ||
+                                              procPath.StartsWith(syswow, StringComparison.OrdinalIgnoreCase) ||
+                                              procPath.StartsWith(winsxs, StringComparison.OrdinalIgnoreCase);
+
+                        if (isSystemBinary && (CriticalProcesses.IsCriticalProcess(procName) || CriticalProcesses.IsCriticalProcess(Path.GetFileName(procPath))))
+                        {
+                            _logger?.LogWarning("Refusing to terminate core Windows system binary: {Path}", procPath);
+                            targetProcName = procName;
+                            continue;
+                        }
                     }
+
+                    // Güvenlik kontrollerini geçen ilk doğrulanmış saldırgan süreç
+                    targetPid = candPid;
+                    targetProcName = procName;
+                    targetProcPath = procPath;
+                    break;
+                }
+                catch (ArgumentException)
+                {
+                    // Süreç arama sırasında sonlanmış
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogDebug(ex, "Error inspecting candidate process {Pid}", candPid);
                 }
             }
-            catch { }
 
-            // 2. Active Process Termination if High/Critical Risk
-            if (riskScore >= 70 && targetPid > 4 && targetPid != Environment.ProcessId && !CriticalProcesses.IsCriticalProcess(targetProcName) && !FileScannerService.IsSelfOwnedPath(targetProcPath))
+            // 3. Yüksek/Kritik Riskte Aktif Güvenli Süreç İnfazı (Kill)
+            if (riskScore >= 70 && targetPid > 4 && targetPid != Environment.ProcessId)
             {
                 try
                 {
                     using var procToKill = Process.GetProcessById(targetPid);
                     if (!procToKill.HasExited)
                     {
+                        // İnfazdan hemen önce yarış durumuna karşı son StartTime doğrulaması
+                        try
+                        {
+                            if (procToKill.StartTime.ToUniversalTime() > incidentTime.AddSeconds(2))
+                            {
+                                throw new InvalidOperationException("PID reuse detected immediately before termination.");
+                            }
+                        }
+                        catch (InvalidOperationException) { throw; }
+                        catch { }
+
                         procToKill.Kill(entireProcessTree: true);
                         procToKill.WaitForExit(1500);
                         processTerminated = true;
-                        _logger?.LogWarning("Ransomware offending process terminated: {Proc} (PID: {Pid})", targetProcName, targetPid);
+                        _logger?.LogWarning("Ransomware offending process successfully terminated: {Proc} (PID: {Pid})", targetProcName, targetPid);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to terminate offending process {Proc} (PID: {Pid})", targetProcName, targetPid);
+                }
             }
 
-            // 3. Quarantine Source Binary if path exists
-            if (!string.IsNullOrEmpty(targetProcPath) && File.Exists(targetProcPath) && !FileScannerService.IsSelfOwnedPath(targetProcPath) && _quarantineService != null)
+            // 4. Saldırgan İkiliyi (Source Binary) Karantinaya Al
+            if ((processTerminated || riskScore >= 90) &&
+                !string.IsNullOrEmpty(targetProcPath) &&
+                File.Exists(targetProcPath) &&
+                !FileScannerService.IsSelfOwnedPath(targetProcPath) &&
+                _quarantineService != null)
             {
                 try
                 {
                     await _quarantineService.QuarantineFileAsync(targetProcPath, $"Ransomware Activity: {reason}");
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Failed to quarantine ransomware binary {Path}", targetProcPath);
+                }
             }
 
             // 4. Create Security Incident
