@@ -10,6 +10,8 @@ namespace AegisPC.Service.Network
     {
         bool IsRunning { get; }
         bool IsDnsSinkholeActive { get; }
+        bool IsWfpActive { get; }
+        IWfpEnforcementService? WfpEnforcement { get; }
         DnsFilterStatistics GetStatistics();
         void Start();
         void Stop();
@@ -19,29 +21,32 @@ namespace AegisPC.Service.Network
 
     /// <summary>
     /// Ağ ve DNS Koruma Servisi.
-    /// Layer 7 DNS Sinkhole (Hosts enjeksiyonu + DoH koruması), zararlı alan adı engelleme
-    /// ve şüpheli C2 / giden ağ akışı telemetrisini koordine eder.
-    /// Not: Bu servis kullanıcı modunda çalışmakta olup, kernel WFP (Windows Filtering Platform)
-    /// filtreleme sürücüsü yerine DNS seviyesinde engelleme ve soket telemetrisi sağlar.
+    /// Layer 7 DNS Sinkhole (Hosts enjeksiyonu + DoH koruması), zararlı alan adı engelleme,
+    /// WFP (Windows Filtering Platform) ALE giden IP engelleme ve şüpheli C2 telemetrisini koordine eder.
     /// </summary>
     public class NetworkProtectionService : INetworkProtectionService
     {
         private readonly ILogger<NetworkProtectionService>? _logger;
         private readonly DnsFilterService _dnsFilterService;
         private readonly INetworkProcessCorrelator? _processCorrelator;
+        private readonly IWfpEnforcementService? _wfpEnforcement;
         private bool _isRunning;
         private readonly object _lock = new();
 
         public bool IsRunning => _isRunning;
         public bool IsDnsSinkholeActive => _dnsFilterService.HostsHelper.IsSinkholeActive();
+        public bool IsWfpActive => _wfpEnforcement?.IsWfpAvailable ?? false;
+        public IWfpEnforcementService? WfpEnforcement => _wfpEnforcement;
 
         public NetworkProtectionService(
             DnsFilterService dnsFilterService,
             INetworkProcessCorrelator? processCorrelator = null,
+            IWfpEnforcementService? wfpEnforcement = null,
             ILogger<NetworkProtectionService>? logger = null)
         {
             _dnsFilterService = dnsFilterService ?? throw new ArgumentNullException(nameof(dnsFilterService));
             _processCorrelator = processCorrelator;
+            _wfpEnforcement = wfpEnforcement;
             _logger = logger;
         }
 
@@ -87,35 +92,44 @@ namespace AegisPC.Service.Network
         {
             if (flow == null) return null;
 
+            NetworkConnectionVerdict verdict;
+
             // Alan adı engelli mi kontrol et
-            if (!string.IsNullOrWhiteSpace(flow.DestinationDomain))
+            if (!string.IsNullOrWhiteSpace(flow.DestinationDomain) &&
+                _dnsFilterService.IsDomainBlocked(flow.DestinationDomain, out var cat, out var reason))
             {
-                if (_dnsFilterService.IsDomainBlocked(flow.DestinationDomain, out var cat, out var reason))
+                verdict = new NetworkConnectionVerdict
                 {
-                    return new NetworkConnectionVerdict
-                    {
-                        IsSuspicious = true,
-                        IsC2Beaconing = (cat == UrlBlockCategory.C2Server),
-                        RiskScore = 90,
-                        ThreatTitle = $"Engellenen Zararlı Alan Adı: {flow.DestinationDomain}",
-                        ThreatCategory = cat.ToString(),
-                        Explanation = reason
-                    };
-                }
+                    IsSuspicious = true,
+                    IsC2Beaconing = (cat == UrlBlockCategory.C2Server),
+                    RiskScore = 90,
+                    ThreatTitle = $"Engellenen Zararlı Alan Adı: {flow.DestinationDomain}",
+                    ThreatCategory = cat.ToString(),
+                    Explanation = reason
+                };
             }
-
             // Süreç korelatörü varsa C2 / beaconing analizi yap
-            if (_processCorrelator != null)
+            else if (_processCorrelator != null)
             {
-                return _processCorrelator.CorrelateFlow(flow);
+                verdict = _processCorrelator.CorrelateFlow(flow);
+            }
+            else
+            {
+                verdict = new NetworkConnectionVerdict
+                {
+                    IsSuspicious = false,
+                    RiskScore = 0,
+                    ThreatTitle = "Clean Flow"
+                };
             }
 
-            return new NetworkConnectionVerdict
+            // Eğer akış şüpheli veya C2 olarak belirlendiyse, WFP ile IP seviyesinde giden paketi durdur
+            if ((verdict.IsSuspicious || verdict.IsC2Beaconing) && !string.IsNullOrWhiteSpace(flow.DestinationIp))
             {
-                IsSuspicious = false,
-                RiskScore = 0,
-                ThreatTitle = "Clean Flow"
-            };
+                _wfpEnforcement?.BlockOutboundIp(flow.DestinationIp, verdict.ThreatTitle);
+            }
+
+            return verdict;
         }
 
         public DnsFilterStatistics GetStatistics()
@@ -127,6 +141,7 @@ namespace AegisPC.Service.Network
         {
             Stop();
             _dnsFilterService?.Dispose();
+            _wfpEnforcement?.Dispose();
         }
     }
 }

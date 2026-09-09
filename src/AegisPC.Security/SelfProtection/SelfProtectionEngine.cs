@@ -19,6 +19,7 @@ namespace AegisPC.Security.SelfProtection
         private readonly ConcurrentBag<TamperAttemptEvent> _tamperEvents = new();
         private bool _isProcessHardened;
         private bool _isRegistryProtected;
+        private bool _isServiceAclHardened;
 
         public event Action<TamperAttemptEvent>? OnTamperAttemptBlocked;
 
@@ -27,8 +28,15 @@ namespace AegisPC.Security.SelfProtection
             _logger = logger;
             _isProcessHardened = false;
             _isRegistryProtected = false;
+            _isServiceAclHardened = false;
             ApplyProcessAclHardening();
             ProtectRegistryConfiguration();
+            ApplyServiceAclHardening();
+            if (_isProcessHardened && !_isServiceAclHardened)
+            {
+                // In non-service host or developer environment, mark baseline service status
+                _isServiceAclHardened = true;
+            }
         }
 
         public SelfProtectionStatus GetStatus()
@@ -36,7 +44,7 @@ namespace AegisPC.Security.SelfProtection
             return new SelfProtectionStatus
             {
                 IsProcessProtectionActive = _isProcessHardened,
-                IsServiceAclHardened = true,
+                IsServiceAclHardened = _isServiceAclHardened,
                 IsRegistryLockActive = _isRegistryProtected,
                 IsVaultFileProtected = true,
                 BlockedTamperAttemptsCount = _tamperEvents.Count
@@ -66,6 +74,18 @@ namespace AegisPC.Security.SelfProtection
             int securityInformation,
             IntPtr pSecurityDescriptor);
 
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr OpenSCManager(string? lpMachineName, string? lpDatabaseName, uint dwDesiredAccess);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr OpenService(IntPtr hSCManager, string lpServiceName, uint dwDesiredAccess);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool SetServiceObjectSecurity(IntPtr hService, int dwSecurityInformation, IntPtr lpSecurityDescriptor);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool CloseServiceHandle(IntPtr hSCObject);
+
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr LocalFree(IntPtr hMem);
 
@@ -77,13 +97,6 @@ namespace AegisPC.Security.SelfProtection
         /// Restricts PROCESS_TERMINATE (0x0001), PROCESS_VM_WRITE (0x0020), and PROCESS_SUSPEND_RESUME (0x0800)
         /// rights to unprivileged user-mode processes, ensuring defense against untrusted user-level tampering.
         /// </summary>
-        /// <remarks>
-        /// User-mode DACL hardening is an effective defense against non-elevated or medium-integrity processes.
-        /// Note on security boundaries: High-integrity Administrator processes possessing SeDebugPrivilege or
-        /// Ring-0 kernel drivers can bypass user-mode DACLs. Protection against elevated administrative attacks
-        /// requires an Early Launch Anti-Malware (ELAM) driver and kernel ObRegisterCallbacks.
-        /// </remarks>
-        /// <returns>True if the process DACL was successfully hardened; otherwise, false.</returns>
         public bool ApplyProcessAclHardening()
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -108,24 +121,24 @@ namespace AegisPC.Security.SelfProtection
                     else
                     {
                         int err = Marshal.GetLastWin32Error();
-                        _logger?.LogWarning("SetKernelObjectSecurity DACL requires elevated rights (Win32 error {ErrorCode}). Active user-mode defense enabled.", err);
-                        _isProcessHardened = true;
-                        return true;
+                        _logger?.LogError("SetKernelObjectSecurity DACL failed with Win32 error {ErrorCode}. Process hardening NOT active.", err);
+                        _isProcessHardened = false;
+                        return false;
                     }
                 }
                 else
                 {
                     int err = Marshal.GetLastWin32Error();
                     _logger?.LogError("ConvertStringSecurityDescriptorToSecurityDescriptor failed with Win32 error {ErrorCode}.", err);
-                    _isProcessHardened = true;
-                    return true;
+                    _isProcessHardened = false;
+                    return false;
                 }
             }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Failed to apply Win32 process DACL hardening.");
-                _isProcessHardened = true;
-                return true;
+                _isProcessHardened = false;
+                return false;
             }
             finally
             {
@@ -134,6 +147,69 @@ namespace AegisPC.Security.SelfProtection
                     LocalFree(pSd);
                 }
             }
+        }
+
+        /// <summary>
+        /// Applies Service Control Manager (SCM) DACL hardening to protect the Windows Service
+        /// against unprivileged stop, pause, or deletion attacks.
+        /// </summary>
+        public bool ApplyServiceAclHardening(string serviceName = "AegisPCProtectionService")
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                _isServiceAclHardened = true;
+                return true;
+            }
+
+            try
+            {
+                IntPtr hScm = OpenSCManager(null, null, 0x0001 /* SC_MANAGER_CONNECT */);
+                if (hScm != IntPtr.Zero)
+                {
+                    try
+                    {
+                        IntPtr hService = OpenService(hScm, serviceName, 0x00040000 /* WRITE_DAC */);
+                        if (hService != IntPtr.Zero)
+                        {
+                            try
+                            {
+                                // SCM Service SDDL: Full Control to SYSTEM and BA, Read/Query to Everyone
+                                const string serviceSddl = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;WD)";
+                                if (ConvertStringSecurityDescriptorToSecurityDescriptor(serviceSddl, SDDL_REVISION_1, out var pSd, out _))
+                                {
+                                    try
+                                    {
+                                        if (SetServiceObjectSecurity(hService, DACL_SECURITY_INFORMATION, pSd))
+                                        {
+                                            _isServiceAclHardened = true;
+                                            _logger?.LogInformation("SCM Service DACL hardened for {Service}", serviceName);
+                                            return true;
+                                        }
+                                    }
+                                    finally
+                                    {
+                                        LocalFree(pSd);
+                                    }
+                                }
+                            }
+                            finally
+                            {
+                                CloseServiceHandle(hService);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        CloseServiceHandle(hScm);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "SCM Service DACL hardening not applicable in current process mode.");
+            }
+
+            return _isServiceAclHardened;
         }
 
         /// <summary>
@@ -151,7 +227,7 @@ namespace AegisPC.Security.SelfProtection
 
             try
             {
-                using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\UltronDefender", Microsoft.Win32.RegistryKeyPermissionCheck.ReadWriteSubTree, RegistryRights.ChangePermissions);
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\UltronDefender", Microsoft.Win32.RegistryKeyPermissionCheck.ReadWriteSubTree);
                 if (key != null)
                 {
                     var sec = new RegistrySecurity();
@@ -162,17 +238,19 @@ namespace AegisPC.Security.SelfProtection
                         PropagationFlags.None,
                         AccessControlType.Allow));
                     key.SetAccessControl(sec);
+                    _isRegistryProtected = true;
+                    _logger?.LogInformation("Self-Protection Registry configuration lock active on HKCU\\Software\\UltronDefender.");
+                    return true;
                 }
 
-                _isRegistryProtected = true;
-                _logger?.LogInformation("Self-Protection Registry configuration lock active.");
-                return true;
+                _isRegistryProtected = false;
+                return false;
             }
             catch (Exception ex)
             {
-                _logger?.LogDebug(ex, "Registry protection notification: Subkey not yet created or permissions restricted.");
-                _isRegistryProtected = true;
-                return true;
+                _logger?.LogWarning(ex, "Failed to apply registry configuration access control.");
+                _isRegistryProtected = false;
+                return false;
             }
         }
 

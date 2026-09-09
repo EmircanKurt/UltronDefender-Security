@@ -46,7 +46,7 @@ namespace AegisPC.Security.RealTime
 
         public bool IsRunning => _isRunning;
         public bool IsEtwSubscribed => _isEtwSubscribed;
-        public TimeSpan ScanTimeout { get; set; } = TimeSpan.FromMilliseconds(500);
+        public TimeSpan ScanTimeout { get; set; } = TimeSpan.FromMilliseconds(1000);
 
         public event Action<PreExecThreatAlert>? OnThreatBlocked;
 

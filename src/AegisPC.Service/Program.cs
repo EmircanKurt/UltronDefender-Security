@@ -108,6 +108,7 @@ namespace AegisPC.Service
                         services.AddSingleton<AegisPC.Service.Network.UrlBlocklistManager>();
                         services.AddSingleton<AegisPC.Service.Network.DnsFilterService>();
                         services.AddSingleton<AegisPC.Service.Network.ThreatFeedManager>();
+                        services.AddSingleton<AegisPC.Service.Network.IWfpEnforcementService, AegisPC.Service.Network.WfpEnforcementService>();
                         services.AddSingleton<AegisPC.Service.Network.INetworkProtectionService, AegisPC.Service.Network.NetworkProtectionService>();
                         services.AddSingleton<AegisPC.Service.Network.NetworkProtectionService>(sp => (AegisPC.Service.Network.NetworkProtectionService)sp.GetRequiredService<AegisPC.Service.Network.INetworkProtectionService>());
 

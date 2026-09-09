@@ -38,6 +38,7 @@ namespace AegisPC.Contracts.SelfProtection
         SelfProtectionStatus GetStatus();
         bool ApplyProcessAclHardening();
         bool ProtectRegistryConfiguration();
+        bool ApplyServiceAclHardening(string serviceName = "AegisPCProtectionService");
         bool RecordAndBlockTamperAttempt(TamperTargetType type, int sourcePid, string sourceName, string targetResource, string details);
     }
 }

@@ -1,12 +1,15 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Caching;
 using AegisPC.Contracts.Detection;
+using AegisPC.Contracts.Services;
 using AegisPC.Core.Constants;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Helpers;
+using AegisPC.Core.Models;
 using AegisPC.Infrastructure.Kernel;
 using Microsoft.Extensions.Logging;
 
@@ -29,6 +32,9 @@ namespace AegisPC.Service.DriverBridge
         private readonly ILogger<KernelBridge>? _logger;
         private readonly IDetectionHub? _detectionHub;
         private readonly IScanCacheService? _scanCacheService;
+        private readonly ISecurityFindingService? _findingService;
+        private readonly IQuarantineService? _quarantineService;
+        private readonly IAuditLogService? _auditLogService;
         private readonly KernelIpcService _kernelIpc;
         private bool _isDriverConnected;
         private bool _isDisposed;
@@ -38,11 +44,17 @@ namespace AegisPC.Service.DriverBridge
         public KernelBridge(
             ILogger<KernelBridge>? logger = null,
             IDetectionHub? detectionHub = null,
-            IScanCacheService? scanCacheService = null)
+            IScanCacheService? scanCacheService = null,
+            ISecurityFindingService? findingService = null,
+            IQuarantineService? quarantineService = null,
+            IAuditLogService? auditLogService = null)
         {
             _logger = logger;
             _detectionHub = detectionHub;
             _scanCacheService = scanCacheService;
+            _findingService = findingService;
+            _quarantineService = quarantineService;
+            _auditLogService = auditLogService;
             _kernelIpc = new KernelIpcService();
         }
 
@@ -144,11 +156,159 @@ namespace AegisPC.Service.DriverBridge
                     using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
                     var detectionResult = _detectionHub.EvaluateAsync(ctx, cts.Token).GetAwaiter().GetResult();
 
-                    if (detectionResult != null && (detectionResult.RiskScore >= 70 || detectionResult.Verdict == DetectionVerdict.ConfirmedMalicious))
+                    if (detectionResult != null)
                     {
-                        _logger?.LogWarning("KERNEL INTERCEPTION: Blocked malicious file I/O '{Path}' from PID {Pid} (Threat: {Threat}, Score: {Score})",
-                            filePath, pid, detectionResult.ThreatTitle, detectionResult.RiskScore);
-                        return true; // BLOCK ACCESS
+                        int score = detectionResult.RiskScore;
+                        var evidenceReasons = detectionResult.Evidences != null && detectionResult.Evidences.Count > 0
+                            ? detectionResult.Evidences.Select(e => e.Description).ToList()
+                            : new List<string> { detectionResult.ThreatTitle };
+
+                        // 3a. CRITICAL THREAT: Risk >= 85 veya ConfirmedMalicious -> QUARANTINE + BLOCK
+                        if (score >= 85 || detectionResult.Verdict == DetectionVerdict.ConfirmedMalicious)
+                        {
+                            _logger?.LogCritical("🚨 KERNEL PRE-OP INTERCEPTION [QUARANTINE]: Intercepted critical malicious payload '{Path}' from PID {Pid} (Threat: {Threat}, Score: {Score})",
+                                filePath, pid, detectionResult.ThreatTitle, score);
+
+                            var finding = new SecurityFinding
+                            {
+                                ObjectPath = filePath,
+                                ObjectName = fileName,
+                                SHA256 = detectionResult.SHA256,
+                                RiskScore = score,
+                                RiskLevel = RiskLevel.ConfirmedMalicious,
+                                Category = FindingCategory.MalwareSuspicion,
+                                Title = string.IsNullOrWhiteSpace(detectionResult.ThreatTitle) ? "Ring-0 Intercepted Malware" : detectionResult.ThreatTitle,
+                                Description = $"Ring-0 Minifilter intercepted confirmed malicious file I/O from PID {pid}. Access blocked (STATUS_ACCESS_DENIED) and staged for quarantine.",
+                                ConfidenceLevel = ConfidenceLevel.High,
+                                Status = FindingStatus.Active,
+                                RiskReasons = evidenceReasons
+                            };
+
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    if (_quarantineService != null && File.Exists(filePath))
+                                    {
+                                        bool quarantined = await _quarantineService.QuarantineFileAsync(filePath, detectionResult.ThreatTitle ?? "Kernel Intercepted Malware");
+                                        if (quarantined) finding.Status = FindingStatus.Resolved;
+                                    }
+                                    if (_findingService != null)
+                                    {
+                                        await _findingService.AddFindingAsync(finding);
+                                    }
+                                    if (_auditLogService != null)
+                                    {
+                                        await _auditLogService.LogActionAsync(
+                                            AuditAction.FileQuarantined,
+                                            "KernelMinifilter",
+                                            fileName,
+                                            filePath,
+                                            $"Critical malware blocked and quarantined from PID {pid}. Threat: {detectionResult.ThreatTitle}, Score: {score}",
+                                            AuditResult.Success);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger?.LogTrace(ex, "Background quarantine execution failed for '{Path}'", filePath);
+                                }
+                            });
+
+                            return true; // BLOCK ACCESS (STATUS_ACCESS_DENIED)
+                        }
+                        // 3b. HIGH RISK: Risk 70-84 -> BLOCK
+                        else if (score >= 70)
+                        {
+                            _logger?.LogWarning("🛡️ KERNEL PRE-OP INTERCEPTION [BLOCK]: Blocked high-risk file access '{Path}' from PID {Pid} (Threat: {Threat}, Score: {Score})",
+                                filePath, pid, detectionResult.ThreatTitle, score);
+
+                            var finding = new SecurityFinding
+                            {
+                                ObjectPath = filePath,
+                                ObjectName = fileName,
+                                SHA256 = detectionResult.SHA256,
+                                RiskScore = score,
+                                RiskLevel = RiskLevel.HighRisk,
+                                Category = FindingCategory.MalwareSuspicion,
+                                Title = string.IsNullOrWhiteSpace(detectionResult.ThreatTitle) ? "Kernel Blocked I/O" : detectionResult.ThreatTitle,
+                                Description = $"Kernel minifilter blocked file access from PID {pid}. Gating enforced (STATUS_ACCESS_DENIED).",
+                                ConfidenceLevel = ConfidenceLevel.High,
+                                Status = FindingStatus.Active,
+                                RiskReasons = evidenceReasons
+                            };
+
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    if (_findingService != null)
+                                    {
+                                        await _findingService.AddFindingAsync(finding);
+                                    }
+                                    if (_auditLogService != null)
+                                    {
+                                        await _auditLogService.LogActionAsync(
+                                            AuditAction.FileBlocked,
+                                            "KernelMinifilter",
+                                            fileName,
+                                            filePath,
+                                            $"High-risk file access blocked from PID {pid}. Threat: {detectionResult.ThreatTitle}, Score: {score}",
+                                            AuditResult.Success);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger?.LogTrace(ex, "Background audit/finding logging failed for '{Path}'", filePath);
+                                }
+                            });
+
+                            return true; // BLOCK ACCESS (STATUS_ACCESS_DENIED)
+                        }
+                        // 3c. MEDIUM RISK / SUSPICIOUS: Risk 40-69 -> ALLOW (MONITOR + TELEMETRY)
+                        else if (score >= 40)
+                        {
+                            _logger?.LogInformation("⚠️ KERNEL TELEMETRY [SUSPICIOUS]: Monitored suspicious I/O '{Path}' from PID {Pid} (Threat: {Threat}, Score: {Score})",
+                                filePath, pid, detectionResult.ThreatTitle, score);
+
+                            var finding = new SecurityFinding
+                            {
+                                ObjectPath = filePath,
+                                ObjectName = fileName,
+                                SHA256 = detectionResult.SHA256,
+                                RiskScore = score,
+                                RiskLevel = RiskLevel.Suspicious,
+                                Category = FindingCategory.MalwareSuspicion,
+                                Title = string.IsNullOrWhiteSpace(detectionResult.ThreatTitle) ? "Suspicious I/O Activity" : detectionResult.ThreatTitle,
+                                Description = $"Kernel telemetry monitored suspicious file I/O from PID {pid}. (Risk Score: {score})",
+                                ConfidenceLevel = ConfidenceLevel.Medium,
+                                Status = FindingStatus.Active,
+                                RiskReasons = evidenceReasons
+                            };
+
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    if (_findingService != null)
+                                    {
+                                        await _findingService.AddFindingAsync(finding);
+                                    }
+                                    if (_auditLogService != null)
+                                    {
+                                        await _auditLogService.LogActionAsync(
+                                            AuditAction.ScanCompleted,
+                                            "KernelTelemetry",
+                                            fileName,
+                                            filePath,
+                                            $"Suspicious file I/O monitored from PID {pid}. Threat: {detectionResult.ThreatTitle}, Score: {score}",
+                                            AuditResult.Success);
+                                    }
+                                }
+                                catch { }
+                            });
+
+                            return false; // ALLOW ACCESS (TELEMETRY ONLY)
+                        }
                     }
                 }
 

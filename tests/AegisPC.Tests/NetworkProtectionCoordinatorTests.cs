@@ -83,5 +83,62 @@ namespace AegisPC.Tests
             Assert.False(verdict.IsSuspicious);
             Assert.Equal(0, verdict.RiskScore);
         }
+
+        [Fact]
+        public void WfpEnforcementService_Lifecycle_And_BlockIp_Tracking()
+        {
+            using var wfp = new WfpEnforcementService();
+
+            Assert.Equal(0, wfp.ActiveBlockFilterCount);
+
+            bool blocked = wfp.BlockOutboundIp("198.51.100.99", "Test C2 Block");
+            Assert.True(blocked);
+            Assert.Equal(1, wfp.ActiveBlockFilterCount);
+
+            bool duplicate = wfp.BlockOutboundIp("198.51.100.99", "Duplicate Block");
+            Assert.True(duplicate);
+            Assert.Equal(1, wfp.ActiveBlockFilterCount);
+
+            bool unblocked = wfp.UnblockIp("198.51.100.99");
+            Assert.True(unblocked);
+            Assert.Equal(0, wfp.ActiveBlockFilterCount);
+
+            // ClearDynamicFilters test
+            wfp.BlockOutboundIp("198.51.100.100", "Bulk Block 1");
+            wfp.BlockOutboundIp("198.51.100.101", "Bulk Block 2");
+            Assert.Equal(2, wfp.ActiveBlockFilterCount);
+
+            wfp.ClearDynamicFilters();
+            Assert.Equal(0, wfp.ActiveBlockFilterCount);
+        }
+
+        [Fact]
+        public void NetworkProtectionService_Integrates_WfpEnforcement_On_Malicious_Flow()
+        {
+            var blocklist = new UrlBlocklistManager();
+            blocklist.AddRule("evil-c2.net", UrlBlockCategory.C2Server, "Test C2");
+            var hostsHelper = new HostsInjectionHelper();
+            var dnsFilter = new DnsFilterService(blocklist, hostsHelper);
+
+            using var wfp = new WfpEnforcementService();
+            using var service = new NetworkProtectionService(dnsFilter, wfpEnforcement: wfp);
+            service.Start();
+
+            var maliciousFlow = new NetworkFlowEvent
+            {
+                ProcessId = 9999,
+                ProcessName = "malware.exe",
+                DestinationDomain = "evil-c2.net",
+                DestinationIp = "203.0.113.50",
+                RemotePort = 4444
+            };
+
+            var verdict = service.AnalyzeFlow(maliciousFlow);
+
+            Assert.NotNull(verdict);
+            Assert.True(verdict.IsSuspicious);
+            // Verify that WFP recorded the IP block
+            Assert.True(wfp.ActiveBlockFilterCount > 0);
+        }
     }
 }

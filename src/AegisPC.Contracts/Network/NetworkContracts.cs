@@ -29,6 +29,7 @@ namespace AegisPC.Contracts.Network
         public string LocalAddress { get; set; } = "127.0.0.1";
         public int LocalPort { get; set; }
         public string RemoteAddress { get; set; } = string.Empty;
+        public string DestinationIp { get => RemoteAddress; set => RemoteAddress = value; }
         public int RemotePort { get; set; }
         public string? DestinationDomain { get; set; }
         public long BytesSent { get; set; }

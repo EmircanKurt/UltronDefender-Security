@@ -19,11 +19,11 @@ Bu doküman, **Ultron Defender Total Security** platformunun mevcut mimarisindek
 
 ## 2. Ağ ve Güvenlik Duvarı Sınırları (Network & WFP Gaps)
 
-1. **WFP Kernel Callout Sürücüsü Yoktur:**
-   - Ağ koruması, `DnsProtectionService` (yerel HOSTS dosya sinkhole) ve `NetworkProcessCorrelator.cs` (C# telemetri korelasyonu) üzerinden yürütülmektedir.
-   - Çekirdek düzeyinde paket filtreleyen veya port seviyesinde trafiği düşüren bir WFP Callout sürücüsü yüklü değildir.
+1. **WFP Kullanıcı Modu (BFE) ALE Engellemesi Devrede, Kernel Callout Sürücüsü Yoktur:**
+   - Ağ koruması, `DnsFilterService` (yerel HOSTS dosya sinkhole + DoH) ve `WfpEnforcementService.cs` (`fwpuclnt.dll` Base Filtering Engine P/Invoke ile `FWPM_LAYER_ALE_AUTH_CONNECT_V4` katmanında dinamik oturumlu IP engelleme) üzerinden yürütülmektedir.
+   - Çekirdek düzeyinde derin paket incelemesi (deep packet inspection - DPI) yapan bir WFP Callout sürücüsü yüklü değildir.
 2. **TLS/HTTPS İncelemesi Yapılmamaktadır:**
-   - Şifreli web trafiği (HTTPS) üzerinde TLS interception uygulanmamaktadır; web koruması sadece alan adı bazlı DNS engellemesi ve indirilen dosyaların taranmasıyla sınırlıdır.
+   - Şifreli web trafiği (HTTPS) üzerinde TLS interception uygulanmamaktadır; web koruması alan adı bazlı DNS engellemesi, ALE IP bloklaması ve indirilen dosyaların taranmasıyla sınırlıdır.
 
 ---
 
@@ -31,7 +31,7 @@ Bu doküman, **Ultron Defender Total Security** platformunun mevcut mimarisindek
 
 1. **PPL / ELAM Yoktur:**
    - Microsoft tarafından imzalanmış bir ELAM (Early Launch Anti-Malware) sürücüsü veya PPL (Protected Process Light) sertifikasyonu bulunmamaktadır.
-   - Öz-koruma; Win32 API ile Process DACL değiştirerek `PROCESS_TERMINATE` izinlerini kısıtlama seviyesindedir. Yönetici (SYSTEM/Admin) haklarına sahip gelişmiş zararlı yazılımlar veya kernel düzeyindeki tehditler bu süreci sonlandırabilir.
+   - Öz-koruma; Win32 API ile Process DACL ve SCM Service DACL (`SetServiceObjectSecurity`) değiştirerek `PROCESS_TERMINATE`, `SERVICE_STOP`, `DELETE` izinlerini kısıtlama seviyesindedir. Sessiz hata yutma kaldırılmış olup hata durumları loglanmaktadır.
 
 ---
 
