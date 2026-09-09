@@ -67,6 +67,7 @@ namespace AegisPC.Tests
             bool connected = await ipc.ConnectAsync("\\AegisTestPort");
             Assert.True(connected);
             Assert.True(ipc.IsConnected);
+            Assert.Equal(KernelDriverStatus.SimulatedMode, ipc.DriverStatus);
 
             KernelIpcMessage? received = null;
             ipc.OnMessageReceived += msg => received = msg;
@@ -94,6 +95,18 @@ namespace AegisPC.Tests
 
             bool sent = await ipc.SendReplyAsync(reply);
             Assert.True(sent);
+        }
+
+        [Fact]
+        public async Task Test_KernelIpcService_ProductionPort_ReportsNotInstalled_WhenDriverMissing()
+        {
+            using var ipc = new KernelIpcService();
+            bool connected = await ipc.ConnectAsync("\\AegisFltPort");
+
+            // Driver (.sys) is not compiled or loaded in test environment; must truthfully report NotInstalled
+            Assert.False(connected);
+            Assert.False(ipc.IsConnected);
+            Assert.Equal(KernelDriverStatus.NotInstalled, ipc.DriverStatus);
         }
 
         [Fact]

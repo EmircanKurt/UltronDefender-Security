@@ -29,9 +29,14 @@ namespace AegisPC.Security.Scanning
         private readonly List<QuarantineEntry> _quarantinedItems = new();
         private readonly object _lock = new();
 
+        public event Action<QuarantineEntry>? OnFileQuarantined;
+        public event Action<int>? OnFileRestored;
+        public event Action<int>? OnFileDeleted;
+
         private byte[]? _cachedMasterKey;
         private byte[]? _dpapiEntropy; // Generated per-installation, no longer hardcoded
-        private static readonly byte[] LegacyFallbackKeySeed = SHA256.HashData(Encoding.UTF8.GetBytes(Environment.MachineName + "_Ultron_Quarantine_Vault_2026"));
+        private byte[]? _fallbackRandomKey;
+        private static readonly byte[] LegacyMigrationKeySeed = SHA256.HashData(Encoding.UTF8.GetBytes(Environment.MachineName + "_Ultron_Quarantine_Vault_2026"));
         private const string QuarantineMagicHeader = "ULTRON_QUAR_V2";
 
         private readonly AegisPC.Contracts.Safety.IProtectedPathGuard _protectedPathGuard;
@@ -111,12 +116,42 @@ namespace AegisPC.Security.Scanning
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "DPAPI key generation failed, falling back to machine seed.");
-                _cachedMasterKey = LegacyFallbackKeySeed;
+                _logger?.LogWarning(ex, "DPAPI key generation failed, falling back to isolated random master key.");
+                _cachedMasterKey = GetOrCreateFallbackRandomKey();
             }
         }
 
-        private byte[] GetMasterKey() => _cachedMasterKey ?? LegacyFallbackKeySeed;
+        private byte[] GetOrCreateFallbackRandomKey()
+        {
+            if (_fallbackRandomKey != null) return _fallbackRandomKey;
+
+            var fallbackPath = Path.Combine(_quarantineDir, "vault_isolated.key");
+            try
+            {
+                if (File.Exists(fallbackPath))
+                {
+                    _fallbackRandomKey = File.ReadAllBytes(fallbackPath);
+                    if (_fallbackRandomKey.Length == 32) return _fallbackRandomKey;
+                }
+
+                _fallbackRandomKey = new byte[32];
+                using (var rng = RandomNumberGenerator.Create())
+                {
+                    rng.GetBytes(_fallbackRandomKey);
+                }
+                File.WriteAllBytes(fallbackPath, _fallbackRandomKey);
+                try { File.SetAttributes(fallbackPath, FileAttributes.Hidden | FileAttributes.System); } catch { }
+                return _fallbackRandomKey;
+            }
+            catch
+            {
+                _fallbackRandomKey = new byte[32];
+                RandomNumberGenerator.Fill(_fallbackRandomKey);
+                return _fallbackRandomKey;
+            }
+        }
+
+        private byte[] GetMasterKey() => _cachedMasterKey ?? GetOrCreateFallbackRandomKey();
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
         private static extern bool MoveFileEx(string lpExistingFileName, string? lpNewFileName, int dwFlags);
@@ -285,6 +320,8 @@ namespace AegisPC.Security.Scanning
                     SaveIndexToDisk();
                 }
 
+                OnFileQuarantined?.Invoke(entry);
+
                 _logger?.LogInformation("Quarantined file encrypted with DPAPI AES-256 to vault: {Path} -> {QuarPath}", canonicalPath, quarantineFilePath);
 
                 if (_auditLogService != null)
@@ -342,22 +379,38 @@ namespace AegisPC.Security.Scanning
                     Directory.CreateDirectory(destDir);
                 }
 
-                // Decrypt container
-                byte[] decryptedBytes = DecryptVaultContainer(entry.QuarantinePath);
-
-                // Verify integrity
-                using (var sha = SHA256.Create())
+                var tempDest = destination + ".restoring.tmp";
+                bool decrypted = false;
+                try
                 {
-                    var restoredHash = Convert.ToHexString(sha.ComputeHash(decryptedBytes));
+                    using (var fsOut = new FileStream(tempDest, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        decrypted = await DecryptVaultContainerStreamAsync(entry.QuarantinePath, fsOut, cancellationToken);
+                    }
+
+                    if (!decrypted)
+                    {
+                        try { if (File.Exists(tempDest)) File.Delete(tempDest); } catch { }
+                        _logger?.LogWarning("Quarantine restore failed: Decryption failed for {Id}.", id);
+                        return false;
+                    }
+
+                    // Verify integrity via streaming hash calculation
+                    var restoredHash = await _hashService.ComputeSha256Async(tempDest, cancellationToken);
                     if (!restoredHash.Equals(entry.SHA256, StringComparison.OrdinalIgnoreCase))
                     {
+                        try { if (File.Exists(tempDest)) File.Delete(tempDest); } catch { }
                         _logger?.LogError("Quarantine integrity check failed for {Id}. Hash mismatch.", id);
                         return false;
                     }
-                }
 
-                // Write restored file
-                await File.WriteAllBytesAsync(destination, decryptedBytes, cancellationToken);
+                    File.Move(tempDest, destination, overwrite: true);
+                }
+                catch
+                {
+                    try { if (File.Exists(tempDest)) File.Delete(tempDest); } catch { }
+                    throw;
+                }
 
                 // Safely remove vault container
                 try { File.Delete(entry.QuarantinePath); } catch { }
@@ -368,6 +421,8 @@ namespace AegisPC.Security.Scanning
                     entry.RestoredAt = DateTime.UtcNow;
                     SaveIndexToDisk();
                 }
+
+                OnFileRestored?.Invoke(id);
 
                 _logger?.LogInformation("Quarantined file restored: {Id} -> {Dest}", id, destination);
 
@@ -406,19 +461,24 @@ namespace AegisPC.Security.Scanning
             {
                 if (File.Exists(entry.QuarantinePath))
                 {
-                    // Overwrite before deleting (secure zero wipe)
-                    var len = new FileInfo(entry.QuarantinePath).Length;
-                    using (var fs = new FileStream(entry.QuarantinePath, FileMode.Open, FileAccess.Write))
+                    // Cryptographic shredding: Overwrite first 64KB (header, IV and magic) with zeroes
+                    try
                     {
-                        byte[] zeroes = new byte[Math.Min(len, 4096)];
-                        long written = 0;
-                        while (written < len)
+                        var fileInfo = new FileInfo(entry.QuarantinePath);
+                        long len = fileInfo.Length;
+                        int wipeSize = (int)Math.Min(len, 65536);
+                        if (wipeSize > 0)
                         {
-                            int toWrite = (int)Math.Min(zeroes.Length, len - written);
-                            fs.Write(zeroes, 0, toWrite);
-                            written += toWrite;
+                            using (var fs = new FileStream(entry.QuarantinePath, FileMode.Open, FileAccess.Write, FileShare.None))
+                            {
+                                byte[] zeroes = new byte[wipeSize];
+                                fs.Write(zeroes, 0, wipeSize);
+                                fs.Flush();
+                            }
                         }
                     }
+                    catch { }
+
                     File.Delete(entry.QuarantinePath);
                 }
 
@@ -428,6 +488,8 @@ namespace AegisPC.Security.Scanning
                     _quarantinedItems.Remove(entry);
                     SaveIndexToDisk();
                 }
+
+                OnFileDeleted?.Invoke(id);
 
                 _logger?.LogInformation("Quarantined file permanently wiped: {Id} ({FileName})", id, entry.FileName);
 
@@ -474,6 +536,49 @@ namespace AegisPC.Security.Scanning
             }
         }
 
+        private async Task<bool> DecryptVaultContainerStreamAsync(string quarantineFilePath, Stream destinationStream, CancellationToken cancellationToken)
+        {
+            byte[][] candidateKeys = new[] { GetMasterKey(), LegacyMigrationKeySeed };
+
+            foreach (var key in candidateKeys)
+            {
+                try
+                {
+                    using var fs = new FileStream(quarantineFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    using var br = new BinaryReader(fs, Encoding.UTF8, leaveOpen: true);
+
+                    var header = br.ReadString();
+                    if (header != QuarantineMagicHeader && header != "ULTRON_QUAR_V1" && header != "ULTRON_QUAR_V2")
+                    {
+                        continue;
+                    }
+
+                    int ivLength = br.ReadInt32();
+                    if (ivLength <= 0 || ivLength > 1024) continue;
+                    byte[] iv = br.ReadBytes(ivLength);
+                    string originalSha = br.ReadString();
+                    int encLength = br.ReadInt32(); // length prefix from writer
+
+                    using var aes = Aes.Create();
+                    aes.Key = key;
+                    aes.IV = iv;
+
+                    destinationStream.SetLength(0);
+                    using (var csDecrypt = new CryptoStream(fs, aes.CreateDecryptor(), CryptoStreamMode.Read, leaveOpen: true))
+                    {
+                        await csDecrypt.CopyToAsync(destinationStream, 81920, cancellationToken);
+                    }
+                    await destinationStream.FlushAsync(cancellationToken);
+                    return true;
+                }
+                catch
+                {
+                    // Try next candidate key
+                }
+            }
+            return false;
+        }
+
         private byte[] DecryptVaultContainer(string quarantineFilePath)
         {
             using var fs = new FileStream(quarantineFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -498,8 +603,8 @@ namespace AegisPC.Security.Scanning
             }
             catch
             {
-                // Fallback to legacy key seed for backward compatibility
-                return DecryptWithKey(encBytes, LegacyFallbackKeySeed, iv);
+                // Fallback to legacy migration key seed for backward compatibility
+                return DecryptWithKey(encBytes, LegacyMigrationKeySeed, iv);
             }
         }
 

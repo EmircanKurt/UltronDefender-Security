@@ -89,7 +89,30 @@
             </UniformGrid>
 
             <!-- ══════════════════════════════════════════════════════
-                 3. SCAN STATUS & ACTIVE SCAN WINDOW LAUNCHER
+                 3. ADAPTİF DONANIM KOTA & DONMA ÖNLEME BİLGİLENDİRMESİ
+            ══════════════════════════════════════════════════════ -->
+            <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="16,14">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Width="38" Height="38" CornerRadius="8"
+                            Background="{DynamicResource BrushPastelBlueBg}"
+                            BorderBrush="{DynamicResource BrushPastelBlueBorder}"
+                            BorderThickness="1" Margin="0,0,14,0" VerticalAlignment="Center">
+                        <ui:SymbolIcon Symbol="DeveloperBoard24" Foreground="{DynamicResource BrushPastelBlueIcon}" FontSize="18"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding HardwareTuningText}" Style="{StaticResource SectionHeadingStyle}" FontSize="13.5"/>
+                        <TextBlock Text="{Binding HardwareProfileDetail}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ══════════════════════════════════════════════════════
+                 4. SCAN STATUS & ACTIVE SCAN WINDOW LAUNCHER
             ══════════════════════════════════════════════════════ -->
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
                 <Grid>
@@ -106,6 +129,7 @@
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock Text="Tarama Durumu" Style="{StaticResource SectionHeadingStyle}"/>
                         <TextBlock Text="{Binding ScanStatusText}" Style="{StaticResource CaptionTextStyle}"/>
+                        <TextBlock Text="{Binding RemainingEtaFormatted}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
                     </StackPanel>
 
                     <Button Grid.Column="2" Content="Tarayıcı Penceresini Aç" Style="{StaticResource SecondaryButtonStyle}"

@@ -92,12 +92,11 @@ namespace AegisPC.Security.RealTime
                 await _findingService.AddFindingAsync(finding, ct);
                 OnThreatDetected?.Invoke(finding);
 
-                // Master UX Policy: Do not spam user toasts for low-confidence warnings (Score < 70).
-                // Log silently to Security Center and Audit Log instead.
-                if (verdict.RiskScore >= 70)
+                // 60-84 arası şüpheli dosyalar için kullanıcı uyarısı oluşturulur
+                if (verdict.RiskScore >= 60)
                 {
-                    string toastTitle = "⚠️ Yüksek Riskli Dosya Algılandı";
-                    string toastMsg = $"'{fileInfo.Name}' şüpheli davranış deseni sergiliyor (Skor: {verdict.RiskScore}/100).";
+                    string toastTitle = "⚠️ Şüpheli Dosya Uyarısı";
+                    string toastMsg = $"'{fileInfo.Name}' şüpheli davranış sergiliyor (Risk Skoru: {verdict.RiskScore}/100).";
                     OnNotificationRaised?.Invoke(toastTitle, toastMsg, "Warning");
                 }
 

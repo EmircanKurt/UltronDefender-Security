@@ -19,7 +19,7 @@ namespace AegisPC.App.ViewModels
     /// </summary>
     public partial class DashboardViewModel
     {
-        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _threatNotificationQueue = new();
+        private readonly System.Collections.Concurrent.ConcurrentQueue<(string Name, bool IsQuarantined)> _threatNotificationQueue = new();
         private System.Threading.Timer? _threatNotificationTimer;
         private int _isFlushingThreats;
 
@@ -147,7 +147,7 @@ namespace AegisPC.App.ViewModels
         /// Bugün taranan dosya sayısını artırır ve diske yazma zamanlayıcısını tetikler.
         /// </summary>
         /// <param name="count">Artırılacak dosya sayısı.</param>
-        private void IncrementDailyScanned(int count = 1)
+        public void IncrementDailyScanned(int count = 1)
         {
             FilesScannedCount += count;
             ScheduleDailyStatsSave();
@@ -188,27 +188,6 @@ namespace AegisPC.App.ViewModels
         }
 
         /// <summary>
-        /// Bu ay içinde karantina kasasına alınan toplam tehdit sayısını asenkron olarak günceller.
-        /// </summary>
-        private async Task RefreshMonthlyQuarantineCountAsync()
-        {
-            if (_quarantineService != null)
-            {
-                try
-                {
-                    var items = await _quarantineService.GetQuarantinedItemsAsync();
-                    var now = DateTime.Now;
-                    int count = items?.Count(x => x.QuarantinedAt.Year == now.Year && x.QuarantinedAt.Month == now.Month) ?? 0;
-                    Application.Current?.Dispatcher?.InvokeAsync(() =>
-                    {
-                        ThreatsBlockedThisMonth = count;
-                    });
-                }
-                catch { }
-            }
-        }
-
-        /// <summary>
         /// Tehdit imza veritabanının en son güncellenme tarihini UI için biçimlendirir.
         /// </summary>
         private void RefreshDatabaseUpdateStatus()
@@ -245,9 +224,24 @@ namespace AegisPC.App.ViewModels
             }
         }
 
-        /// <summary>
-        /// Dashboard'daki tüm veri kaynaklarını (sağlık skoru, başlangıç uygulamaları, süreçler vb.) arka planda yeniler.
-        /// </summary>
+        private async Task RefreshMonthlyQuarantineCountAsync()
+        {
+            if (_quarantineService != null)
+            {
+                try
+                {
+                    var items = await _quarantineService.GetQuarantinedItemsAsync();
+                    var monthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+                    var count = items.Count(i => i.QuarantinedAt >= monthStart);
+                    Application.Current?.Dispatcher?.InvokeAsync(() =>
+                    {
+                        ThreatsBlockedThisMonth = count;
+                    });
+                }
+                catch { }
+            }
+        }
+
         [RelayCommand]
         public async Task LoadDashboardDataAsync()
         {
@@ -291,43 +285,79 @@ namespace AegisPC.App.ViewModels
                         ActiveProcessCount = procs.Count;
                     });
                 }
+
+                await RefreshThreatStatusAsync();
             }
             catch { }
         }
 
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _threatToastCooldown = new(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>
-        /// Bir tehdit engellendiğinde bildirim kuyruğuna ekler ve toplu uyarı zamanlayıcısını tetikler.
+        /// Bir tehdit veya şüpheli olay algılandığında bildirim kuyruğuna ekler ve toplu uyarı zamanlayıcısını tetikler.
         /// </summary>
         /// <param name="threatName">Tespit edilen tehdidin dosya veya imza adı.</param>
-        public void TriggerThreatToast(string threatName)
+        /// <param name="isQuarantined">Dosyanın karantinaya alınıp alınmadığı.</param>
+        public void TriggerThreatToast(string threatName, bool isQuarantined = true)
         {
-            _threatNotificationQueue.Enqueue(threatName);
+            if (string.IsNullOrWhiteSpace(threatName)) return;
+
+            var settings = _settingsService ?? (App.ServiceProvider?.GetService(typeof(ISettingsService)) as ISettingsService);
+            if (settings != null && !settings.GetSetting("NotificationsEnabled", true))
+            {
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            if (_threatToastCooldown.TryGetValue(threatName, out var lastTime) && (now - lastTime).TotalMinutes < 15)
+            {
+                return; // 15 dakikalık soğuma süresi: aynı tehdit için peş peşe bildirim atma
+            }
+            _threatToastCooldown[threatName] = now;
+
+            _threatNotificationQueue.Enqueue((threatName, isQuarantined));
             _threatNotificationTimer ??= new System.Threading.Timer(_ => FlushThreatToast(), null, Timeout.Infinite, Timeout.Infinite);
             _threatNotificationTimer.Change(600, Timeout.Infinite);
         }
 
         /// <summary>
-        /// Bildirim kuyruğundaki tehditleri toplayarak UI'da tek bir zarif bildirim kartında gösterir.
+        /// Bildirim kuyruğundaki tehdit ve uyarıları toplayarak UI'da tek bir zarif bildirim kartında gösterir.
         /// </summary>
         private void FlushThreatToast()
         {
             if (Interlocked.Exchange(ref _isFlushingThreats, 1) == 1) return;
             try
             {
-                var list = new List<string>();
+                var list = new List<(string Name, bool IsQuarantined)>();
                 while (_threatNotificationQueue.TryDequeue(out var item))
                 {
                     list.Add(item);
                 }
                 if (list.Count == 0) return;
 
+                bool anyQuarantined = list.Any(x => x.IsQuarantined);
                 if (list.Count == 1)
                 {
-                    TriggerToast($"Ultron Defender (Antivirüs Programı): '{list[0]}' engellendi ve karantinaya alındı.", "Danger");
+                    var item = list[0];
+                    if (item.IsQuarantined)
+                    {
+                        TriggerToast($"Ultron Defender: '{item.Name}' engellendi ve karantinaya alındı.", "Danger");
+                    }
+                    else
+                    {
+                        TriggerToast($"Ultron Defender: '{item.Name}' şüpheli etkinlik sergiledi (Olay Geçmişine kaydedildi).", "Warning");
+                    }
                 }
                 else
                 {
-                    TriggerToast($"Ultron Defender (Antivirüs Programı): {list.Count} adet zararlı tehdit engellendi ve karantinaya alındı.", "Danger");
+                    if (anyQuarantined)
+                    {
+                        TriggerToast($"Ultron Defender: {list.Count} adet zararlı tehdit engellendi ve karantinaya alındı.", "Danger");
+                    }
+                    else
+                    {
+                        TriggerToast($"Ultron Defender: {list.Count} adet şüpheli dosya/olay incelendi ve Olay Geçmişine kaydedildi.", "Warning");
+                    }
                 }
             }
             finally
@@ -343,6 +373,12 @@ namespace AegisPC.App.ViewModels
         /// <param name="type">Bildirim türü (Success, Info, Warning, Danger).</param>
         public void TriggerToast(string message, string type = "Success")
         {
+            var settings = _settingsService ?? (App.ServiceProvider?.GetService(typeof(ISettingsService)) as ISettingsService);
+            if (settings != null && !settings.GetSetting("NotificationsEnabled", true))
+            {
+                return;
+            }
+
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
                 ToastMessage = message;

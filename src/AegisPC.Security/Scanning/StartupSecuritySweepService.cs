@@ -31,6 +31,7 @@ namespace AegisPC.Security.Scanning
 
         // Cached file inspection metadata: Path -> (Size, LastWriteTimeUtc, SHA256, Verdict, RiskScore)
         private readonly ConcurrentDictionary<string, (long Size, DateTime LastWrite, string SHA256, string Verdict, int Score)> _fileCache = new(StringComparer.OrdinalIgnoreCase);
+        private const int MaxFileCacheEntries = 100000;
 
         private static readonly HashSet<string> RiskyExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -147,7 +148,9 @@ namespace AegisPC.Security.Scanning
                 {
                     if (cancellationToken.IsCancellationRequested) break;
 
-                    if (!File.Exists(file.FullName) || FileScannerService.IsSelfOwnedPath(file.FullName))
+                    if (!File.Exists(file.FullName) || 
+                        FileScannerService.IsSelfOwnedPath(file.FullName) ||
+                        FileScannerService.SafeMediaExtensions.Contains(file.Extension))
                     {
                         continue;
                     }
@@ -273,7 +276,7 @@ namespace AegisPC.Security.Scanning
                         result.Findings.Add(finding);
                         OnThreatDiscovered?.Invoke(finding);
 
-                        _fileCache[file.FullName] = (file.Length, file.LastWriteTimeUtc, verdictResult.SHA256, "Suspicious", verdictResult.RiskScore);
+                        CacheFileVerdict(file, verdictResult.SHA256, "Suspicious", verdictResult.RiskScore);
                     }
                     else
                     {
@@ -296,7 +299,7 @@ namespace AegisPC.Security.Scanning
                         };
                         result.Findings.Add(finding);
 
-                        _fileCache[file.FullName] = (file.Length, file.LastWriteTimeUtc, verdictResult.SHA256, "Clean", verdictResult.RiskScore);
+                        CacheFileVerdict(file, verdictResult.SHA256, "Clean", verdictResult.RiskScore);
                     }
 
                     NotifyProgress(progress);
@@ -339,6 +342,16 @@ namespace AegisPC.Security.Scanning
             _sweepSemaphore.Release();
         }
     }
+
+        private void CacheFileVerdict(FileInfo file, string sha256, string verdict, int score)
+        {
+            if (_fileCache.Count >= MaxFileCacheEntries)
+            {
+                _fileCache.Clear();
+                _logger?.LogWarning("Startup scan cache reached its {Limit} entry limit and was cleared.", MaxFileCacheEntries);
+            }
+            _fileCache[file.FullName] = (file.Length, file.LastWriteTimeUtc, sha256, verdict, score);
+        }
 
         private void NotifyProgress(StartupSweepProgress progress)
         {
@@ -468,8 +481,12 @@ namespace AegisPC.Security.Scanning
                             if (FileScannerService.IsSelfOwnedPath(filePath)) continue;
 
                             var ext = Path.GetExtension(filePath);
+                            if (!string.IsNullOrEmpty(ext) && FileScannerService.SafeMediaExtensions.Contains(ext))
+                                continue;
+
                             var fileName = Path.GetFileName(filePath);
-                            if (RiskyExtensions.Contains(ext) || fileName.Count(c => c == '.') > 1)
+                            bool isDoubleExtensionThreat = fileName.Count(c => c == '.') > 1 && RiskyExtensions.Contains(ext);
+                            if (RiskyExtensions.Contains(ext) || isDoubleExtensionThreat)
                             {
                                 candidates.Add(new FileInfo(filePath));
                             }

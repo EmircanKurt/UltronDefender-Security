@@ -15,6 +15,7 @@ namespace AegisPC.Security.Scanning
         private readonly ILogger<SecurityFindingService>? _logger;
         private readonly List<SecurityFinding> _findings = new();
         private readonly object _lock = new();
+        private const int MaxInMemoryFindings = 10000;
 
         public SecurityFindingService(ILogger<SecurityFindingService>? logger = null)
         {
@@ -47,6 +48,12 @@ namespace AegisPC.Security.Scanning
                 }
                 finding.CreatedAt = DateTime.UtcNow;
                 finding.UpdatedAt = DateTime.UtcNow;
+                if (_findings.Count >= MaxInMemoryFindings)
+                {
+                    var oldestResolved = _findings.Where(f => f.Status != FindingStatus.Active).OrderBy(f => f.UpdatedAt).FirstOrDefault();
+                    if (oldestResolved != null) _findings.Remove(oldestResolved);
+                    else _findings.RemoveAt(0);
+                }
                 _findings.Add(finding);
             }
             _logger?.LogInformation("Security finding registered: {Title} ({RiskLevel})", finding.Title, finding.RiskLevel);

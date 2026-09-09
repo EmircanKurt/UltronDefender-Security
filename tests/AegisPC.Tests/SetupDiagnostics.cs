@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
@@ -25,12 +25,14 @@ namespace AegisPC.Tests
         [Fact]
         public async Task Diagnose_UltronDefender_Setup_File()
         {
-            string setupPath = @"c:\Users\PC\Documents\gemini virüs program\UltronDefender_Setup_v3.0.exe";
+            string projectRoot = @"c:\Users\PC\Documents\gemini virüs program";
+            string setupPath = Path.Combine(projectRoot, "UltronDefenderSetup.exe");
             if (!File.Exists(setupPath))
             {
-                _output.WriteLine("Setup file not found: " + setupPath);
-                return;
+                setupPath = Path.Combine(projectRoot, "UltronDefender_Setup_v3.2.exe");
             }
+
+            Assert.True(File.Exists(setupPath), $"Setup installer executable was not found at '{setupPath}'. Real installer binary is required for diagnostic verification.");
 
             var fileInfo = new FileInfo(setupPath);
             _output.WriteLine("=== SETUP FILE METRICS ===");

@@ -106,9 +106,11 @@ namespace AegisPC.Security.Detection
                         rawEvidences.AddRange(detectorEvidences);
                     }
                 }
-                catch
+                catch (Exception)
                 {
                     // Isolated plugin fault tolerance: One detector's error does not fail the entire hub
+                    // Hata loglaması bu seviyede yapılmaz çünkü DetectionHub'ın logger bağımlılığı yoktur.
+                    // Her dedektör kendi hatasını internal olarak yakalamalıdır.
                 }
             }
 
@@ -196,47 +198,57 @@ namespace AegisPC.Security.Detection
             double contextModifier = 1.0;
             bool hasExplicitMalwareSignature = uniqueEvidences.Any(e => e.Category == EvidenceCategory.StaticSignature && e.ScoreContribution >= 80);
 
-            bool isMicrosoftOrSystem = uniqueEvidences.Any(e => 
+            bool isMicrosoftSigned = uniqueEvidences.Any(e => 
                 e.RuleName.Contains("ValidMicrosoft", StringComparison.OrdinalIgnoreCase) || 
-                e.RuleName.Contains("MicrosoftTrusted", StringComparison.OrdinalIgnoreCase)) ||
-                (!string.IsNullOrEmpty(context.FilePath) && AegisPC.Core.Helpers.PathHelper.IsSystemPath(context.FilePath));
+                e.RuleName.Contains("MicrosoftTrusted", StringComparison.OrdinalIgnoreCase));
 
             bool isCommercialSigned = uniqueEvidences.Any(e => 
                 e.RuleName.Contains("TrustedPublisher", StringComparison.OrdinalIgnoreCase) ||
                 e.RuleName.Contains("Signature.Valid", StringComparison.OrdinalIgnoreCase) ||
                 e.RuleName.Contains("Cert.ValidPublisher", StringComparison.OrdinalIgnoreCase));
 
-            bool isGameCrackOrEmulator = !string.IsNullOrEmpty(context.FilePath) && 
-                (AegisPC.Core.Helpers.GameCrackClassifier.IsGameCrackOrEmulator(context.FilePath) || 
-                 AegisPC.Core.Helpers.PathHelper.IsGameOrRepackDirectory(context.FilePath));
+            bool isSystemPath = !string.IsNullOrEmpty(context.FilePath) && 
+                AegisPC.Core.Helpers.PathHelper.IsSystemPath(context.FilePath);
+
+            bool isVerifiedEmulatorHash = !string.IsNullOrEmpty(context.FilePath) && 
+                AegisPC.Core.Helpers.GameCrackClassifier.IsGameCrackOrEmulator(context.FilePath);
 
             bool isDevelopmentOrPackageDirectory = !string.IsNullOrEmpty(context.FilePath) &&
                 AegisPC.Core.Helpers.PathHelper.IsDevelopmentOrPackageDirectory(context.FilePath);
 
             if (!hasExplicitMalwareSignature)
             {
-                if (isMicrosoftOrSystem)
+                // Multi-signal trust evaluation:
+                // A valid signature is a STRONG trust signal, but NOT an absolute bypass for severe malicious payloads (stolen certs, signed trojans, dual-use tools).
+                bool hasSevereMaliciousPayload = uniqueEvidences.Any(e => 
+                    (e.Category is EvidenceCategory.AntiEvasion or EvidenceCategory.BehaviorMemory or EvidenceCategory.BehaviorProcess && e.ScoreContribution >= 40) ||
+                    e.RuleName.Contains("SystemProcessMasquerading", StringComparison.OrdinalIgnoreCase));
+
+                // KRİPTOGRAFİK DOĞRULAMA: Geçerli dijital sertifikası veya doğrulanmış emülatör hash'i olan dosyalar
+                if (isMicrosoftSigned)
                 {
-                    contextModifier = 0.0;
+                    // Doğrulanmış Microsoft / Windows dijital sertifikası
+                    contextModifier = hasSevereMaliciousPayload ? 0.25 : 0.0;
                 }
                 else if (isCommercialSigned)
                 {
-                    contextModifier = 0.0;
+                    // Geçerli ticari sertifika (Adobe, NVIDIA, Valve vb.)
+                    contextModifier = hasSevereMaliciousPayload ? 0.45 : 0.0;
                 }
-                else if (!string.IsNullOrEmpty(context.FilePath) && AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(context.FilePath))
+                else if (isSystemPath)
                 {
-                    contextModifier = 0.0;
+                    // Sistem yolunda ama sertifika doğrulanmamış (ör. bırakılan zararlı) → Asla sıfırlanmaz!
+                    contextModifier = 0.3;
                 }
-                else if (isGameCrackOrEmulator)
+                else if (isVerifiedEmulatorHash)
                 {
-                    // Zararsız Oyun Crack / Steam Emülatörü / Mod Dosyası: Gerçek malware imzası taşımıyorsa puanı sıfırla (Temiz)
-                    contextModifier = 0.0;
+                    // Doğrulanmış bilinen emülatör hash'i (asla dosya yolu değil)
+                    contextModifier = 0.5;
                 }
                 else if (isDevelopmentOrPackageDirectory)
                 {
-                    // Meşru Geliştirme Paketleri (Python site-packages, astropy, scipy, venv, node_modules, nuget):
-                    // Açık bir zararlı imza (hash/signature) taşımıyorsa, kütüphane kodundaki genel string/entropi anomalilerini sıfırla
-                    contextModifier = 0.0;
+                    // Geliştirme paketleri (node_modules, site-packages vb.): Hafif indirim, asla sıfır değil
+                    contextModifier = 0.4;
                 }
             }
 

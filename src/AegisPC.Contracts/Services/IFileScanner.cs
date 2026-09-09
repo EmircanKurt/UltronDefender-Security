@@ -12,5 +12,6 @@ public interface IFileScanner
     void PauseScan();
     void ResumeScan();
     Task<SecurityFinding?> ScanFileAsync(string path, CancellationToken cancellationToken = default);
+    Task<FileScanDetailedResult> ScanFileDetailedAsync(string path, TimeSpan perFileTimeout, CancellationToken cancellationToken = default);
     Task<ScanResult> ScanDirectoryAsync(string path, ScanType scanType, IProgress<ScanProgress>? progress = null, CancellationToken cancellationToken = default);
 }

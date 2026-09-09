@@ -23,7 +23,10 @@ namespace AegisPC.Security.SelfDefense
                     _executableLock = new FileStream(exePath, FileMode.Open, FileAccess.Read, FileShare.Read);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Trace.TraceWarning($"[SelfDefenseManager] Failed to lock executable for self-protection: {ex.Message}");
+            }
         }
 
         public static bool IsTamperAttempt(string targetPath, string commandLine)

@@ -1,0 +1,12 @@
+LIBRARY "AmsiProvider.dll"
+
+EXPORTS
+    DllGetClassObject   PRIVATE
+    DllCanUnloadNow     PRIVATE
+    DllRegisterServer   PRIVATE
+    DllUnregisterServer PRIVATE
+    AmsiInitialize
+    AmsiOpenSession
+    AmsiCloseSession
+    AmsiScanString
+    AmsiScanBuffer

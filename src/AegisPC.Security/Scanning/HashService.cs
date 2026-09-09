@@ -10,9 +10,8 @@ namespace AegisPC.Security.Scanning
 {
     public class HashService : IHashService
     {
-        // 64 KB buffer — standart I/O performansı için optimal boyut
-        // (önceki 8 KB buffer, büyük dosyalarda 8× fazla syscall yapıyordu)
-        private const int BufferSize = 65536;
+        // 256 KB buffer — büyük dosyalarda syscall sayısını azaltır, NVMe SSD'lerde throughput artırır
+        private const int BufferSize = 262144;
 
         public async Task<string> ComputeSha256Async(string filePath, CancellationToken cancellationToken = default)
         {

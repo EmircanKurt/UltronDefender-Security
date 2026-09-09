@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using AegisPC.Contracts.Services;
+using AegisPC.Core.Constants;
 using AegisPC.Core.Models;
 using AegisPC.Performance.Process;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -16,7 +17,21 @@ namespace AegisPC.App.ViewModels
     {
         private readonly IProcessMonitor? _processMonitor;
         private readonly ProcessTerminationService? _terminationService;
+        private readonly ISettingsService? _settingsService;
         private List<ProcessInfo> _allProcesses = new();
+
+        private static readonly HashSet<string> KnownWindowsServices = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "System", "Idle", "Registry", "Memory Compression",
+            "smss", "csrss", "wininit", "winlogon", "services", "lsass",
+            "svchost", "fontdrvhost", "dwm", "spoolsv", "taskhostw", "sihost",
+            "ctfmon", "SearchHost", "SearchIndexer", "SecurityHealthService",
+            "SecurityHealthSystray", "MsMpEng", "NisSrv", "WmiPrvSE", "dllhost",
+            "conhost", "RuntimeBroker", "ShellExperienceHost", "StartMenuExperienceHost",
+            "smartscreen", "ApplicationFrameHost", "TextInputHost", "audiodg",
+            "dasHost", "SystemSettings", "wlanext", "LocationNotificationWindows",
+            "TrustedInstaller", "sppsvc", "tiworker", "compattelrunner"
+        };
 
         [ObservableProperty]
         private string pageTitle = "Süreçler";
@@ -31,18 +46,52 @@ namespace AegisPC.App.ViewModels
         private string searchText = string.Empty;
 
         [ObservableProperty]
+        private bool hideWindowsServices = true;
+
+        [ObservableProperty]
+        private int sortMode = 0; // 0 = En Çok RAM (varsayılan), 1 = En Çok CPU, 2 = GPU
+
+        [ObservableProperty]
+        private bool isGpuSupported = true;
+
+        [ObservableProperty]
         private bool isLoading;
 
         [ObservableProperty]
         private string statusMessage = string.Empty;
 
-        public ProcessListViewModel(IProcessMonitor? processMonitor = null, ProcessTerminationService? terminationService = null)
+        public ProcessListViewModel(
+            IProcessMonitor? processMonitor = null,
+            ProcessTerminationService? terminationService = null,
+            ISettingsService? settingsService = null)
         {
             _processMonitor = processMonitor;
             _terminationService = terminationService;
+            _settingsService = settingsService;
+
+            try
+            {
+                isGpuSupported = _processMonitor?.IsGpuSupported ?? ProcessMonitorService.IsGpuEngineAvailable();
+            }
+            catch
+            {
+                isGpuSupported = false;
+            }
+
+            hideWindowsServices = _settingsService?.GetSetting<bool>("ProcessManager_HideWindowsServices", true) ?? true;
 
             // Arka planda donma yapmadan yükle
             Task.Run(async () => await LoadProcessesAsync());
+        }
+
+        [RelayCommand]
+        public void SetSortMode(object? parameter)
+        {
+            if (parameter != null && int.TryParse(parameter.ToString(), out int mode))
+            {
+                SortMode = mode;
+                FilterProcesses();
+            }
         }
 
         partial void OnSearchTextChanged(string value)
@@ -50,20 +99,84 @@ namespace AegisPC.App.ViewModels
             FilterProcesses();
         }
 
+        partial void OnHideWindowsServicesChanged(bool value)
+        {
+            try
+            {
+                _settingsService?.SetSetting("ProcessManager_HideWindowsServices", value);
+                _ = _settingsService?.SaveAsync();
+            }
+            catch { }
+            FilterProcesses();
+        }
+
+        public static bool IsWindowsServiceOrSystem(ProcessInfo p)
+        {
+            if (p == null) return false;
+
+            // 1. Session 0: Windows mimarisinde tüm Windows servisleri Session 0'da izole çalışır
+            if (p.SessionId == 0) return true;
+
+            // 2. Kritik / Temel Windows süreçleri
+            if (CriticalProcesses.IsCriticalProcess(p.Name)) return true;
+
+            // 3. Bilinen Windows servis ve arka plan sistem süreçleri
+            string cleanName = p.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? p.Name[..^4]
+                : p.Name;
+
+            if (KnownWindowsServices.Contains(p.Name) || KnownWindowsServices.Contains(cleanName))
+            {
+                return true;
+            }
+
+            // 4. Windows sistem dizinindeki Microsoft servis ikilileri
+            if (!string.IsNullOrEmpty(p.ExecutablePath))
+            {
+                string path = p.ExecutablePath;
+                string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+                if (path.StartsWith(winDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (path.Contains("\\System32\\", StringComparison.OrdinalIgnoreCase) ||
+                        path.Contains("\\SysWOW64\\", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (p.Publisher != null && p.Publisher.Contains("Microsoft", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
         private void FilterProcesses()
         {
-            if (string.IsNullOrWhiteSpace(SearchText))
+            var query = _allProcesses.AsEnumerable();
+
+            if (HideWindowsServices)
             {
-                Processes = new ObservableCollection<ProcessInfo>(_allProcesses);
+                query = query.Where(p => !IsWindowsServiceOrSystem(p));
             }
-            else
+
+            if (!string.IsNullOrWhiteSpace(SearchText))
             {
-                var filtered = _allProcesses.Where(p =>
+                query = query.Where(p =>
                     p.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
                     p.PID.ToString().Contains(SearchText) ||
                     p.ExecutablePath.Contains(SearchText, StringComparison.OrdinalIgnoreCase));
-                Processes = new ObservableCollection<ProcessInfo>(filtered);
             }
+
+            query = SortMode switch
+            {
+                0 => query.OrderByDescending(p => p.MemoryBytes).ThenByDescending(p => p.CpuPercent),
+                1 => query.OrderByDescending(p => p.CpuPercent).ThenByDescending(p => p.MemoryBytes),
+                2 => query.OrderByDescending(p => p.GpuPercent).ThenByDescending(p => p.MemoryBytes),
+                _ => query.OrderByDescending(p => p.MemoryBytes)
+            };
+
+            Processes = new ObservableCollection<ProcessInfo>(query.ToList());
         }
 
         [RelayCommand]

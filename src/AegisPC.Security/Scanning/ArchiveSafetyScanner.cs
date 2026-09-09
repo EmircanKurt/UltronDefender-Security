@@ -49,12 +49,6 @@ namespace AegisPC.Security.Scanning
             var result = new ArchiveScanResult();
             if (!File.Exists(filePath)) return result;
 
-            // Oyun ve mod dizinlerindeki arşivleri (BeamNG araçları, haritalar, modlar) false-positive ve bellek yükünden koru
-            if (AegisPC.Core.Helpers.PathHelper.IsGameOrRepackDirectory(filePath) || AegisPC.Core.Helpers.GameCrackClassifier.IsGameCrackOrEmulator(filePath))
-            {
-                return result;
-            }
-
             var ext = Path.GetExtension(filePath).ToLowerInvariant();
             if (ext != ".zip" && ext != ".jar" && ext != ".nupkg")
             {
@@ -67,7 +61,7 @@ namespace AegisPC.Security.Scanning
             {
                 var fileInfo = new FileInfo(filePath);
                 var compressedFileSize = fileInfo.Length;
-                if (compressedFileSize == 0 || compressedFileSize > 100 * 1024 * 1024) return result; // 100 MB üzeri devasa arşivleri atla
+                if (compressedFileSize == 0) return result;
 
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
                 using var archive = new ZipArchive(fs, ZipArchiveMode.Read, leaveOpen: false);

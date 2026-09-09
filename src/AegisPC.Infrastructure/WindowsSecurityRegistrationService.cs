@@ -46,16 +46,29 @@ namespace AegisPC.Infrastructure
     /// </summary>
     public class WindowsSecurityRegistrationService : IWindowsSecurityRegistrationService
     {
+        private readonly AegisPC.Contracts.Services.ISettingsService? _settingsService;
         private readonly ILogger<WindowsSecurityRegistrationService>? _logger;
 
-        public WindowsSecurityRegistrationService(ILogger<WindowsSecurityRegistrationService>? logger = null)
+        public WindowsSecurityRegistrationService(
+            AegisPC.Contracts.Services.ISettingsService? settingsService = null,
+            ILogger<WindowsSecurityRegistrationService>? logger = null)
         {
+            _settingsService = settingsService;
             _logger = logger;
         }
 
         public void RegisterAsSecurityProvider()
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return;
+
+            // ── FEATURE FLAG: EnableWscRegistration (VARSAYILAN: KAPALI) ──
+            // Ürün henüz birincil AV olarak konumlanamaz.
+            bool isEnabled = _settingsService?.GetSetting<bool>("EnableWscRegistration", false) ?? false;
+            if (!isEnabled)
+            {
+                _logger?.LogInformation("Windows Security Center (WSC) kaydı devre dışı (EnableWscRegistration=false: ürün henüz birincil AV olarak konumlanamaz).");
+                return;
+            }
 
             try
             {
@@ -74,7 +87,10 @@ namespace AegisPC.Infrastructure
                         key.SetValue("ReportingMode", 1, RegistryValueKind.DWord);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "WSC Provider Registry anahtarı yazılamadı (Yönetici yetkisi gerekebilir).");
+                }
 
                 // 2. Add App Path to Windows Defender Exclusions if elevated to prevent interference
                 try
@@ -90,13 +106,16 @@ namespace AegisPC.Infrastructure
                     };
                     using var proc = Process.Start(psi);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Windows Defender hariç tutma betiği çalıştırılamadı.");
+                }
 
                 _logger?.LogInformation("Registered as Windows Security Provider successfully.");
             }
             catch (Exception ex)
             {
-                _logger?.LogTrace(ex, "Security provider registration trace note.");
+                _logger?.LogWarning(ex, "Security provider kaydı sırasında hata oluştu.");
             }
         }
 
@@ -146,7 +165,10 @@ namespace AegisPC.Infrastructure
                                 IsUltronDefender = isUltron
                             });
                         }
-                        catch { }
+                        catch (Exception itemEx)
+                        {
+                            _logger?.LogTrace(itemEx, "WSC item parse hatası.");
+                        }
                     }
                 }
                 catch (Exception ex)

@@ -37,7 +37,16 @@ namespace AegisPC.Security.Detection.Detectors
             ("Yml0c2FkbWluKD86XC5leGUpP1xzKy90cmFuc2Zlcg==", "Script.BitsadminTransfer", "Arka Planda Gizli Dosya Indirme (bitsadmin /transfer)", 25, EvidenceConfidence.Medium),
             ("cmVnKD86XC5leGUpP1xzK2FkZFxzKy4qXFwoPzpSdW58UnVuT25jZSlcYg==", "Script.RegRunPersistence", "Kayit Defteri Baslangic Kaliciligi Enjeksiyonu (reg add Run/RunOnce)", 30, EvidenceConfidence.High),
             ("Wz1AK1wtXVxzKig/OmNtZHxwb3dlcnNoZWxsfG1zaHRhfHdzY3JpcHR8Y3NjcmlwdClcfA==", "Script.CsvDdeFormulaInjection", "CSV/Excel DDE Formül Enjeksiyonu Saldırısı (=cmd|/powershell|)", 75, EvidenceConfidence.Absolute),
-            ("dGFza2tpbGwuKig/OnVsdHJvbnxhZWdpc3xtc21wZW5nfGRlZmVuZGVyKQ==", "Script.AvKillAttempt", "Antivirüs Kapatma / Sonlandırma Girişimi (taskkill /im Ultron)", 65, EvidenceConfidence.Absolute)
+            ("dGFza2tpbGwuKig/OnVsdHJvbnxhZWdpc3xtc21wZW5nfGRlZmVuZGVyKQ==", "Script.AvKillAttempt", "Antivirüs Kapatma / Sonlandırma Girişimi (taskkill /im Ultron)", 65, EvidenceConfidence.Absolute),
+            ("YW1zaUluaXRGYWlsZWR8QW1zaVV0aWxz", "Script.AmsiBypass", "AMSI Atlama ve Koruma Devre Disi Birakma (AmsiBypass)", 75, EvidenceConfidence.Absolute),
+            ("VmlydHVhbEFsbG9jfFdyaXRlUHJvY2Vzc01lbW9yeXxDcmVhdGVSZW1vdGVUaHJlYWQ=", "Script.ProcessInjection", "Bellek Enjeksiyonu API Cagrisi (Process Injection)", 60, EvidenceConfidence.High),
+            ("cnVuZGxsMzIoXC5leGUpP1xzKy4qKD86amF2YXNjcmlwdHx2YnNjcmlwdCk6", "Script.Rundll32Script", "Rundll32 uzerinden Zararli Script Yurutme", 65, EvidenceConfidence.High),
+            ("bXNodGEoXC5leGUpP1xzK2h0dHBzPzo=", "Script.MshtaRemoteExecution", "Mshta ile Uzaktan Zararli Kod Calistirma", 55, EvidenceConfidence.High),
+            ("Y2VydHV0aWwoXC5leGUpP1xzKy4qLXVybGNhY2hlLipodHRwcz86", "Script.CertutilDownload", "Certutil ile Uzaktan Dosya Indirme (LOLBin)", 45, EvidenceConfidence.High),
+            ("Y29tc3Zjc1wuZGxsLipNaW5pRHVtcA==", "Script.ComsvcsLsassDump", "LSASS Parola Hafiza Dokumu Girisimi (comsvcs MiniDump)", 80, EvidenceConfidence.Absolute),
+            ("cmVnKFwuZXhlKT9ccytzYXZlXHMraGtsbVxcKD86c2FtfHN5c3RlbSk=", "Script.RegSaveCredentialHive", "SAM/SYSTEM Parola Kovanini Kopyalama Girisimi", 80, EvidenceConfidence.Absolute),
+            ("U2V0LU1wUHJlZmVyZW5jZVxzKy4qLURpc2FibGVSZWFsdGltZU1vbml0b3Jpbmc=", "Script.DisableDefender", "Defender Gercek Zamanli Korumayi Devre Disi Birakma", 85, EvidenceConfidence.Absolute),
+            ("bmV0c2goXC5leGUpP1xzK2FkdmZpcmV3YWxsXHMrc2V0XHMrYWxscHJvZmlsZXNccytzdGF0ZVxzK29mZg==", "Script.DisableFirewall", "Guvenlik Duvarini Kapatma Girisimi", 80, EvidenceConfidence.Absolute)
         };
 
         public async Task<IEnumerable<SecurityEvidence>> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
@@ -93,8 +102,9 @@ namespace AegisPC.Security.Detection.Detectors
                     }
                 }
             }
-            catch
+            catch (Exception)
             {
+                // Dosya erişim, paylaşım ve kilit hatalarında taranamazsa sessizce atla
             }
 
             return list;

@@ -188,7 +188,11 @@ namespace AegisPC.Tests
             var scanner = new MemoryPatternScanner();
             var currentProc = Process.GetCurrentProcess();
 
-            string currentExe = currentProc.MainModule?.FileName ?? string.Empty;
+            string currentExe = Environment.ProcessPath ?? string.Empty;
+            if (string.IsNullOrEmpty(currentExe))
+            {
+                try { currentExe = currentProc.MainModule?.FileName ?? string.Empty; } catch { }
+            }
             if (File.Exists(currentExe))
             {
                 var verdict = scanner.DetectProcessHollowing(currentProc.Id, currentExe);

@@ -28,7 +28,23 @@ namespace AegisPC.Service.IPC
         private int _totalThreatsBlocked24h = 0;
         private DateTime? _lastThreatTime;
 
-        private readonly ConcurrentDictionary<Guid, StreamWriter> _connectedClients = new();
+        private sealed class ConnectedClient : IDisposable
+        {
+            public StreamWriter Writer { get; }
+            public SemaphoreSlim WriteLock { get; } = new(1, 1);
+
+            public ConnectedClient(StreamWriter writer)
+            {
+                Writer = writer;
+            }
+
+            public void Dispose()
+            {
+                WriteLock.Dispose();
+            }
+        }
+
+        private readonly ConcurrentDictionary<Guid, ConnectedClient> _connectedClients = new();
 
         public const string PipeName = "UltronDefender_IPC";
 
@@ -95,15 +111,31 @@ namespace AegisPC.Service.IPC
 
             foreach (var kvp in _connectedClients)
             {
-                try
+                var clientId = kvp.Key;
+                var client = kvp.Value;
+                _ = Task.Run(async () =>
                 {
-                    kvp.Value.WriteLine(line);
-                    kvp.Value.Flush();
-                }
-                catch
-                {
-                    _connectedClients.TryRemove(kvp.Key, out _);
-                }
+                    try
+                    {
+                        await client.WriteLock.WaitAsync().ConfigureAwait(false);
+                        try
+                        {
+                            await client.Writer.WriteLineAsync(line).ConfigureAwait(false);
+                            await client.Writer.FlushAsync().ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            client.WriteLock.Release();
+                        }
+                    }
+                    catch
+                    {
+                        if (_connectedClients.TryRemove(clientId, out var removed))
+                        {
+                            removed.Dispose();
+                        }
+                    }
+                });
             }
         }
 
@@ -157,8 +189,9 @@ namespace AegisPC.Service.IPC
             using (pipeServer)
             using (var reader = new StreamReader(pipeServer, Encoding.UTF8))
             using (var writer = new StreamWriter(pipeServer, Encoding.UTF8) { AutoFlush = true })
+            using (var client = new ConnectedClient(writer))
             {
-                _connectedClients[clientId] = writer;
+                _connectedClients[clientId] = client;
 
                 try
                 {
@@ -174,7 +207,7 @@ namespace AegisPC.Service.IPC
                             var command = JsonSerializer.Deserialize<ServiceCommand>(line);
                             if (command != null)
                             {
-                                await ProcessCommandAsync(command, writer);
+                                await ProcessCommandAsync(command, client);
                             }
                         }
                         catch (Exception cmdEx)
@@ -195,34 +228,48 @@ namespace AegisPC.Service.IPC
             }
         }
 
-        private async Task ProcessCommandAsync(ServiceCommand command, StreamWriter writer)
+        private static async Task SendResponseAsync(ConnectedClient client, string response)
+        {
+            await client.WriteLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await client.Writer.WriteLineAsync(response).ConfigureAwait(false);
+                await client.Writer.FlushAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                client.WriteLock.Release();
+            }
+        }
+
+        private async Task ProcessCommandAsync(ServiceCommand command, ConnectedClient client)
         {
             switch (command.CommandType)
             {
                 case ServiceCommandType.GetStatus:
                     var status = BuildCurrentStatus();
                     var statusJson = JsonSerializer.Serialize(status);
-                    await writer.WriteLineAsync($"Status:{statusJson}");
+                    await SendResponseAsync(client, $"Status:{statusJson}");
                     break;
 
                 case ServiceCommandType.EnableProtection:
                     _protectionService.StartProtection();
-                    await writer.WriteLineAsync($"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
+                    await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
                     break;
 
                 case ServiceCommandType.DisableProtection:
                     _protectionService.StopProtection();
-                    await writer.WriteLineAsync($"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
+                    await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
                     break;
 
                 case ServiceCommandType.EnableRansomwareShield:
                     _ransomwareEngine.StartShield();
-                    await writer.WriteLineAsync($"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
+                    await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
                     break;
 
                 case ServiceCommandType.DisableRansomwareShield:
                     _ransomwareEngine.StopShield();
-                    await writer.WriteLineAsync($"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
+                    await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
                     break;
 
                 case ServiceCommandType.StartScan:
@@ -230,12 +277,12 @@ namespace AegisPC.Service.IPC
                     {
                         _ = _scanCoordinator.StartScanAsync(ScanType.Quick);
                     }
-                    await writer.WriteLineAsync($"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
+                    await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
                     break;
 
                 case ServiceCommandType.StopScan:
                     _scanCoordinator?.CancelScan();
-                    await writer.WriteLineAsync($"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
+                    await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
                     break;
             }
         }

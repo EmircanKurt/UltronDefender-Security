@@ -11,18 +11,68 @@
          • All handwriting/script/italic styles strictly eliminated across the entire design system.
          ══════════════════════════════════════════════════════════════════════════════════ -->
 
-    <!-- ── 1. FONT FAMILY DEFINITIONS (STRICT SANS-SERIF & MONOSPACE ONLY) ── -->
-    <!-- Primary Brand & Headings (Segoe UI Variable Display, Inter, Segoe UI) -->
-    <FontFamily x:Key="FontBrand">Segoe UI Variable Display, Inter, Segoe UI, Aptos, Arial, sans-serif</FontFamily>
-    <FontFamily x:Key="FontHeading">Segoe UI Variable Display, Inter, Segoe UI, Aptos, -apple-system, sans-serif</FontFamily>
+    <!-- ── 1. FONT FAMILY DEFINITIONS (CODEX GÖRÜNÜMÜ: Segoe UI Variable önde, Inter fallback) ── -->
+    <FontFamily x:Key="FontBrand">Segoe UI Variable Display, Segoe UI, pack://application:,,,/UltronDefender;component/Resources/Fonts/#Inter Display Medium, pack://application:,,,/UltronDefender;component/Resources/Fonts/#Inter, sans-serif</FontFamily>
+    <FontFamily x:Key="FontHeading">Segoe UI Variable Display, Segoe UI, pack://application:,,,/UltronDefender;component/Resources/Fonts/#Inter, Aptos, sans-serif</FontFamily>
 
     <!-- UI Standard Sans-Serif Body & Interface Font -->
-    <FontFamily x:Key="FontSans">Segoe UI Variable Text, Inter, Segoe UI, Aptos, -apple-system, sans-serif</FontFamily>
+    <FontFamily x:Key="FontSans">Segoe UI Variable Text, Segoe UI, pack://application:,,,/UltronDefender;component/Resources/Fonts/#Inter, Aptos, sans-serif</FontFamily>
 
     <!-- Monospace & Tabular Data Font Stack (Hashes, PIDs, Paths, Hex) -->
     <FontFamily x:Key="FontMono">Cascadia Code, Consolas, Segoe UI Mono, Courier New, monospace</FontFamily>
 
     <!-- ── 2. TYPOGRAPHY STYLES ── -->
+
+    <!-- [0.1] Codex-Inspired Hero Headline: 24px Clean, Elegant Medium Heading -->
+    <Style x:Key="HeroTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontHeading}"/>
+        <Setter Property="FontSize" Value="24"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+        <Setter Property="LineHeight" Value="32"/>
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="TextAlignment" Value="Center"/>
+    </Style>
+
+    <!-- [0.2] Hero Subtitle: 13.5px Neutral Sans-Serif with Airy Line Height -->
+    <Style x:Key="HeroSubtitleStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
+        <Setter Property="FontSize" Value="13.5"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+        <Setter Property="LineHeight" Value="21"/>
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="TextAlignment" Value="Center"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="MaxWidth" Value="560"/>
+    </Style>
+
+    <!-- [0.3] Action Card Title: 13.5px Medium for Modern Quick Cards -->
+    <Style x:Key="ActionCardTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
+        <Setter Property="FontSize" Value="13.5"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+        <Setter Property="LineHeight" Value="18"/>
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+    </Style>
+
+    <!-- [0.4] Action Card Description: 12px Regular for 2-Line Explanations -->
+    <Style x:Key="ActionCardDescStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}"/>
+        <Setter Property="LineHeight" Value="17"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+    </Style>
 
     <!-- [1] Brand Logo Title: 23px ExtraBold Modern Display for ULTRON -->
     <Style x:Key="BrandTitleStyle" TargetType="TextBlock">
@@ -46,35 +96,35 @@
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
 
-    <!-- [2] Page Heading: 24px Clean Bold Sans-Serif for Page Titles -->
+    <!-- [2] Page Heading: 22px Clean SemiBold Sans-Serif for Page Titles -->
     <Style x:Key="PageHeadingStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontHeading}"/>
-        <Setter Property="FontSize" Value="24"/>
-        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="FontSize" Value="22"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
-        <Setter Property="LineHeight" Value="30"/>
-        <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
+        <Setter Property="LineHeight" Value="28"/>
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
-    <!-- [3] Status Headline: 24px Bold Sans-Serif for Hero Status ("GÜVENDESİNİZ", "TEHDİT TESPİT EDİLDİ") -->
+    <!-- [3] Status Headline: 24px Medium Sans-Serif for Hero Status -->
     <Style x:Key="StatusHeadlineStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontHeading}"/>
         <Setter Property="FontSize" Value="24"/>
-        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="FontWeight" Value="Medium"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
-        <Setter Property="LineHeight" Value="30"/>
-        <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
+        <Setter Property="LineHeight" Value="32"/>
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
-    <!-- [4] Section / Card Heading: 15.5px Semibold for Card & Group Headers -->
+    <!-- [4] Section / Card Heading: 15px Medium for Card & Group Headers -->
     <Style x:Key="SectionHeadingStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontHeading}"/>
-        <Setter Property="FontSize" Value="15.5"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="15"/>
+        <Setter Property="FontWeight" Value="Medium"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
         <Setter Property="LineHeight" Value="21"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
@@ -107,13 +157,13 @@
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
 
-    <!-- [7] Small Uppercase Label: 10.5px Semibold / Bold for Metric Headings ("BUGÜN TARANAN DOSYA") -->
+    <!-- [7] Small Label: 11px Medium for Metric Headings -->
     <Style x:Key="StatLabelStyle" TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{StaticResource FontHeading}"/>
-        <Setter Property="FontSize" Value="10"/>
-        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="Medium"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}"/>
-        <Setter Property="LineHeight" Value="14"/>
+        <Setter Property="LineHeight" Value="15"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>

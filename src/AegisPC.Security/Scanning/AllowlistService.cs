@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -16,6 +17,8 @@ namespace AegisPC.Security.Scanning
         private readonly IHashService _hashService;
         private readonly ILogger<AllowlistService>? _logger;
         private readonly List<AllowlistEntry> _allowlist = new();
+        private readonly ConcurrentDictionary<string, AllowlistEntry> _activeHashIndex = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, AllowlistEntry> _activePathIndex = new(StringComparer.OrdinalIgnoreCase);
         private readonly string _storageFilePath;
         private readonly object _lock = new();
 
@@ -45,6 +48,25 @@ namespace AegisPC.Security.Scanning
                         {
                             _allowlist.Clear();
                             _allowlist.AddRange(items);
+                            _activeHashIndex.Clear();
+                            _activePathIndex.Clear();
+                            foreach (var item in _allowlist.Where(a => a.IsActive))
+                            {
+                                if (!string.IsNullOrEmpty(item.SHA256))
+                                {
+                                    _activeHashIndex[item.SHA256] = item;
+                                }
+                                if (!string.IsNullOrEmpty(item.FilePath))
+                                {
+                                    _activePathIndex[item.FilePath] = item;
+                                    try
+                                    {
+                                        var norm = Path.GetFullPath(item.FilePath);
+                                        _activePathIndex[norm] = item;
+                                    }
+                                    catch { }
+                                }
+                            }
                         }
                     }
                 }
@@ -71,12 +93,22 @@ namespace AegisPC.Security.Scanning
         public Task<bool> IsAllowlistedAsync(string sha256, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(sha256)) return Task.FromResult(false);
+            return Task.FromResult(_activeHashIndex.ContainsKey(sha256));
+        }
 
-            lock (_lock)
+        public Task<bool> IsPathAllowlistedAsync(string filePath, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(filePath)) return Task.FromResult(false);
+            if (_activePathIndex.ContainsKey(filePath)) return Task.FromResult(true);
+
+            try
             {
-                bool isAllowed = _allowlist.Any(a => a.IsActive && a.SHA256.Equals(sha256, StringComparison.OrdinalIgnoreCase));
-                return Task.FromResult(isAllowed);
+                var norm = Path.GetFullPath(filePath);
+                if (_activePathIndex.ContainsKey(norm)) return Task.FromResult(true);
             }
+            catch { }
+
+            return Task.FromResult(false);
         }
 
         public Task AddToAllowlistAsync(AllowlistEntry entry, CancellationToken cancellationToken = default)
@@ -87,6 +119,20 @@ namespace AegisPC.Security.Scanning
                 entry.AddedAt = DateTime.UtcNow;
                 entry.IsActive = true;
                 _allowlist.Add(entry);
+                if (!string.IsNullOrEmpty(entry.SHA256))
+                {
+                    _activeHashIndex[entry.SHA256] = entry;
+                }
+                if (!string.IsNullOrEmpty(entry.FilePath))
+                {
+                    _activePathIndex[entry.FilePath] = entry;
+                    try
+                    {
+                        var norm = Path.GetFullPath(entry.FilePath);
+                        _activePathIndex[norm] = entry;
+                    }
+                    catch { }
+                }
                 SaveToDisk();
             }
             _logger?.LogInformation("Added to allowlist: {Path} ({Hash})", entry.FilePath, entry.SHA256);
@@ -101,6 +147,20 @@ namespace AegisPC.Security.Scanning
                 if (entry != null)
                 {
                     _allowlist.Remove(entry);
+                    if (!string.IsNullOrEmpty(entry.SHA256))
+                    {
+                        _activeHashIndex.TryRemove(entry.SHA256, out _);
+                    }
+                    if (!string.IsNullOrEmpty(entry.FilePath))
+                    {
+                        _activePathIndex.TryRemove(entry.FilePath, out _);
+                        try
+                        {
+                            var norm = Path.GetFullPath(entry.FilePath);
+                            _activePathIndex.TryRemove(norm, out _);
+                        }
+                        catch { }
+                    }
                     SaveToDisk();
                 }
             }

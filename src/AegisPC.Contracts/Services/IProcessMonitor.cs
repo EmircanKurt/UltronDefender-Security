@@ -10,4 +10,5 @@ public interface IProcessMonitor
     Task<ProcessInfo?> GetProcessByPidAsync(int pid);
     Task<List<ProcessTreeNode>> GetProcessTreeAsync();
     Task RefreshAsync();
+    bool IsGpuSupported { get; }
 }

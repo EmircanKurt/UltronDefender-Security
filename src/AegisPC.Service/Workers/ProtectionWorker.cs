@@ -17,6 +17,10 @@ namespace AegisPC.Service.Workers
         private readonly IRansomwareProtectionEngine _ransomwareEngine;
         private readonly IBehaviorEngine _behaviorEngine;
         private readonly SettingsService _settingsService;
+        private readonly IEtwPreExecProtectionService? _etwPreExecService;
+        private readonly AegisPC.Service.DriverBridge.IKernelBridge? _kernelBridge;
+        private readonly AegisPC.Service.RealTime.EtwProcessMonitor? _processMonitor;
+        private readonly AegisPC.Service.RealTime.EtwImageLoadMonitor? _imageLoadMonitor;
 
         public ProtectionWorker(
             ILogger<ProtectionWorker> logger,
@@ -24,7 +28,11 @@ namespace AegisPC.Service.Workers
             IRealTimeProtectionEngine realTimeProtectionEngine,
             IRansomwareProtectionEngine ransomwareEngine,
             IBehaviorEngine behaviorEngine,
-            SettingsService settingsService)
+            SettingsService settingsService,
+            IEtwPreExecProtectionService? etwPreExecService = null,
+            AegisPC.Service.DriverBridge.IKernelBridge? kernelBridge = null,
+            AegisPC.Service.RealTime.EtwProcessMonitor? processMonitor = null,
+            AegisPC.Service.RealTime.EtwImageLoadMonitor? imageLoadMonitor = null)
         {
             _logger = logger;
             _fileProtectionService = fileProtectionService;
@@ -32,6 +40,10 @@ namespace AegisPC.Service.Workers
             _ransomwareEngine = ransomwareEngine;
             _behaviorEngine = behaviorEngine;
             _settingsService = settingsService;
+            _etwPreExecService = etwPreExecService;
+            _kernelBridge = kernelBridge;
+            _processMonitor = processMonitor;
+            _imageLoadMonitor = imageLoadMonitor;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -63,6 +75,37 @@ namespace AegisPC.Service.Workers
                     {
                         _logger.LogError(ex, "Failed to start File Protection Service.");
                     }
+
+                    try
+                    {
+                        _logger.LogInformation("Starting ETW Pre-Execution Protection Layer...");
+                        _etwPreExecService?.Start();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to start ETW Pre-Execution Protection Service.");
+                    }
+
+                    try
+                    {
+                        _logger.LogInformation("Starting ETW Process & Image Telemetry Monitors...");
+                        _processMonitor?.Start();
+                        _imageLoadMonitor?.Start();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to start ETW Process/Image Monitors.");
+                    }
+
+                    try
+                    {
+                        _logger.LogInformation("Starting Kernel Minifilter Driver Bridge...");
+                        _kernelBridge?.StartBridge();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to connect Kernel Driver Bridge (continuing in user-mode).");
+                    }
                 }
 
                 if (_settingsService.Current.IsRansomwareShieldEnabled)
@@ -84,8 +127,8 @@ namespace AegisPC.Service.Workers
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
-                    _logger.LogDebug("ProtectionWorker heartbeat: FileProtection={FileActive}, RansomwareShield={RansomwareActive}",
-                        _fileProtectionService.IsProtectionActive, _ransomwareEngine.IsShieldActive);
+                    _logger.LogDebug("ProtectionWorker heartbeat: FileProtection={FileActive}, RansomwareShield={RansomwareActive}, KernelBridge={KernelActive}",
+                        _fileProtectionService.IsProtectionActive, _ransomwareEngine.IsShieldActive, _kernelBridge?.IsDriverConnected ?? false);
                 }
             }
             catch (OperationCanceledException)
@@ -102,6 +145,10 @@ namespace AegisPC.Service.Workers
                 try { _realTimeProtectionEngine?.Stop(); } catch { }
                 try { _fileProtectionService?.StopProtection(); } catch { }
                 try { _ransomwareEngine?.StopShield(); } catch { }
+                try { _etwPreExecService?.Stop(); } catch { }
+                try { _processMonitor?.Stop(); } catch { }
+                try { _imageLoadMonitor?.Stop(); } catch { }
+                try { _kernelBridge?.StopBridge(); } catch { }
             }
         }
     }

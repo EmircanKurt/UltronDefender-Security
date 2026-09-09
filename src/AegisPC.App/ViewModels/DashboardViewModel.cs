@@ -3,7 +3,6 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using AegisPC.App.Views;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Models;
 using AegisPC.Recommendations.Engine;
@@ -59,12 +58,12 @@ namespace AegisPC.App.ViewModels
 
         // Status Banner Hero
         [ObservableProperty] private string shortSummary = "Cihazınız ve kişisel verileriniz Ultron Defender tarafından gerçek zamanlı korunuyor.";
-        [ObservableProperty] private string protectionStatusText = "GÜVENDESİNİZ";
-        [ObservableProperty] private string protectionBadgeText = "GERÇEK ZAMANLI KORUMA AKTİF";
+        [ObservableProperty] private string protectionStatusText = "Sisteminiz güvende";
+        [ObservableProperty] private string protectionBadgeText = "Gerçek zamanlı koruma aktif";
         [ObservableProperty] private string protectionStatusColor = "#4CAF50"; // Bitdefender Safe Green
         [ObservableProperty] private string protectionStatusSymbol = "ShieldCheckmark24";
         [ObservableProperty] private bool hasThreatsDetected = false;
-        [ObservableProperty] private string threatActionText = "🚨 Tehditleri İncele";
+        [ObservableProperty] private string threatActionText = "Tehditleri İncele";
         [ObservableProperty] private bool isServiceConnected = true;
         [ObservableProperty] private bool isRealTimeProtectionActive = true;
         [ObservableProperty] private int threatsBocked24h = 0;
@@ -87,7 +86,7 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty] private string scanCurrentFile = "";
         [ObservableProperty] private int scanScannedCount = 0;
         [ObservableProperty] private int scanThreatCount = 0;
-        [ObservableProperty] private string quickScanButtonText = "TARAMAYI BAŞLAT";
+        [ObservableProperty] private string quickScanButtonText = "Taramayı Başlat";
 
 
 
@@ -109,18 +108,18 @@ namespace AegisPC.App.ViewModels
         // Real-Time Protection Live Activity Telemetry
         public System.Collections.ObjectModel.ObservableCollection<AegisPC.Security.RealTime.RealTimeActivityEvent> LiveActivities { get; } = new();
         public System.Collections.ObjectModel.ObservableCollection<string> WatchedLocationsList { get; } = new();
-        [ObservableProperty] private string realTimeHealthStatus = "PROTECTED";
+        [ObservableProperty] private string realTimeHealthStatus = "Aktif";
         [ObservableProperty] private string realTimeHealthMessage = "Tüm güvenlik modülleri aktif ve izleniyor";
         [ObservableProperty] private string realTimeHealthColor = "#35D07F";
-        [ObservableProperty] private string watcherStatusText = "RUNNING";
-        [ObservableProperty] private string scannerStatusText = "HEALTHY";
-        [ObservableProperty] private string quarantineStatusText = "HEALTHY";
-        [ObservableProperty] private string eventQueueStatusText = "HEALTHY";
+        [ObservableProperty] private string watcherStatusText = "Çalışıyor";
+        [ObservableProperty] private string scannerStatusText = "Normal";
+        [ObservableProperty] private string quarantineStatusText = "Normal";
+        [ObservableProperty] private string eventQueueStatusText = "Normal";
         [ObservableProperty] private string lastEventTimeAgo = "Aktif";
 
         // Startup Security Sweep Live State
         public System.Collections.ObjectModel.ObservableCollection<AegisPC.Contracts.Services.StartupSweepFinding> StartupSweepFindings { get; } = new();
-        [ObservableProperty] private string startupSweepStatusText = "TAMAMLANDI";
+        [ObservableProperty] private string startupSweepStatusText = "Tamamlandı";
         [ObservableProperty] private string startupSweepBadgeColor = "#35D07F";
         [ObservableProperty] private string startupSweepFilesRatio = "0 / 0";
         [ObservableProperty] private double startupSweepProgressPercent = 100.0;
@@ -140,6 +139,8 @@ namespace AegisPC.App.ViewModels
         private readonly IQuarantineService? _quarantineService;
         private readonly AegisPC.Security.RealTime.IRansomwareProtectionEngine? _ransomwareEngine;
         private readonly AegisPC.Infrastructure.Configuration.SettingsService? _settingsService;
+
+        public static DashboardViewModel? Current { get; private set; }
 
         public DashboardViewModel(
             IPerformanceMonitor? performanceMonitor = null,
@@ -170,6 +171,7 @@ namespace AegisPC.App.ViewModels
             _quarantineService = quarantineService;
             _ransomwareEngine = ransomwareEngine;
             _settingsService = settingsService;
+            Current = this;
 
             // Initialize ransomware protection state
             if (_settingsService != null)
@@ -205,12 +207,12 @@ namespace AegisPC.App.ViewModels
                         IsStartupSweepRunning = p.Status == StartupSweepStatus.Scanning || p.Status == StartupSweepStatus.Preparing;
                         StartupSweepStatusText = p.Status switch
                         {
-                            StartupSweepStatus.Preparing => "HAZIRLANIYOR",
-                            StartupSweepStatus.Scanning => "TARANIYOR...",
-                            StartupSweepStatus.ThreatsFound => "TEHDİT BULUNDU",
-                            StartupSweepStatus.Clean => "TEMİZ",
-                            StartupSweepStatus.Completed => "TAMAMLANDI",
-                            _ => "HAZIR"
+                            StartupSweepStatus.Preparing => "Hazırlanıyor",
+                            StartupSweepStatus.Scanning => "Taranıyor...",
+                            StartupSweepStatus.ThreatsFound => "Tehdit bulundu",
+                            StartupSweepStatus.Clean => "Temiz",
+                            StartupSweepStatus.Completed => "Tamamlandı",
+                            _ => "Hazır"
                         };
                         StartupSweepBadgeColor = p.Status switch
                         {
@@ -241,8 +243,8 @@ namespace AegisPC.App.ViewModels
                         ThreatsBocked24h++;
                         ThreatsBlockedThisMonth++;
                         HasThreatsDetected = true;
-                        ProtectionStatusText = "TEHDİT TESPİT EDİLDİ";
-                        ProtectionBadgeText = $"🚨 {f.FileName} ({f.Verdict})";
+                        ProtectionStatusText = "Tehdit tespit edildi";
+                        ProtectionBadgeText = $"{f.FileName} ({f.Verdict})";
                         ProtectionStatusColor = "#C41E1E";
                         ProtectionStatusSymbol = "ShieldAlert24";
 
@@ -251,7 +253,7 @@ namespace AegisPC.App.ViewModels
                             Timestamp = DateTime.Now,
                             FileName = f.FileName,
                             FilePath = f.FilePath,
-                            Stage = "BAŞLANGIÇ SÜPÜRME",
+                            Stage = "Başlangıç Taraması",
                             Message = f.FilePath,
                             RiskScore = f.RiskScore,
                             Verdict = f.Verdict,
@@ -260,18 +262,19 @@ namespace AegisPC.App.ViewModels
                         });
                         while (LiveActivities.Count > 15) LiveActivities.RemoveAt(LiveActivities.Count - 1);
 
-                        TriggerThreatToast(f.FileName);
+                        TriggerThreatToast(f.FileName, isQuarantined: true);
                     });
                 };
 
                 _startupSweepService.OnSweepCompleted += (res) =>
                 {
-                    Application.Current?.Dispatcher?.InvokeAsync(() =>
+                    Application.Current?.Dispatcher?.InvokeAsync(async () =>
                     {
                         IsStartupSweepRunning = false;
-                        StartupSweepStatusText = res.ThreatsCount > 0 ? $"{res.ThreatsCount} TEHDİT" : "TEMİZ";
+                        StartupSweepStatusText = res.ThreatsCount > 0 ? $"{res.ThreatsCount} tehdit" : "Temiz";
                         StartupSweepBadgeColor = res.ThreatsCount > 0 ? "#C41E1E" : "#4CAF50";
                         _ = RefreshMonthlyQuarantineCountAsync();
+                        await RefreshThreatStatusAsync();
                     });
                 };
 
@@ -306,11 +309,19 @@ namespace AegisPC.App.ViewModels
                             ThreatsBocked24h++;
                             ThreatsBlockedThisMonth++;
                             HasThreatsDetected = true;
-                            ProtectionStatusText = "TEHDİT ENGELLENDİ";
-                            ProtectionBadgeText = $"🚨 {act.FileName} Karantinaya Alındı";
+                            ProtectionStatusText = "Tehdit engellendi";
+                            ProtectionBadgeText = $"{act.FileName} karantinaya alındı";
                             ProtectionStatusColor = "#C41E1E";
                             ProtectionStatusSymbol = "ShieldAlert24";
-                            TriggerThreatToast(act.FileName);
+                            TriggerThreatToast(act.FileName, isQuarantined: true);
+                        }
+                        else if (act.Action == "WARN" || act.Severity == "Warning")
+                        {
+                            ProtectionStatusText = "Şüpheli aktivite algılandı";
+                            ProtectionBadgeText = $"{act.FileName} incelendi";
+                            ProtectionStatusColor = "#F5A623";
+                            ProtectionStatusSymbol = "Warning24";
+                            TriggerThreatToast(act.FileName, isQuarantined: false);
                         }
                     });
                 };
@@ -319,10 +330,10 @@ namespace AegisPC.App.ViewModels
                 {
                     Application.Current?.Dispatcher?.InvokeAsync(() =>
                     {
-                        RealTimeHealthStatus = healthy ? "PROTECTED" : "DEGRADED";
+                        RealTimeHealthStatus = healthy ? "Aktif" : "Kısıtlı";
                         RealTimeHealthMessage = msg;
                         RealTimeHealthColor = healthy ? "#4CAF50" : "#C41E1E";
-                        WatcherStatusText = healthy ? "RUNNING" : "DEGRADED";
+                        WatcherStatusText = healthy ? "Çalışıyor" : "Kısıtlı";
                         IsRealTimeProtectionActive = healthy;
                         UpdateProtectionUptime();
                     });
@@ -346,37 +357,47 @@ namespace AegisPC.App.ViewModels
                         ScanCurrentFile = p.CurrentFile;
                         ScanScannedCount = p.ScannedFiles;
                         ScanThreatCount = p.FindingsCount;
-                        QuickScanButtonText = "DURDUR";
-                        ProtectionStatusText = "SİSTEM TARANIYOR...";
-                        ProtectionBadgeText = "HIZLI TARAMA ÇALIŞIYOR";
+                        QuickScanButtonText = "Durdur";
+                        ProtectionStatusText = "Sistem taranıyor...";
+                        ProtectionBadgeText = "Hızlı tarama çalışıyor";
                         ProtectionStatusColor = "#2196F3";
                     });
                 };
 
                 _scanCoordinator.ScanCompleted += (result) =>
                 {
-                    Application.Current?.Dispatcher?.InvokeAsync(() =>
+                    Application.Current?.Dispatcher?.InvokeAsync(async () =>
                     {
                         IsScanning = false;
                         ScanProgress = 100;
                         LastScanTime = "Az önce";
                         IncrementDailyScanned(result.ScannedFiles);
-                        ProtectionStatusText = result.Findings.Count > 0 ? "TEHDİT BULUNDU" : "GÜVENDESİNİZ";
-                        ProtectionBadgeText = result.Findings.Count > 0 ? $"{result.Findings.Count} ŞÜPHELİ BULGU" : "GERÇEK ZAMANLI KORUMA AKTİF";
-                        ProtectionStatusColor = result.Findings.Count > 0 ? "#C41E1E" : "#4CAF50";
-                        QuickScanButtonText = "TEKRAR TARA";
-                        PendingFindingsCount = result.Findings.Count;
+                        QuickScanButtonText = "Tekrar Tara";
 
-                        _ = RefreshMonthlyQuarantineCountAsync();
+                        int activeFindingsCount = result.Findings?.Count(f => f.Status == AegisPC.Core.Enums.FindingStatus.Active && !f.IsAllowlisted) ?? 0;
+                        PendingFindingsCount = activeFindingsCount;
 
-                        if (result.Findings.Count > 0)
+                        if (activeFindingsCount > 0)
                         {
-                            TriggerToast($"Hızlı tarama tamamlandı: {result.Findings.Count} riskli öğe tespit edildi!", "Warning");
+                            HasThreatsDetected = true;
+                            ProtectionStatusText = "Tehdit bulundu";
+                            ProtectionBadgeText = $"{activeFindingsCount} şüpheli bulgu";
+                            ProtectionStatusColor = "#C41E1E";
+                            ProtectionStatusSymbol = "ShieldAlert24";
+                            TriggerToast($"Hızlı tarama tamamlandı: {activeFindingsCount} riskli öğe tespit edildi!", "Warning");
                         }
                         else
                         {
+                            HasThreatsDetected = false;
+                            ProtectionStatusText = "Sisteminiz güvende";
+                            ProtectionBadgeText = "Gerçek zamanlı koruma aktif";
+                            ProtectionStatusColor = "#4CAF50";
+                            ProtectionStatusSymbol = "ShieldCheckmark24";
                             TriggerToast($"Hızlı tarama tamamlandı! {result.ScannedFiles:N0} dosya incelendi, tehdit bulunamadı.", "Success");
                         }
+
+                        _ = RefreshMonthlyQuarantineCountAsync();
+                        await RefreshThreatStatusAsync();
                     });
                 };
 
@@ -388,9 +409,9 @@ namespace AegisPC.App.ViewModels
                     ScanCurrentFile = _scanCoordinator.CurrentFile;
                     ScanScannedCount = _scanCoordinator.ScannedFiles;
                     ScanThreatCount = _scanCoordinator.FindingsCount;
-                    QuickScanButtonText = "DURDUR";
-                    ProtectionStatusText = "SİSTEM TARANIYOR...";
-                    ProtectionBadgeText = "HIZLI TARAMA ÇALIŞIYOR";
+                    QuickScanButtonText = "Durdur";
+                    ProtectionStatusText = "Sistem taranıyor...";
+                    ProtectionBadgeText = "Hızlı tarama çalışıyor";
                     ProtectionStatusColor = "#2196F3";
                 }
             }
@@ -469,6 +490,75 @@ namespace AegisPC.App.ViewModels
                 RansomwareStatusColor = "#94A3B8";
                 RansomwareTitle = "Fidye Kalkanı Kapalı";
                 RansomwareDescription = "Belgelerinizi ve resimlerinizi şifreleme girişimlerine karşı korur.";
+            }
+        }
+
+        /// <summary>
+        /// Sistemdeki aktif ve çözülmemiş tehditleri denetleyerek ana ekran uyarı durumunu (banner) senkronize eder.
+        /// Çözülen veya temizlenen tehditler sonrası kırmızı uyarı bandını kapatır.
+        /// </summary>
+        public async Task RefreshThreatStatusAsync()
+        {
+            try
+            {
+                int activeScanFindings = 0;
+                if (_scanCoordinator?.CurrentFindings != null)
+                {
+                    activeScanFindings = _scanCoordinator.CurrentFindings.Count(f => f.Status == AegisPC.Core.Enums.FindingStatus.Active && !f.IsAllowlisted);
+                }
+
+                int activeServiceFindings = 0;
+                if (_findingService != null)
+                {
+                    try
+                    {
+                        activeServiceFindings = await _findingService.GetActiveCountAsync();
+                    }
+                    catch { }
+                }
+
+                int activeSweepFindings = 0;
+                if (StartupSweepFindings != null)
+                {
+                    activeSweepFindings = StartupSweepFindings.Count(f => !f.IsQuarantined && f.RiskScore >= 60 && f.Action != "Allow");
+                }
+
+                int totalActiveThreats = Math.Max(activeScanFindings, Math.Max(activeServiceFindings, activeSweepFindings));
+
+                void ApplyStatus()
+                {
+                    if (totalActiveThreats > 0)
+                    {
+                        HasThreatsDetected = true;
+                        ProtectionStatusText = "Tehdit bulundu";
+                        ProtectionBadgeText = $"{totalActiveThreats} şüpheli bulgu";
+                        ProtectionStatusColor = "#C41E1E";
+                        ProtectionStatusSymbol = "ShieldAlert24";
+                        PendingFindingsCount = totalActiveThreats;
+                    }
+                    else
+                    {
+                        HasThreatsDetected = false;
+                        ProtectionStatusText = "Sisteminiz güvende";
+                        ProtectionBadgeText = "Gerçek zamanlı koruma aktif";
+                        ProtectionStatusColor = "#4CAF50";
+                        ProtectionStatusSymbol = "ShieldCheckmark24";
+                        PendingFindingsCount = 0;
+                    }
+                }
+
+                if (Application.Current?.Dispatcher != null && !Application.Current.Dispatcher.CheckAccess())
+                {
+                    await Application.Current.Dispatcher.InvokeAsync(ApplyStatus);
+                }
+                else
+                {
+                    ApplyStatus();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine(ex);
             }
         }
     }

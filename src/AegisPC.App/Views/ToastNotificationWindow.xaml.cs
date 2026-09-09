@@ -4,6 +4,8 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using AegisPC.Contracts.Services;
+using Microsoft.Extensions.DependencyInjection;
 using Wpf.Ui.Controls;
 
 namespace AegisPC.App.Views
@@ -13,14 +15,30 @@ namespace AegisPC.App.Views
         private System.Windows.Threading.DispatcherTimer? _closeTimer;
         private static ToastNotificationWindow? _activeToast;
         private static readonly object _toastLock = new();
+        private string _currentType = "Info";
+        public Type? CustomTargetPage { get; set; }
+        public Action? CustomClickAction { get; set; }
 
         public ToastNotificationWindow()
         {
             InitializeComponent();
         }
 
-        public static void ShowToast(string title, string message, string type = "Info")
+        public static void ShowToast(string title, string message, string type = "Info", Type? targetPageType = null, Action? clickAction = null)
         {
+            try
+            {
+                if (App.ServiceProvider != null)
+                {
+                    var settings = App.ServiceProvider.GetService<ISettingsService>();
+                    if (settings != null && !settings.GetSetting("NotificationsEnabled", true))
+                    {
+                        return;
+                    }
+                }
+            }
+            catch { }
+
             Application.Current?.Dispatcher?.Invoke(() =>
             {
                 try
@@ -29,12 +47,16 @@ namespace AegisPC.App.Views
                     {
                         if (_activeToast != null && _activeToast.IsLoaded)
                         {
+                            _activeToast.CustomTargetPage = targetPageType;
+                            _activeToast.CustomClickAction = clickAction;
                             _activeToast.UpdateContent(title, message, type);
                             return;
                         }
 
                         var toast = new ToastNotificationWindow();
                         _activeToast = toast;
+                        toast.CustomTargetPage = targetPageType;
+                        toast.CustomClickAction = clickAction;
                         toast.Closed += (s, e) =>
                         {
                             lock (_toastLock)
@@ -52,15 +74,21 @@ namespace AegisPC.App.Views
 
         public void UpdateContent(string title, string message, string type)
         {
+            _currentType = type;
             ToastTitle.Text = CleanTitle(title);
             ToastMessage.Text = message;
             ApplyStyling(type);
             _closeTimer?.Stop();
+            if (_closeTimer != null)
+            {
+                _closeTimer.Interval = TimeSpan.FromSeconds(8);
+            }
             _closeTimer?.Start();
         }
 
         private void Setup(string title, string message, string type)
         {
+            _currentType = type;
             ToastTitle.Text = CleanTitle(title);
             ToastMessage.Text = message;
 
@@ -76,7 +104,7 @@ namespace AegisPC.App.Views
 
             _closeTimer = new System.Windows.Threading.DispatcherTimer
             {
-                Interval = TimeSpan.FromSeconds(6)
+                Interval = TimeSpan.FromSeconds(8)
             };
             _closeTimer.Tick += (s, e) => CloseToast();
             _closeTimer.Start();
@@ -150,14 +178,43 @@ namespace AegisPC.App.Views
             BeginAnimation(OpacityProperty, fadeOut);
         }
 
+        private void OnCardMouseEnter(object sender, MouseEventArgs e)
+        {
+            // Kullanıcı bildirimin üzerine geldiğinde zamanlayıcıyı durdur
+            _closeTimer?.Stop();
+        }
+
+        private void OnCardMouseLeave(object sender, MouseEventArgs e)
+        {
+            // Kullanıcı fareyi bildirimden çektiğinde 3 saniye ek süre verip devam ettir
+            if (_closeTimer != null)
+            {
+                _closeTimer.Interval = TimeSpan.FromSeconds(3);
+                _closeTimer.Start();
+            }
+        }
+
         private void OnCardClicked(object sender, MouseButtonEventArgs e)
         {
             try
             {
-                var mainWindow = Application.Current?.MainWindow as MainWindow;
+                var mainWindow = Application.Current?.MainWindow as MainWindow ?? MainWindow.Instance;
                 if (mainWindow != null)
                 {
                     mainWindow.ShowAndActivate();
+
+                    Type target = CustomTargetPage ?? ResolveTargetPage(ToastTitle.Text, ToastMessage.Text, _currentType);
+                    if (target != null)
+                    {
+                        if (target == typeof(QuarantineView))
+                        {
+                            mainWindow.NavigateToQuarantine(showIncidentsTab: false);
+                        }
+                        else
+                        {
+                            mainWindow.NavigateTo(target);
+                        }
+                    }
                 }
                 else if (Application.Current?.MainWindow != null)
                 {
@@ -169,18 +226,77 @@ namespace AegisPC.App.Views
                     mw.Focus();
                     mw.Topmost = false;
                 }
+
+                CustomClickAction?.Invoke();
             }
             catch { }
             CloseToast();
         }
 
+        private static Type ResolveTargetPage(string? title, string? message, string? type)
+        {
+            string combined = $"{title} {message}".ToLowerInvariant();
+
+            // GÖREV 7: 60-84 arası Uyarı veya Şüpheli bildirimler doğrudan Olay Merkezi (IncidentCenterView)'ne yönlendirilir (Karantina değil)
+            if (string.Equals(type, "Warning", StringComparison.OrdinalIgnoreCase) ||
+                combined.Contains("şüpheli") ||
+                combined.Contains("uyarıldı") ||
+                combined.Contains("uyarı") ||
+                combined.Contains("olay merkezi") ||
+                combined.Contains("olay geçmişi"))
+            {
+                return typeof(IncidentCenterView);
+            }
+
+            // Tehditler, Karantina, Fidye veya Tehlike bildirimleri doğrudan Karantina sayfasına yönlendirir
+            if (combined.Contains("karantina") || 
+                combined.Contains("tehdit") || 
+                combined.Contains("zararlı") || 
+                combined.Contains("threat") || 
+                combined.Contains("virüs") || 
+                combined.Contains("kilitlendi") || 
+                combined.Contains("engellendi") || 
+                combined.Contains("etkisiz") ||
+                combined.Contains("fidye") ||
+                combined.Contains("ransomware") ||
+                string.Equals(type, "Danger", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "Error", StringComparison.OrdinalIgnoreCase))
+            {
+                return typeof(QuarantineView);
+            }
+
+            if (combined.Contains("tarayıcı") || combined.Contains("browser") || combined.Contains("dns") || combined.Contains("web"))
+            {
+                return typeof(BrowserSecurityView);
+            }
+
+            if (combined.Contains("tarama") || combined.Contains("scan"))
+            {
+                return typeof(ScanView);
+            }
+
+            if (combined.Contains("süreç") || combined.Contains("process"))
+            {
+                return typeof(ProcessListView);
+            }
+
+            if (combined.Contains("çökme") || combined.Contains("crash"))
+            {
+                return typeof(CrashAnalysisView);
+            }
+
+            return typeof(QuarantineView);
+        }
+
         private void OnMinimizeClicked(object sender, RoutedEventArgs e)
         {
+            e.Handled = true;
             CloseToast();
         }
 
         private void OnCloseClicked(object sender, RoutedEventArgs e)
         {
+            e.Handled = true;
             CloseToast();
         }
     }

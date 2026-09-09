@@ -22,6 +22,8 @@
             <conv:NullToBoolConverter x:Key="NullToBoolConverter"/>
             <conv:PercentToColorConverter x:Key="PercentColorConverter"/>
             <conv:RiskLevelToColorConverter x:Key="RiskColorConverter"/>
+            <conv:ThreatToBrushConverter x:Key="ThreatToBrushConverter"/>
+            <conv:ThreatToBrushConverter x:Key="ThreatToBrush"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

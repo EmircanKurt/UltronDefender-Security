@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
@@ -14,6 +16,10 @@ namespace AegisPC.Security.Scanning
     public class SignatureVerifier : ISignatureVerifier
     {
         private readonly ILogger<SignatureVerifier>? _logger;
+
+        private const int MaxCacheEntries = 100000;
+        private readonly ConcurrentDictionary<string, SignatureInfo> _signatureCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentQueue<string> _cacheKeys = new();
 
         private static readonly Guid WINTRUST_ACTION_GENERIC_VERIFY_V2 = new Guid("{00AAC56B-CD44-11d0-8CC2-00C04FC295EE}");
 
@@ -83,6 +89,22 @@ namespace AegisPC.Security.Scanning
                 });
             }
 
+            string? cacheKey = null;
+            try
+            {
+                var fi = new FileInfo(filePath);
+                if (fi.Exists)
+                {
+                    cacheKey = $"{fi.FullName}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}";
+                    if (_signatureCache.TryGetValue(cacheKey, out var cached))
+                    {
+                        return Task.FromResult(cached);
+                    }
+                }
+            }
+            catch { }
+
+            SignatureInfo result;
             try
             {
                 // 1. Try embedded Authenticode X509 certificate extraction
@@ -93,14 +115,14 @@ namespace AegisPC.Security.Scanning
 
                     using (var chain = new X509Chain())
                     {
-                        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                        chain.ChainPolicy.RevocationMode = X509RevocationMode.Offline;
                         isChainValid = chain.Build(cert);
                     }
 
                     var publisher = cert.GetNameInfo(X509NameType.SimpleName, false);
                     var issuer = cert.GetNameInfo(X509NameType.SimpleName, true);
 
-                    return Task.FromResult(new SignatureInfo
+                    result = new SignatureInfo
                     {
                         IsSigned = true,
                         IsValid = isChainValid,
@@ -111,7 +133,9 @@ namespace AegisPC.Security.Scanning
                         ValidFrom = cert.NotBefore,
                         ValidTo = cert.NotAfter,
                         SignatureAlgorithm = cert.SignatureAlgorithm.FriendlyName
-                    });
+                    };
+                    CacheSignatureResult(cacheKey, result);
+                    return Task.FromResult(result);
                 }
                 catch
                 {
@@ -123,31 +147,51 @@ namespace AegisPC.Security.Scanning
                 if (isWinTrustValid)
                 {
                     bool isSystem = PathHelper.IsSystemPath(filePath);
-                    return Task.FromResult(new SignatureInfo
+                    result = new SignatureInfo
                     {
                         IsSigned = true,
                         IsValid = true,
                         Publisher = isSystem ? "Microsoft Windows" : "Doğrulanmış Windows Kataloğu",
                         Issuer = "Microsoft Windows Production PCA",
                         SignatureAlgorithm = "SHA256"
-                    });
+                    };
+                    CacheSignatureResult(cacheKey, result);
+                    return Task.FromResult(result);
                 }
 
-                return Task.FromResult(new SignatureInfo
+                result = new SignatureInfo
                 {
                     IsSigned = false,
                     IsValid = false
-                });
+                };
+                CacheSignatureResult(cacheKey, result);
+                return Task.FromResult(result);
             }
             catch (Exception ex)
             {
                 _logger?.LogTrace(ex, "Error verifying signature for {Path}", filePath);
-                return Task.FromResult(new SignatureInfo
+                result = new SignatureInfo
                 {
                     IsSigned = false,
                     IsValid = false
-                });
+                };
+                return Task.FromResult(result);
             }
+        }
+
+        private void CacheSignatureResult(string? cacheKey, SignatureInfo info)
+        {
+            if (string.IsNullOrEmpty(cacheKey)) return;
+
+            if (_signatureCache.Count >= MaxCacheEntries)
+            {
+                while (_signatureCache.Count >= (MaxCacheEntries - 10000) && _cacheKeys.TryDequeue(out var oldKey))
+                {
+                    _signatureCache.TryRemove(oldKey, out _);
+                }
+            }
+            _signatureCache[cacheKey] = info;
+            _cacheKeys.Enqueue(cacheKey);
         }
 
         private static bool CheckWinVerifyTrust(string filePath)
@@ -173,13 +217,13 @@ namespace AegisPC.Security.Scanning
                     pPolicyCallbackData = IntPtr.Zero,
                     pSIPClientData = IntPtr.Zero,
                     dwUIChoice = 2, // WTD_UI_NONE
-                    fdwRevocationChecks = 0, // WTD_REVOKE_NONE
+                    fdwRevocationChecks = 1, // WTD_REVOKE_WHOLECHAIN
                     dwUnionChoice = 1, // WTD_CHOICE_FILE
                     pFile = pFileInfo,
                     dwStateAction = 0, // WTD_STATEACTION_IGNORE
                     hWVTStateData = IntPtr.Zero,
                     pwszURLReference = null,
-                    dwProvFlags = 0x00000040 | 0x00000080, // WTD_CACHE_ONLY_URL_RETRIEVAL | WTD_REVOCATION_CHECK_NONE
+                    dwProvFlags = 0x00000040, // WTD_CACHE_ONLY_URL_RETRIEVAL; WinTrust revocation policy remains enabled
                     dwUIContext = 0,
                     pSignatureSettings = IntPtr.Zero
                 };

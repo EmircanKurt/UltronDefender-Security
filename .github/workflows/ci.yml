@@ -1,0 +1,90 @@
+name: AegisPC Security CI Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build, Test & Coverage Verification
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 8.0 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore NuGet Packages
+        run: dotnet restore AegisPC.sln
+
+      - name: Build Solution (Release)
+        run: dotnet build AegisPC.sln --configuration Release --no-restore
+
+      - name: Execute xUnit Security Test Suites & Collect Coverage
+        run: >
+          dotnet test tests/AegisPC.Tests/AegisPC.Tests.csproj
+          --configuration Release
+          --no-build
+          --verbosity normal
+          --collect:"XPlat Code Coverage"
+          --results-directory ./TestResults/
+          --logger "trx;LogFileName=test_results.trx"
+
+      - name: Install ReportGenerator Tool
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Generate Code Coverage Report & Summary
+        run: >
+          reportgenerator
+          -reports:"./TestResults/**/coverage.cobertura.xml"
+          -targetdir:"./CoverageReport"
+          -reporttypes:"HtmlInline;Cobertura;TextSummary"
+          -assemblyfilters:"+AegisPC.*"
+          -classfilters:"-*.Views.*"
+
+      - name: Display Coverage Summary
+        shell: pwsh
+        run: |
+          if (Test-Path "./CoverageReport/Summary.txt") {
+            Get-Content "./CoverageReport/Summary.txt"
+          }
+
+      - name: Enforce Code Coverage Policy Threshold (>80%)
+        shell: pwsh
+        run: |
+          $summaryFile = "./CoverageReport/Summary.txt"
+          if (Test-Path $summaryFile) {
+            $content = Get-Content $summaryFile -Raw
+            if ($content -match 'Line coverage:\s*([\d\.]+)%') {
+              $lineCoverage = [double]$matches[1]
+              Write-Host "Overall Line Coverage: $lineCoverage%"
+              if ($lineCoverage -lt 80.0) {
+                Write-Error "CI Gate Failed: Line coverage ($lineCoverage%) is below the required threshold of 80%!"
+                exit 1
+              }
+              Write-Host "CI Gate Passed: Line coverage ($lineCoverage%) satisfies >80% threshold requirement."
+            }
+          }
+
+      - name: Upload Test Results Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Test-Results
+          path: ./TestResults/
+
+      - name: Upload Code Coverage Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Code-Coverage-Report
+          path: ./CoverageReport/

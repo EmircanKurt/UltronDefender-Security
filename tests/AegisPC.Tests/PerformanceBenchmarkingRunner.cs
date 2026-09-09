@@ -128,5 +128,111 @@ namespace AegisPC.Tests
             vm.Dispose();
             vm.Dispose();
         }
+
+        [Fact]
+        public async Task Test_10kFilesTree_SignedPassCache_SkipsHashComputation_OnSecondScan()
+        {
+            string treeDir = Path.Combine(_benchDir, "Tree10k_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(treeDir);
+
+            const int folderCount = 100;
+            const int filesPerFolder = 100;
+            const int totalFiles = folderCount * filesPerFolder; // 10,000 files
+
+            byte[] dummyBytes = new byte[] { 0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00 };
+
+            try
+            {
+                // 10,000 dosyayı paralel oluştur
+                Parallel.For(0, folderCount, i =>
+                {
+                    string sub = Path.Combine(treeDir, $"Folder_{i:D3}");
+                    Directory.CreateDirectory(sub);
+                    for (int j = 0; j < filesPerFolder; j++)
+                    {
+                        string filePath = Path.Combine(sub, $"file_{j:D3}.dll");
+                        File.WriteAllBytes(filePath, dummyBytes);
+                    }
+                });
+
+                var countingHash = new CountingHashService(new HashService());
+                var sigVerifier = new SignatureVerifier();
+                var riskEngine = new RiskScoringEngine();
+                var allowlist = new AllowlistService(countingHash);
+                var findingService = new SecurityFindingService();
+                var detectionHub = DetectionHubFactory.CreateDefault(countingHash, sigVerifier);
+
+                var scanner = new FileScannerService(
+                    countingHash,
+                    sigVerifier,
+                    riskEngine,
+                    allowlist,
+                    findingService,
+                    detectionHub);
+
+                // Tarama 1: İlk geçiş (Cold scan)
+                var sw1 = Stopwatch.StartNew();
+                var result1 = await scanner.ScanDirectoryAsync(treeDir, ScanType.Custom);
+                sw1.Stop();
+                int scan1HashCalls = countingHash.ComputeCount;
+
+                // Hash sayacını sıfırla
+                countingHash.ResetCount();
+
+                // Tarama 2: İkinci geçiş (Warm scan - önbellek devrede)
+                var sw2 = Stopwatch.StartNew();
+                var result2 = await scanner.ScanDirectoryAsync(treeDir, ScanType.Custom);
+                sw2.Stop();
+                int scan2HashCalls = countingHash.ComputeCount;
+
+                double skipRatio = 1.0 - ((double)scan2HashCalls / totalFiles);
+                double speedup = (double)sw1.ElapsedMilliseconds / Math.Max(1, sw2.ElapsedMilliseconds);
+
+                _output.WriteLine($"[10K TREE BENCHMARK RESULTS]");
+                _output.WriteLine($"Toplam Dosya Sayısı:    {totalFiles:N0}");
+                _output.WriteLine($"1. Tarama Süresi:       {sw1.ElapsedMilliseconds} ms (Hash Çağrısı: {scan1HashCalls})");
+                _output.WriteLine($"2. Tarama Süresi:       {sw2.ElapsedMilliseconds} ms (Hash Çağrısı: {scan2HashCalls})");
+                _output.WriteLine($"Hash Atlanma Oranı:     {skipRatio:P2}");
+                _output.WriteLine($"Hızlanma Faktörü:       {speedup:F2}x");
+
+                Assert.Equal(totalFiles, result1.ScannedFiles);
+                Assert.Equal(totalFiles, result2.ScannedFiles);
+                // 2. taramada en az %80 hash atlanması garanti edilmeli
+                Assert.True(skipRatio >= 0.80, $"2. taramada hash atlanma oranı >= %80 olmalıdır. Elde edilen: {skipRatio:P2}");
+                Assert.True(sw2.ElapsedMilliseconds <= sw1.ElapsedMilliseconds * 1.5, "2. tarama ilkinden daha hızlı veya benzer olmalıdır.");
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(treeDir))
+                    {
+                        Directory.Delete(treeDir, true);
+                    }
+                }
+                catch { }
+            }
+        }
+    }
+
+    public class CountingHashService : IHashService
+    {
+        private readonly IHashService _inner;
+        private int _computeCount;
+
+        public CountingHashService(IHashService inner) => _inner = inner;
+        public int ComputeCount => _computeCount;
+        public void ResetCount() => Volatile.Write(ref _computeCount, 0);
+
+        public Task<string> ComputeSha256Async(string filePath, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _computeCount);
+            return _inner.ComputeSha256Async(filePath, cancellationToken);
+        }
+
+        public Task<string> ComputeSha1Async(string filePath, CancellationToken cancellationToken = default)
+        {
+            return _inner.ComputeSha1Async(filePath, cancellationToken);
+        }
     }
 }

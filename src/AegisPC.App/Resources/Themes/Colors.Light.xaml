@@ -6,18 +6,18 @@
          Bitdefender-Inspired Light Palette: Temiz Açık Antrasit (#F4F6F8) + Kırmızı (#C41E1E) + Güvenli Yeşil (#2E7D32)
          ══════════════════════════════════════════════════════════════════════════════════ -->
 
-    <!-- ── 1. BACKGROUND & SURFACE TOKENS ── -->
-    <Color x:Key="ColorAppBg">#F4F6F8</Color>
+    <!-- ── 1. BACKGROUND & SURFACE TOKENS (CODEX CLEAN WHITE & SOFT SURFACES) ── -->
+    <Color x:Key="ColorAppBg">#FFFFFF</Color>
     <Color x:Key="ColorCardBg">#FFFFFF</Color>
-    <Color x:Key="ColorCardBgAlt">#EDF1F5</Color>
-    <Color x:Key="ColorCardBorder">#DDE3EA</Color>
-    <Color x:Key="ColorCardBorderHover">#C5CFDC</Color>
+    <Color x:Key="ColorCardBgAlt">#F9FAFB</Color>
+    <Color x:Key="ColorCardBorder">#E5E7EB</Color>
+    <Color x:Key="ColorCardBorderHover">#D1D5DB</Color>
 
-    <Color x:Key="ColorSidebarBg">#FAFBFC</Color>
-    <Color x:Key="ColorSidebarHeader">#F4F6F8</Color>
-    <Color x:Key="ColorSidebarBorder">#E5E9EE</Color>
-    <Color x:Key="ColorSidebarHover">#F0F3F7</Color>
-    <Color x:Key="ColorSidebarActive">#C41E1E</Color>
+    <Color x:Key="ColorSidebarBg">#F9F9FB</Color>
+    <Color x:Key="ColorSidebarHeader">#F9F9FB</Color>
+    <Color x:Key="ColorSidebarBorder">#ECECF1</Color>
+    <Color x:Key="ColorSidebarHover">#EFEFF2</Color>
+    <Color x:Key="ColorSidebarActive">#E4E4E7</Color>
 
     <!-- ── 2. PRIMARY BRAND ACCENT TOKENS (BITDEFENDER BRAND RED #C41E1E) ── -->
     <Color x:Key="ColorBrandPrimary">#C41E1E</Color>
@@ -31,46 +31,63 @@
     <Color x:Key="ColorBrandMinimal">#FFF2F2</Color>      <!-- ~8% Opacity Red on White -->
     <Color x:Key="ColorBrandFocusRing">#80C41E1E</Color>
 
+    <!-- Action Card Pastel Tokens (Codex-inspired Action Cards) -->
+    <Color x:Key="ColorPastelBlueBg">#EFF6FF</Color>
+    <Color x:Key="ColorPastelBlueBorder">#DBEAFE</Color>
+    <Color x:Key="ColorPastelBlueIcon">#3B82F6</Color>
+
+    <Color x:Key="ColorPastelPurpleBg">#F5F3FF</Color>
+    <Color x:Key="ColorPastelPurpleBorder">#EDE9FE</Color>
+    <Color x:Key="ColorPastelPurpleIcon">#8B5CF6</Color>
+
+    <Color x:Key="ColorPastelGreenBg">#ECFDF5</Color>
+    <Color x:Key="ColorPastelGreenBorder">#D1FAE5</Color>
+    <Color x:Key="ColorPastelGreenIcon">#10B981</Color>
+
+    <Color x:Key="ColorPastelOrangeBg">#FFF7ED</Color>
+    <Color x:Key="ColorPastelOrangeBorder">#FFEDD5</Color>
+    <Color x:Key="ColorPastelOrangeIcon">#F97316</Color>
+
     <!-- Legacy / Compatibility Alias -->
     <Color x:Key="ColorAccent">#C41E1E</Color>
     <Color x:Key="ColorAccentHover">#B31818</Color>
     <Color x:Key="ColorAccentLight">#FFF2F2</Color>
 
     <!-- ── 3. TYPOGRAPHY TOKENS (CALM HIGH-CONTRAST NEUTRALS) ── -->
-    <Color x:Key="ColorTextPrimary">#1B2532</Color>
-    <Color x:Key="ColorTextSecondary">#6B7684</Color>
-    <Color x:Key="ColorTextMuted">#9AA5B4</Color>
+    <Color x:Key="ColorTextPrimary">#18181B</Color>
+    <Color x:Key="ColorTextSecondary">#52525B</Color>
+    <Color x:Key="ColorTextMuted">#71717A</Color>
     <Color x:Key="ColorTextOnAccent">#FFFFFF</Color>
     <Color x:Key="ColorTextOnDark">#FFFFFF</Color>
 
     <!-- ── 4. SEMANTIC STATUS TOKENS (BITDEFENDER ENTERPRISE PALETTE) ── -->
     <!-- Safe / Clean (Bitdefender Emerald Green) -->
-    <Color x:Key="ColorStatusSafe">#2E7D32</Color>
-    <Color x:Key="ColorStatusSafeDark">#1B5E20</Color>
-    <Color x:Key="ColorStatusSafeBg">#E8F5E9</Color>
-    <Color x:Key="ColorStatusSafeBorder">#A5D6A7</Color>
-    <Color x:Key="ColorStatusSafeText">#1B5E20</Color>
+    <Color x:Key="ColorStatusSafe">#10B981</Color>
+    <Color x:Key="ColorStatusSafeDark">#059669</Color>
+    <Color x:Key="ColorStatusSafeBg">#ECFDF5</Color>
+    <Color x:Key="ColorStatusSafeBorder">#A7F3D0</Color>
+    <Color x:Key="ColorStatusSafeText">#047857</Color>
 
     <!-- Warning / Suspicious (Technical Amber #F5A623 - SADECE kritik olmayan dikkat durumları için) -->
-    <Color x:Key="ColorStatusWarning">#D97706</Color>
-    <Color x:Key="ColorStatusWarningDark">#B45309</Color>
-    <Color x:Key="ColorStatusWarningBg">#FFF8E1</Color>
-    <Color x:Key="ColorStatusWarningBorder">#FFE082</Color>
-    <Color x:Key="ColorStatusWarningText">#B76E00</Color>
+    <Color x:Key="ColorStatusWarning">#F59E0B</Color>
+    <Color x:Key="ColorStatusWarningDark">#D97706</Color>
+    <Color x:Key="ColorStatusWarningBg">#FFFBEB</Color>
+    <Color x:Key="ColorStatusWarningBorder">#FDE68A</Color>
+    <Color x:Key="ColorStatusWarningText">#B45309</Color>
 
     <!-- Danger / Critical (Marka Kırmızıyla Bütünleşik Tehdit Tonu #C41E1E) -->
-    <Color x:Key="ColorStatusDanger">#C41E1E</Color>
-    <Color x:Key="ColorStatusDangerDark">#991515</Color>
-    <Color x:Key="ColorStatusDangerBg">#FFEBEE</Color>
-    <Color x:Key="ColorStatusDangerBorder">#FFCDD2</Color>
-    <Color x:Key="ColorStatusDangerText">#C41E1E</Color>
+    <Color x:Key="ColorStatusDanger">#EF4444</Color>
+    <Color x:Key="ColorStatusDangerDark">#DC2626</Color>
+    <Color x:Key="ColorStatusDangerBg">#FEF2F2</Color>
+    <Color x:Key="ColorStatusDangerBorder">#FECACA</Color>
+    <Color x:Key="ColorStatusDangerText">#B91C1C</Color>
 
     <!-- Info (Corporate Cobalt Blue) -->
-    <Color x:Key="ColorStatusInfo">#1976D2</Color>
-    <Color x:Key="ColorStatusInfoDark">#0D47A1</Color>
-    <Color x:Key="ColorStatusInfoBg">#E3F2FD</Color>
-    <Color x:Key="ColorStatusInfoBorder">#90CAF9</Color>
-    <Color x:Key="ColorStatusInfoText">#0D47A1</Color>
+    <Color x:Key="ColorStatusInfo">#3B82F6</Color>
+    <Color x:Key="ColorStatusInfoDark">#1D4ED8</Color>
+    <Color x:Key="ColorStatusInfoBg">#EFF6FF</Color>
+    <Color x:Key="ColorStatusInfoBorder">#BFDBFE</Color>
+    <Color x:Key="ColorStatusInfoText">#1D4ED8</Color>
 
     <!-- Purple (Quarantine / Vault) -->
     <Color x:Key="ColorStatusPurple">#8B5CF6</Color>
@@ -80,14 +97,14 @@
     <Color x:Key="ColorStatusPurpleText">#6D28D9</Color>
 
     <!-- Compatibility Status Aliases -->
-    <Color x:Key="ColorStatusGreen">#2E7D32</Color>
-    <Color x:Key="ColorStatusGreenBg">#E8F5E9</Color>
-    <Color x:Key="ColorStatusAmber">#D97706</Color>
-    <Color x:Key="ColorStatusAmberBg">#FFF8E1</Color>
-    <Color x:Key="ColorStatusRed">#C41E1E</Color>
-    <Color x:Key="ColorStatusRedBg">#FFEBEE</Color>
-    <Color x:Key="ColorStatusBlue">#1976D2</Color>
-    <Color x:Key="ColorStatusBlueBg">#E3F2FD</Color>
+    <Color x:Key="ColorStatusGreen">#10B981</Color>
+    <Color x:Key="ColorStatusGreenBg">#ECFDF5</Color>
+    <Color x:Key="ColorStatusAmber">#F59E0B</Color>
+    <Color x:Key="ColorStatusAmberBg">#FFFBEB</Color>
+    <Color x:Key="ColorStatusRed">#EF4444</Color>
+    <Color x:Key="ColorStatusRedBg">#FEF2F2</Color>
+    <Color x:Key="ColorStatusBlue">#3B82F6</Color>
+    <Color x:Key="ColorStatusBlueBg">#EFF6FF</Color>
 
     <!-- ══════════════════════════════════════════════════════════════════════════════════
          SOLID COLOR BRUSHES (FOR DynamicResource BINDING)
@@ -102,6 +119,24 @@
     <SolidColorBrush x:Key="BrushSidebarBg" Color="{StaticResource ColorSidebarBg}"/>
     <SolidColorBrush x:Key="BrushSidebarHeader" Color="{StaticResource ColorSidebarHeader}"/>
     <SolidColorBrush x:Key="BrushSidebarBorder" Color="{StaticResource ColorSidebarBorder}"/>
+    <SolidColorBrush x:Key="BrushSidebarHover" Color="{StaticResource ColorSidebarHover}"/>
+
+    <!-- Action Card Pastel Brushes -->
+    <SolidColorBrush x:Key="BrushPastelBlueBg" Color="{StaticResource ColorPastelBlueBg}"/>
+    <SolidColorBrush x:Key="BrushPastelBlueBorder" Color="{StaticResource ColorPastelBlueBorder}"/>
+    <SolidColorBrush x:Key="BrushPastelBlueIcon" Color="{StaticResource ColorPastelBlueIcon}"/>
+
+    <SolidColorBrush x:Key="BrushPastelPurpleBg" Color="{StaticResource ColorPastelPurpleBg}"/>
+    <SolidColorBrush x:Key="BrushPastelPurpleBorder" Color="{StaticResource ColorPastelPurpleBorder}"/>
+    <SolidColorBrush x:Key="BrushPastelPurpleIcon" Color="{StaticResource ColorPastelPurpleIcon}"/>
+
+    <SolidColorBrush x:Key="BrushPastelGreenBg" Color="{StaticResource ColorPastelGreenBg}"/>
+    <SolidColorBrush x:Key="BrushPastelGreenBorder" Color="{StaticResource ColorPastelGreenBorder}"/>
+    <SolidColorBrush x:Key="BrushPastelGreenIcon" Color="{StaticResource ColorPastelGreenIcon}"/>
+
+    <SolidColorBrush x:Key="BrushPastelOrangeBg" Color="{StaticResource ColorPastelOrangeBg}"/>
+    <SolidColorBrush x:Key="BrushPastelOrangeBorder" Color="{StaticResource ColorPastelOrangeBorder}"/>
+    <SolidColorBrush x:Key="BrushPastelOrangeIcon" Color="{StaticResource ColorPastelOrangeIcon}"/>
 
     <!-- Brand Accent Brushes -->
     <SolidColorBrush x:Key="BrushBrandPrimary" Color="{StaticResource ColorBrandPrimary}"/>
@@ -198,5 +233,14 @@
     <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#E5E9EE"/>
     <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="{StaticResource ColorBrandSubtle}"/>
     <SolidColorBrush x:Key="NavigationViewItemSelectedBackground" Color="{StaticResource ColorBrandSubtle}"/>
+
+    <!-- ── 7. CODEX CLOUD TERMINAL LOGO TOKENS (LIGHT - SIMSİYAH) ── -->
+    <BitmapImage x:Key="ImageCloudLogoBase" UriSource="pack://application:,,,/UltronDefender;component/Resources/Images/codex_cloud_base_black.png"/>
+    <BitmapImage x:Key="ImageCloudCursorLine" UriSource="pack://application:,,,/UltronDefender;component/Resources/Images/codex_cursor_line_black.png"/>
+    <Color x:Key="ColorCloudGlow">#00000000</Color>
+    <Color x:Key="ColorCloudCursorGlow">#00000000</Color>
+    <SolidColorBrush x:Key="BrushCloudAura" Color="Transparent"/>
+    <SolidColorBrush x:Key="BrushCloudLogo" Color="#000000"/>
+    <SolidColorBrush x:Key="BrushCloudCursor" Color="#000000"/>
 
 </ResourceDictionary>

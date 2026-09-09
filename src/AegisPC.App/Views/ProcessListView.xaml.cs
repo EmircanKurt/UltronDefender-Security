@@ -8,6 +8,10 @@ namespace AegisPC.App.Views
     {
         public ProcessListViewModel ViewModel { get; }
 
+        public ProcessListView() : this(App.ServiceProvider != null ? (Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<ProcessListViewModel>(App.ServiceProvider) ?? new ProcessListViewModel()) : new ProcessListViewModel())
+        {
+        }
+
         public ProcessListView(ProcessListViewModel viewModel)
         {
             ViewModel = viewModel;

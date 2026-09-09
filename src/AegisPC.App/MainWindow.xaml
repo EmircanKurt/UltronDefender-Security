@@ -13,9 +13,54 @@
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType"
-        RenderOptions.ClearTypeHint="Enabled">
+        RenderOptions.ClearTypeHint="Enabled"
+        FontFamily="{StaticResource FontSans}">
         
-    <Grid Background="{DynamicResource BrushAppBg}" UseLayoutRounding="True" SnapsToDevicePixels="True">
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="Window.Loaded">
+            <BeginStoryboard>
+                <Storyboard>
+                    <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.0" To="1.0" Duration="0:0:0.35">
+                        <DoubleAnimation.EasingFunction>
+                            <CubicEase EasingMode="EaseOut"/>
+                        </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </Window.Triggers>
+
+    <Grid Background="{DynamicResource BrushAppBg}" UseLayoutRounding="True" SnapsToDevicePixels="True" RenderTransformOrigin="0.5,0.5">
+        <Grid.RenderTransform>
+            <TransformGroup>
+                <ScaleTransform x:Name="WindowRootScale" ScaleX="0.985" ScaleY="0.985"/>
+                <TranslateTransform x:Name="WindowRootTranslate" Y="8"/>
+            </TransformGroup>
+        </Grid.RenderTransform>
+        <Grid.Triggers>
+            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                <BeginStoryboard>
+                    <Storyboard>
+                        <DoubleAnimation Storyboard.TargetName="WindowRootScale" Storyboard.TargetProperty="ScaleX" To="1.0" Duration="0:0:0.35">
+                            <DoubleAnimation.EasingFunction>
+                                <CubicEase EasingMode="EaseOut"/>
+                            </DoubleAnimation.EasingFunction>
+                        </DoubleAnimation>
+                        <DoubleAnimation Storyboard.TargetName="WindowRootScale" Storyboard.TargetProperty="ScaleY" To="1.0" Duration="0:0:0.35">
+                            <DoubleAnimation.EasingFunction>
+                                <CubicEase EasingMode="EaseOut"/>
+                            </DoubleAnimation.EasingFunction>
+                        </DoubleAnimation>
+                        <DoubleAnimation Storyboard.TargetName="WindowRootTranslate" Storyboard.TargetProperty="Y" To="0.0" Duration="0:0:0.35">
+                            <DoubleAnimation.EasingFunction>
+                                <CubicEase EasingMode="EaseOut"/>
+                            </DoubleAnimation.EasingFunction>
+                        </DoubleAnimation>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+        </Grid.Triggers>
+
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -29,11 +74,7 @@
                      FontSize="14"
                      FontWeight="SemiBold"
                      Height="44"
-                     Padding="8,0,0,0">
-            <ui:TitleBar.Icon>
-                <ui:ImageIcon Source="pack://application:,,,/Resources/Images/ultron_logo.png" Width="26" Height="26" Margin="6,0,10,0" RenderOptions.BitmapScalingMode="HighQuality"/>
-            </ui:TitleBar.Icon>
-        </ui:TitleBar>
+                     Padding="14,0,0,0" />
 
         <!-- Main Body: 2 Columns with Dynamic Theme-Adaptive Left Sidebar -->
         <Grid Grid.Row="1">
@@ -62,21 +103,24 @@
                     <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="{DynamicResource ColorSidebarBg}"/>
                     
                     <Style TargetType="{x:Type ui:NavigationViewItem}">
+                        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
                         <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
-                        <Setter Property="FontWeight" Value="SemiBold"/>
+                        <Setter Property="FontWeight" Value="Medium"/>
                         <Setter Property="FontSize" Value="13"/>
-                        <Setter Property="Margin" Value="8,2,8,2"/>
+                        <Setter Property="Margin" Value="10,2,10,2"/>
+                        <Setter Property="Height" Value="38"/>
                     </Style>
 
                     <Style TargetType="{x:Type ui:NavigationViewItemHeader}">
+                        <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
                         <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}"/>
-                        <Setter Property="FontWeight" Value="Bold"/>
-                        <Setter Property="FontSize" Value="10"/>
+                        <Setter Property="FontWeight" Value="Medium"/>
+                        <Setter Property="FontSize" Value="11"/>
                         <Setter Property="Margin" Value="16,14,0,4"/>
                     </Style>
                 </ui:NavigationView.Resources>
                 
-                <!-- Sidebar Pane Header with Generous Breathing Space & Authoritative Brand Logo -->
+                <!-- Sidebar Pane Header with Modern Brand Identity -->
                 <ui:NavigationView.PaneHeader>
                     <Border Padding="18,22,18,20" Margin="0,0,0,12" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource BrushSidebarBorder}" Background="{DynamicResource BrushSidebarHeader}">
                         <Grid VerticalAlignment="Center">
@@ -134,28 +178,6 @@
                 </ui:NavigationView.MenuItems>
 
                 <ui:NavigationView.FooterMenuItems>
-                    <!-- License / Protection Tier Badge Card -->
-                    <Border Margin="12,4,12,8" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="10,8">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Width="28" Height="28" CornerRadius="4" Background="{DynamicResource BrushStatusSafeBg}" Margin="0,0,8,0" VerticalAlignment="Center">
-                                <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="PRO LİSANS" FontSize="10.5" FontWeight="Black" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                    <Border Background="{DynamicResource BrushStatusSafe}" CornerRadius="3" Padding="4,1" Margin="5,0,0,0">
-                                        <TextBlock Text="AKTİF" FontSize="8" FontWeight="Bold" Foreground="#FFFFFF"/>
-                                    </Border>
-                                </StackPanel>
-                                <TextBlock Text="365 Gün Kaldı (18.08.2027)" FontSize="9.5" Foreground="{DynamicResource BrushTextMuted}" Margin="0,1,0,0"/>
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-
                     <ui:NavigationViewItem x:Name="NavThemeToggle" Content="Gece Modu" Click="OnThemeToggleClicked">
                         <ui:NavigationViewItem.Icon>
                             <ui:SymbolIcon x:Name="NavThemeIcon" Symbol="DarkTheme24" FontSize="16"/>

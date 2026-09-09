@@ -76,92 +76,24 @@ namespace AegisPC.Security.Scanning
             "$WinREAgent",
             "Config.Msi",
             "Recovery",
-            ".git",
-            ".vs",
-            ".cache",
-            "node_modules",
             "Package Cache",
             "AegisPC_BrowserStress_Tests",
-            "AegisLabSuite",
-            // ── DEVELOPMENT & PACKAGE LIBRARIES (Geliştirici Kütüphane / Paket Önbellekleri) ──
-            "site-packages",
-            "dist-packages",
-            ".venv",
-            "venv",
-            ".conda",
-            "conda-meta",
-            "pip-wheel-metadata",
-            ".cargo",
-            ".rustup",
-            ".nuget",
-            // ── SELF-PROTECTION: Uygulamanın kendi veri/imza/log dizinleri ve derleme çıktıları tarama dışı ──
-            "UltronDefender",
-            "Ultron Defender Total Security",
-            "Ultron Defender",
-            "AegisPC",
+            "AegisPC_Staging",
             "AegisPC_App",
-            "bin",
-            "obj",
-            "Debug",
-            "Release",
-            "x64",
-            "x86"
+            "AegisPC_App_Optimized",
+            "AegisPC",
+            "UltronDefender"
         };
 
         /// <summary>
-        /// Uygulamanın kendi dizinlerini (ProgramData, ProgramFiles, AppData, BaseDirectory) içeren lazy yol koleksiyonu.
+        /// Uygulamanın kendi dizinlerini (ProgramData, ProgramFiles, AppData, BaseDirectory, Repo) içeren lazy yol koleksiyonu.
         /// </summary>
         public static readonly Lazy<string[]> SelfExcludedPaths = new(() =>
         {
             var paths = new List<string>();
             try
             {
-                // %ProgramData%\UltronDefender & %ProgramData%\Ultron Defender Total Security
-                string programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-                if (!string.IsNullOrEmpty(programData))
-                {
-                    paths.Add(Path.Combine(programData, "UltronDefender") + Path.DirectorySeparatorChar);
-                    paths.Add(Path.Combine(programData, "Ultron Defender Total Security") + Path.DirectorySeparatorChar);
-                    paths.Add(Path.Combine(programData, "AegisPC") + Path.DirectorySeparatorChar);
-                }
-
-                // %ProgramFiles%\Ultron Defender Total Security & %ProgramFiles%\UltronDefender
-                string progFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-                if (!string.IsNullOrEmpty(progFiles))
-                {
-                    paths.Add(Path.Combine(progFiles, "UltronDefender") + Path.DirectorySeparatorChar);
-                    paths.Add(Path.Combine(progFiles, "Ultron Defender Total Security") + Path.DirectorySeparatorChar);
-                    paths.Add(Path.Combine(progFiles, "AegisPC") + Path.DirectorySeparatorChar);
-                }
-
-                // %ProgramFiles(x86)%
-                string progFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-                if (!string.IsNullOrEmpty(progFilesX86))
-                {
-                    paths.Add(Path.Combine(progFilesX86, "UltronDefender") + Path.DirectorySeparatorChar);
-                    paths.Add(Path.Combine(progFilesX86, "Ultron Defender Total Security") + Path.DirectorySeparatorChar);
-                    paths.Add(Path.Combine(progFilesX86, "AegisPC") + Path.DirectorySeparatorChar);
-                }
-
-                // %AppData%\AegisPC & %AppData%\UltronDefender
-                string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                if (!string.IsNullOrEmpty(appData))
-                {
-                    paths.Add(Path.Combine(appData, "AegisPC") + Path.DirectorySeparatorChar);
-                    paths.Add(Path.Combine(appData, "UltronDefender") + Path.DirectorySeparatorChar);
-                    paths.Add(Path.Combine(appData, "Ultron Defender Total Security") + Path.DirectorySeparatorChar);
-                }
-
-                // %LocalAppData%\AegisPC & %LocalAppData%\UltronDefender
-                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                if (!string.IsNullOrEmpty(localAppData))
-                {
-                    paths.Add(Path.Combine(localAppData, "AegisPC") + Path.DirectorySeparatorChar);
-                    paths.Add(Path.Combine(localAppData, "UltronDefender") + Path.DirectorySeparatorChar);
-                    paths.Add(Path.Combine(localAppData, "Ultron Defender Total Security") + Path.DirectorySeparatorChar);
-                }
-
-                // Uygulamanın kendi çalışma dizini (exe, dll'ler, pdb'ler, AppDomain BaseDirectory)
+                // 1. Uygulamanın kendi çalışma dizini (exe, dll'ler, pdb'ler, AppDomain BaseDirectory)
                 string? processDir = Path.GetDirectoryName(Environment.ProcessPath);
                 if (!string.IsNullOrEmpty(processDir))
                     paths.Add(processDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
@@ -169,6 +101,60 @@ namespace AegisPC.Security.Scanning
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 if (!string.IsNullOrEmpty(baseDir))
                     paths.Add(baseDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
+
+                // 2. ProgramData / AppData / ProgramFiles sistem kurulum ve veri dizinleri
+                string[] specialFolders = {
+                    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), // ProgramData
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),  // AppData\Local
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),       // AppData\Roaming
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),          // Program Files
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)       // Program Files (x86)
+                };
+
+                string[] subNames = { "UltronDefender", "AegisPC", "Ultron Defender Total Security", "Ultron Defender Security" };
+
+                foreach (var sf in specialFolders)
+                {
+                    if (string.IsNullOrEmpty(sf)) continue;
+                    foreach (var name in subNames)
+                    {
+                        paths.Add(Path.Combine(sf, name).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
+                    }
+                }
+
+                // 3. Geliştirme, Repository ve Staging Dizinleri
+                string? searchRoot = baseDir;
+                for (int i = 0; i < 6 && !string.IsNullOrEmpty(searchRoot); i++)
+                {
+                    if (File.Exists(Path.Combine(searchRoot, "AegisPC.sln")) ||
+                        File.Exists(Path.Combine(searchRoot, "UltronDefender.sln")) ||
+                        Directory.Exists(Path.Combine(searchRoot, ".git")))
+                    {
+                        paths.Add(searchRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
+                        break;
+                    }
+                    searchRoot = Path.GetDirectoryName(searchRoot);
+                }
+
+                string? curDir = Directory.GetCurrentDirectory();
+                for (int i = 0; i < 6 && !string.IsNullOrEmpty(curDir); i++)
+                {
+                    if (File.Exists(Path.Combine(curDir, "AegisPC.sln")) ||
+                        File.Exists(Path.Combine(curDir, "UltronDefender.sln")) ||
+                        Directory.Exists(Path.Combine(curDir, ".git")))
+                    {
+                        paths.Add(curDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
+                        break;
+                    }
+                    curDir = Path.GetDirectoryName(curDir);
+                }
+
+                // Documents altındaki bilinen proje çalışma alanı
+                string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                if (!string.IsNullOrEmpty(docs))
+                {
+                    paths.Add(Path.Combine(docs, "gemini virüs program").TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
+                }
             }
             catch { }
             return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -176,18 +162,65 @@ namespace AegisPC.Security.Scanning
 
         /// <summary>
         /// Verilen dosya yolunun uygulamanın kendi veri/imza/log/config dizinlerinden
-        /// birine ait olup olmadığını kontrol eder. True dönerse dosya taranmamalıdır.
+        /// veya bileşenlerinden birine ait olup olmadığını kontrol eder. True dönerse dosya asla taranmaz.
         /// </summary>
         /// <param name="filePath">Kontrol edilecek dosya yolu.</param>
         /// <returns>Uygulamanın kendi dosyası ise true; aksi halde false.</returns>
         public static bool IsSelfOwnedPath(string filePath)
         {
-            if (string.IsNullOrEmpty(filePath)) return false;
-            foreach (var excludedPath in SelfExcludedPaths.Value)
+            if (string.IsNullOrWhiteSpace(filePath)) return false;
+
+            try
             {
-                if (filePath.StartsWith(excludedPath, StringComparison.OrdinalIgnoreCase))
+                // 1. Dosya adı denetimi: Ultron Defender veya AegisPC'ye ait hiçbir ikili/sembol/ayar taranmaz
+                string fileName = Path.GetFileName(filePath);
+                if (fileName.StartsWith("AegisPC", StringComparison.OrdinalIgnoreCase) ||
+                    fileName.StartsWith("UltronDefender", StringComparison.OrdinalIgnoreCase) ||
+                    fileName.StartsWith("Ultron.", StringComparison.OrdinalIgnoreCase))
+                {
                     return true;
+                }
+
+                // 2. Özel sistem uygulama veri ve kurulum yolları (ProgramData, AppData, Program Files altındaki meşru klasörler ve repo/staging)
+                if (filePath.Contains(@"\AppData\Local\AegisPC\", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.Contains(@"\AppData\Roaming\AegisPC\", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.Contains(@"\AppData\Local\UltronDefender\", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.Contains(@"\AppData\Roaming\UltronDefender\", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.Contains(@"\ProgramData\UltronDefender\", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.Contains(@"\ProgramData\AegisPC\", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.Contains(@"\Program Files\UltronDefender\", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.Contains(@"\Program Files (x86)\UltronDefender\", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.Contains(@"\AegisPC_Staging\", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.Contains(@"\AegisPC_App\", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.Contains(@"\AegisPC_App_Optimized\", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.Contains(@"\gemini virüs program\", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                // 3. Derleyici sembolü ve hata ayıklama dosyaları (.pdb, .idb, .ilk, .exp, .lib)
+                string ext = Path.GetExtension(filePath);
+                if (!string.IsNullOrEmpty(ext) && (ext.Equals(".pdb", StringComparison.OrdinalIgnoreCase) ||
+                    ext.Equals(".idb", StringComparison.OrdinalIgnoreCase) ||
+                    ext.Equals(".ilk", StringComparison.OrdinalIgnoreCase) ||
+                    ext.Equals(".exp", StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (fileName.Contains("Aegis", StringComparison.OrdinalIgnoreCase) ||
+                        fileName.Contains("Ultron", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                // 4. Hariç tutulan tam dizin yolları
+                foreach (var excludedPath in SelfExcludedPaths.Value)
+                {
+                    if (filePath.StartsWith(excludedPath, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
             }
+            catch { }
+
             return false;
         }
 
@@ -203,34 +236,22 @@ namespace AegisPC.Security.Scanning
 
             try
             {
+                // 0. Öz-koruma: Uygulamanın kendi dizinleri ve ikilileri asla aday olamaz
+                if (IsSelfOwnedPath(filePath)) return false;
+
                 if (!File.Exists(filePath)) return false;
 
                 string ext = Path.GetExtension(filePath).ToLowerInvariant();
                 
-                // 1. Bilinen güvenli medya, ofis ve belge uzantılarını doğrudan atla (CPU/RAM harcamaz)
-                if (!string.IsNullOrEmpty(ext) && SafeMediaExtensions.Contains(ext))
-                {
-                    return false;
-                }
-
-                // 2. Oyun ve Mod Klasörü Koruması: Oyun kaynakları (.zip, .bin, .dat, .pak, .dds, .dae) virüs değildir ve devasadır
-                bool isGame = PathHelper.IsGameOrRepackDirectory(filePath) || GameCrackClassifier.IsGameCrackOrEmulator(filePath);
-                if (isGame && (ext != ".exe" && ext != ".dll" && ext != ".scr" && ext != ".bat" && ext != ".cmd" && ext != ".ps1"))
-                {
-                    return false;
-                }
+                // 1. Bilinen güvenli medya, ofis, sembol ve belge uzantılarını doğrudan atla (CPU/RAM harcamaz)
+                bool safeExtension = !string.IsNullOrEmpty(ext) && SafeMediaExtensions.Contains(ext);
+                if (safeExtension) return false;
 
                 var fileInfo = new FileInfo(filePath);
                 if (fileInfo.Length == 0) return false;
 
-                // 3. 100 MB'dan büyük dosyaları tarama (Oyun repacki, büyük video, ISO, VM disk vb. CPU/RAM patlamasını önler)
-                if (fileInfo.Length > 100 * 1024 * 1024)
-                {
-                    return false;
-                }
-
-                // 4. Yürütülebilir veya komut dosyası uzantısı ise doğrudan adaydır
-                if (!string.IsNullOrEmpty(ext) && KnownCandidateExtensions.Contains(ext))
+                // 3. Yürütülebilir veya komut dosyası uzantısı ise doğrudan adaydır.
+                if (!safeExtension && !string.IsNullOrEmpty(ext) && KnownCandidateExtensions.Contains(ext))
                 {
                     return true;
                 }

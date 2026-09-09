@@ -16,7 +16,7 @@
          1. BUTTON STYLES & CONTROL TEMPLATES (ENTERPRISE PRECISION)
          ═══════════════════════════════════════════════════════════ -->
 
-    <!-- Primary Button: Brand Red Fill + White SemiBold Text + 4px CornerRadius -->
+    <!-- Primary Button: Brand Red Fill + White SemiBold Text + 8px CornerRadius -->
     <Style x:Key="PrimaryButtonStyle" TargetType="Button">
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Background" Value="{DynamicResource BrushBrandPrimary}"/>
@@ -35,7 +35,7 @@
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="BtnBorder" 
                             Background="{TemplateBinding Background}" 
-                            CornerRadius="4" 
+                            CornerRadius="8" 
                             Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" 
                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
@@ -60,7 +60,7 @@
     <!-- Primary Action Button Alias -->
     <Style x:Key="PrimaryActionButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}"/>
 
-    <!-- Secondary Button: Strictly Neutral Slate/Gray Border & Background (NO Orange) -->
+    <!-- Secondary Button: Strictly Neutral Slate/Gray Border & Background (8px CornerRadius) -->
     <Style x:Key="SecondaryButtonStyle" TargetType="Button">
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Background" Value="{DynamicResource BrushCardBgAlt}"/>
@@ -82,7 +82,7 @@
                             Background="{TemplateBinding Background}" 
                             BorderBrush="{TemplateBinding BorderBrush}" 
                             BorderThickness="{TemplateBinding BorderThickness}" 
-                            CornerRadius="4" 
+                            CornerRadius="8" 
                             Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" 
                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
@@ -111,7 +111,7 @@
     <Style x:Key="SecondaryActionButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}"/>
     <Style x:Key="NeutralActionButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}"/>
 
-    <!-- Danger Button: Enterprise Crimson Red Fill (4px CornerRadius) -->
+    <!-- Danger Button: Enterprise Crimson Red Fill (8px CornerRadius) -->
     <Style x:Key="DangerButtonStyle" TargetType="Button">
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Background" Value="{DynamicResource BrushStatusDanger}"/>
@@ -130,7 +130,7 @@
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="BtnBorder" 
                             Background="{TemplateBinding Background}" 
-                            CornerRadius="4" 
+                            CornerRadius="8" 
                             Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" 
                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
@@ -155,15 +155,15 @@
     <Style x:Key="DangerActionButtonStyle" TargetType="Button" BasedOn="{StaticResource DangerButtonStyle}"/>
 
     <!-- ═══════════════════════════════════════════════════════════
-         2. CARD STYLES (ENTERPRISE FLAT PRECISION: 6px CORNER RADIUS, 1px BORDER)
+         2. CARD STYLES (MODERN PRECISION: 12px CORNER RADIUS, 1px BORDER)
          ═══════════════════════════════════════════════════════════ -->
 
-    <!-- Standard Metric Card: 6px Rounded Corners + Crisp 1px Micro-Border -->
+    <!-- Standard Metric Card: 12px Rounded Corners + Crisp 1px Micro-Border -->
     <Style x:Key="MetricCardStyle" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource BrushCardBg}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BrushCardBorder}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="CornerRadius" Value="12"/>
         <Setter Property="Padding" Value="16"/>
         <Setter Property="Margin" Value="4"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
@@ -175,12 +175,12 @@
         </Style.Triggers>
     </Style>
 
-    <!-- Hero Card Style: 6px Rounded Corners for Main Top Banners -->
+    <!-- Hero Card Style: 12px Rounded Corners for Main Top Banners -->
     <Style x:Key="HeroCardStyle" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource BrushCardBg}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BrushCardBorder}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="CornerRadius" Value="12"/>
         <Setter Property="Padding" Value="20,18"/>
         <Setter Property="Margin" Value="0,0,0,14"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
@@ -192,12 +192,12 @@
         </Style.Triggers>
     </Style>
 
-    <!-- Feature / Sub-Card Style: 6px Rounded Corners for Grouped Panels -->
+    <!-- Feature / Sub-Card Style: 12px Rounded Corners for Grouped Panels -->
     <Style x:Key="FeatureCardStyle" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource BrushCardBgAlt}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BrushCardBorder}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="CornerRadius" Value="12"/>
         <Setter Property="Padding" Value="14"/>
         <Setter Property="Margin" Value="0,0,0,10"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
@@ -207,6 +207,53 @@
                 <Setter Property="BorderBrush" Value="{DynamicResource BrushCardBorderHover}"/>
             </Trigger>
         </Style.Triggers>
+    </Style>
+
+    <!-- Action Card Button Style (Codex Reference Card: 12px radius, subtle border, hover lift) -->
+    <Style x:Key="ActionCardButtonStyle" TargetType="Button">
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Background" Value="{DynamicResource BrushCardBg}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushCardBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="16,16"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="UseLayoutRounding" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="CardBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="12"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource BrushCardBgAlt}"/>
+                            <Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource BrushCardBorderHover}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="CardBorder" Property="Opacity" Value="0.88"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Pill Status Container Style (Codex reference bottom dock: 16px radius) -->
+    <Style x:Key="PillDockContainerStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource BrushCardBgAlt}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushCardBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="16"/>
+        <Setter Property="Padding" Value="16,12"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="UseLayoutRounding" Value="True"/>
     </Style>
 
     <!-- ═══════════════════════════════════════════════════════════
@@ -235,8 +282,8 @@
         <Setter Property="Background" Value="{DynamicResource BrushCardBgAlt}"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
         <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-        <Setter Property="FontSize" Value="12"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="11.5"/>
+        <Setter Property="FontWeight" Value="Medium"/>
         <Setter Property="Padding" Value="12,8"/>
         <Setter Property="BorderThickness" Value="0,0,0,1"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BrushCardBorder}"/>

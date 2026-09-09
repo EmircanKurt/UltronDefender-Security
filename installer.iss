@@ -71,7 +71,14 @@ Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\UltronDefenderS
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\UltronDefenderScan\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" /scan ""%V"""; Flags: uninsdeletekey
 
 [Run]
+Filename: "{sys}\sc.exe"; Parameters: "create UltronDefenderService binPath= ""{app}\Service\AegisPC.Service.exe"" start= auto displayname= ""Ultron Defender Core Security Service"""; Flags: runhidden; StatusMsg: "Ultron Defender Koruma Servisi kuruluyor..."
+Filename: "{sys}\sc.exe"; Parameters: "failure UltronDefenderService reset= 86400 actions= restart/5000/restart/10000/restart/30000"; Flags: runhidden
+Filename: "{sys}\sc.exe"; Parameters: "start UltronDefenderService"; Flags: runhidden; StatusMsg: "Ultron Defender Koruma Servisi başlatılıyor..."
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+
+[UninstallRun]
+Filename: "{sys}\sc.exe"; Parameters: "stop UltronDefenderService"; Flags: runhidden
+Filename: "{sys}\sc.exe"; Parameters: "delete UltronDefenderService"; Flags: runhidden
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
@@ -82,6 +89,9 @@ var
   ErrorCode: Integer;
 begin
   Result := True;
+  Exec('sc.exe', 'stop UltronDefenderService', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('sc.exe', 'delete UltronDefenderService', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/f /im AegisPC.Service.exe', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Exec('taskkill.exe', '/f /im UltronDefender.exe', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Exec('taskkill.exe', '/f /im "Ultron Defender Total Security.exe"', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Exec('taskkill.exe', '/f /im "Ultron Defender Security.exe"', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);

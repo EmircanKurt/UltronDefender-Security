@@ -38,6 +38,8 @@ namespace AegisPC.Security.RealTime
         private readonly IHashService _hashService;
         private readonly ISignatureVerifier _signatureVerifier;
         private readonly IRiskScoringEngine _riskScoringEngine;
+        private readonly IFileHashMatcher? _fileHashMatcher;
+        private readonly IReputationService? _reputationService;
         private readonly ILogger? _logger;
 
         private readonly ConcurrentDictionary<string, (string hash, RealTimeVerdict verdict, RealTimePolicyAction policy, int riskScore, RiskLevel riskLevel, string threatTitle, string threatDesc, DateTime cachedAt)> _verdictCache = new(StringComparer.OrdinalIgnoreCase);
@@ -53,10 +55,33 @@ namespace AegisPC.Security.RealTime
             ISignatureVerifier signatureVerifier,
             IRiskScoringEngine riskScoringEngine,
             ILogger? logger = null)
+            : this(hashService, signatureVerifier, riskScoringEngine, null, null, logger)
+        {
+        }
+
+        public RealTimeVerdictProcessor(
+            IHashService hashService,
+            ISignatureVerifier signatureVerifier,
+            IRiskScoringEngine riskScoringEngine,
+            IFileHashMatcher? fileHashMatcher,
+            ILogger? logger = null)
+            : this(hashService, signatureVerifier, riskScoringEngine, fileHashMatcher, null, logger)
+        {
+        }
+
+        public RealTimeVerdictProcessor(
+            IHashService hashService,
+            ISignatureVerifier signatureVerifier,
+            IRiskScoringEngine riskScoringEngine,
+            IFileHashMatcher? fileHashMatcher,
+            IReputationService? reputationService,
+            ILogger? logger = null)
         {
             _hashService = hashService;
             _signatureVerifier = signatureVerifier;
             _riskScoringEngine = riskScoringEngine;
+            _fileHashMatcher = fileHashMatcher;
+            _reputationService = reputationService;
             _logger = logger;
         }
 
@@ -89,6 +114,14 @@ namespace AegisPC.Security.RealTime
                 return result;
             }
 
+            var fileExt = Path.GetExtension(filePath);
+            if (!string.IsNullOrEmpty(fileExt) && ScanFilterPolicy.SafeMediaExtensions.Contains(fileExt))
+            {
+                result.ScanEndTime = DateTime.UtcNow;
+                result.VerdictTime = DateTime.UtcNow;
+                return result;
+            }
+
             try
             {
                 var fileInfo = new FileInfo(filePath);
@@ -97,6 +130,22 @@ namespace AegisPC.Security.RealTime
                     result.ScanEndTime = DateTime.UtcNow;
                     result.VerdictTime = DateTime.UtcNow;
                     return result;
+                }
+
+                // STAGE 0: Fast Shared Scan-Cache Lookup (FileHashMatcher)
+                if (_fileHashMatcher != null && _fileHashMatcher.TryGetCached(filePath, fileInfo, false, out var cachedFinding))
+                {
+                    if (cachedFinding == null)
+                    {
+                        result.Verdict = RealTimeVerdict.Clean;
+                        result.RecommendedPolicy = RealTimePolicyAction.Allow;
+                        result.RiskScore = 0;
+                        result.RiskLevel = RiskLevel.Clean;
+                        result.ThreatTitle = "Doğrulanmış Temiz Dosya (Önbellek)";
+                        result.ScanEndTime = DateTime.UtcNow;
+                        result.VerdictTime = DateTime.UtcNow;
+                        return result;
+                    }
                 }
 
                 var ext = fileInfo.Extension.ToLowerInvariant();
@@ -157,6 +206,36 @@ namespace AegisPC.Security.RealTime
                     return result;
                 }
 
+                // Check Cloud Reputation (Abuse.ch MalwareBazaar) if enabled
+                if (!hashMatch.IsMatched && _reputationService != null && _reputationService.IsCloudLookupEnabled && !string.IsNullOrEmpty(sha256))
+                {
+                    try
+                    {
+                        var cloudRep = await _reputationService.CheckReputationAsync(sha256, ct);
+                        if (cloudRep.IsMalicious)
+                        {
+                            result.Verdict = RealTimeVerdict.ConfirmedMalicious;
+                            result.RecommendedPolicy = RealTimePolicyAction.BlockAndQuarantine;
+                            result.Confidence = 0.99;
+                            result.RiskScore = cloudRep.Severity > 0 ? cloudRep.Severity : 100;
+                            result.RiskLevel = RiskLevel.ConfirmedMalicious;
+                            result.ThreatTitle = $"🚨 Bulut Tehdit Tespiti: {cloudRep.ThreatName}";
+                            result.ThreatDescription = $"Dosya Abuse.ch MalwareBazaar küresel tehdit veritabanında '{cloudRep.ThreatName}' olarak doğrulandı.";
+                            result.Evidences.Add($"Bulut İmzası: {cloudRep.ThreatName} ({cloudRep.MalwareFamily ?? "Malware"})");
+                            result.Evidences.Add($"Kaynak: {cloudRep.Source}");
+
+                            if (!string.IsNullOrEmpty(sha256)) _verdictCache[cacheKey] = (sha256, result.Verdict, result.RecommendedPolicy, result.RiskScore, result.RiskLevel, result.ThreatTitle, result.ThreatDescription, DateTime.UtcNow);
+                            result.ScanEndTime = DateTime.UtcNow;
+                            result.VerdictTime = DateTime.UtcNow;
+                            return result;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // Kesintisiz çalışma: Bulut hatası yerel taramayı engellemez
+                    }
+                }
+
                 // Check Pattern & YARA-like Rules (EICAR, Keyloggers, Mimikatz, ShadowCopy Deletion)
                 var patternMatch = await MalwareSignatureDatabase.CheckFileContentPatternsAsync(filePath, ct);
                 if (patternMatch.IsMatched)
@@ -182,6 +261,8 @@ namespace AegisPC.Security.RealTime
                 if (sigInfo.IsValid && sigInfo.Publisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true && PathHelper.IsKnownSafePath(filePath))
                 {
                     if (!string.IsNullOrEmpty(sha256)) _verdictCache[cacheKey] = (sha256, RealTimeVerdict.Clean, RealTimePolicyAction.Allow, 0, RiskLevel.Clean, "Güvenilir Microsoft İmzalı Dosya", string.Empty, DateTime.UtcNow);
+                    fileInfo.Refresh();
+                    _fileHashMatcher?.SetCache(filePath, fileInfo.Length, fileInfo.LastWriteTimeUtc, null);
                     result.ScanEndTime = DateTime.UtcNow;
                     result.VerdictTime = DateTime.UtcNow;
                     return result;
@@ -214,13 +295,11 @@ namespace AegisPC.Security.RealTime
                 result.RiskLevel = riskLevel;
                 result.Evidences.AddRange(reasons);
 
-                // POLICY MATRIX WITH GAMER / REPACK SAFE SHIELD:
-                bool isGameOrRepack = PathHelper.IsGameOrRepackDirectory(filePath) || GameCrackClassifier.IsGameCrackOrEmulator(filePath);
-
                 // 1. Confirmed Malicious / Score >= 85 (High Confidence) -> BlockAndQuarantine
-                // 2. High Risk / Score >= 70 (Medium Confidence) -> BlockAndQuarantine (Oyun/Crack dosyaları için muaf tutulur)
-                // 3. Suspicious / Score >= 40 (Low Confidence) -> Warn (ALLOW + LOG + USER ALERT, NEVER DELETE)
-                // 4. Clean / Unknown / Game Crack -> Allow (NEVER DELETE UNKNOWN)
+                // 2. High Risk / Score >= 70 (Medium Confidence) -> BlockAndQuarantine (Deterministic Security Enforcement)
+                // 3. Suspicious / Score >= 50 (Low Confidence) -> Warn (ALLOW + LOG + USER ALERT, NEVER DELETE)
+                // 4. Clean / Unknown -> Allow (NEVER DELETE UNKNOWN)
+                // RiskScore >= 85 veya ConfirmedMalicious: Otomatik Karantina
                 if (riskLevel >= RiskLevel.ConfirmedMalicious || score >= 85)
                 {
                     result.Verdict = RealTimeVerdict.ConfirmedMalicious;
@@ -229,19 +308,12 @@ namespace AegisPC.Security.RealTime
                     result.ThreatTitle = $"🚨 Zararlı Yazılım: {fileInfo.Name}";
                     result.ThreatDescription = string.Join(" ", reasons.Take(2));
                 }
-                else if (!isGameOrRepack && (riskLevel >= RiskLevel.HighRisk || score >= 70))
-                {
-                    result.Verdict = RealTimeVerdict.Suspicious;
-                    result.RecommendedPolicy = RealTimePolicyAction.BlockAndQuarantine;
-                    result.Confidence = 0.80;
-                    result.ThreatTitle = $"⚠️ Yüksek Riskli Dosya: {fileInfo.Name}";
-                    result.ThreatDescription = string.Join(" ", reasons.Take(2));
-                }
-                else if (score >= 50 && !isGameOrRepack)
+                // RiskScore 60-84 veya HighRisk: Uyarıldı (Olay Merkezine kaydedilir, otomatik karantinaya alınmaz)
+                else if (riskLevel >= RiskLevel.HighRisk || score >= 60)
                 {
                     result.Verdict = RealTimeVerdict.Suspicious;
                     result.RecommendedPolicy = RealTimePolicyAction.Warn;
-                    result.Confidence = 0.50;
+                    result.Confidence = 0.65;
                     result.ThreatTitle = $"⚠️ Şüpheli Dosya Uyarısı: {fileInfo.Name}";
                     result.ThreatDescription = string.Join(" ", reasons.Take(2));
                 }
@@ -250,6 +322,8 @@ namespace AegisPC.Security.RealTime
                     result.Verdict = RealTimeVerdict.Clean;
                     result.RecommendedPolicy = RealTimePolicyAction.Allow;
                     result.Confidence = 0.90;
+                    fileInfo.Refresh();
+                    _fileHashMatcher?.SetCache(filePath, fileInfo.Length, fileInfo.LastWriteTimeUtc, null);
                 }
 
                 if (!string.IsNullOrEmpty(sha256) && !sha256.Equals("E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855", StringComparison.OrdinalIgnoreCase))

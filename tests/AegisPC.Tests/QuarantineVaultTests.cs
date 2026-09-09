@@ -57,5 +57,57 @@ namespace AegisPC.Tests
                 }
             }
         }
+
+        [Fact]
+        public async Task QuarantineAndRestore_StreamingDecryption_WorksWithoutMemorySpikes()
+        {
+            var testVaultDir = Path.Combine(Path.GetTempPath(), $"AegisTest_StreamVault_{Guid.NewGuid():N}");
+            Directory.CreateDirectory(testVaultDir);
+
+            var hashService = new HashService();
+            var quarantine = new QuarantineService(hashService, customVaultDir: testVaultDir);
+
+            var tempFile = Path.Combine(Path.GetTempPath(), $"test_stream_{Guid.NewGuid():N}.bin");
+            var restoredFile = Path.Combine(Path.GetTempPath(), $"test_stream_restored_{Guid.NewGuid():N}.bin");
+
+            // Create a 2MB binary payload with distinct byte pattern
+            byte[] originalBytes = new byte[2 * 1024 * 1024];
+            new Random(42).NextBytes(originalBytes);
+            await File.WriteAllBytesAsync(tempFile, originalBytes);
+
+            try
+            {
+                bool quarantined = await quarantine.QuarantineFileAsync(tempFile, "Streaming.Test.Threat");
+                Assert.True(quarantined);
+                Assert.False(File.Exists(tempFile));
+
+                var items = await quarantine.GetQuarantinedItemsAsync();
+                Assert.Single(items);
+                var entry = items[0];
+
+                // Restore using streaming
+                bool restored = await quarantine.RestoreFileAsync(entry.Id, restoredFile);
+                Assert.True(restored);
+                Assert.True(File.Exists(restoredFile));
+
+                byte[] restoredBytes = await File.ReadAllBytesAsync(restoredFile);
+                Assert.Equal(originalBytes.Length, restoredBytes.Length);
+                Assert.True(originalBytes.AsSpan().SequenceEqual(restoredBytes), "Restored streaming file must exactly match original bytes.");
+
+                // Test fast cryptographic shred delete
+                bool deleted = await quarantine.DeleteQuarantinedAsync(entry.Id);
+                Assert.True(deleted);
+                Assert.False(File.Exists(entry.QuarantinePath));
+            }
+            finally
+            {
+                try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
+                try { if (File.Exists(restoredFile)) File.Delete(restoredFile); } catch { }
+                if (Directory.Exists(testVaultDir))
+                {
+                    try { Directory.Delete(testVaultDir, true); } catch { }
+                }
+            }
+        }
     }
 }

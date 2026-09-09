@@ -10,8 +10,18 @@ public class ScanProgress
     public int ScannedFiles { get; set; }
     public int TotalFiles { get; set; }
     public int SkippedFiles { get; set; }
+    public int FailedFiles { get; set; }
+    public int TimedOutFiles { get; set; }
     public int FindingsCount { get; set; }
     public TimeSpan ElapsedTime { get; set; }
+    public double ElapsedSeconds { get; set; }
+    public double? EstimatedRemainingSeconds { get; set; }
+    public ConfidenceLevel EtaConfidence { get; set; } = ConfidenceLevel.Low;
+    public string FormattedEta { get; set; } = "Hesaplanıyor...";
+    public double CpuUsagePercent { get; set; }
+    public double RamUsageMb { get; set; }
+    public double DiskThroughputMbSec { get; set; }
+    public string ResourceProfileName { get; set; } = "Auto";
     public string CurrentFile { get; set; } = string.Empty;
     public bool IsCompleted { get; set; }
     public bool IsCancelled { get; set; }

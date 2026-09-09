@@ -166,9 +166,11 @@
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button Content="Kaynak Dosyayı Karantinaya Al" 
                                         Command="{Binding DataContext.QuarantineSourceFileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                        CommandParameter="{Binding}"
                                         Style="{StaticResource DangerActionButtonStyle}" Margin="0,0,10,0" Padding="16,8"/>
                                 <Button Content="Çözüldü Olarak İşaretle" 
                                         Command="{Binding DataContext.RemediateIncidentCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                        CommandParameter="{Binding}"
                                         Style="{StaticResource SecondaryButtonStyle}" Padding="14,8"/>
                             </StackPanel>
                         </StackPanel>

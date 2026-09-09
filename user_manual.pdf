@@ -1,0 +1,217 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [6 0 R 8 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 7 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> >>
+endobj
+7 0 obj
+<< /Length 5758 >>
+stream
+0.1 0.3 0.6 rg
+0.1 0.3 0.6 RG
+50 805 495 1 re f
+BT /F2 8 Tf 50 812 Td (ULTRON DEFENDER TOTAL SECURITY | KURULUM VE KULLANICI KILAVUZU v3.5.0) Tj ET
+0 0 0 rg
+0 0 0 RG
+0.05 0.25 0.55 rg
+BT /F2 18 Tf 50 780 Td (Ultron Defender Total Security \(AegisPC\)) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 50 754 Td (Uretim Surumu \(Production-Ready\) Kurulum, Yonetim ve Calistirma Kilavuzu - v3.5.0) Tj ET
+0.12 0.35 0.65 rg
+BT /F2 13 Tf 50 737 Td (1. Genel Bakis ve 4 Katmanli Guvenlik Mimarisi) Tj ET
+0.7 0.7 0.7 RG
+50 733 495 0.5 re f
+0 0 0 rg
+0 0 0 RG
+BT /F1 9.5 Tf 50 715 Td (Ultron Defender Total Security, Windows uzerinde yuksek basarimli, cevik ve yerel) Tj ET
+BT /F1 9.5 Tf 50 702 Td (cevrimdisi \(air-gapped\) calisabilen yeni nesil bir ucbirim koruma ve EDR mimarisidir.) Tj ET
+0.2 0.4 0.7 rg
+BT /F2 9.5 Tf 58 685 Td (*) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 70 685 Td (Katman 1 - Kernel Minifilter Driver \(AegisFilter\): Dosya I/O olaylarini cekirdek) Tj ET
+BT /F1 9.5 Tf 70 672 Td (seviyesinde yakalar. Zararli dosyalarin olusumunu PreCreate asamasinda) Tj ET
+BT /F1 9.5 Tf 70 659 Td (STATUS_ACCESS_DENIED \(0xC0000022\) kodu ile bloke eder. Altitude: 320500.) Tj ET
+0.2 0.4 0.7 rg
+BT /F2 9.5 Tf 58 644 Td (*) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 70 644 Td (Katman 2 - Windows Core Protection Service \(AegisPCProtectionService\): start= auto) Tj ET
+BT /F1 9.5 Tf 70 631 Td (modunda LocalSystem olarak arka planda calisir. Hizmet gocmelerine karsi otomatik) Tj ET
+BT /F1 9.5 Tf 70 618 Td (kendini onarma \(failure recovery actions= restart\) politikasina sahiptir.) Tj ET
+0.2 0.4 0.7 rg
+BT /F2 9.5 Tf 58 603 Td (*) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 70 603 Td (Katman 3 - ETW ve Anti-Tamper Motoru: 256 MB dongusel tampon bellek ile ProcessStart,) Tj ET
+BT /F1 9.5 Tf 70 590 Td (ProcessExit ve ImageLoad telemetrisini analiz eder. LOLBAS, DLL injection, BYOVD rootkit) Tj ET
+BT /F1 9.5 Tf 70 577 Td (ve sc config/reg add tamper saldirilarini engeller.) Tj ET
+0.2 0.4 0.7 rg
+BT /F2 9.5 Tf 58 562 Td (*) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 70 562 Td (Katman 4 - Modern WPF Kullanici Paneli \(UltronDefender.exe\): Hizli, Tam ve Ozel tarama,) Tj ET
+BT /F1 9.5 Tf 70 549 Td (Karantina Kasasi, DNS Kalkani ve performans optimizasyon arayuzunu sunar.) Tj ET
+0.12 0.35 0.65 rg
+BT /F2 13 Tf 50 534 Td (2. Sistem Gereksinimleri) Tj ET
+0.7 0.7 0.7 RG
+50 530 495 0.5 re f
+0 0 0 rg
+0 0 0 RG
+0.2 0.4 0.7 rg
+BT /F2 9.5 Tf 58 512 Td (*) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 70 512 Td (Isletim Sistemi: Windows 10 \(1903+\) / Windows 11 / Windows Server 2016/2019/2022 \(x64) Tj ET
+BT /F1 9.5 Tf 70 499 Td (uyumlu\)) Tj ET
+0.2 0.4 0.7 rg
+BT /F2 9.5 Tf 58 484 Td (*) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 70 484 Td (Donanim: Asgari 2 Core CPU, 4 GB RAM \(Onerilen: 8 GB+ RAM, NVMe SSD\)) Tj ET
+0.2 0.4 0.7 rg
+BT /F2 9.5 Tf 58 469 Td (*) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 70 469 Td (Disk Alani: Kurulum ve loglar icin en az 500 MB bos depolama alani) Tj ET
+0.2 0.4 0.7 rg
+BT /F2 9.5 Tf 58 454 Td (*) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 70 454 Td (Yetki Duzeyi: Administrator \(Yerel Yonetici Haklari\)) Tj ET
+0.12 0.35 0.65 rg
+BT /F2 13 Tf 50 439 Td (3. Hizli ve Otomatik Kurulum \(install.ps1\)) Tj ET
+0.7 0.7 0.7 RG
+50 435 495 0.5 re f
+0 0 0 rg
+0 0 0 RG
+BT /F1 9.5 Tf 50 417 Td (Sistemde 'install.ps1' calistirildiginda dosya dizinleri, erisim izinleri, surucu kaydi,) Tj ET
+BT /F1 9.5 Tf 50 404 Td (Windows servisi ve baslangic entegrasyonu 1 dakikadan kisa surede tamamlanir.) Tj ET
+0.95 0.96 0.98 rg
+0.8 0.82 0.85 RG
+50 297 495 94 re B
+0 0 0 rg
+0 0 0 RG
+BT /F3 8.5 Tf 62 377 Td (# Administrator olarak acilmis PowerShell penceresinde:) Tj ET
+BT /F3 8.5 Tf 62 365 Td (cd 'C:\\Path\\To\\UltronDefender') Tj ET
+BT /F3 8.5 Tf 62 353 Td (powershell.exe -ExecutionPolicy Bypass -File .\\install.ps1) Tj ET
+BT /F3 8.5 Tf 62 341 Td () Tj ET
+BT /F3 8.5 Tf 62 329 Td (# Parametreli Sessiz / Ozel Kurulum Secenekleri:) Tj ET
+BT /F3 8.5 Tf 62 317 Td (.\\install.ps1 -Force -NoDesktopShortcut   # Sessiz kurulum ve masaustu ikonu olmadan) Tj ET
+BT /F3 8.5 Tf 62 305 Td (.\\install.ps1 -SkipDriver               # Sadece servis ve UI kurulumu \(surucusuz\)) Tj ET
+0.12 0.35 0.65 rg
+BT /F2 13 Tf 50 285 Td (4. Cevrimdisi USB Imza Guncelleme \(Auto-Update Engine\)) Tj ET
+0.7 0.7 0.7 RG
+50 281 495 0.5 re f
+0 0 0 rg
+0 0 0 RG
+BT /F1 9.5 Tf 50 263 Td (Internet baglantisi olmayan kapali aglarda veya sahada imza guncellemesi USB uzerinden tam) Tj ET
+BT /F1 9.5 Tf 50 250 Td (otomatik gerceklesir:) Tj ET
+0.2 0.4 0.7 rg
+BT /F2 9.5 Tf 58 233 Td (*) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 70 233 Td (Guncel imza paketi \(signatures_packed.bin\) bir USB bellege kopyalanir \(Orn:) Tj ET
+BT /F1 9.5 Tf 70 220 Td (E:\\UltronUpdate\\signatures_packed.bin\).) Tj ET
+0.2 0.4 0.7 rg
+BT /F2 9.5 Tf 58 205 Td (*) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 70 205 Td (USB bellek cihaza takildiginda, arka plandaki 'UltronDefender_UsbUpdateWatcher' gorevi) Tj ET
+BT /F1 9.5 Tf 70 192 Td (veya 'Sync-UsbSignatures.ps1' betigi guncellemeyi otomatik olarak tespit eder.) Tj ET
+0.2 0.4 0.7 rg
+BT /F2 9.5 Tf 58 177 Td (*) Tj ET
+0 0 0 rg
+BT /F1 9.5 Tf 70 177 Td (Paketin SHA-256 ozeti ve boyutu denetlenir, C:\\ProgramData\\UltronDefender\\signatures\\) Tj ET
+BT /F1 9.5 Tf 70 164 Td (altina atomik olarak aktarilir ve calisan servise aninda bildirilir.) Tj ET
+0.12 0.35 0.65 rg
+BT /F2 13 Tf 50 149 Td (5. Kurulum ve Saglik Dogrulamasi \(verify_install.ps1\)) Tj ET
+0.7 0.7 0.7 RG
+50 145 495 0.5 re f
+0 0 0 rg
+0 0 0 RG
+BT /F1 9.5 Tf 50 127 Td (Kurulumun eksiksiz tamamlandigini teyit etmek icin 'verify_install.ps1' komutu) Tj ET
+BT /F1 9.5 Tf 50 114 Td (calistirilir. 6 temel guvenlik vektoru denetlenir:) Tj ET
+0.4 0.4 0.4 rg
+0.8 0.8 0.8 RG
+50 45 495 0.5 re f
+BT /F1 8 Tf 50 32 Td (Ultron Security Technologies (c) 2026 | Guvenli Windows EDR Mimarisi) Tj ET
+BT /F1 8 Tf 500 32 Td (Sayfa 1 / 2) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 9 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> >>
+endobj
+9 0 obj
+<< /Length 2362 >>
+stream
+0.1 0.3 0.6 rg
+0.1 0.3 0.6 RG
+50 805 495 1 re f
+BT /F2 8 Tf 50 812 Td (ULTRON DEFENDER TOTAL SECURITY | KURULUM VE KULLANICI KILAVUZU v3.5.0) Tj ET
+0 0 0 rg
+0 0 0 RG
+0.95 0.96 0.98 rg
+0.8 0.82 0.85 RG
+50 666 495 118 re B
+0 0 0 rg
+0 0 0 RG
+BT /F3 8.5 Tf 62 770 Td (powershell.exe -ExecutionPolicy Bypass -File .\\verify_install.ps1) Tj ET
+BT /F3 8.5 Tf 62 758 Td () Tj ET
+BT /F3 8.5 Tf 62 746 Td (# Cikti Ozeti:) Tj ET
+BT /F3 8.5 Tf 62 734 Td ([PASS] AegisPCProtectionService : Servis calisiyor \(Status: Running\)) Tj ET
+BT /F3 8.5 Tf 62 722 Td ([PASS] Kernel Minifilter Driver  : AegisFilter aktif \(Altitude 320500\)) Tj ET
+BT /F3 8.5 Tf 62 710 Td ([PASS] Dosya Butunlugu          : UltronDefender.exe ve AegisPC.Service.exe dogrulandi) Tj ET
+BT /F3 8.5 Tf 62 698 Td ([PASS] Imza Veritabani          : 500+ Tehdit imzasi bellek ve diskte hazir) Tj ET
+BT /F3 8.5 Tf 62 686 Td ([PASS] Guvenli IPC Kanali       : \\\\.\\pipe\\AegisPC_ServicePipe baglantisi aktif) Tj ET
+BT /F3 8.5 Tf 62 674 Td ([PASS] Explorer Entegrasyonu    : 'Ultron Defender ile Tara' sag-tik aktif) Tj ET
+0.12 0.35 0.65 rg
+BT /F2 13 Tf 50 654 Td (6. Kusursuz ve Kalintisiz Kaldirma \(uninstall.ps1\)) Tj ET
+0.7 0.7 0.7 RG
+50 650 495 0.5 re f
+0 0 0 rg
+0 0 0 RG
+BT /F1 9.5 Tf 50 632 Td (Ultron Defender guvenlik yazilimini ve tum izlerini sistemden 100% temizlemek icin:) Tj ET
+0.95 0.96 0.98 rg
+0.8 0.82 0.85 RG
+50 501 495 118 re B
+0 0 0 rg
+0 0 0 RG
+BT /F3 8.5 Tf 62 605 Td (# Tam kaldirma ve tum dosya/registry kayitlarini temizleme:) Tj ET
+BT /F3 8.5 Tf 62 593 Td (powershell.exe -ExecutionPolicy Bypass -File .\\uninstall.ps1 -Force) Tj ET
+BT /F3 8.5 Tf 62 581 Td () Tj ET
+BT /F3 8.5 Tf 62 569 Td (# Temizlenen Bilesenler:) Tj ET
+BT /F3 8.5 Tf 62 557 Td (1. Calisan surecler sonlandirilir.) Tj ET
+BT /F3 8.5 Tf 62 545 Td (2. Minifilter surucu bosaltilir \(fltmc unload\) ve PnP deposundan silinir.) Tj ET
+BT /F3 8.5 Tf 62 533 Td (3. AegisPCProtectionService servisi ve Registry kayitlari temizlenir.) Tj ET
+BT /F3 8.5 Tf 62 521 Td (4. Hosts dosyasindaki DNS sinkhole girdileri geri alinir \(rollback\).) Tj ET
+BT /F3 8.5 Tf 62 509 Td (5. Program Files ve ProgramData dizinleri tamamen silinir.) Tj ET
+0.4 0.4 0.4 rg
+0.8 0.8 0.8 RG
+50 45 495 0.5 re f
+BT /F1 8 Tf 50 32 Td (Ultron Security Technologies (c) 2026 | Guvenli Windows EDR Mimarisi) Tj ET
+BT /F1 8 Tf 500 32 Td (Sayfa 2 / 2) Tj ET
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000000 00000 n 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000127 00000 n 
+0000000197 00000 n 
+0000000272 00000 n 
+0000000340 00000 n 
+0000000486 00000 n 
+0000006296 00000 n 
+0000006442 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+8856
+%%EOF

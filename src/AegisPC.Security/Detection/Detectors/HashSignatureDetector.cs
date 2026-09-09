@@ -12,6 +12,8 @@ namespace AegisPC.Security.Detection.Detectors
     public class HashSignatureDetector : IDetectorPlugin
     {
         private readonly IHashService _hashService;
+        private readonly IReputationService? _reputationService;
+        private readonly AegisPC.Contracts.ThreatIntelligence.IThreatIntelligenceStore _threatStore;
 
         public string DetectorId => "Detector.HashSignature";
         public string DisplayName => "Zararlı Yazılım İmza ve Hash Dedektörü";
@@ -19,9 +21,14 @@ namespace AegisPC.Security.Detection.Detectors
         public int Priority => 10; // High priority (Fast Path)
         public bool IsEnabled { get; set; } = true;
 
-        public HashSignatureDetector(IHashService hashService)
+        public HashSignatureDetector(
+            IHashService hashService,
+            IReputationService? reputationService = null,
+            AegisPC.Contracts.ThreatIntelligence.IThreatIntelligenceStore? threatStore = null)
         {
             _hashService = hashService;
+            _reputationService = reputationService;
+            _threatStore = threatStore ?? new ThreatIntelligence.ThreatIntelligenceStore();
         }
 
         public async Task<IEnumerable<SecurityEvidence>> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
@@ -38,25 +45,66 @@ namespace AegisPC.Security.Detection.Detectors
                 context.SHA256 = await _hashService.ComputeSha256Async(context.FilePath, cancellationToken);
             }
 
-            // 2. Exact Hash Lookup in Signature Database
+            // 2. Exact Hash Lookup in Threat Intelligence Store
             if (!string.IsNullOrEmpty(context.SHA256))
             {
-                var hashMatch = MalwareSignatureDatabase.CheckHash(context.SHA256);
-                if (hashMatch.IsMatched)
+                if (_threatStore.IsMaliciousHash(context.SHA256, out var record) && record != null)
                 {
                     list.Add(new SecurityEvidence
                     {
                         Category = EvidenceCategory.StaticSignature,
                         SourceDetector = DisplayName,
-                        RuleName = $"Signature.Hash.{hashMatch.ThreatCategory}",
-                        Description = $"Bilinen Zararlı İmza Eşleşmesi: {hashMatch.ThreatName}",
-                        ScoreContribution = hashMatch.SeverityScore,
+                        RuleName = $"Signature.Hash.{record.Category}",
+                        Description = $"Bilinen Zararlı İmza Eşleşmesi: {record.ThreatName}",
+                        ScoreContribution = record.Severity,
                         Confidence = EvidenceConfidence.Absolute,
                         FilePath = context.FilePath,
                         SHA256 = context.SHA256,
                         ProcessId = context.ProcessId,
                         ParentProcessId = context.ParentProcessId
                     });
+                }
+                else if (_threatStore.IsTrustedHash(context.SHA256))
+                {
+                    list.Add(new SecurityEvidence
+                    {
+                        Category = EvidenceCategory.DigitalCertificate,
+                        SourceDetector = DisplayName,
+                        RuleName = "Trust.KnownGoodHash",
+                        Description = "Doğrulanmış Güvenilir Dosya Özeti (Known Trusted Hash)",
+                        ScoreContribution = -100,
+                        Confidence = EvidenceConfidence.Absolute,
+                        FilePath = context.FilePath,
+                        SHA256 = context.SHA256
+                    });
+                }
+                else if (_reputationService != null && _reputationService.IsCloudLookupEnabled)
+                {
+                    // 2b. Bulut Tehdit İstihbaratı ve Gerçek Zamanlı Hash Doğrulama (Abuse.ch MalwareBazaar)
+                    try
+                    {
+                        var cloudResult = await _reputationService.CheckReputationAsync(context.SHA256, cancellationToken);
+                        if (cloudResult.IsMalicious)
+                        {
+                            list.Add(new SecurityEvidence
+                            {
+                                Category = EvidenceCategory.StaticSignature,
+                                SourceDetector = "Bulut Tehdit İstihbarat Motoru (Cloud Reputation)",
+                                RuleName = $"Signature.Cloud.{cloudResult.MalwareFamily ?? "Malware"}",
+                                Description = $"Bulut İstihbaratı Tehdit Tespiti: {cloudResult.ThreatName ?? "Bilinmeyen Zararlı"}",
+                                ScoreContribution = cloudResult.Severity > 0 ? cloudResult.Severity : 100,
+                                Confidence = EvidenceConfidence.Absolute,
+                                FilePath = context.FilePath,
+                                SHA256 = context.SHA256,
+                                ProcessId = context.ProcessId,
+                                ParentProcessId = context.ParentProcessId
+                            });
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // Kesintisiz çalışma: Bulut sorgusu başarısız olsa bile yerel analiz devam eder
+                    }
                 }
             }
 

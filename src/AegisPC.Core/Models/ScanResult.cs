@@ -13,6 +13,8 @@ public class ScanResult
     public int TotalFiles { get; set; }
     public int ScannedFiles { get; set; }
     public int SkippedFiles { get; set; }
+    public int FailedFiles { get; set; }
+    public int TimedOutFiles { get; set; }
     public int FindingsCount => Findings.Count;
     public string? CustomPath { get; set; }
     public long ElapsedMs { get; set; }

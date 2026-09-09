@@ -30,11 +30,11 @@ namespace AegisPC.Security.Scanning
     public class PupAnalysisCoordinator : IPupAnalysisCoordinator
     {
         private readonly IDetectionHub _detectionHub;
-        private readonly ISecurityFindingService _findingService;
+        private readonly ISecurityFindingService? _findingService;
 
         public PupAnalysisCoordinator(
             IDetectionHub detectionHub,
-            ISecurityFindingService findingService)
+            ISecurityFindingService? findingService = null)
         {
             _detectionHub = detectionHub;
             _findingService = findingService;
@@ -109,7 +109,10 @@ namespace AegisPC.Security.Scanning
                     Status = FindingStatus.Active
                 };
 
-                await _findingService.AddFindingAsync(finding, ct);
+                if (_findingService != null)
+                {
+                    await _findingService.AddFindingAsync(finding, ct);
+                }
                 return finding;
             }
 

@@ -122,8 +122,8 @@ namespace AegisPC.Tests
 
             await _cache.SetVerdictAsync(verdict);
 
-            // Wait for background L2 persistence task
-            await Task.Delay(400);
+            // Anında L2 diske yazılmasını sağla
+            await _cache.FlushAsync();
 
             // Create a second new cache instance pointing to the same storage directory
             var secondCacheInstance = new MultiLayerScanCache(_sandboxDir);

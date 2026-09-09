@@ -26,16 +26,16 @@ namespace AegisPC.Security.AntiEvasion
             _detector = detector ?? new AntiEvasionDetector();
         }
 
-        public async Task<IEnumerable<SecurityEvidence>> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
+        public Task<IEnumerable<SecurityEvidence>> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
         {
             var evidences = new List<SecurityEvidence>();
 
             if (string.IsNullOrWhiteSpace(context.FilePath) || !File.Exists(context.FilePath))
             {
-                return evidences;
+                return Task.FromResult<IEnumerable<SecurityEvidence>>(evidences);
             }
 
-            var eval = await Task.Run(() => _detector.AnalyzeBinary(context.FilePath), cancellationToken);
+            var eval = _detector.AnalyzeBinary(context.FilePath);
             if (eval.HasEvasionTechniques)
             {
                 foreach (var ev in eval.Evidences)
@@ -46,7 +46,7 @@ namespace AegisPC.Security.AntiEvasion
                 }
             }
 
-            return evidences;
+            return Task.FromResult<IEnumerable<SecurityEvidence>>(evidences);
         }
     }
 }

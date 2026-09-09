@@ -2,5 +2,10 @@
   "$schema": "https://xunit.net/schema/current/xunit.runner.schema.json",
   "parallelizeAssembly": false,
   "parallelizeTestCollections": false,
-  "diagnosticMessages": false
+  "diagnosticMessages": false,
+  "shadowCopy": false,
+  "preEnumerateTheories": true,
+  "longRunningTestSeconds": 5,
+  "methodDisplay": "method",
+  "methodDisplayOptions": "all"
 }

@@ -431,7 +431,7 @@ namespace AegisPC.Security.RealTime
 
         public Task<List<SecurityIncident>> GetActiveIncidentsAsync(CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(_incidents.Values.OrderByDescending(i => i.CreatedAt).ToList());
+            return Task.FromResult(_incidents.Values.Where(i => i.Status != "Remediated").OrderByDescending(i => i.CreatedAt).ToList());
         }
 
         public Task<SecurityIncident?> GetIncidentByIdAsync(string incidentId, CancellationToken cancellationToken = default)

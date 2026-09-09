@@ -1,8 +1,10 @@
 using System;
 using System.IO;
 using System.Windows;
+using System.Threading.Tasks;
 using System.Windows.Threading;
 using AegisPC.App.Startup;
+using AegisPC.App.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Wpf.Ui;
 
@@ -29,11 +31,25 @@ namespace AegisPC.App
             catch { }
         }
 
-        protected override void OnStartup(StartupEventArgs e)
+        protected override async void OnStartup(StartupEventArgs e)
         {
             Log("=== AegisPC App Startup Begin ===");
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
             DispatcherUnhandledException += App_DispatcherUnhandledException;
+
+            // GÖREV 2: 1.5-2 sn'lik koyu temalı açılış (splash) animasyonu
+            SplashWindow? splash = null;
+            DateTime splashStart = DateTime.UtcNow;
+            try
+            {
+                splash = new SplashWindow();
+                splash.Show();
+            }
+            catch (Exception ex)
+            {
+                Log($"[WARN] SplashWindow gösterilemedi: {ex.Message}");
+                Serilog.Log.Warning(ex, "SplashWindow başlatılırken hata oluştu.");
+            }
 
             try
             {
@@ -51,14 +67,20 @@ namespace AegisPC.App
                     var secReg = ServiceProvider.GetService<AegisPC.Infrastructure.IWindowsSecurityRegistrationService>();
                     secReg?.RegisterAsSecurityProvider();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Log($"[WARN] AutoStart / SecurityRegistration failed: {ex.Message}");
+                }
 
                 // Apply Saved UI Theme (Dark or Light)
                 try
                 {
                     AegisPC.App.Services.AppThemeManager.ApplyTheme(AegisPC.App.Services.AppThemeManager.CurrentTheme);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Log($"[WARN] Theme application failed: {ex.Message}");
+                }
 
                 Log("3. Resolving MainWindow...");
                 var mainWindow = ServiceProvider.GetRequiredService<MainWindow>();
@@ -77,6 +99,34 @@ namespace AegisPC.App
                             break;
                         }
                     }
+                }
+
+                // DI konteyneri hazırlandıktan sonra splash penceresini 250 ms fade-out ile kapat
+                try
+                {
+                    if (splash != null)
+                    {
+                        var elapsed = DateTime.UtcNow - splashStart;
+                        var minDuration = TimeSpan.FromMilliseconds(1600);
+                        if (elapsed < minDuration)
+                        {
+                            await Task.Delay(minDuration - elapsed);
+                        }
+
+                        if (startMinimized)
+                        {
+                            splash.Close();
+                        }
+                        else
+                        {
+                            await splash.FadeOutAndCloseAsync(250);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Serilog.Log.Warning(ex, "Splash penceresi kapatılırken hata oluştu.");
+                    try { splash?.Close(); } catch { }
                 }
 
                 if (!startMinimized)
@@ -123,19 +173,17 @@ namespace AegisPC.App
                         {
                             scanCoordinator.ScanCompleted += (result) =>
                             {
-                                if (result.Findings.Count > 0)
+                                // Otomatik (zamanlanmış) taramalar BackgroundProtectionService tarafından
+                                // yalnızca YENİ bulgu varsa bildirilir; burada çift bildirim yapma.
+                                if (AegisPC.Security.RealTime.BackgroundProtectionService.IsAutomaticScanInProgress) return;
+
+                                int activeCount = result.Findings.Count(f => f.Status == AegisPC.Core.Enums.FindingStatus.Active && !f.IsAllowlisted);
+                                if (activeCount > 0)
                                 {
                                     toastService.ShowToast(
-                                        "🚨 Ultron Defender (Antivirüs Programı): Tehdit Tespit Edildi!",
-                                        $"{result.ScanType} taraması bitti: {result.Findings.Count} adet riskli tehdit bulundu. Detayları görmek için tıklayın.",
+                                        "🚨 Ultron Defender: Tehdit Tespit Edildi!",
+                                        $"{result.ScanType} taraması tamamlandı: {activeCount} adet riskli tehdit bulundu. Detayları görmek için tıklayın.",
                                         "Warning");
-                                }
-                                else
-                                {
-                                    toastService.ShowToast(
-                                        "🛡️ Ultron Defender (Antivirüs Programı): Sistem Güvende",
-                                        $"{result.ScanType} taraması bitti: {result.ScannedFiles:N0} dosya incelendi, sistem tamamen temiz.",
-                                        "Info");
                                 }
                             };
                         }
@@ -219,7 +267,10 @@ namespace AegisPC.App
                                         await behaviorEngine.ProcessEventAsync(bEvent);
                                     }
                                 }
-                                catch { }
+                                catch (Exception ex)
+                                {
+                                    Log($"[ERROR] ETW process event handling error: {ex.Message}");
+                                }
                             };
 
                             etwMonitor.Start();
@@ -258,25 +309,21 @@ namespace AegisPC.App
         [System.Runtime.InteropServices.DllImport("kernel32.dll")]
         private static extern bool SetProcessWorkingSetSize(IntPtr hProcess, IntPtr dwMinimumWorkingSetSize, IntPtr dwMaximumWorkingSetSize);
 
+        private static System.Threading.Timer? _memoryTimer;
+
         private static void StartMemoryWatchdog()
         {
-            var memoryTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(10)
-            };
-
-            memoryTimer.Tick += (s, e) =>
+            _memoryTimer = new System.Threading.Timer(_ =>
             {
                 try
                 {
                     long managedMemory = GC.GetTotalMemory(forceFullCollection: false);
                     long workingSet = System.Diagnostics.Process.GetCurrentProcess().WorkingSet64;
 
-                    // 1. Yönetilen bellek 400 MB'ı aşarsa veya fiziksel RAM 1 GB'ı geçerse agresif toplama
+                    // 1. Yönetilen bellek 400 MB'ı aşarsa veya fiziksel RAM 1 GB'ı geçerse optimize toplama
                     if (managedMemory > 400 * 1024 * 1024 || workingSet > 1024 * 1024 * 1024)
                     {
-                        GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-                        GC.WaitForPendingFinalizers();
+                        GC.Collect(2, GCCollectionMode.Optimized, blocking: false);
 
                         // Kullanılmayan fiziksel sayfaları Windows çekirdeğine geri ver
                         try
@@ -291,9 +338,7 @@ namespace AegisPC.App
                     }
                 }
                 catch { }
-            };
-
-            memoryTimer.Start();
+            }, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
         }
         #endregion
 
@@ -302,10 +347,21 @@ namespace AegisPC.App
             Log($"=== Ultron Defender App Shut down with code {e.ApplicationExitCode} ===");
             try
             {
+                _memoryTimer?.Dispose();
+                _memoryTimer = null;
+
                 var trayService = ServiceProvider?.GetService<AegisPC.App.Services.ISystemTrayService>();
                 trayService?.Dispose();
+
+                if (ServiceProvider is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log($"[WARN] Service cleanup warning: {ex.Message}");
+            }
             base.OnExit(e);
         }
 

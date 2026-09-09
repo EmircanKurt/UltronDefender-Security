@@ -103,6 +103,20 @@
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding IsNetworkProtectionEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
+
+                    <!-- Row 6: Cloud Threat Reputation -->
+                    <Grid Margin="0,14,0,0">
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Bulut Tehdit İstihbaratı ve Hash Doğrulama" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                                <Border Style="{StaticResource BadgeBlueStyle}" Padding="6,1" Margin="8,0,0,0">
+                                    <TextBlock Text="Bulut / Cloud" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusInfoText}"/>
+                                </Border>
+                            </StackPanel>
+                            <TextBlock Text="Bilinmeyen dosyaların SHA-256 özetini Abuse.ch MalwareBazaar küresel bulut istihbaratında anlık doğrular." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <ui:ToggleSwitch IsChecked="{Binding IsCloudLookupEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
                 </StackPanel>
             </Border>
 
@@ -116,10 +130,10 @@
 
                     <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
-                            <TextBlock Text="Kritik Tehdit Bildirimleri" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
-                            <TextBlock Text="Tehdit tespit edildiğinde veya engellendiğinde bildirim gösterir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Kritik Tehdit ve Güvenlik Bildirimleri" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Açık olduğunda sistem tepsisi ve masaüstü uyarıları gösterilir. Kapatıldığında tüm bildirimler sessize alınır." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                         </StackPanel>
-                        <ui:ToggleSwitch IsChecked="{Binding NotificationsEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                        <ui:ToggleSwitch IsChecked="{Binding NotificationsEnabled, Mode=TwoWay}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
 
                     <Grid Margin="0">
@@ -183,6 +197,45 @@
                             <ui:SymbolIcon Symbol="Warning24" Foreground="{DynamicResource BrushStatusWarning}" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="1" Text="⚠️ Dikkat: 30 dakikada bir tarama periyodu güvenlik düzeyini en üst seviyeye çıkarır ancak eski veya düşük donanımlı sistemlerde disk ve CPU işlemlerini sıklaştırabilir." 
                                        Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusWarningText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- 5b. Adaptif Kaynak ve Performans Yönetimi (Adaptive Resource Management) -->
+            <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <ui:SymbolIcon Symbol="Pulse24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Adaptif Kaynak ve Performans Yönetimi" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <Grid Margin="0,0,0,10">
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,260,0">
+                            <TextBlock Text="Tarama Kaynak Modu" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Tarayıcının CPU çekirdeği, bellek tavanı ve disk I/O pacing davranışını belirler." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <ComboBox ItemsSource="{Binding ResourceModes}" 
+                                  SelectedItem="{Binding SelectedResourceModeItem}" 
+                                  DisplayMemberPath="Title"
+                                  Width="260" Height="34" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                  Style="{DynamicResource DefaultComboBoxStyle}"/>
+                    </Grid>
+
+                    <!-- Selected Mode Description -->
+                    <TextBlock Text="{Binding SelectedResourceModeItem.Description}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,10"/>
+
+                    <!-- Resource Throttling Warning Banner (VeryLow / Low) -->
+                    <Border Background="{DynamicResource BrushStatusWarningBg}" BorderBrush="{DynamicResource BrushStatusWarningBorder}" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,4,0,0"
+                            Visibility="{Binding IsResourceThrottlingWarningVisible, Converter={StaticResource BoolToVis}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="Warning24" Foreground="{DynamicResource BrushStatusWarning}" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="⚠️ Kaynak kullanımı kısıldı. Tarama işlemi daha uzun sürebilir." 
+                                       Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusWarningText}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
                 </StackPanel>

@@ -174,11 +174,11 @@ namespace AegisPC.Tests
         [Fact]
         public async Task Test_FileFlood_500Events_HandledGracefully()
         {
-            // Rapidly write 500 files to simulate high load
+            // Rapidly write 500 files to simulate high load (verifying genuine 500 event flood)
             var floodDir = Path.Combine(_testSandboxDir, "FloodZone");
             Directory.CreateDirectory(floodDir);
 
-            for (int i = 0; i < 200; i++)
+            for (int i = 0; i < 500; i++)
             {
                 var filePath = Path.Combine(floodDir, $"flood_file_{i}.txt");
                 await File.WriteAllTextAsync(filePath, $"Test flood line content {i}");
@@ -187,6 +187,84 @@ namespace AegisPC.Tests
             // Engine should remain responsive and stable
             var verdict = await _engine.InspectFileAsync(Path.Combine(floodDir, "flood_file_10.txt"));
             Assert.Equal(RealTimeVerdict.Clean, verdict.Verdict);
+        }
+
+        [Fact]
+        public void Test_RealTimeEventIngestor_TracksDroppedEvents_WhenBufferSaturated()
+        {
+            // Verify P1 #4 fix: BoundedChannel telemetry event loss monitoring and exact accounting
+            using var ingestor = new RealTimeEventIngestor(channelCapacity: 10);
+
+            for (int i = 0; i < 25; i++)
+            {
+                ingestor.EnqueueEvent(RealTimeEventType.Created, $@"C:\FakePath\test_telemetry_{i}.txt");
+            }
+
+            Assert.Equal(25, ingestor.TotalProducedEvents);
+            Assert.Equal(10, ingestor.TotalAcceptedEvents);
+            Assert.Equal(15, ingestor.TotalDroppedEvents);
+            Assert.Equal(15, ingestor.DroppedEventsCount);
+            Assert.Equal(10, ingestor.PendingEventsCount);
+        }
+
+        [Theory]
+        [InlineData(0)]     // Critical event first
+        [InlineData(2500)]  // Critical event middle
+        [InlineData(4999)]  // Critical event last
+        public async Task Test_RealTimeEventIngestor_CriticalEvents_NeverDropped_UnderHeavyTelemetryFlood(int criticalIndex)
+        {
+            // Section 11-14: 5000 event flood (4999 benign telemetry + 1 critical security executable event)
+            using var ingestor = new RealTimeEventIngestor(channelCapacity: 500);
+
+            var processedCriticalPaths = new System.Collections.Concurrent.ConcurrentBag<string>();
+            var processedCount = 0;
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            ingestor.StartWorkers(4, async (evt, token) =>
+            {
+                Interlocked.Increment(ref processedCount);
+                if (evt.FilePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    processedCriticalPaths.Add(evt.FilePath);
+                }
+                // Simulate realistic inspection workload so 500-capacity telemetry buffer saturates under 5000-event flood
+                try
+                {
+                    await Task.Delay(2, token);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }, cts.Token);
+
+            string criticalPath = @"C:\HighRisk\ransomware_dropper.exe";
+
+            for (int i = 0; i < 5000; i++)
+            {
+                if (i == criticalIndex)
+                {
+                    ingestor.EnqueueEvent(RealTimeEventType.Created, criticalPath);
+                }
+                else
+                {
+                    ingestor.EnqueueEvent(RealTimeEventType.Created, $@"C:\BulkLogs\flood_{i}.txt");
+                }
+            }
+
+            // Wait for workers to process queues
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < 5000 && processedCriticalPaths.IsEmpty)
+            {
+                await Task.Delay(50);
+            }
+
+            // Invariant: The critical executable event MUST NEVER be dropped, regardless of queue saturation
+            Assert.Single(processedCriticalPaths);
+            Assert.Contains(criticalPath, processedCriticalPaths);
+
+            // Telemetry queue was saturated at 500 capacity, so telemetry events were dropped
+            Assert.True(ingestor.TotalDroppedEvents > 0, "Telemetry buffer saturation must drop excess non-critical events.");
+            Assert.Equal(5000, ingestor.TotalProducedEvents);
         }
 
         [Fact]

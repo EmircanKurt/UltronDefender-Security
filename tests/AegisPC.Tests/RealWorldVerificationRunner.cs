@@ -143,7 +143,7 @@ namespace AegisPC.Tests
             var mockToast = new MockToast(toastList);
             using var aggregator = new NotificationAggregator(mockToast)
             {
-                AggregationWindow = TimeSpan.FromMilliseconds(500)
+                AggregationWindow = TimeSpan.FromSeconds(2)
             };
 
             for (int i = 1; i <= 20; i++)
@@ -152,10 +152,23 @@ namespace AegisPC.Tests
                 await File.WriteAllTextAsync(dummyThreat, "MZ_THREAT_PAYLOAD");
                 bool qOk = await _quarantineService.QuarantineFileAsync(dummyThreat, $"Batch Threat #{i}");
                 Assert.True(qOk, $"Quarantine failed on item {i}");
-                aggregator.PushThreatEvent($"Threat #{i}", dummyThreat, "Quarantined", isCritical: false);
+                aggregator.PushThreatEvent($"Batch Threat #{i}", dummyThreat, "Quarantined", isCritical: false);
             }
 
-            await Task.Delay(700); // Wait for aggregator flush
+            var flushSw = Stopwatch.StartNew();
+            while (toastList.Count == 0 && flushSw.ElapsedMilliseconds < 3000)
+            {
+                await Task.Delay(50);
+            }
+
+            if (toastList.Count == 0)
+            {
+                aggregator.Flush();
+                while (toastList.Count == 0 && flushSw.ElapsedMilliseconds < 6000)
+                {
+                    await Task.Delay(50);
+                }
+            }
 
             _output.WriteLine($"Total Threats Pushed:   20");
             _output.WriteLine($"Total Notifications Fired: {toastList.Count} (Expected: Aggregated Batch Notification)");

@@ -127,5 +127,92 @@ namespace AegisPC.Tests
             Assert.True(vm.IsQuarantineTabActive);
             Assert.False(vm.IsIncidentsTabActive);
         }
+
+        [Fact]
+        public async Task QuarantineUnified_RemoveAllFromQuarantine_RestoresOrPurgesAllItems_AndPersists()
+        {
+            // 1. Create 3 test quarantined files
+            var file1 = Path.Combine(_testRoot, "threat1.dll");
+            var file2 = Path.Combine(_testRoot, "threat2.exe");
+            var file3 = Path.Combine(_testRoot, "threat3.bin");
+
+            await File.WriteAllBytesAsync(file1, new byte[] { 0x4D, 0x5A, 0x01 });
+            await File.WriteAllBytesAsync(file2, new byte[] { 0x4D, 0x5A, 0x02 });
+            await File.WriteAllBytesAsync(file3, new byte[] { 0x4D, 0x5A, 0x03 });
+
+            await _quarantineService.QuarantineFileAsync(file1, "Test.Threat.1");
+            await _quarantineService.QuarantineFileAsync(file2, "Test.Threat.2");
+            await _quarantineService.QuarantineFileAsync(file3, "Test.Threat.3");
+
+            // Verify files moved to quarantine and deleted from source
+            Assert.False(File.Exists(file1));
+            Assert.False(File.Exists(file2));
+            Assert.False(File.Exists(file3));
+
+            // 2. Initialize ViewModel with quarantine service
+            var vm = new QuarantineViewModel(quarantineService: _quarantineService);
+            await vm.RefreshAllDataAsync();
+
+            Assert.Equal(3, vm.QuarantinedItems.Count);
+            Assert.True(vm.CanRemoveAll, "CanRemoveAll must be true when there are items in quarantine.");
+
+            // 3. Execute Remove All
+            await vm.RemoveAllFromQuarantineAsync();
+
+            // 4. Verify in-memory state
+            Assert.Empty(vm.QuarantinedItems);
+            Assert.False(vm.CanRemoveAll, "CanRemoveAll must be false when quarantine is empty.");
+            Assert.True(vm.HasNoQuarantinedItems);
+
+            // 5. Verify physical restoration back to disk
+            Assert.True(File.Exists(file1), "File 1 must be restored back to disk.");
+            Assert.True(File.Exists(file2), "File 2 must be restored back to disk.");
+            Assert.True(File.Exists(file3), "File 3 must be restored back to disk.");
+
+            // 6. Verify persistence: reload fresh QuarantineService from vault disk index
+            var freshService = new QuarantineService(hashService: new HashService(), customVaultDir: _vaultDir);
+            var reloadedItems = await freshService.GetQuarantinedItemsAsync();
+            Assert.Empty(reloadedItems);
+        }
+
+        [Fact]
+        public async Task QuarantineUnified_RemediateIncident_RemovesIncidentFromListAndPurgesFromVault_AndPersists()
+        {
+            // 1. Create and quarantine a test threat file
+            var threatFile = Path.Combine(_testRoot, "malicious_script.vbs");
+            await File.WriteAllBytesAsync(threatFile, new byte[] { 0x58, 0x59, 0x5A });
+
+            await _quarantineService.QuarantineFileAsync(threatFile, "Trojan.VbsRunner");
+            Assert.False(File.Exists(threatFile));
+
+            // 2. Initialize ViewModel and refresh
+            var vm = new QuarantineViewModel(quarantineService: _quarantineService);
+            await vm.RefreshAllDataAsync();
+
+            Assert.Single(vm.QuarantinedItems);
+            Assert.Single(vm.Incidents);
+            Assert.False(vm.HasNoIncidents);
+
+            var incidentToRemediate = vm.Incidents.First();
+            Assert.StartsWith("QUAR-", incidentToRemediate.IncidentId);
+
+            // 3. User clicks "Çözüldü Olarak İşaretle"
+            await vm.RemediateIncidentAsync(incidentToRemediate);
+
+            // 4. VERIFY: Immediately removed from incidents list and active incident count is 0
+            Assert.Empty(vm.Incidents);
+            Assert.True(vm.HasNoIncidents, "HasNoIncidents must be true once all incidents are remediated.");
+            Assert.Equal(0, vm.ActiveIncidentCount);
+            Assert.Null(vm.SelectedIncident);
+
+            // 5. VERIFY: Quarantine vault is cleaned up
+            Assert.Empty(vm.QuarantinedItems);
+            Assert.True(vm.HasNoQuarantinedItems);
+
+            // 6. VERIFY: Reloading incidents does NOT bring it back (anti-ghosting)
+            await vm.LoadIncidentsAsync();
+            Assert.Empty(vm.Incidents);
+            Assert.True(vm.HasNoIncidents);
+        }
     }
 }

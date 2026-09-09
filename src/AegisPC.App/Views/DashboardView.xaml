@@ -14,408 +14,409 @@
     <Page.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
         <conv:SecurityStatusToColorConverter x:Key="StatusToColor"/>
-
-        <!-- Module Feature Card Style (Enterprise Flat 6px) -->
-        <Style x:Key="ModuleCardStyle" TargetType="Border" BasedOn="{StaticResource MetricCardStyle}">
-            <Setter Property="Padding" Value="18,16,18,16"/>
-            <Setter Property="Margin" Value="0,0,10,0"/>
-            <Setter Property="CornerRadius" Value="6"/>
-            <Setter Property="Cursor" Value="Hand"/>
-        </Style>
     </Page.Resources>
 
-    <ScrollViewer x:Name="RootScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Focusable="False">
-        <StackPanel Margin="28,20,28,24" MaxWidth="1500" HorizontalAlignment="Left">
+    <Grid>
+        <ScrollViewer x:Name="RootScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Focusable="False">
+            <StackPanel MaxWidth="880" HorizontalAlignment="Center" Margin="0,48,0,32">
 
-            <!-- ══════════════════════════════════════════════════════
-                 1. DYNAMIC HERO STATUS BANNER (Güvendesiniz / Tehdit Durumu)
-            ══════════════════════════════════════════════════════ -->
-            <Border Style="{StaticResource HeroCardStyle}" Margin="0,0,0,12">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
+                <!-- ═══════════════════════════════════════════════════════════
+                     1. CENTERED HERO: MINIMALIST STATUS
+                     ═══════════════════════════════════════════════════════════ -->
+                <StackPanel HorizontalAlignment="Center">
+                    <!-- ═══ INTERACTIVE CODEX BLUE CLOUD TERMINAL LOGO ═══ -->
+                    <!-- Hover lift/float animation + Idle blinking cursor ("gözü o satır çizgisi gidip gelsin") -->
+                    <Grid Width="64" Height="58" HorizontalAlignment="Center" Margin="0,0,0,16"
+                          Cursor="Hand" RenderTransformOrigin="0.5,0.5" ToolTip="Ultron Terminal Koruma Çekirdeği">
+                        <Grid.RenderTransform>
+                            <TransformGroup>
+                                <TranslateTransform x:Name="CloudLogoTranslate" Y="0"/>
+                                <ScaleTransform x:Name="CloudLogoScale" ScaleX="1.0" ScaleY="1.0"/>
+                            </TransformGroup>
+                        </Grid.RenderTransform>
 
-                    <!-- Dynamic Status Shield -->
-                    <Grid Grid.Column="0" Width="68" Height="68" Margin="0,0,20,0" VerticalAlignment="Center">
-                        <Ellipse Width="68" Height="68" 
-                                 Fill="{Binding ProtectionStatusColor, Converter={StaticResource StatusToColor}, ConverterParameter=Fill}" 
-                                 Stroke="{Binding ProtectionStatusColor, Converter={StaticResource StatusToColor}, ConverterParameter=Stroke}" 
-                                 StrokeThickness="2"/>
-                        <ui:SymbolIcon Symbol="{Binding ProtectionStatusSymbol, FallbackValue='ShieldCheckmark24'}" FontSize="32" 
-                                       Foreground="{Binding ProtectionStatusColor, Converter={StaticResource StatusToColor}, ConverterParameter=Stroke}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <!-- Ambient Aura (Mavi ışıma sadece koyu temada, açık temada şeffaf) -->
+                        <Ellipse Width="54" Height="46" Fill="{DynamicResource BrushCloudAura}" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Ellipse.Effect>
+                                <BlurEffect Radius="16"/>
+                            </Ellipse.Effect>
+                        </Ellipse>
+
+                        <!-- Cloud Base Silhouette & Prompt (Koyu temada Canlı Codex Mavisi, Açık temada Simsiyah) -->
+                        <Image Source="{DynamicResource ImageCloudLogoBase}"
+                               Width="58" Height="52" Stretch="Uniform"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               RenderOptions.BitmapScalingMode="HighQuality">
+                            <Image.Effect>
+                                <DropShadowEffect BlurRadius="12" Color="{DynamicResource ColorCloudGlow}" ShadowDepth="0" Opacity="0.75"/>
+                            </Image.Effect>
+                        </Image>
+
+                        <!-- Blinking Cursor Line _ (Koyu temada Mavi, Açık temada Simsiyah) -->
+                        <Image x:Name="CodexCursorLine"
+                               Source="{DynamicResource ImageCloudCursorLine}"
+                               Width="58" Height="52" Stretch="Uniform"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               RenderOptions.BitmapScalingMode="HighQuality">
+                            <Image.Effect>
+                                <DropShadowEffect BlurRadius="10" Color="{DynamicResource ColorCloudCursorGlow}" ShadowDepth="0" Opacity="0.9"/>
+                            </Image.Effect>
+                            <Image.Triggers>
+                                <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever">
+                                            <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="Opacity">
+                                                <DiscreteDoubleKeyFrame KeyTime="0:0:0.0" Value="1.0"/>
+                                                <DiscreteDoubleKeyFrame KeyTime="0:0:0.5" Value="1.0"/>
+                                                <LinearDoubleKeyFrame KeyTime="0:0:0.6" Value="0.0"/>
+                                                <DiscreteDoubleKeyFrame KeyTime="0:0:0.9" Value="0.0"/>
+                                                <LinearDoubleKeyFrame KeyTime="0:0:1.0" Value="1.0"/>
+                                            </DoubleAnimationUsingKeyFrames>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </EventTrigger>
+                            </Image.Triggers>
+                        </Image>
+
+                        <!-- Hover Float/Lift Interaction ("üzerine gelince hareket etsin") -->
+                        <Grid.Triggers>
+                            <EventTrigger RoutedEvent="MouseEnter">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="CloudLogoTranslate"
+                                                         Storyboard.TargetProperty="Y"
+                                                         To="-6" Duration="0:0:0.25">
+                                            <DoubleAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut"/>
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="CloudLogoScale"
+                                                         Storyboard.TargetProperty="ScaleX"
+                                                         To="1.08" Duration="0:0:0.25">
+                                            <DoubleAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut"/>
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="CloudLogoScale"
+                                                         Storyboard.TargetProperty="ScaleY"
+                                                         To="1.08" Duration="0:0:0.25">
+                                            <DoubleAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut"/>
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <EventTrigger RoutedEvent="MouseLeave">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="CloudLogoTranslate"
+                                                         Storyboard.TargetProperty="Y"
+                                                         To="0" Duration="0:0:0.3">
+                                            <DoubleAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut"/>
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="CloudLogoScale"
+                                                         Storyboard.TargetProperty="ScaleX"
+                                                         To="1.0" Duration="0:0:0.3">
+                                            <DoubleAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut"/>
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="CloudLogoScale"
+                                                         Storyboard.TargetProperty="ScaleY"
+                                                         To="1.0" Duration="0:0:0.3">
+                                            <DoubleAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut"/>
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Grid.Triggers>
                     </Grid>
 
-                    <!-- Status Info -->
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                            <TextBlock Text="ULTRON DEFENDER TOTAL SECURITY" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushBrandPrimary}" Margin="0,0,10,0"/>
-                            <Border Background="{Binding ProtectionStatusColor, Converter={StaticResource StatusToColor}, ConverterParameter=Fill}" 
-                                    BorderBrush="{Binding ProtectionStatusColor, Converter={StaticResource StatusToColor}, ConverterParameter=Stroke}" 
-                                    BorderThickness="1" CornerRadius="4" Padding="6,2">
-                                <TextBlock Text="{Binding ProtectionBadgeText, FallbackValue='● KORUMA AKTİF'}" FontSize="10" FontWeight="Bold" 
-                                           Foreground="{Binding ProtectionStatusColor, Converter={StaticResource StatusToColor}, ConverterParameter=Stroke}"/>
-                            </Border>
-                        </StackPanel>
+                    <TextBlock Text="{Binding ProtectionStatusText, FallbackValue='Sisteminiz güvende'}" Style="{StaticResource HeroTitleStyle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="Ultron Defender ile sisteminiz tam koruma altında. İndirmeler, süreçler ve bellek sürekli denetleniyor."
+                               Style="{StaticResource HeroSubtitleStyle}"/>
 
-                        <TextBlock Text="{Binding ProtectionStatusText, FallbackValue='GÜVENDESİNİZ'}" Style="{StaticResource StatusHeadlineStyle}" Margin="0,0,0,3"/>
-                        <TextBlock Text="Gerçek zamanlı koruma devrede. Dosya sisteminiz, indirmeleriniz ve bellek arka planda sürekli korunuyor." Style="{StaticResource BodyTextStyle}" FontSize="12.5"/>
-                    </StackPanel>
-
-                    <!-- Primary Action Buttons -->
-                    <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="16,0,0,0">
-                        <!-- Direct Review Threats Action when threats exist (Crimson Red Danger Button) -->
-                        <Button Style="{StaticResource DangerActionButtonStyle}" 
-                                Content="{Binding ThreatActionText, FallbackValue='Tehditleri İncele'}" 
-                                Command="{Binding ReviewThreatsCommand}" 
-                                Padding="12,6" 
-                                Margin="0,0,0,6" 
-                                Width="160"
-                                Visibility="{Binding HasThreatsDetected, Converter={StaticResource BoolToVis}}"/>
-
-                        <!-- Standard Quick Scan Action (Brand Red Primary Button) -->
-                        <Button Style="{StaticResource PrimaryActionButtonStyle}" 
-                                Content="Hızlı Tarama Başlat" 
-                                Command="{Binding StartQuickScanCommand}" 
-                                Padding="12,6" 
-                                Margin="0,0,0,6" 
-                                Width="160"
-                                Visibility="{Binding HasThreatsDetected, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"/>
-
-                        <Button Style="{StaticResource SecondaryActionButtonStyle}" 
-                                Content="Korumayı Yönet" 
-                                Command="{Binding NavigateToTargetCommand}" 
-                                CommandParameter="settings" 
-                                Padding="12,6" 
-                                Width="160"/>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- ══════════════════════════════════════════════════════
-                 2. ENTERPRISE TELEMETRY STATS STRIP (Gerçek Veriye Bağlı Kompakt 4 İstatistik Kartı)
-            ══════════════════════════════════════════════════════ -->
-            <Grid Margin="0,0,0,12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-
-                <!-- Stat 1: Today Scanned Files -->
-                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="16,13">
-                    <StackPanel>
-                        <TextBlock Text="BUGÜN TARANAN DOSYA" Style="{StaticResource StatLabelStyle}" Margin="0,0,0,6"/>
+                    <!-- Threat Alert Banner (Only visible if threats detected) -->
+                    <Border Margin="0,14,0,0" HorizontalAlignment="Center"
+                            Background="{DynamicResource BrushStatusDangerBg}"
+                            BorderBrush="{DynamicResource BrushStatusDangerBorder}"
+                            BorderThickness="1" CornerRadius="16" Padding="14,6"
+                            Visibility="{Binding HasThreatsDetected, Converter={StaticResource BoolToVis}}">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="DocumentSearch24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding FilesScannedCount, StringFormat='{}{0:N0}'}" Style="{StaticResource StatNumberStyle}"/>
-                            <TextBlock Text=" dosya" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Bottom" Margin="4,0,0,3"/>
+                            <ui:SymbolIcon Symbol="Warning24" FontSize="14" Foreground="{DynamicResource BrushStatusDanger}" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ProtectionBadgeText}" FontSize="12.5" FontWeight="Medium" Foreground="{DynamicResource BrushStatusDanger}" VerticalAlignment="Center"/>
+                            <Button Style="{StaticResource DangerButtonStyle}" Content="{Binding ThreatActionText, FallbackValue='Tehditleri İncele'}"
+                                    Command="{Binding ReviewThreatsCommand}" Padding="10,2" Margin="10,0,0,0" FontSize="11"/>
                         </StackPanel>
-                    </StackPanel>
-                </Border>
+                    </Border>
+                </StackPanel>
 
-                <!-- Stat 2: Blocked Threats This Month (QuarantineService Real Data) -->
-                <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="16,13">
-                    <StackPanel>
-                        <TextBlock Text="BU AY ENGELLENEN TEHDİT" Style="{StaticResource StatLabelStyle}" Margin="0,0,0,6"/>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="ShieldDismiss24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding ThreatsBlockedThisMonth}" Style="{StaticResource StatNumberStyle}"/>
-                            <TextBlock Text=" tehdit" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Bottom" Margin="4,0,0,3"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <!-- Stat 3: Signature DB Last Update Time -->
-                <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Margin="0,0,8,0" Padding="16,13">
-                    <StackPanel>
-                        <TextBlock Text="SON İMZA GÜNCELLEMESİ" Style="{StaticResource StatLabelStyle}" Margin="0,0,0,6"/>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="ArrowSyncCircle24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding LastDatabaseUpdateFormatted}" Style="{StaticResource StatNumberStyle}" FontSize="18"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <!-- Stat 4: Real-Time Protection Uptime (Koruma Süresi) -->
-                <Border Grid.Column="3" Style="{StaticResource MetricCardStyle}" Margin="0" Padding="16,13">
-                    <StackPanel>
-                        <TextBlock Text="KORUMA SÜRESİ" Style="{StaticResource StatLabelStyle}" Margin="0,0,0,6"/>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="Timer24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding ProtectionUptimeText}" Style="{StaticResource StatNumberStyle}" FontSize="18"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-            </Grid>
-
-            <!-- ══════════════════════════════════════════════════════
-                 3. FOUR CORE ACTION MODULE TILES (Büyütülmüş & Öne Çıkarılmış Kartlar)
-            ══════════════════════════════════════════════════════ -->
-            <UniformGrid Columns="4" Margin="0,0,0,14">
-                <!-- Tile 1: Virus Scanner (Blue Accent) -->
-                <Border Style="{StaticResource ModuleCardStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <!-- Monochromatic Icon Box (6px Corner Radius) & Status Pill -->
-                        <Grid Grid.Row="0" Margin="0,0,0,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Width="42" Height="42" CornerRadius="6"
-                                    Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
-                                <ui:SymbolIcon Symbol="Shield24" Foreground="{DynamicResource BrushTextPrimary}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <!-- ═══════════════════════════════════════════════════════════
+                     2. CODEX-INSPIRED 4 HORIZONTAL ACTION CARDS
+                     ═══════════════════════════════════════════════════════════ -->
+                <UniformGrid Columns="4" Margin="0,32,0,0">
+                    <!-- Action Card 1: Quick Scan (Pastel Blue) -->
+                    <Button Style="{StaticResource ActionCardButtonStyle}"
+                            Command="{Binding StartQuickScanCommand}"
+                            Margin="0,0,8,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <!-- Top-Left Pastel Icon Badge -->
+                            <Border Grid.Row="0" Width="34" Height="34" HorizontalAlignment="Left"
+                                    Background="{DynamicResource BrushPastelBlueBg}"
+                                    BorderBrush="{DynamicResource BrushPastelBlueBorder}"
+                                    BorderThickness="1" CornerRadius="8" Margin="0,0,0,12">
+                                <ui:SymbolIcon Symbol="Search24" FontSize="16"
+                                               Foreground="{DynamicResource BrushPastelBlueIcon}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushStatusSafe}" Margin="0,0,5,0"/>
-                                <TextBlock Text="Hazır" Style="{StaticResource CaptionTextStyle}"/>
-                            </StackPanel>
+                            <TextBlock Grid.Row="1" Text="Hızlı Tarama Başlat"
+                                       Style="{StaticResource ActionCardTitleStyle}" Margin="0,0,0,6"/>
+                            <TextBlock Grid.Row="2" Text="Kritik sistem dizinlerini, belleği ve başlangıç dosyalarını tara"
+                                       Style="{StaticResource ActionCardDescStyle}"/>
                         </Grid>
+                    </Button>
 
-                        <!-- Title -->
-                        <TextBlock Grid.Row="1" Text="Virüs Taraması" Style="{StaticResource SectionHeadingStyle}" FontSize="14.5" FontWeight="Bold" Margin="0,0,0,4"/>
+                    <!-- Action Card 2: Full System Scan (Pastel Purple) -->
+                    <Button Style="{StaticResource ActionCardButtonStyle}"
+                            Command="{Binding NavigateToTargetCommand}"
+                            CommandParameter="scan"
+                            Margin="4,0,4,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <!-- Top-Left Pastel Icon Badge -->
+                            <Border Grid.Row="0" Width="34" Height="34" HorizontalAlignment="Left"
+                                    Background="{DynamicResource BrushPastelPurpleBg}"
+                                    BorderBrush="{DynamicResource BrushPastelPurpleBorder}"
+                                    BorderThickness="1" CornerRadius="8" Margin="0,0,0,12">
+                                <ui:SymbolIcon Symbol="Desktop24" FontSize="16"
+                                               Foreground="{DynamicResource BrushPastelPurpleIcon}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock Grid.Row="1" Text="Tam Sistem Taraması"
+                                       Style="{StaticResource ActionCardTitleStyle}" Margin="0,0,0,6"/>
+                            <TextBlock Grid.Row="2" Text="Tüm yerel diskleri, arşivleri ve derin sistem dosyalarını analiz et"
+                                       Style="{StaticResource ActionCardDescStyle}"/>
+                        </Grid>
+                    </Button>
 
-                        <!-- Description -->
-                        <TextBlock Grid.Row="2" Text="Hızlı, tam veya özel dosya analizi ile sisteminizi derinlemesine tarayın." 
-                                   Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11.5" Margin="0,0,0,12"/>
+                    <!-- Action Card 3: Real-Time Shields (Pastel Green) -->
+                    <Button Style="{StaticResource ActionCardButtonStyle}"
+                            Command="{Binding NavigateToTargetCommand}"
+                            CommandParameter="settings"
+                            Margin="4,0,4,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <!-- Top-Left Pastel Icon Badge -->
+                            <Border Grid.Row="0" Width="34" Height="34" HorizontalAlignment="Left"
+                                    Background="{DynamicResource BrushPastelGreenBg}"
+                                    BorderBrush="{DynamicResource BrushPastelGreenBorder}"
+                                    BorderThickness="1" CornerRadius="8" Margin="0,0,0,12">
+                                <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="16"
+                                               Foreground="{DynamicResource BrushPastelGreenIcon}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock Grid.Row="1" Text="Gerçek Zamanlı Kalkanlar"
+                                       Style="{StaticResource ActionCardTitleStyle}" Margin="0,0,0,6"/>
+                            <TextBlock Grid.Row="2" Text="ETW, indirme kalkanı ve bellek koruma durumunu denetle"
+                                       Style="{StaticResource ActionCardDescStyle}"/>
+                        </Grid>
+                    </Button>
 
-                        <!-- Action Button -->
-                        <Button Grid.Row="3" Content="Taramayı Başlat" Style="{StaticResource PrimaryActionButtonStyle}" 
-                                Command="{Binding StartQuickScanCommand}" HorizontalAlignment="Stretch" Padding="0,7" FontSize="11.5"/>
+                    <!-- Action Card 4: Threats & EDR Incident Center (Pastel Orange) -->
+                    <Button Style="{StaticResource ActionCardButtonStyle}"
+                            Command="{Binding ReviewThreatsCommand}"
+                            Margin="8,0,0,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <!-- Top-Left Pastel Icon Badge -->
+                            <Border Grid.Row="0" Width="34" Height="34" HorizontalAlignment="Left"
+                                    Background="{DynamicResource BrushPastelOrangeBg}"
+                                    BorderBrush="{DynamicResource BrushPastelOrangeBorder}"
+                                    BorderThickness="1" CornerRadius="8" Margin="0,0,0,12">
+                                <ui:SymbolIcon Symbol="Warning24" FontSize="16"
+                                               Foreground="{DynamicResource BrushPastelOrangeIcon}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock Grid.Row="1" Text="Tehdit &amp; Olay Geçmişi"
+                                       Style="{StaticResource ActionCardTitleStyle}" Margin="0,0,0,6"/>
+                            <TextBlock Grid.Row="2" Text="Karantinaya alınan zararlıları ve EDR güvenlik kayıtlarını incele"
+                                       Style="{StaticResource ActionCardDescStyle}"/>
+                        </Grid>
+                    </Button>
+                </UniformGrid>
+
+                <!-- ═══════════════════════════════════════════════════════════
+                     3. CODEX-INSPIRED ROUNDED PILL STATUS DOCK
+                     ═══════════════════════════════════════════════════════════ -->
+                <Border Style="{StaticResource PillDockContainerStyle}" Margin="0,16,0,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="1.4*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Metric 1: Scanned Today -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <ui:SymbolIcon Symbol="DocumentBulletList24" FontSize="14" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Bugün taranan:" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <TextBlock Text="{Binding FilesScannedCount, StringFormat='{}{0:N0}'}" FontSize="12.5" FontWeight="Medium" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                            <TextBlock Text=" dosya" FontSize="11.5" Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                        </StackPanel>
+
+                        <!-- Vertical Divider 1 -->
+                        <Rectangle Grid.Column="1" Width="1" Height="20" Fill="{DynamicResource BrushCardBorder}" Margin="8,0"/>
+
+                        <!-- Metric 2: Signature Update -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <ui:SymbolIcon Symbol="ArrowSync24" FontSize="14" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="İmza:" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <TextBlock Text="{Binding LastDatabaseUpdateFormatted}" FontSize="12.5" FontWeight="Medium" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <!-- Vertical Divider 2 -->
+                        <Rectangle Grid.Column="3" Width="1" Height="20" Fill="{DynamicResource BrushCardBorder}" Margin="8,0"/>
+
+                        <!-- Metric 3: Protection Uptime -->
+                        <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <ui:SymbolIcon Symbol="Timer24" FontSize="14" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Koruma:" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <TextBlock Text="{Binding ProtectionUptimeText}" FontSize="12.5" FontWeight="Medium" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <!-- Vertical Divider 3 -->
+                        <Rectangle Grid.Column="5" Width="1" Height="20" Fill="{DynamicResource BrushCardBorder}" Margin="8,0"/>
+
+                        <!-- Metric 4: Ransomware Shield Quick Controls -->
+                        <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <ui:SymbolIcon Symbol="LockClosed24" FontSize="14" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Fidye Kalkanı:" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <Ellipse Width="6" Height="6" Fill="{Binding RansomwareStatusColor}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <TextBlock Text="{Binding RansomwareStatusText}" FontSize="11.5" FontWeight="Medium" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <Button Content="Ayarlar" Style="{StaticResource SecondaryActionButtonStyle}"
+                                    Command="{Binding OpenRansomwareSettingsCommand}" Padding="8,2" FontSize="11" Margin="0,0,6,0"/>
+                            <ui:ToggleSwitch IsChecked="{Binding IsRansomwareEnabled, Mode=TwoWay}" VerticalAlignment="Center"/>
+                        </StackPanel>
                     </Grid>
                 </Border>
 
-                <!-- Tile 2: Real-Time Shield (Monochromatic with Status Indicator) -->
-                <Border Style="{StaticResource ModuleCardStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <!-- Monochromatic Icon Box & Status Pill -->
-                        <Grid Grid.Row="0" Margin="0,0,0,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Width="42" Height="42" CornerRadius="6"
-                                    Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
-                                <ui:SymbolIcon Symbol="Flash24" Foreground="{DynamicResource BrushTextPrimary}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushStatusSafe}" Margin="0,0,5,0"/>
-                                <TextBlock Text="Aktif" Style="{StaticResource CaptionTextStyle}"/>
-                            </StackPanel>
-                        </Grid>
-
-                        <!-- Title -->
-                        <TextBlock Grid.Row="1" Text="Gerçek Zamanlı Kalkan" Style="{StaticResource SectionHeadingStyle}" FontSize="14.5" FontWeight="Bold" Margin="0,0,0,4"/>
-
-                        <!-- Description -->
-                        <TextBlock Grid.Row="2" Text="İndirmeleri, harici USB diskleri ve bellek süreçlerini anlık denetler." 
-                                   Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11.5" Margin="0,0,0,12"/>
-
-                        <!-- Action Button -->
-                        <Button Grid.Row="3" Content="Durumu İncele" Style="{StaticResource SecondaryActionButtonStyle}" 
-                                Command="{Binding NavigateToTargetCommand}" CommandParameter="settings" HorizontalAlignment="Stretch" Padding="0,7" FontSize="11.5"/>
-                    </Grid>
-                </Border>
-
-                <!-- Tile 3: Ransomware Protection (Live Interactive Toggle & Modal Link) -->
-                <Border Style="{StaticResource ModuleCardStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <!-- Icon Box & Dynamic Status Pill -->
-                        <Grid Grid.Row="0" Margin="0,0,0,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Width="42" Height="42" CornerRadius="6"
-                                    Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
-                                <ui:SymbolIcon Symbol="LockClosed24" Foreground="{DynamicResource BrushTextPrimary}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <Ellipse Width="6" Height="6" Fill="{Binding RansomwareStatusColor}" Margin="0,0,5,0"/>
-                                <TextBlock Text="{Binding RansomwareStatusText}" Style="{StaticResource CaptionTextStyle}"/>
-                            </StackPanel>
-                        </Grid>
-
-                        <!-- Title -->
-                        <TextBlock Grid.Row="1" Text="Fidye Kalkanı" Style="{StaticResource SectionHeadingStyle}" FontSize="14.5" FontWeight="Bold" Margin="0,0,0,4"/>
-
-                        <!-- Description -->
-                        <TextBlock Grid.Row="2" Text="Belgelerinizi ve resimlerinizi şifreleme girişimlerine karşı korur." 
-                                   Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11.5" Margin="0,0,0,12"/>
-
-                        <!-- Action Controls: Real ToggleSwitch + Modal Settings Button -->
-                        <Grid Grid.Row="3">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <ui:ToggleSwitch Grid.Column="0" IsChecked="{Binding IsRansomwareEnabled, Mode=TwoWay}" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Content="Ayarları Yönet" Style="{StaticResource SecondaryActionButtonStyle}" 
-                                    Command="{Binding OpenRansomwareSettingsCommand}" HorizontalAlignment="Right" Padding="10,6" FontSize="11.5"/>
-                        </Grid>
-                    </Grid>
-                </Border>
-
-                <!-- Tile 4: Quarantine Vault (Monochromatic with Status Indicator) -->
-                <Border Style="{StaticResource ModuleCardStyle}" Margin="0">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <!-- Monochromatic Icon Box & Status Pill -->
-                        <Grid Grid.Row="0" Margin="0,0,0,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Width="42" Height="42" CornerRadius="6"
-                                    Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
-                                <ui:SymbolIcon Symbol="Archive24" Foreground="{DynamicResource BrushTextPrimary}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushStatusSafe}" Margin="0,0,5,0"/>
-                                <TextBlock Text="Kilitli" Style="{StaticResource CaptionTextStyle}"/>
-                            </StackPanel>
-                        </Grid>
-
-                        <!-- Title -->
-                        <TextBlock Grid.Row="1" Text="Karantina &amp; Olaylar" Style="{StaticResource SectionHeadingStyle}" FontSize="14.5" FontWeight="Bold" Margin="0,0,0,4"/>
-
-                        <!-- Description -->
-                        <TextBlock Grid.Row="2" Text="Karantinadaki yalıtılmış dosyaları ve EDR güvenlik olay geçmişini yönetin." 
-                                   Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11.5" Margin="0,0,0,12"/>
-
-                        <!-- Action Button -->
-                        <Button Grid.Row="3" Content="Karantina &amp; Olayları Aç" Style="{StaticResource SecondaryActionButtonStyle}" 
-                                Command="{Binding NavigateToTargetCommand}" CommandParameter="quarantine" HorizontalAlignment="Stretch" Padding="0,7" FontSize="11.5"/>
-                    </Grid>
-                </Border>
-            </UniformGrid>
-
-            <!-- ══════════════════════════════════════════════════════
-                 4. COMPACT LIVE SECURITY TELEMETRY STREAM (Sade & Kompakt Canlı Akış)
-            ══════════════════════════════════════════════════════ -->
-            <Border Style="{StaticResource MetricCardStyle}" Margin="0" Padding="14,12,14,12">
-                <StackPanel>
-                    <!-- Stream Header -->
-                    <Grid Margin="0,0,0,8">
+                <!-- ═══════════════════════════════════════════════════════════
+                     4. LIVE ACTIVITY TELEMETRY TABLE (Airy rows)
+                     ═══════════════════════════════════════════════════════════ -->
+                <StackPanel Margin="0,36,0,0">
+                    <Grid Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="PulseSquare24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Canlı Güvenlik Akışı" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock Text="— Arka planda taranan ve korunan son olaylar" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center"/>
+                            <TextBlock Text="Son Güvenlik Olayları" FontSize="13.5" FontWeight="Medium" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="— arka planda korunan süreç ve dosya işlemleri" FontSize="12" Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"/>
                         </StackPanel>
-                        
-                        <!-- Pulsing Live Monitoring Badge -->
-                        <Border Grid.Column="1" Style="{StaticResource BadgeSafeStyle}" Padding="6,2" CornerRadius="4">
-                            <StackPanel Orientation="Horizontal">
-                                <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushStatusSafeDark}" Margin="0,0,4,0" VerticalAlignment="Center">
-                                    <Ellipse.Triggers>
-                                        <EventTrigger RoutedEvent="Loaded">
-                                            <BeginStoryboard>
-                                                <Storyboard RepeatBehavior="Forever" AutoReverse="True">
-                                                    <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1.0" To="0.25" Duration="0:0:1.0"/>
-                                                </Storyboard>
-                                            </BeginStoryboard>
-                                        </EventTrigger>
-                                    </Ellipse.Triggers>
-                                </Ellipse>
-                                <TextBlock Text="CANLI İZLEME" Style="{StaticResource BadgeTextStyle}" FontSize="9" Foreground="{DynamicResource BrushStatusSafeText}"/>
-                            </StackPanel>
-                        </Border>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushStatusSafeDark}" Margin="0,0,6,0" VerticalAlignment="Center">
+                                <Ellipse.Triggers>
+                                    <EventTrigger RoutedEvent="Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1.0" To="0.25" Duration="0:0:1.0"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Ellipse.Triggers>
+                            </Ellipse>
+                            <TextBlock Text="Canlı" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource BrushStatusSafeText}" VerticalAlignment="Center"/>
+                        </StackPanel>
                     </Grid>
 
-                    <!-- Stream Events Table -->
-                    <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4">
-                        <DataGrid ItemsSource="{Binding LiveActivities}"
-                                  AutoGenerateColumns="False"
-                                  CanUserAddRows="False"
-                                  CanUserSortColumns="False"
-                                  IsReadOnly="True"
-                                  BorderThickness="0"
-                                  Background="Transparent"
-                                  RowHeaderWidth="0"
-                                  GridLinesVisibility="Horizontal"
-                                  HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}"
-                                  MaxHeight="150"
-                                  HeadersVisibility="Column">
-                            <DataGrid.Columns>
-                                <DataGridTemplateColumn Header="ZAMAN" Width="75">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding TimestampFormatted}" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Padding="6,0"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
+                    <DataGrid x:Name="LiveActivitiesGrid"
+                              ItemsSource="{Binding LiveActivities}"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserSortColumns="False"
+                              IsReadOnly="True"
+                              BorderThickness="0"
+                              Background="Transparent"
+                              RowBackground="Transparent"
+                              AlternatingRowBackground="Transparent"
+                              RowHeaderWidth="0"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}"
+                              HeadersVisibility="Column"
+                              ScrollViewer.CanContentScroll="False"
+                              PreviewMouseWheel="OnDataGridPreviewMouseWheel"
+                              MaxHeight="220">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Zaman" Width="75">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding TimestampFormatted}" Style="{StaticResource CaptionTextStyle}" FontSize="11.5" VerticalAlignment="Center" Padding="4,0"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
 
-                                <DataGridTemplateColumn Header="DOSYA / HEDEF" Width="160">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding FileName}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}" VerticalAlignment="Center" Padding="6,0"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Dosya / Hedef" Width="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding FileName}" Style="{StaticResource DataTableStyle}" FontSize="12.5" FontWeight="Medium" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}" VerticalAlignment="Center" Padding="4,0"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
 
-                                <DataGridTemplateColumn Header="DİZİN &amp; AŞAMA" Width="*" MinWidth="180">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding StageDetails}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding StageDetails}" VerticalAlignment="Center" Padding="6,0"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Aşama" Width="*" MinWidth="160">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StageDetails}" Style="{StaticResource CaptionTextStyle}" FontSize="11.5" TextTrimming="CharacterEllipsis" ToolTip="{Binding StageDetails}" VerticalAlignment="Center" Padding="4,0"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
 
-                                <DataGridTemplateColumn Header="RİSK" Width="70">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding ScoreBadge}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" VerticalAlignment="Center" Padding="6,0"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Risk" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding ScoreBadge}" Style="{StaticResource DataTableStyle}" FontSize="12" FontWeight="Medium" VerticalAlignment="Center" Padding="4,0"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
 
-                                <DataGridTemplateColumn Header="MÜDAHALE" Width="130">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding ActionTaken}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ActionTaken}" VerticalAlignment="Center" Padding="6,0"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </Border>
+                            <DataGridTemplateColumn Header="Müdahale" Width="120">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding ActionTaken}" Style="{StaticResource CaptionTextStyle}" FontSize="11.5" TextTrimming="CharacterEllipsis" ToolTip="{Binding ActionTaken}" VerticalAlignment="Center" Padding="4,0"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
                 </StackPanel>
-            </Border>
-        </StackPanel>
-    </ScrollViewer>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
 </Page>

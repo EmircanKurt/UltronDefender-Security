@@ -6,5 +6,6 @@ namespace AegisPC.Contracts.Services;
 
 public interface IReputationService
 {
-    Task<ReputationResult> CheckReputationAsync(string sha256, CancellationToken cancellationToken);
+    bool IsCloudLookupEnabled { get; set; }
+    Task<ReputationResult> CheckReputationAsync(string sha256, CancellationToken cancellationToken = default);
 }

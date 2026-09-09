@@ -11,4 +11,8 @@ public class ReputationResult
     public string Source { get; set; } = string.Empty;
     public DateTime CheckedAt { get; set; } = DateTime.UtcNow;
     public string? Details { get; set; }
+    public string? ThreatName { get; set; }
+    public int Severity { get; set; } = 0;
+    public string? MalwareFamily { get; set; }
+    public string[] Tags { get; set; } = Array.Empty<string>();
 }

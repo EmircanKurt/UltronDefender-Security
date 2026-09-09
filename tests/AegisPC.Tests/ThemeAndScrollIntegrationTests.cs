@@ -42,11 +42,11 @@ namespace AegisPC.Tests
 
             // Assert authoritative dark theme tokens exist
             Assert.Contains("ColorAppBg", content);
-            Assert.Contains("#0F141C", content); // Obsidian App Canvas
+            Assert.Contains("#0D0D0D", content); // Sakin Nötr Siyah Canvas
             Assert.Contains("ColorSidebarBg", content);
-            Assert.Contains("#0A0D14", content); // Charcoal Sidebar
+            Assert.Contains("#111111", content); // Neutral Sidebar
             Assert.Contains("ColorCardBg", content);
-            Assert.Contains("#161D27", content); // Elevated Card Surface
+            Assert.Contains("#151515", content); // Elevated Card Surface
             Assert.Contains("NavigationViewPaneBackground", content);
             Assert.Contains("NavigationViewDefaultPaneBackground", content);
             Assert.Contains("NavigationViewExpandedPaneBackground", content);
@@ -75,9 +75,9 @@ namespace AegisPC.Tests
 
             string content = File.ReadAllText(mainWindowPath);
 
-            // TitleBar icon must use ultron_logo.png at 26x26
-            Assert.Contains("ultron_logo.png", content);
-            Assert.Contains("Width=\"26\" Height=\"26\"", content);
+            // TitleBar displays clean title text without duplicate small icon
+            Assert.Contains("Title=\"Ultron Defender Total Security (Antivirüs Programı)\"", content);
+            Assert.DoesNotContain("<ui:TitleBar.Icon>", content);
 
             // Sidebar PaneHeader must be enlarged to 62x62 with 26pt ULTRON text
             Assert.Contains("Width=\"62\" Height=\"62\"", content);
@@ -164,6 +164,44 @@ namespace AegisPC.Tests
             string content = File.ReadAllText(path);
             Assert.Contains("<ScrollViewer", content);
             Assert.Contains("CanContentScroll=\"False\"", content);
+        }
+
+        [Fact]
+        public void Dashboard_CloudLogo_InLightTheme_IsPureBlackAndNoAura()
+        {
+            var appDir = GetAppDir();
+            var lightThemePath = Path.Combine(appDir, "Resources", "Themes", "Colors.Light.xaml");
+            Assert.True(File.Exists(lightThemePath));
+            string lightContent = File.ReadAllText(lightThemePath);
+
+            Assert.Contains("codex_cloud_base_black.png", lightContent);
+            Assert.Contains("codex_cursor_line_black.png", lightContent);
+            Assert.Contains("<SolidColorBrush x:Key=\"BrushCloudLogo\" Color=\"#000000\"/>", lightContent);
+            Assert.Contains("<SolidColorBrush x:Key=\"BrushCloudCursor\" Color=\"#000000\"/>", lightContent);
+            Assert.Contains("<SolidColorBrush x:Key=\"BrushCloudAura\" Color=\"Transparent\"/>", lightContent);
+            Assert.Contains("<Color x:Key=\"ColorCloudGlow\">#00000000</Color>", lightContent);
+
+            var dashboardPath = Path.Combine(appDir, "Views", "DashboardView.xaml");
+            Assert.True(File.Exists(dashboardPath));
+            string dashContent = File.ReadAllText(dashboardPath);
+            Assert.Contains("{DynamicResource ImageCloudLogoBase}", dashContent);
+            Assert.Contains("{DynamicResource BrushCloudAura}", dashContent);
+            Assert.Contains("{DynamicResource ColorCloudGlow}", dashContent);
+        }
+
+        [Fact]
+        public void Dashboard_CloudLogo_InDarkTheme_IsElectricBlue()
+        {
+            var appDir = GetAppDir();
+            var darkThemePath = Path.Combine(appDir, "Resources", "Themes", "Colors.Dark.xaml");
+            Assert.True(File.Exists(darkThemePath));
+            string darkContent = File.ReadAllText(darkThemePath);
+
+            Assert.Contains("codex_cloud_base.png", darkContent);
+            Assert.Contains("codex_cursor_line.png", darkContent);
+            Assert.Contains("<SolidColorBrush x:Key=\"BrushCloudLogo\" Color=\"#3B82F6\"/>", darkContent);
+            Assert.Contains("<SolidColorBrush x:Key=\"BrushCloudCursor\" Color=\"#60A5FA\"/>", darkContent);
+            Assert.Contains("<Color x:Key=\"ColorCloudGlow\">#3B82F6</Color>", darkContent);
         }
     }
 }

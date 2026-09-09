@@ -74,9 +74,22 @@ namespace AegisPC.Security.RealTime
         public string TimestampFormatted => Timestamp.ToString("HH:mm:ss");
 
         /// <summary>
+        /// UI gösterimi için okunabilir aşama adı.
+        /// </summary>
+        public string StageDisplayName => Stage switch
+        {
+            "FILE_DETECTED" => "Dosya yakalandı",
+            "STABILITY_CHECK" => "Erişim kontrolü",
+            "SCAN_STARTED" => "Tarama başlatıldı",
+            "VERDICT" => "Güvenlik analizi",
+            "ACTION_APPLIED" => "İşlem uygulandı",
+            _ => Stage
+        };
+
+        /// <summary>
         /// UI gösterimi için detaylı aşama metni.
         /// </summary>
-        public string StageDetails => string.IsNullOrWhiteSpace(Message) ? $"{Stage} ({FilePath})" : $"{Stage}: {Message}";
+        public string StageDetails => string.IsNullOrWhiteSpace(Message) ? $"{StageDisplayName} ({FilePath})" : $"{StageDisplayName}: {Message}";
 
         /// <summary>
         /// UI gösterimi için risk rozet metni.
@@ -86,6 +99,12 @@ namespace AegisPC.Security.RealTime
         /// <summary>
         /// UI gösterimi için uygulanan eylem metni.
         /// </summary>
-        public string ActionTaken => Action;
+        public string ActionTaken => Action switch
+        {
+            "QUARANTINED" => "Karantinaya alındı",
+            "ALLOWED" => "İzin verildi",
+            "WARN" => "Uyarıldı",
+            _ => Action
+        };
     }
 }

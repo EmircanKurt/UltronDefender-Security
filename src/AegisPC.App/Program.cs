@@ -8,7 +8,7 @@ namespace AegisPC.App
 {
     public static class Program
     {
-        private static readonly string MutexName = @"Local\UltronDefender_SingleInstance_" + Environment.UserName;
+        private static readonly string MutexName = @"Global\UltronDefender_SingleInstance_Mutex";
         private static readonly string PipeName = "UltronDefender_Activate_Pipe_" + Environment.UserName;
         private static readonly string EventName = @"Local\UltronDefender_Activate_Event_" + Environment.UserName;
 

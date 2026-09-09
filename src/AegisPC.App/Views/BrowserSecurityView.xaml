@@ -15,6 +15,8 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
         <conv:RiskLevelToColorConverter x:Key="RiskColorConverter"/>
         <conv:BoolToStatusTextConverter x:Key="BoolToStatus"/>
+        <conv:DescriptionVisibilityConverter x:Key="DescriptionVisConverter"/>
+        <conv:CollectionNotEmptyVisibilityConverter x:Key="CollectionVisConverter"/>
     </Page.Resources>
 
     <Grid Margin="28,20,28,24">
@@ -69,20 +71,51 @@
             <!-- Table (Strict DataTableStyle: Pure Sans-Serif) -->
             <Border Grid.Column="0" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Margin="0,0,16,0">
                 <Grid>
-                    <ui:DataGrid ItemsSource="{Binding Extensions}" 
-                                 SelectedItem="{Binding SelectedExtension}"
-                                 AutoGenerateColumns="False" 
-                                 IsReadOnly="True"
-                                 SelectionMode="Single"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 RowHeaderWidth="0"
-                                 ScrollViewer.CanContentScroll="False"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 GridLinesVisibility="Horizontal"
-                                 HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
-                        <ui:DataGrid.Columns>
+                    <DataGrid ItemsSource="{Binding Extensions}" 
+                              SelectedItem="{Binding SelectedExtension}"
+                              AutoGenerateColumns="False" 
+                              IsReadOnly="True"
+                              SelectionMode="Single"
+                              BorderThickness="0"
+                              Background="Transparent"
+                              RowBackground="Transparent"
+                              AlternatingRowBackground="Transparent"
+                              RowHeaderWidth="0"
+                              ScrollViewer.CanContentScroll="False"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#262626"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#1F1F1F"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#262626"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.CellStyle>
+                        <DataGrid.Columns>
                             <DataGridTemplateColumn Header="Risk Seviyesi" Width="110">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
@@ -94,7 +127,7 @@
                             <DataGridTemplateColumn Header="Eklenti Adı" Width="180">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Padding="6,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Padding="6,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -102,7 +135,7 @@
                             <DataGridTemplateColumn Header="Sürüm" Width="80">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding Version}" Style="{StaticResource DataTableStyle}" Padding="6,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Version}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" Padding="6,0" VerticalAlignment="Center"/>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -110,7 +143,7 @@
                             <DataGridTemplateColumn Header="Harici (Sideload)" Width="135">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding IsSideloaded, Converter={StaticResource BoolToStatus}, ConverterParameter=yesno}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" Padding="6,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding IsSideloaded, Converter={StaticResource BoolToStatus}, ConverterParameter=yesno}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" FontWeight="SemiBold" Padding="6,0" VerticalAlignment="Center"/>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -118,12 +151,12 @@
                             <DataGridTemplateColumn Header="Eklenti ID" Width="*" MinWidth="180">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding Id}" Style="{StaticResource DataMonospaceStyle}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding Id}" Padding="6,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Id}" Style="{StaticResource DataMonospaceStyle}" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding Id}" Padding="6,0" VerticalAlignment="Center"/>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                        </ui:DataGrid.Columns>
-                    </ui:DataGrid>
+                        </DataGrid.Columns>
+                    </DataGrid>
 
                     <!-- Empty state placeholder when selected profile has 0 extensions -->
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="24"
@@ -150,17 +183,27 @@
                                 <TextBlock Text="{Binding SelectedExtension.RiskLevel}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{Binding SelectedExtension.RiskLevel, Converter={StaticResource RiskColorConverter}}"/>
                             </StackPanel>
 
-                            <TextBlock Text="Açıklama" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,8,0,4"/>
-                            <TextBlock Text="{Binding SelectedExtension.Description}" Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap" Margin="0,2"/>
+                            <!-- Açıklama: Boş, MSG_ veya 'Açıklama yok' ise gizlenir -->
+                            <StackPanel Visibility="{Binding SelectedExtension.Description, Converter={StaticResource DescriptionVisConverter}}">
+                                <TextBlock Text="Açıklama" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,8,0,4"/>
+                                <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,2,0,8">
+                                    <TextBlock Text="{Binding SelectedExtension.Description}" Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextPrimary}" TextWrapping="Wrap"/>
+                                </Border>
+                            </StackPanel>
 
-                            <TextBlock Text="İstenen İzinler" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,12,0,4"/>
-                            <ItemsControl ItemsSource="{Binding SelectedExtension.Permissions}" Margin="0,0,0,8">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding StringFormat='• \{0\}'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,1"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            <!-- İstenen İzinler: Liste boşsa gizlenir -->
+                            <StackPanel Visibility="{Binding SelectedExtension.Permissions, Converter={StaticResource CollectionVisConverter}}">
+                                <TextBlock Text="İstenen İzinler" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,8,0,4"/>
+                                <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,2,0,8">
+                                    <ItemsControl ItemsSource="{Binding SelectedExtension.Permissions}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding StringFormat='• \{0\}'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,1"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
+                            </StackPanel>
 
                             <!-- Risk Reasons -->
                             <TextBlock Text="Güvenlik Bulguları" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,8,0,4"/>

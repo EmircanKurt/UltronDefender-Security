@@ -40,6 +40,12 @@ namespace AegisPC.App.ViewModels
         private string location = string.Empty;
 
         /// <summary>
+        /// Uygulanan güvenlik müdahalesi ("Karantinaya alındı", "Uyarıldı").
+        /// </summary>
+        [ObservableProperty]
+        private string actionTaken = "Uyarıldı";
+
+        /// <summary>
         /// Bu UI modelinin temsil ettiği temel güvenlik bulgusu veri nesnesi.
         /// </summary>
         public SecurityFinding Finding { get; set; } = new();

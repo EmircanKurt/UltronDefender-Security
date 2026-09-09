@@ -8,9 +8,6 @@
     <IsTestProject>true</IsTestProject>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -37,6 +34,7 @@
     <ProjectReference Include="..\..\src\AegisPC.Infrastructure\AegisPC.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\AegisPC.BrowserSecurity\AegisPC.BrowserSecurity.csproj" />
     <ProjectReference Include="..\..\src\AegisPC.App\AegisPC.App.csproj" />
+    <ProjectReference Include="..\..\src\AegisPC.Service\AegisPC.Service.csproj" />
   </ItemGroup>
 
 </Project>

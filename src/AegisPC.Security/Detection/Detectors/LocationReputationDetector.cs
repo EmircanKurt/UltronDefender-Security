@@ -97,11 +97,10 @@ namespace AegisPC.Security.Detection.Detectors
             catch { }
 
             // 2. High-Risk Location Checks (ONLY for binaries/scripts)
-            // 2. High-Risk Location Checks (ONLY for binaries/scripts, skip if inside legitimate game/repack or development environment)
-            bool isGameDir = PathHelper.IsGameOrRepackDirectory(path);
+            // 2. High-Risk Location Checks (ONLY for binaries/scripts, skip if inside verified development environment)
             bool isDevDir = PathHelper.IsDevelopmentOrPackageDirectory(path);
 
-            if (isBinaryOrScript && !isGameDir && !isDevDir)
+            if (isBinaryOrScript && !isDevDir)
             {
                 if (PathHelper.IsTempPath(path) || path.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase))
                 {
@@ -168,37 +167,41 @@ namespace AegisPC.Security.Detection.Detectors
                 }
             }
 
-            // 4. PUP / Hacktool Pattern via Known Hashes & Untrusted User Ingestion (Skipped for recognized game and dev library folders)
-            if (!isSigned && isBinaryOrScript && !isGameDir && !isDevDir)
+            // 4. PUP / Hacktool Pattern via Known Hashes
+            if (isBinaryOrScript && !string.IsNullOrEmpty(context.SHA256) && KnownPupHashes.Contains(context.SHA256))
             {
-                bool isPup = false;
-                string pupDesc = "Potansiyel İstenmeyen / Şüpheli Yazılım (PUP) davranış kalıbı";
+                list.Add(new SecurityEvidence
+                {
+                    Category = EvidenceCategory.LocationReputation,
+                    SourceDetector = DisplayName,
+                    RuleName = "Reputation.PUP.KnownHash",
+                    Description = "Bilinen İstenmeyen Program / Hacktool imzası (Hash Veritabanı Eşleşmesi)",
+                    ScoreContribution = 50,
+                    Confidence = EvidenceConfidence.High,
+                    FilePath = path,
+                    SHA256 = context.SHA256
+                });
+            }
 
-                if (!string.IsNullOrEmpty(context.SHA256) && KnownPupHashes.Contains(context.SHA256))
+            // 5. Critical Windows System Binary Masquerading Check (e.g. svchost.exe outside System32)
+            var sysBinaryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "svchost.exe", "lsass.exe", "csrss.exe", "smss.exe", "services.exe",
+                "winlogon.exe", "wininit.exe", "taskhostw.exe", "conhost.exe"
+            };
+            if (sysBinaryNames.Contains(fileName) && !PathHelper.IsSystemPath(path))
+            {
+                list.Add(new SecurityEvidence
                 {
-                    isPup = true;
-                    pupDesc = "Bilinen İstenmeyen Program / Hacktool imzası (Hash Veritabanı Eşleşmesi)";
-                }
-                else if (PathHelper.IsUserDownloadsPath(path) || PathHelper.IsTempPath(path) || path.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase))
-                {
-                    isPup = true;
-                    pupDesc = "Potansiyel İstenmeyen / Şüpheli Yazılım (PUP) kalıbı: İmzasız İndirme/Geçici İkili";
-                }
-
-                if (isPup)
-                {
-                    list.Add(new SecurityEvidence
-                    {
-                        Category = EvidenceCategory.LocationReputation,
-                        SourceDetector = DisplayName,
-                        RuleName = "Reputation.PUP.BehaviorPattern",
-                        Description = pupDesc,
-                        ScoreContribution = 50,
-                        Confidence = EvidenceConfidence.Medium,
-                        FilePath = path,
-                        SHA256 = context.SHA256
-                    });
-                }
+                    Category = EvidenceCategory.AntiEvasion,
+                    SourceDetector = DisplayName,
+                    RuleName = "Evasion.SystemProcessMasquerading",
+                    Description = $"Kritik Windows sistem süreci kamuflajı tespit edildi: '{fileName}' meşru sistem dizini dışında yürütülüyor.",
+                    ScoreContribution = 80,
+                    Confidence = EvidenceConfidence.High,
+                    FilePath = path,
+                    SHA256 = context.SHA256
+                });
             }
 
             return list;

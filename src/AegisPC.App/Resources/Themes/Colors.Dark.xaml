@@ -3,21 +3,21 @@
 
     <!-- ══════════════════════════════════════════════════════════════════════════════════
          ULTRON DEFENDER TOTAL SECURITY — DESIGN SYSTEM TOKENS (DARK THEME)
-         Bitdefender-Inspired Dark Palette: Koyu Lacivert/Antrasit (#1B2532) + Kırmızı (#C41E1E) + Yeşil (#4CAF50)
+         Sakin Nötr Siyah Palet (#0D0D0D) + Marka Kırmızısı (#C41E1E, yalnızca logo/tehdit) + Yeşil (#22C55E)
          ══════════════════════════════════════════════════════════════════════════════════ -->
 
-    <!-- ── 1. BACKGROUND & SURFACE TOKENS ── -->
-    <Color x:Key="ColorAppBg">#0F141C</Color>
-    <Color x:Key="ColorCardBg">#161D27</Color>
-    <Color x:Key="ColorCardBgAlt">#1C2432</Color>
-    <Color x:Key="ColorCardBorder">#253142</Color>
-    <Color x:Key="ColorCardBorderHover">#3B4D66</Color>
+    <!-- ── 1. BACKGROUND & SURFACE TOKENS (Sakin nötr siyah — Codex tarzı) ── -->
+    <Color x:Key="ColorAppBg">#0D0D0D</Color>
+    <Color x:Key="ColorCardBg">#151515</Color>
+    <Color x:Key="ColorCardBgAlt">#1B1B1B</Color>
+    <Color x:Key="ColorCardBorder">#262626</Color>
+    <Color x:Key="ColorCardBorderHover">#3A3A3A</Color>
 
-    <Color x:Key="ColorSidebarBg">#0A0D14</Color>
-    <Color x:Key="ColorSidebarHeader">#080B10</Color>
-    <Color x:Key="ColorSidebarBorder">#1E2634</Color>
-    <Color x:Key="ColorSidebarHover">#171F2C</Color>
-    <Color x:Key="ColorSidebarActive">#C41E1E</Color>
+    <Color x:Key="ColorSidebarBg">#111111</Color>
+    <Color x:Key="ColorSidebarHeader">#0D0D0D</Color>
+    <Color x:Key="ColorSidebarBorder">#232323</Color>
+    <Color x:Key="ColorSidebarHover">#1E1E1E</Color>
+    <Color x:Key="ColorSidebarActive">#333333</Color>
 
     <!-- ── 2. PRIMARY BRAND ACCENT TOKENS (BITDEFENDER BRAND RED #C41E1E) ── -->
     <Color x:Key="ColorBrandPrimary">#C41E1E</Color>
@@ -31,15 +31,32 @@
     <Color x:Key="ColorBrandMinimal">#1FC41E1E</Color>      <!-- ~12% Opacity Red on Dark Navy -->
     <Color x:Key="ColorBrandFocusRing">#80C41E1E</Color>
 
+    <!-- Action Card Pastel Tokens (Dark Theme) -->
+    <Color x:Key="ColorPastelBlueBg">#172554</Color>
+    <Color x:Key="ColorPastelBlueBorder">#1E3A8A</Color>
+    <Color x:Key="ColorPastelBlueIcon">#60A5FA</Color>
+
+    <Color x:Key="ColorPastelPurpleBg">#2E1065</Color>
+    <Color x:Key="ColorPastelPurpleBorder">#3B0764</Color>
+    <Color x:Key="ColorPastelPurpleIcon">#A78BFA</Color>
+
+    <Color x:Key="ColorPastelGreenBg">#064E3B</Color>
+    <Color x:Key="ColorPastelGreenBorder">#065F46</Color>
+    <Color x:Key="ColorPastelGreenIcon">#34D399</Color>
+
+    <Color x:Key="ColorPastelOrangeBg">#431407</Color>
+    <Color x:Key="ColorPastelOrangeBorder">#7C2D12</Color>
+    <Color x:Key="ColorPastelOrangeIcon">#FB923C</Color>
+
     <!-- Legacy / Compatibility Alias -->
     <Color x:Key="ColorAccent">#C41E1E</Color>
     <Color x:Key="ColorAccentHover">#D92B2B</Color>
     <Color x:Key="ColorAccentLight">#1FC41E1E</Color>
 
-    <!-- ── 3. TYPOGRAPHY TOKENS (CALM HIGH-CONTRAST NEUTRALS) ── -->
-    <Color x:Key="ColorTextPrimary">#F8FAFC</Color>
-    <Color x:Key="ColorTextSecondary">#94A3B8</Color>
-    <Color x:Key="ColorTextMuted">#64748B</Color>
+    <!-- ── 3. TYPOGRAPHY TOKENS (NÖTR GRİLER — MAVİ TON YOK) ── -->
+    <Color x:Key="ColorTextPrimary">#EDEDED</Color>
+    <Color x:Key="ColorTextSecondary">#A0A0A0</Color>
+    <Color x:Key="ColorTextMuted">#6B6B6B</Color>
     <Color x:Key="ColorTextOnAccent">#FFFFFF</Color>
     <Color x:Key="ColorTextOnDark">#FFFFFF</Color>
 
@@ -102,6 +119,24 @@
     <SolidColorBrush x:Key="BrushSidebarBg" Color="{StaticResource ColorSidebarBg}"/>
     <SolidColorBrush x:Key="BrushSidebarHeader" Color="{StaticResource ColorSidebarHeader}"/>
     <SolidColorBrush x:Key="BrushSidebarBorder" Color="{StaticResource ColorSidebarBorder}"/>
+    <SolidColorBrush x:Key="BrushSidebarHover" Color="{StaticResource ColorSidebarHover}"/>
+
+    <!-- Action Card Pastel Brushes (Dark Theme) -->
+    <SolidColorBrush x:Key="BrushPastelBlueBg" Color="{StaticResource ColorPastelBlueBg}"/>
+    <SolidColorBrush x:Key="BrushPastelBlueBorder" Color="{StaticResource ColorPastelBlueBorder}"/>
+    <SolidColorBrush x:Key="BrushPastelBlueIcon" Color="{StaticResource ColorPastelBlueIcon}"/>
+
+    <SolidColorBrush x:Key="BrushPastelPurpleBg" Color="{StaticResource ColorPastelPurpleBg}"/>
+    <SolidColorBrush x:Key="BrushPastelPurpleBorder" Color="{StaticResource ColorPastelPurpleBorder}"/>
+    <SolidColorBrush x:Key="BrushPastelPurpleIcon" Color="{StaticResource ColorPastelPurpleIcon}"/>
+
+    <SolidColorBrush x:Key="BrushPastelGreenBg" Color="{StaticResource ColorPastelGreenBg}"/>
+    <SolidColorBrush x:Key="BrushPastelGreenBorder" Color="{StaticResource ColorPastelGreenBorder}"/>
+    <SolidColorBrush x:Key="BrushPastelGreenIcon" Color="{StaticResource ColorPastelGreenIcon}"/>
+
+    <SolidColorBrush x:Key="BrushPastelOrangeBg" Color="{StaticResource ColorPastelOrangeBg}"/>
+    <SolidColorBrush x:Key="BrushPastelOrangeBorder" Color="{StaticResource ColorPastelOrangeBorder}"/>
+    <SolidColorBrush x:Key="BrushPastelOrangeIcon" Color="{StaticResource ColorPastelOrangeIcon}"/>
 
     <!-- Brand Accent Brushes -->
     <SolidColorBrush x:Key="BrushBrandPrimary" Color="{StaticResource ColorBrandPrimary}"/>
@@ -163,11 +198,11 @@
     <SolidColorBrush x:Key="BrushStatusBlue" Color="{StaticResource ColorStatusInfo}"/>
 
     <!-- ── 5. TITLEBAR HIGH CONTRAST BRUSHES (DARK) ── -->
-    <SolidColorBrush x:Key="TitleBarButtonForeground" Color="#F8FAFC"/>
+    <SolidColorBrush x:Key="TitleBarButtonForeground" Color="#EDEDED"/>
     <SolidColorBrush x:Key="TitleBarButtonPointerOverForeground" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="TitleBarButtonPointerOverBackground" Color="#161D27"/>
+    <SolidColorBrush x:Key="TitleBarButtonPointerOverBackground" Color="#1C1C1C"/>
     <SolidColorBrush x:Key="TitleBarButtonPressedForeground" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="TitleBarButtonPressedBackground" Color="#253142"/>
+    <SolidColorBrush x:Key="TitleBarButtonPressedBackground" Color="#262626"/>
     <SolidColorBrush x:Key="TitleBarCloseButtonPointerOverBackground" Color="#EF4444"/>
     <SolidColorBrush x:Key="TitleBarCloseButtonPointerOverForeground" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="TitleBarCloseButtonPressedBackground" Color="#DC2626"/>
@@ -183,20 +218,29 @@
     <SolidColorBrush x:Key="SystemAccentColorSecondaryBrush" Color="{StaticResource ColorBrandHover}"/>
     <SolidColorBrush x:Key="SystemAccentColorTertiaryBrush" Color="{StaticResource ColorBrandPressed}"/>
 
-    <!-- NavigationView Control Brushes (Deep Charcoal Sidebar with Crimson Active) -->
+    <!-- NavigationView Control Brushes (Nötr koyu sidebar, sakin gri seçim) -->
     <SolidColorBrush x:Key="NavigationViewPaneBackground" Color="{StaticResource ColorSidebarBg}"/>
     <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="{StaticResource ColorSidebarBg}"/>
     <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="{StaticResource ColorSidebarBg}"/>
     <SolidColorBrush x:Key="NavigationViewContentBackground" Color="{StaticResource ColorAppBg}"/>
     <SolidColorBrush x:Key="NavigationViewContentGridBackground" Color="{StaticResource ColorAppBg}"/>
-    <SolidColorBrush x:Key="NavigationViewItemForeground" Color="#94A3B8"/>
+    <SolidColorBrush x:Key="NavigationViewItemForeground" Color="#A0A0A0"/>
     <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOver" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="NavigationViewItemForegroundPressed" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="NavigationViewItemHeaderForeground" Color="#64748B"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="#171F2C"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#1C2432"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="#2A1215"/>
-    <SolidColorBrush x:Key="NavigationViewItemSelectedBackground" Color="#2A1215"/>
+    <SolidColorBrush x:Key="NavigationViewItemHeaderForeground" Color="#6B6B6B"/>
+    <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="#1C1C1C"/>
+    <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#222222"/>
+    <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="#2A2A2A"/>
+    <SolidColorBrush x:Key="NavigationViewItemSelectedBackground" Color="#2A2A2A"/>
+
+    <!-- ── 7. CODEX CLOUD TERMINAL LOGO TOKENS (DARK) ── -->
+    <BitmapImage x:Key="ImageCloudLogoBase" UriSource="pack://application:,,,/UltronDefender;component/Resources/Images/codex_cloud_base.png"/>
+    <BitmapImage x:Key="ImageCloudCursorLine" UriSource="pack://application:,,,/UltronDefender;component/Resources/Images/codex_cursor_line.png"/>
+    <Color x:Key="ColorCloudGlow">#3B82F6</Color>
+    <Color x:Key="ColorCloudCursorGlow">#60A5FA</Color>
+    <SolidColorBrush x:Key="BrushCloudAura" Color="#1E3A8A" Opacity="0.38"/>
+    <SolidColorBrush x:Key="BrushCloudLogo" Color="#3B82F6"/>
+    <SolidColorBrush x:Key="BrushCloudCursor" Color="#60A5FA"/>
 
 </ResourceDictionary>

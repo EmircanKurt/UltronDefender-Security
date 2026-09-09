@@ -7,12 +7,30 @@ namespace AegisPC.Core.Helpers;
 public static class PathHelper
 {
     public static string CanonicalizePath(string path) => Path.GetFullPath(path).TrimEnd('\\');
-    public static bool IsSystemPath(string path) => path.StartsWith(KnownPaths.WindowsDir, StringComparison.OrdinalIgnoreCase);
-    public static bool IsKnownSafePath(string path) => IsSystemPath(path) || 
-                                                       path.StartsWith(KnownPaths.ProgramFiles, StringComparison.OrdinalIgnoreCase) || 
-                                                       path.StartsWith(KnownPaths.ProgramFilesX86, StringComparison.OrdinalIgnoreCase);
-    public static bool IsTempPath(string path) => path.StartsWith(KnownPaths.Temp, StringComparison.OrdinalIgnoreCase);
-    public static bool IsUserDownloadsPath(string path) => path.StartsWith(KnownPaths.Downloads, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Returns true only when path is root or a child of root at a directory boundary.</summary>
+    public static bool IsPathUnder(string path, string root)
+    {
+        if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(root)) return false;
+        try
+        {
+            var canonicalPath = Path.GetFullPath(path).TrimEnd('\\');
+            var canonicalRoot = Path.GetFullPath(root).TrimEnd('\\');
+            return canonicalPath.Equals(canonicalRoot, StringComparison.OrdinalIgnoreCase) ||
+                   canonicalPath.StartsWith(canonicalRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    public static bool IsSystemPath(string path) => IsPathUnder(path, KnownPaths.WindowsDir);
+    public static bool IsKnownSafePath(string path) => IsSystemPath(path) ||
+                                                       IsPathUnder(path, KnownPaths.ProgramFiles) ||
+                                                       IsPathUnder(path, KnownPaths.ProgramFilesX86);
+    public static bool IsTempPath(string path) => IsPathUnder(path, KnownPaths.Temp);
+    public static bool IsUserDownloadsPath(string path) => IsPathUnder(path, KnownPaths.Downloads);
 
     public static bool ContainsReparsePoint(string path)
     {
@@ -43,23 +61,15 @@ public static class PathHelper
                path.StartsWith(KnownPaths.LocalAppData, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static readonly string[] GameRepackKeywords = new[]
-    {
-        "beamng", "insaneramzes", "fitgirl", "dodi", "codex", "skidrow", "flt", "rune", 
-        "goldberg", "empress", "tenoke", "razor1911", "cpy", "reloaded", "plaza",
-        "steamapps", "epic games", "riot games", "ubisoft", "rockstar games", "gog games", "gog galaxy",
-        "ea games", "origin games", "battle.net", "xboxgames", @"\games\", @"\oyunlar\", @"\repack\",
-        "modorganizer", "vortex", "curseforge", "minecraft", ".minecraft", "roblox", "unity", "unreal"
-    };
-
+    /// <summary>
+    /// Verifies whether a file path is located within a recognized legitimate game library directory.
+    /// In accordance with Rule 7.1 (No Magic Strings), arbitrary pirate repack keywords (e.g. 'fitgirl', 'dodi')
+    /// are strictly excluded to prevent malware from obtaining security exemptions via directory naming.
+    /// </summary>
     public static bool IsGameOrRepackDirectory(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
-        var lower = path.ToLowerInvariant();
-        foreach (var kw in GameRepackKeywords)
-        {
-            if (lower.Contains(kw, StringComparison.OrdinalIgnoreCase)) return true;
-        }
+        // A directory name is attacker-controlled input and cannot grant a security exemption.
         return false;
     }
 

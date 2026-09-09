@@ -37,6 +37,14 @@ namespace AegisPC.Security.RealTime
     {
         private static readonly ConcurrentDictionary<string, bool> _ignoredWatchlist = new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Otomatik (zamanlanmış) tarama sürüyor mu? App.xaml.cs ScanCompleted bildirimi bu bayrakla susturulur.
+        /// </summary>
+        public static bool IsAutomaticScanInProgress { get; private set; }
+
+        // Zaten bildirilmiş bulgu yolları: aynı statik bulgu her 20 dakikalık taramada tekrar bildirilmez
+        private static readonly ConcurrentDictionary<string, byte> _notifiedFindingPaths = new(StringComparer.OrdinalIgnoreCase);
+
         public static void AddToIgnoredWatchlist(string path)
         {
             if (!string.IsNullOrEmpty(path))
@@ -101,18 +109,16 @@ namespace AegisPC.Security.RealTime
                 if (_isActive) return;
                 _isActive = true;
 
-                // 1. Setup Watchers for Desktop, Downloads, and Temp Drop Zones
+                // 1. Setup Watchers for Desktop and Downloads Drop Zones (Temp excluded to prevent I/O storm & spam)
                 var watchPaths = new[]
                 {
                     KnownPaths.Downloads,
-                    KnownPaths.Temp,
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
                     Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
                     Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
                     Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
                     Path.Combine(KnownPaths.UserProfile, "Desktop"),
-                    Path.Combine(KnownPaths.UserProfile, "OneDrive", "Desktop"),
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp")
+                    Path.Combine(KnownPaths.UserProfile, "OneDrive", "Desktop")
                 }.Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var dir in watchPaths)
@@ -199,23 +205,47 @@ namespace AegisPC.Security.RealTime
             }
         }
 
+        private void PruneRecentlyScanned()
+        {
+            if (_recentlyScanned.Count > 1000)
+            {
+                var threshold = DateTime.UtcNow.AddMinutes(-10);
+                foreach (var kvp in _recentlyScanned)
+                {
+                    if (kvp.Value < threshold)
+                    {
+                        _recentlyScanned.TryRemove(kvp.Key, out _);
+                    }
+                }
+            }
+        }
+
+        private static void PruneNotifiedFindingPaths()
+        {
+            if (_notifiedFindingPaths.Count > 5000)
+            {
+                _notifiedFindingPaths.Clear();
+            }
+        }
+
         private async void OnFileCreatedOrChanged(object sender, FileSystemEventArgs e)
         {
-            if (!FileScannerService.IsInspectableCandidate(e.FullPath)) return;
-
-            // Debounce rapid writes
-            if (_recentlyScanned.TryGetValue(e.FullPath, out var lastScanned) &&
-                (DateTime.UtcNow - lastScanned).TotalSeconds < 4)
-            {
-                return;
-            }
-            _recentlyScanned[e.FullPath] = DateTime.UtcNow;
-
-            // Wait a brief moment for file write completion / browser lock release
-            await Task.Delay(500);
-
             try
             {
+                if (!FileScannerService.IsInspectableCandidate(e.FullPath)) return;
+
+                // Debounce rapid writes
+                if (_recentlyScanned.TryGetValue(e.FullPath, out var lastScanned) &&
+                    (DateTime.UtcNow - lastScanned).TotalSeconds < 4)
+                {
+                    return;
+                }
+                _recentlyScanned[e.FullPath] = DateTime.UtcNow;
+                PruneRecentlyScanned();
+
+                // Wait a brief moment for file write completion / browser lock release
+                await Task.Delay(500);
+
                 if (!File.Exists(e.FullPath)) return;
 
                 // Watchdog on ignored items: If an ignored file or folder creates/modifies files, trigger instant quarantine
@@ -261,24 +291,32 @@ namespace AegisPC.Security.RealTime
                 if (_scanCoordinator.IsScanning) return; // Skip if a scan is already actively running
 
                 _logger?.LogInformation("Starting 20-minute periodic background quick scan...");
-                var result = await _scanCoordinator.StartScanAsync(ScanType.Quick);
-                if (result != null)
+                IsAutomaticScanInProgress = true;
+                try
                 {
-                    _scheduleState.LastQuickScanTime = DateTime.UtcNow;
-                    SaveScheduleState();
+                    var result = await _scanCoordinator.StartScanAsync(ScanType.Quick);
+                    if (result != null)
+                    {
+                        _scheduleState.LastQuickScanTime = DateTime.UtcNow;
+                        SaveScheduleState();
 
-                    if (result.Findings.Count > 0)
-                    {
-                        OnNotificationRaised?.Invoke(
-                            "🚨 Ultron Defender (Antivirüs Programı): Otomatik Taramada Tehdit Bulundu!",
-                            $"20 dakikalık arka plan taramasında {result.Findings.Count} adet riskli tehdit tespit edildi. Karantinaya almak için tıklayın.");
+                        PruneNotifiedFindingPaths();
+                        // Yalnızca DAHA ÖNCE BİLDİRİLMEMİŞ bulgular için bildirim: statik bulgular sessiz kalır
+                        int newCount = result.Findings
+                            .Where(f => !string.IsNullOrEmpty(f.ObjectPath) && _notifiedFindingPaths.TryAdd(f.ObjectPath, 0))
+                            .Count();
+
+                        if (newCount > 0)
+                        {
+                            OnNotificationRaised?.Invoke(
+                                "🚨 Ultron Defender (Antivirüs Programı): Otomatik Taramada Yeni Tehdit Bulundu!",
+                                $"Arka plan taramasında {newCount} adet yeni riskli tehdit tespit edildi. Detaylar Güvenlik Merkezinde.");
+                        }
                     }
-                    else
-                    {
-                        OnNotificationRaised?.Invoke(
-                            "🛡️ Ultron Defender (Antivirüs Programı): Rutin Tarama Temiz",
-                            $"20 dakikalık otomatik arka plan taraması tamamlandı ({result.ScannedFiles:N0} dosya). Sisteminiz tamamen güvende.");
-                    }
+                }
+                finally
+                {
+                    IsAutomaticScanInProgress = false;
                 }
             }
             catch (Exception ex)
@@ -298,32 +336,32 @@ namespace AegisPC.Security.RealTime
                 if (_scanCoordinator.IsScanning) return;
 
                 _logger?.LogInformation("Running Daily Full Scan (Catchup: {IsCatchup}) for date {Date}...", isStartupCatchup, today);
-                
-                if (isStartupCatchup)
+
+                IsAutomaticScanInProgress = true;
+                try
                 {
-                    OnNotificationRaised?.Invoke(
-                        "🛡️ Günlük Tam Tarama Başlatılıyor",
-                        "Bugünkü planlanmış tam tarama henüz yapılmadığından arka planda otomatik olarak başlatılıyor...");
+                    var result = await _scanCoordinator.StartScanAsync(ScanType.Full);
+                    if (result != null)
+                    {
+                        _scheduleState.LastFullScanDate = DateTime.Today;
+                        SaveScheduleState();
+
+                        PruneNotifiedFindingPaths();
+                        int newCount = result.Findings
+                            .Where(f => !string.IsNullOrEmpty(f.ObjectPath) && _notifiedFindingPaths.TryAdd(f.ObjectPath, 0))
+                            .Count();
+
+                        if (newCount > 0)
+                        {
+                            OnNotificationRaised?.Invoke(
+                                "🚨 Ultron Defender (Antivirüs Programı): Günlük Tam Tarama - Yeni Tehdit Bulundu!",
+                                $"Tam taramada {newCount} adet yeni şüpheli tehdit tespit edildi. Lütfen inceleyin.");
+                        }
+                    }
                 }
-
-                var result = await _scanCoordinator.StartScanAsync(ScanType.Full);
-                if (result != null)
+                finally
                 {
-                    _scheduleState.LastFullScanDate = DateTime.Today;
-                    SaveScheduleState();
-
-                    if (result.Findings.Count > 0)
-                    {
-                        OnNotificationRaised?.Invoke(
-                            "🚨 Günlük Tam Tarama Tamamlandı - Tehdit Bulundu!",
-                            $"Tam taramada {result.Findings.Count} adet şüpheli tehdit tespit edildi. Lütfen inceleyin.");
-                    }
-                    else
-                    {
-                        OnNotificationRaised?.Invoke(
-                            "🛡️ Günlük Tam Tarama Tamamlandı",
-                            $"Tüm sabit diskler başarıyla tarandı ({result.ScannedFiles:N0} dosya). Sisteminiz tamamen temiz.");
-                    }
+                    IsAutomaticScanInProgress = false;
                 }
             }
             catch (Exception ex)

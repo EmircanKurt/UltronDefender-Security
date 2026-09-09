@@ -26,6 +26,7 @@ namespace AegisPC.Security.Scanning
         private readonly ConcurrentDictionary<string, byte> _bypassDomains = new(StringComparer.OrdinalIgnoreCase);
         private readonly string _storageFilePath;
         private readonly object _diskLock = new();
+        private const int MaxCustomDomainRules = 10000;
 
         // Curated Top Brand Names targeted by phishing
         private static readonly string[] TargetedBrands = new[]
@@ -261,6 +262,7 @@ namespace AegisPC.Security.Scanning
         {
             if (string.IsNullOrWhiteSpace(domain)) return false;
             var host = ExtractHost(domain);
+            if (!_bypassDomains.ContainsKey(host) && _bypassDomains.Count >= MaxCustomDomainRules) return false;
             _bypassDomains.TryAdd(host, 0);
             SaveRulesToDisk();
             return true;
@@ -281,6 +283,7 @@ namespace AegisPC.Security.Scanning
         {
             if (string.IsNullOrWhiteSpace(domain)) return false;
             var host = ExtractHost(domain);
+            if (!_blockedDomains.ContainsKey(host) && _blockedDomains.Count >= MaxCustomDomainRules) return false;
             _blockedDomains[host] = reason;
             SaveRulesToDisk();
             return true;

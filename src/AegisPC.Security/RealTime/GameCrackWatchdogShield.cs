@@ -48,15 +48,8 @@ namespace AegisPC.Security.RealTime
 
             if (GameCrackClassifier.IsGameCrackOrEmulator(executablePath)) return true;
 
-            var lower = executablePath.ToLowerInvariant();
-            return lower.Contains(@"\games\") ||
-                   lower.Contains(@"\oyunlar\") ||
-                   lower.Contains("-steam") ||
-                   lower.Contains(@"\steamapps\") ||
-                   lower.Contains(@"\bin64\") ||
-                   lower.Contains("beamng") ||
-                   lower.Contains("gta5") ||
-                   lower.Contains("cyberpunk");
+            return PathHelper.IsGameOrRepackDirectory(executablePath) ||
+                   executablePath.Contains(@"\steamapps\", StringComparison.OrdinalIgnoreCase);
         }
 
         public WatchdogEvaluationResult EvaluateActivity(

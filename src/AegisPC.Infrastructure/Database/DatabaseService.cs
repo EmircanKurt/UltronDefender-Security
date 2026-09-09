@@ -19,30 +19,54 @@ namespace AegisPC.Infrastructure.Database
         /// <summary>
         /// Initializes a new instance of the <see cref="DatabaseService"/> class.
         /// </summary>
-        public DatabaseService()
+        public DatabaseService(string? customDbPath = null)
         {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var aegisDir = Path.Combine(appData, "AegisPC");
-            Directory.CreateDirectory(aegisDir);
+            if (!string.IsNullOrEmpty(customDbPath))
+            {
+                _dbPath = customDbPath;
+                var dir = Path.GetDirectoryName(_dbPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+            }
+            else
+            {
+                var commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                var aegisDir = Path.Combine(commonAppData, "UltronDefender");
+                if (!Directory.Exists(aegisDir))
+                {
+                    Directory.CreateDirectory(aegisDir);
+                }
 
-            _dbPath = Path.Combine(aegisDir, "aegis.db");
+                _dbPath = Path.Combine(aegisDir, "aegis.db");
+            }
+
             _connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = _dbPath,
                 Pooling = true,
-                ForeignKeys = true
+                ForeignKeys = true,
+                DefaultTimeout = 5
             }.ToString();
         }
 
         public string GetConnectionString() => _connectionString;
 
         /// <summary>
-        /// Gets a new SQLite database connection.
+        /// Gets a new SQLite database connection with WAL mode and busy timeout enabled.
         /// </summary>
         public SqliteConnection GetConnection()
         {
             var connection = new SqliteConnection(_connectionString);
             connection.Open();
+            try
+            {
+                using var pragma = connection.CreateCommand();
+                pragma.CommandText = "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;";
+                pragma.ExecuteNonQuery();
+            }
+            catch { }
             return connection;
         }
 

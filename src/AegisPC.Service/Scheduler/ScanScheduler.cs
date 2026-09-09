@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
@@ -46,10 +46,15 @@ namespace AegisPC.Service.Scheduler
                     }
 
                     var now = DateTime.Now;
-                    if (ScanScheduleEvaluator.IsDailyScanDue(now, settings.ScheduledScanHour, _lastRunDate))
+                    bool isDue = settings.ScheduledScanIntervalHours > 0 && settings.ScheduledScanIntervalHours < 24
+                        ? ScanScheduleEvaluator.IsIntervalScanDue(now, settings.ScheduledScanIntervalHours, _lastRunDate)
+                        : ScanScheduleEvaluator.IsDailyScanDue(now, settings.ScheduledScanHour, _lastRunDate);
+
+                    if (isDue)
                     {
-                        _logger.LogInformation("Triggering scheduled routine quick scan at hour {Hour}...", now.Hour);
-                        _lastRunDate = now.Date;
+                        _logger.LogInformation("Triggering scheduled routine quick scan (Interval: {Interval}h, Hour: {Hour})...", 
+                            settings.ScheduledScanIntervalHours, now.Hour);
+                        _lastRunDate = now;
 
                         try
                         {

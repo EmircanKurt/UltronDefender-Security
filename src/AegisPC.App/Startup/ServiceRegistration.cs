@@ -83,11 +83,16 @@ namespace AegisPC.App.Startup
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.ProcessBehaviorDetector>();
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.MemoryBehaviorDetector>();
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.NetworkBehaviorDetector>();
+            services.AddSingleton<AegisPC.Security.Detection.YaraEngine.IYaraEngine, AegisPC.Security.Detection.YaraEngine.YaraEngine>();
+            services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.YaraDetector>();
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectionHub, AegisPC.Security.Detection.DetectionHub>();
             services.AddSingleton<AegisPC.Core.Localization.ILocalizationService>(AegisPC.Core.Localization.LocalizationService.Instance);
             services.AddSingleton<IAllowlistService, AllowlistService>();
+            services.AddSingleton<AegisPC.Security.Scanning.IFileHashMatcher, AegisPC.Security.Scanning.FileHashMatcher>();
             services.AddSingleton<IQuarantineService, QuarantineService>();
             services.AddSingleton<ISecurityFindingService, SecurityFindingService>();
+            services.AddSingleton<IScanResourceManager, AdaptiveScanResourceManager>();
+            services.AddSingleton<IScanSessionManager, ScanSessionManager>();
             services.AddSingleton<IFileScanner, FileScannerService>();
             services.AddSingleton<IScanCoordinatorService, ScanCoordinatorService>();
             services.AddSingleton<AegisPC.Contracts.Services.IStartupSecuritySweepService, AegisPC.Security.Scanning.StartupSecuritySweepService>();
@@ -99,6 +104,7 @@ namespace AegisPC.App.Startup
             services.AddSingleton<AegisPC.Security.RealTime.IRansomwareProtectionEngine, AegisPC.Security.RealTime.RansomwareProtectionEngine>();
             services.AddSingleton<IAmsiScanService, AegisPC.Security.Scanning.AmsiScanService>();
             services.AddSingleton<AegisPC.Contracts.Services.IEtwProcessMonitorService, AegisPC.Security.RealTime.EtwProcessMonitorService>();
+            services.AddSingleton<AegisPC.Contracts.Services.IEtwPreExecProtectionService, AegisPC.Security.RealTime.EtwPreExecProtectionService>();
             services.AddSingleton<AegisPC.Contracts.AntiEvasion.IMemoryPatternScanner, AegisPC.Security.AntiEvasion.MemoryPatternScanner>();
             services.AddSingleton<IWebShieldService, WebShieldService>();
             services.AddSingleton<IDnsProtectionService, AegisPC.Security.RealTime.DnsProtectionService>();
@@ -129,26 +135,29 @@ namespace AegisPC.App.Startup
             services.AddSingleton<HealthScoringEngine>();
             services.AddSingleton<IAiExplanationService, AiExplanationService>();
 
-            // ViewModels (Singletons so state, active scans, and loaded data are preserved during navigation)
+            // ViewModels:
+            // 1. Core State & Koordinatör ViewModels (Sayfalar arası gezinmede durumun korunması için Singleton)
             services.AddSingleton<MainViewModel>();
             services.AddSingleton<DashboardViewModel>();
             services.AddSingleton<SecurityViewModel>();
             services.AddSingleton<ScanViewModel>();
-            services.AddSingleton<ProcessListViewModel>();
-            services.AddSingleton<PerformanceViewModel>();
-            services.AddSingleton<StartupManagerViewModel>();
-            services.AddSingleton<ApplicationsViewModel>();
-            services.AddSingleton<BrowserSecurityViewModel>();
-            services.AddSingleton<WindowsEventsViewModel>();
-            services.AddSingleton<CrashAnalysisViewModel>();
-            services.AddSingleton<QuarantineViewModel>();
-            services.AddSingleton<RecommendationsViewModel>();
-            services.AddSingleton<HistoryViewModel>();
             services.AddSingleton<SettingsViewModel>();
             services.AddSingleton<RansomwareShieldViewModel>();
             services.AddSingleton<NetworkProtectionViewModel>();
             services.AddSingleton<ParentalControlsViewModel>();
-            services.AddSingleton<IncidentCenterViewModel>();
+            services.AddSingleton<QuarantineViewModel>();
+
+            // 2. Ağır Veri/Olay Tutan Teşhis ViewModels (Her sayfa açılışında taze veri, ayrılınca GC temizliği için Transient)
+            services.AddTransient<ProcessListViewModel>();
+            services.AddTransient<PerformanceViewModel>();
+            services.AddTransient<StartupManagerViewModel>();
+            services.AddTransient<ApplicationsViewModel>();
+            services.AddTransient<BrowserSecurityViewModel>();
+            services.AddTransient<WindowsEventsViewModel>();
+            services.AddTransient<CrashAnalysisViewModel>();
+            services.AddTransient<RecommendationsViewModel>();
+            services.AddTransient<HistoryViewModel>();
+            services.AddTransient<IncidentCenterViewModel>();
 
             // Views
             services.AddTransient<DashboardView>();
@@ -170,6 +179,7 @@ namespace AegisPC.App.Startup
             services.AddTransient<NetworkProtectionView>();
             services.AddTransient<ParentalControlsView>();
             services.AddTransient<IncidentCenterView>();
+            services.AddTransient<SplashWindow>();
 
             // Service IPC & Tray
             services.AddSingleton<AegisPC.ServiceContracts.IServiceIpcClient, AegisPC.App.Services.ServiceIpcClient>();

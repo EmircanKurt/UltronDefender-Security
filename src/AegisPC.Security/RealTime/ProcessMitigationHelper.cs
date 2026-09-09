@@ -20,7 +20,94 @@ namespace AegisPC.Security.RealTime
 
         [DllImport("ntdll.dll", SetLastError = true)]
         private static extern int NtResumeProcess(IntPtr processHandle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, int processId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        private const uint PROCESS_SUSPEND_RESUME = 0x0800;
+        private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+        private const uint PROCESS_TERMINATE = 0x0001;
         #endregion
+
+        /// <summary>
+        /// Belirtilen süreç kimliğini (PID) işletim sistemi düzeyinde açar ve NtSuspendProcess ile yürütmesini askıya alır.
+        /// Başarılı olursa açık process handle'ını döndürür (işlem bitince SafeCloseHandle ile kapatılmalıdır).
+        /// </summary>
+        public static bool TrySuspendProcessById(int processId, out IntPtr processHandle)
+        {
+            processHandle = IntPtr.Zero;
+            if (processId <= 4) return false;
+
+            try
+            {
+                processHandle = OpenProcess(PROCESS_SUSPEND_RESUME | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE, false, processId);
+                if (processHandle != IntPtr.Zero)
+                {
+                    int status = NtSuspendProcess(processHandle);
+                    if (status == 0)
+                    {
+                        return true;
+                    }
+
+                    CloseHandle(processHandle);
+                    processHandle = IntPtr.Zero;
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Askıya alınmış bir sürecin yürütmesini devam ettirir (Resume).
+        /// Mevcut handle verilmişse onu kullanır; verilmemişse süreci açıp resume eder.
+        /// </summary>
+        public static bool TryResumeProcessById(int processId, IntPtr processHandle = default)
+        {
+            try
+            {
+                if (processHandle != IntPtr.Zero)
+                {
+                    return NtResumeProcess(processHandle) == 0;
+                }
+
+                if (processId <= 4) return false;
+
+                IntPtr hProc = OpenProcess(PROCESS_SUSPEND_RESUME, false, processId);
+                if (hProc != IntPtr.Zero)
+                {
+                    try
+                    {
+                        return NtResumeProcess(hProc) == 0;
+                    }
+                    finally
+                    {
+                        CloseHandle(hProc);
+                    }
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Bir Win32 tanıtıcısını (Handle) güvenli şekilde serbest bırakır.
+        /// </summary>
+        public static void SafeCloseHandle(IntPtr handle)
+        {
+            try
+            {
+                if (handle != IntPtr.Zero)
+                {
+                    CloseHandle(handle);
+                }
+            }
+            catch { }
+        }
 
         /// <summary>
         /// Bir sürecin CPU yürütmesini NT çekirdek seviyesinde askıya alarak dondurur.

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows;
 using AegisPC.App.Services;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Enums;
@@ -12,13 +14,18 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace AegisPC.App.ViewModels
 {
-    public partial class IncidentCenterViewModel : ObservableObject
+    public partial class IncidentCenterViewModel : ObservableObject, IDisposable
     {
         private readonly IBehaviorEngine? _behaviorEngine;
         private readonly ISecurityFindingService? _findingService;
         private readonly IScanCoordinatorService? _scanCoordinator;
         private readonly IQuarantineService? _quarantineService;
         private readonly IWindowsToastNotificationService? _toastService;
+        private readonly ISettingsService? _settingsService;
+        private readonly IAllowlistService? _allowlistService;
+        private readonly HashSet<string> _dismissedIncidentIds = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Action<SecurityIncident>? _incidentCreatedHandler;
+        private readonly Action<ScanResult>? _scanCompletedHandler;
 
         [ObservableProperty] private string pageTitle = "Olay ve Tehdit Bildirim Merkezi (Incident Center)";
         [ObservableProperty] private ObservableCollection<SecurityIncident> incidents = new();
@@ -33,21 +40,43 @@ namespace AegisPC.App.ViewModels
             ISecurityFindingService? findingService = null,
             IScanCoordinatorService? scanCoordinator = null,
             IQuarantineService? quarantineService = null,
-            IWindowsToastNotificationService? toastService = null)
+            IWindowsToastNotificationService? toastService = null,
+            ISettingsService? settingsService = null,
+            IAllowlistService? allowlistService = null)
         {
             _behaviorEngine = behaviorEngine;
             _findingService = findingService;
             _scanCoordinator = scanCoordinator;
             _quarantineService = quarantineService;
             _toastService = toastService;
+            _settingsService = settingsService;
+            _allowlistService = allowlistService;
+
+            if (_settingsService != null)
+            {
+                try
+                {
+                    var saved = _settingsService.GetSetting<List<string>>("DismissedIncidentIds", new List<string>());
+                    if (saved != null)
+                    {
+                        foreach (var id in saved)
+                        {
+                            if (!string.IsNullOrWhiteSpace(id)) _dismissedIncidentIds.Add(id);
+                        }
+                    }
+                }
+                catch { }
+            }
 
             if (_behaviorEngine != null)
             {
-                _behaviorEngine.OnIncidentCreated += (incident) =>
+                _incidentCreatedHandler = (incident) =>
                 {
-                    App.Current?.Dispatcher?.Invoke(() =>
+                    Action action = () =>
                     {
-                        if (!Incidents.Any(i => i.IncidentId == incident.IncidentId))
+                        if (!_dismissedIncidentIds.Contains(incident.IncidentId) &&
+                            (string.IsNullOrEmpty(incident.RootExecutablePath) || !_dismissedIncidentIds.Contains(incident.RootExecutablePath)) &&
+                            !Incidents.Any(i => i.IncidentId == incident.IncidentId))
                         {
                             Incidents.Insert(0, incident);
                             while (Incidents.Count > 100)
@@ -58,19 +87,42 @@ namespace AegisPC.App.ViewModels
                             ActiveIncidentCount = Incidents.Count(i => i.Status == "Active" || i.Status == "Contained");
                             if (SelectedIncident == null) SelectedIncident = incident;
                         }
-                    });
+                    };
+
+                    if (Application.Current?.Dispatcher != null && !Application.Current.Dispatcher.CheckAccess())
+                    {
+                        Application.Current.Dispatcher.InvokeAsync(action);
+                    }
+                    else
+                    {
+                        action();
+                    }
                 };
+                _behaviorEngine.OnIncidentCreated += _incidentCreatedHandler;
             }
 
             if (_scanCoordinator != null)
             {
-                _scanCoordinator.ScanCompleted += (result) =>
+                _scanCompletedHandler = (result) =>
                 {
                     _ = LoadIncidentsAsync();
                 };
+                _scanCoordinator.ScanCompleted += _scanCompletedHandler;
             }
 
             _ = LoadIncidentsAsync();
+        }
+
+        public void Dispose()
+        {
+            if (_behaviorEngine != null && _incidentCreatedHandler != null)
+            {
+                _behaviorEngine.OnIncidentCreated -= _incidentCreatedHandler;
+            }
+            if (_scanCoordinator != null && _scanCompletedHandler != null)
+            {
+                _scanCoordinator.ScanCompleted -= _scanCompletedHandler;
+            }
         }
 
         [RelayCommand]
@@ -88,7 +140,15 @@ namespace AegisPC.App.ViewModels
                     var activeList = await _behaviorEngine.GetActiveIncidentsAsync();
                     if (activeList != null)
                     {
-                        combinedList.AddRange(activeList);
+                        foreach (var inc in activeList)
+                        {
+                            if (inc.Status != "Remediated" &&
+                                !_dismissedIncidentIds.Contains(inc.IncidentId) &&
+                                (string.IsNullOrEmpty(inc.RootExecutablePath) || !_dismissedIncidentIds.Contains(inc.RootExecutablePath)))
+                            {
+                                combinedList.Add(inc);
+                            }
+                        }
                     }
                 }
 
@@ -100,6 +160,17 @@ namespace AegisPC.App.ViewModels
                     {
                         foreach (var f in findings)
                         {
+                            if (f.Status == FindingStatus.Resolved || f.Status == FindingStatus.Ignored || f.IsAllowlisted)
+                            {
+                                continue;
+                            }
+
+                            var incidentId = $"FIND-{(f.Id != Guid.Empty ? f.Id.ToString("N")[..8] : Guid.NewGuid().ToString("N")[..8])}".ToUpperInvariant();
+                            if (_dismissedIncidentIds.Contains(incidentId) || _dismissedIncidentIds.Contains(f.ObjectPath))
+                            {
+                                continue;
+                            }
+
                             if (!combinedList.Any(i => i.RootExecutablePath.Equals(f.ObjectPath, StringComparison.OrdinalIgnoreCase)))
                             {
                                 combinedList.Add(ConvertFindingToIncident(f));
@@ -113,6 +184,16 @@ namespace AegisPC.App.ViewModels
                 {
                     foreach (var f in _scanCoordinator.CurrentFindings)
                     {
+                        if (f.Status == FindingStatus.Resolved || f.Status == FindingStatus.Ignored || f.IsAllowlisted)
+                        {
+                            continue;
+                        }
+
+                        if (_dismissedIncidentIds.Contains(f.ObjectPath))
+                        {
+                            continue;
+                        }
+
                         if (!combinedList.Any(i => i.RootExecutablePath.Equals(f.ObjectPath, StringComparison.OrdinalIgnoreCase)))
                         {
                             combinedList.Add(ConvertFindingToIncident(f));
@@ -120,10 +201,47 @@ namespace AegisPC.App.ViewModels
                     }
                 }
 
-                // Sort by RiskScore Descending (Most dangerous first)
-                var sorted = combinedList.OrderByDescending(i => i.RiskScore).ToList();
+                // 4. Load Quarantined items if quarantine service is available
+                if (_quarantineService != null)
+                {
+                    try
+                    {
+                        var qItems = await _quarantineService.GetQuarantinedItemsAsync();
+                        if (qItems != null)
+                        {
+                            foreach (var q in qItems)
+                            {
+                                if (q.Status != QuarantineStatus.Quarantined) continue;
 
-                App.Current?.Dispatcher?.Invoke(() =>
+                                var quarId = $"QUAR-{q.Id:D4}";
+                                if (_dismissedIncidentIds.Contains(quarId) || _dismissedIncidentIds.Contains(q.OriginalPath))
+                                {
+                                    continue;
+                                }
+
+                                var matchingIncident = combinedList.FirstOrDefault(i =>
+                                    !string.IsNullOrEmpty(i.RootExecutablePath) &&
+                                    i.RootExecutablePath.Equals(q.OriginalPath, StringComparison.OrdinalIgnoreCase));
+
+                                if (matchingIncident != null)
+                                {
+                                    matchingIncident.Status = "Quarantined";
+                                    matchingIncident.ActionTaken = "Karantina Kasasına Kilitlendi (AES-256)";
+                                }
+                                else
+                                {
+                                    combinedList.Add(ConvertQuarantineToIncident(q));
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // Sort by RiskScore Descending (Most dangerous first)
+                var sorted = combinedList.OrderByDescending(i => i.RiskScore).ThenByDescending(i => i.CreatedAt).ToList();
+
+                Action updateAction = () =>
                 {
                     Incidents.Clear();
                     foreach (var inc in sorted)
@@ -149,7 +267,16 @@ namespace AegisPC.App.ViewModels
                     StatusMessage = HasNoIncidents 
                         ? "Aktif güvenlik olayı bulunmuyor. Sisteminiz koruma altında." 
                         : $"Toplam {Incidents.Count} güvenlik olayı ve tespit edilen tehdit kayıtlı ({ActiveIncidentCount} aktif).";
-                });
+                };
+
+                if (Application.Current?.Dispatcher != null && !Application.Current.Dispatcher.CheckAccess())
+                {
+                    Application.Current.Dispatcher.Invoke(updateAction);
+                }
+                else
+                {
+                    updateAction();
+                }
             }
             catch (Exception ex)
             {
@@ -204,23 +331,190 @@ namespace AegisPC.App.ViewModels
             };
         }
 
+        private SecurityIncident ConvertQuarantineToIncident(QuarantineEntry q)
+        {
+            return new SecurityIncident
+            {
+                IncidentId = $"QUAR-{q.Id:D4}",
+                CreatedAt = q.QuarantinedAt,
+                Title = !string.IsNullOrWhiteSpace(q.Reason) ? q.Reason : "Karantinaya Alınan Tehdit",
+                ThreatName = !string.IsNullOrWhiteSpace(q.Reason) ? q.Reason : "Zararlı / Şüpheli Dosya",
+                RootProcessName = q.FileName,
+                RootExecutablePath = q.OriginalPath,
+                RiskScore = q.RiskLevel == RiskLevel.ConfirmedMalicious ? 95 : (q.RiskLevel == RiskLevel.HighRisk ? 85 : 70),
+                RiskLevel = q.RiskLevel.ToString().ToUpperInvariant(),
+                Status = "Quarantined",
+                ActionTaken = "Karantina Kasasına Kilitlendi (AES-256)",
+                HumanExplanation = $"Bu dosya '{q.Reason}' tespiti nedeniyle AES-256 şifreli karantina kasasına kilitlenmiştir. Sistem güvenliğiniz için dosyanın çalışması durdurulmuştur. Orijinal yol: {q.OriginalPath}",
+                RecommendedUserAction = "Dosya karantinada güvendedir. Yanlış tespit olduğunu düşünüyorsanız Karantina sekmesinden geri yükleyebilirsiniz.",
+                Timeline = new List<string>
+                {
+                    $"{q.QuarantinedAt:HH:mm:ss} | [Tespit & Müdahale] Dosya tespit edildi ve karantinaya alındı.",
+                    $"{q.QuarantinedAt:HH:mm:ss} | [Şifreleme] AES-256 ile kasaya kilitlendi: {q.FileName}",
+                    $"{q.QuarantinedAt:HH:mm:ss} | [Konum] {q.OriginalPath}",
+                    $"{q.QuarantinedAt:HH:mm:ss} | [SHA-256] {q.SHA256}"
+                }
+            };
+        }
+
         [RelayCommand]
         public async Task RemediateIncidentAsync(SecurityIncident? incident)
         {
             var target = incident ?? SelectedIncident;
             if (target == null) return;
 
-            if (_behaviorEngine != null && target.IncidentId.StartsWith("INC-"))
+            IsLoading = true;
+            try
             {
-                await _behaviorEngine.RemediateIncidentAsync(target.IncidentId);
-            }
+                // 1. Mark as remediated in model
+                target.Status = "Remediated";
+                target.ActionTaken = "Çözüldü Olarak İşaretlendi";
 
-            target.Status = "Remediated";
-            target.ActionTaken = "Çözüldü Olarak İşaretlendi";
-            OnPropertyChanged(nameof(SelectedIncident));
-            ActiveIncidentCount = Incidents.Count(i => i.Status == "Active" || i.Status == "Contained");
-            StatusMessage = $"'{target.ThreatName}' olayı çözüldü olarak işaretlendi.";
-            _toastService?.ShowToast("Olay Çözüldü", StatusMessage, "Success");
+                // 2. Persist in dismissed set
+                if (!string.IsNullOrWhiteSpace(target.IncidentId))
+                {
+                    _dismissedIncidentIds.Add(target.IncidentId);
+                }
+                if (!string.IsNullOrWhiteSpace(target.RootExecutablePath))
+                {
+                    _dismissedIncidentIds.Add(target.RootExecutablePath);
+                }
+
+                if (_settingsService != null)
+                {
+                    try
+                    {
+                        _settingsService.SetSetting("DismissedIncidentIds", _dismissedIncidentIds.ToList());
+                        await _settingsService.SaveAsync();
+                    }
+                    catch { }
+                }
+
+                // 3. Behavior Engine remediation if INC-
+                if (_behaviorEngine != null && target.IncidentId.StartsWith("INC-", StringComparison.OrdinalIgnoreCase))
+                {
+                    await _behaviorEngine.RemediateIncidentAsync(target.IncidentId);
+                }
+
+                // 4. Finding Service resolution if FIND- or matching path
+                if (_findingService != null)
+                {
+                    try
+                    {
+                        var findings = await _findingService.GetAllFindingsAsync();
+                        var matchingFindings = findings?.Where(f =>
+                            (!string.IsNullOrEmpty(target.RootExecutablePath) && f.ObjectPath.Equals(target.RootExecutablePath, StringComparison.OrdinalIgnoreCase)) ||
+                            target.IncidentId.EndsWith(f.Id.ToString("N")[..8], StringComparison.OrdinalIgnoreCase)
+                        ).ToList();
+
+                        if (matchingFindings != null)
+                        {
+                            foreach (var f in matchingFindings)
+                            {
+                                f.Status = FindingStatus.Resolved;
+                                f.IsAllowlisted = true;
+                                await _findingService.UpdateFindingAsync(f);
+
+                                if (_allowlistService != null && !string.IsNullOrWhiteSpace(f.ObjectPath))
+                                {
+                                    try
+                                    {
+                                        var fEntry = new AllowlistEntry
+                                        {
+                                            FilePath = f.ObjectPath,
+                                            FileName = f.ObjectName,
+                                            SHA256 = f.SHA256 ?? string.Empty,
+                                            Reason = "Kullanıcı tarafından çözüldü olarak işaretlendi.",
+                                            AddedBy = "Kullanıcı (Çözüldü)",
+                                            AddedAt = DateTime.UtcNow,
+                                            IsActive = true
+                                        };
+                                        await _allowlistService.AddToAllowlistAsync(fEntry);
+                                    }
+                                    catch { }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // 5. Allowlist Service registration so future scans will NEVER encounter it again
+                if (_allowlistService != null && !string.IsNullOrWhiteSpace(target.RootExecutablePath))
+                {
+                    try
+                    {
+                        var entry = new AllowlistEntry
+                        {
+                            FilePath = target.RootExecutablePath,
+                            FileName = Path.GetFileName(target.RootExecutablePath),
+                            SHA256 = target.RootHashSha256 ?? string.Empty,
+                            Reason = "Kullanıcı tarafından çözüldü olarak işaretlendi.",
+                            AddedBy = "Kullanıcı (Çözüldü)",
+                            AddedAt = DateTime.UtcNow,
+                            IsActive = true
+                        };
+                        await _allowlistService.AddToAllowlistAsync(entry);
+                    }
+                    catch { }
+                }
+
+                // 6. Quarantine Service cleanup if QUAR- or quarantined file
+                if (_quarantineService != null)
+                {
+                    if (target.IncidentId.StartsWith("QUAR-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var idPart = target.IncidentId.Replace("QUAR-", "", StringComparison.OrdinalIgnoreCase);
+                        if (int.TryParse(idPart, out int quarId))
+                        {
+                            await _quarantineService.DeleteQuarantinedAsync(quarId);
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(target.RootExecutablePath))
+                    {
+                        try
+                        {
+                            var qItems = await _quarantineService.GetQuarantinedItemsAsync();
+                            var matchingQuar = qItems?.FirstOrDefault(q => q.OriginalPath.Equals(target.RootExecutablePath, StringComparison.OrdinalIgnoreCase));
+                            if (matchingQuar != null)
+                            {
+                                await _quarantineService.DeleteQuarantinedAsync(matchingQuar.Id);
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                // 6. UI Update: Remove from Incidents list immediately
+                Action uiRemove = () =>
+                {
+                    Incidents.Remove(target);
+                    HasNoIncidents = Incidents.Count == 0;
+                    ActiveIncidentCount = Incidents.Count(i => i.Status == "Active" || i.Status == "Contained");
+                    SelectedIncident = Incidents.FirstOrDefault();
+                };
+
+                if (Application.Current?.Dispatcher != null && !Application.Current.Dispatcher.CheckAccess())
+                {
+                    Application.Current.Dispatcher.Invoke(uiRemove);
+                }
+                else
+                {
+                    uiRemove();
+                }
+
+                StatusMessage = $"'{target.ThreatName}' olayı çözüldü olarak işaretlendi ve listeden kaldırıldı.";
+                _toastService?.ShowToast("Olay Çözüldü", StatusMessage, "Success");
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Olay çözülürken hata: {ex.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
 
         [RelayCommand]
@@ -240,6 +534,7 @@ namespace AegisPC.App.ViewModels
                     ActiveIncidentCount = Incidents.Count(i => i.Status == "Active" || i.Status == "Contained");
                     StatusMessage = $"Zararlı dosya karantina kasasına kilitlendi: {target.RootExecutablePath}";
                     _toastService?.ShowToast("Karantina Başarılı", StatusMessage, "Success");
+                    await LoadIncidentsAsync();
                 }
                 else
                 {

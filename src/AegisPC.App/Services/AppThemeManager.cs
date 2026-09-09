@@ -100,13 +100,14 @@ namespace AegisPC.App.Services
             CurrentTheme = theme;
             SaveTheme(theme);
 
-            Application.Current?.Dispatcher?.Invoke(() =>
+            Action applyAction = () =>
             {
                 try
                 {
                     bool isSystemDark = DetectWindowsSystemTheme() == ThemeMode.Dark;
                     bool dark = (theme == ThemeMode.Dark) || (theme == ThemeMode.System && isSystemDark);
-                    var appResources = Application.Current.Resources;
+                    var appResources = Application.Current?.Resources;
+                    if (appResources == null) return;
 
                     // 1. Apply WPF-UI Native Theme Engine first so custom tokens take precedence
                     try
@@ -206,7 +207,25 @@ namespace AegisPC.App.Services
                 catch { }
 
                 ThemeChanged?.Invoke(CurrentTheme);
-            });
+            };
+
+            var app = Application.Current;
+            var dispatcher = app?.Dispatcher;
+            if (dispatcher != null && dispatcher.Thread.IsAlive && !dispatcher.HasShutdownStarted)
+            {
+                if (dispatcher.CheckAccess())
+                {
+                    applyAction();
+                }
+                else
+                {
+                    dispatcher.BeginInvoke(applyAction);
+                }
+            }
+            else
+            {
+                applyAction();
+            }
         }
 
         private class ThemeSettingsData

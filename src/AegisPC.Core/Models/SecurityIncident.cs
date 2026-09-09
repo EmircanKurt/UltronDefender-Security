@@ -45,23 +45,76 @@ namespace AegisPC.Core.Models
         public int Severity { get; set; } = 50;
     }
 
-    public class SecurityIncident
+    public class SecurityIncident : System.ComponentModel.INotifyPropertyChanged
     {
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
+        private void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+
+        private string _status = "Active";
+        private string _actionTaken = "None";
+        private int _riskScore;
+        private string _riskLevel = "MEDIUM";
+        private string _title = string.Empty;
+        private string _threatName = string.Empty;
+        private string _humanExplanation = string.Empty;
+
         public string IncidentId { get; set; } = $"INC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-        public string Title { get; set; } = string.Empty;
-        public string ThreatName { get; set; } = string.Empty;
+
+        public string Title
+        {
+            get => _title;
+            set { if (_title != value) { _title = value; OnPropertyChanged(); } }
+        }
+
+        public string ThreatName
+        {
+            get => _threatName;
+            set { if (_threatName != value) { _threatName = value; OnPropertyChanged(); } }
+        }
+
         public int RootPid { get; set; }
         public string RootProcessName { get; set; } = string.Empty;
         public string RootExecutablePath { get; set; } = string.Empty;
         public string? RootHashSha256 { get; set; }
-        public int RiskScore { get; set; }
-        public string RiskLevel { get; set; } = "MEDIUM";
-        public string Status { get; set; } = "Active"; // Active, Contained, Quarantined, Remediated
-        public string ActionTaken { get; set; } = "None";
+
+        public int RiskScore
+        {
+            get => _riskScore;
+            set { if (_riskScore != value) { _riskScore = value; OnPropertyChanged(); } }
+        }
+
+        public string RiskLevel
+        {
+            get => _riskLevel;
+            set { if (_riskLevel != value) { _riskLevel = value; OnPropertyChanged(); } }
+        }
+
+        public string Status
+        {
+            get => _status;
+            set { if (_status != value) { _status = value; OnPropertyChanged(); } }
+        }
+
+        public string ActionTaken
+        {
+            get => _actionTaken;
+            set { if (_actionTaken != value) { _actionTaken = value; OnPropertyChanged(); } }
+        }
+
         public List<BehaviorEvidence> Evidences { get; set; } = new();
         public List<string> Timeline { get; set; } = new();
-        public string HumanExplanation { get; set; } = string.Empty;
+
+        public string HumanExplanation
+        {
+            get => _humanExplanation;
+            set { if (_humanExplanation != value) { _humanExplanation = value; OnPropertyChanged(); } }
+        }
+
         public string RecommendedUserAction { get; set; } = string.Empty;
     }
 }

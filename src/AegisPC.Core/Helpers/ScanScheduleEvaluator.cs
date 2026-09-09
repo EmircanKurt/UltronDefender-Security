@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace AegisPC.Core.Helpers
 {
@@ -9,6 +9,13 @@ namespace AegisPC.Core.Helpers
             if (now.Hour != scheduledHour) return false;
             if (lastRunDate.HasValue && lastRunDate.Value.Date == now.Date) return false;
             return true;
+        }
+
+        public static bool IsIntervalScanDue(DateTime now, int intervalHours, DateTime? lastRunTime)
+        {
+            if (intervalHours <= 0) intervalHours = 24;
+            if (!lastRunTime.HasValue) return true;
+            return (now - lastRunTime.Value).TotalHours >= intervalHours;
         }
 
         public static bool IsWeeklyScanDue(DateTime now, DayOfWeek scheduledDay, int scheduledHour, DateTime? lastRunDate)

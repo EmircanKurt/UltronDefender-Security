@@ -27,9 +27,10 @@
         <!-- 1. Header -->
         <TextBlock Grid.Row="0" Style="{StaticResource PageHeadingStyle}" Text="Süreç Yöneticisi" Margin="0,0,0,4"/>
 
-        <!-- 2. Toolbar -->
+        <!-- 2. Toolbar & Sorting Tabs -->
         <Grid Grid.Row="1" Margin="0,0,0,16">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
@@ -38,7 +39,78 @@
                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" 
                         Icon="{ui:SymbolIcon Search24}" Margin="0,0,12,0" Height="36"/>
 
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
+            <!-- Sorting Tabs: CPU, RAM, GPU -->
+            <Border Grid.Column="1" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="8" Padding="3" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="💾 En Çok RAM" 
+                            Command="{Binding SetSortModeCommand}" CommandParameter="0"
+                            Padding="12,6" BorderThickness="0" Cursor="Hand">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                                <Setter Property="FontSize" Value="12"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SortMode}" Value="0">
+                                        <Setter Property="Background" Value="{DynamicResource BrushBrandPrimary}"/>
+                                        <Setter Property="Foreground" Value="#FFFFFF"/>
+                                        <Setter Property="FontWeight" Value="Bold"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
+                    <Button Content="⚡ En Çok CPU" 
+                            Command="{Binding SetSortModeCommand}" CommandParameter="1"
+                            Padding="12,6" BorderThickness="0" Cursor="Hand" Margin="4,0,0,0">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                                <Setter Property="FontSize" Value="12"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SortMode}" Value="1">
+                                        <Setter Property="Background" Value="{DynamicResource BrushBrandPrimary}"/>
+                                        <Setter Property="Foreground" Value="#FFFFFF"/>
+                                        <Setter Property="FontWeight" Value="Bold"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
+                    <Button Content="🎮 GPU" 
+                            Command="{Binding SetSortModeCommand}" CommandParameter="2"
+                            Visibility="{Binding IsGpuSupported, Converter={StaticResource BoolToVis}}"
+                            Padding="12,6" BorderThickness="0" Cursor="Hand" Margin="4,0,0,0">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                                <Setter Property="FontSize" Value="12"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SortMode}" Value="2">
+                                        <Setter Property="Background" Value="{DynamicResource BrushBrandPrimary}"/>
+                                        <Setter Property="Foreground" Value="#FFFFFF"/>
+                                        <Setter Property="FontWeight" Value="Bold"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </StackPanel>
+            </Border>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox Content="Windows Hizmetlerini Gizle" 
+                          IsChecked="{Binding HideWindowsServices, Mode=TwoWay}" 
+                          VerticalAlignment="Center" Margin="0,0,14,0" 
+                          FontWeight="SemiBold"
+                          ToolTip="Windows servislerini ve sistem arka plan süreçlerini listeden gizler."/>
                 <Button Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
                         Command="{Binding LoadProcessesCommand}" Margin="0,0,8,0" Padding="14,6"/>
                 <Button Content="Görevi Sonlandır" Style="{StaticResource DangerButtonStyle}" 
@@ -56,19 +128,22 @@
 
             <!-- Process DataGrid (Strict DataTableStyle: Pure Sans-Serif, Tabular Numerals) -->
             <Border Grid.Column="0" Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Margin="0,0,16,0">
-                <ui:DataGrid ItemsSource="{Binding Processes}" 
-                             SelectedItem="{Binding SelectedProcess}"
-                             AutoGenerateColumns="False" 
-                             IsReadOnly="True"
-                             SelectionMode="Single"
-                             BorderThickness="0"
-                             Background="Transparent"
-                             RowHeaderWidth="0"
-                             ScrollViewer.CanContentScroll="False"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             GridLinesVisibility="Horizontal"
-                             HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
-                    <ui:DataGrid.Columns>
+                <DataGrid ItemsSource="{Binding Processes}" 
+                          SelectedItem="{Binding SelectedProcess}"
+                          AutoGenerateColumns="False" 
+                          IsReadOnly="True"
+                          SelectionMode="Single"
+                          BorderThickness="0"
+                          Background="Transparent"
+                          RowBackground="Transparent"
+                          AlternatingRowBackground="Transparent"
+                          RowHeaderWidth="0"
+                          ScrollViewer.CanContentScroll="False"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal"
+                          HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}">
+                    <DataGrid.Columns>
                         <DataGridTemplateColumn Header="PID" Width="75">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -80,7 +155,7 @@
                         <DataGridTemplateColumn Header="Süreç Adı" Width="170">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Padding="6,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Padding="6,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
@@ -96,7 +171,15 @@
                         <DataGridTemplateColumn Header="Bellek" Width="105">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding MemoryBytes, Converter={StaticResource BytesConverter}}" Style="{StaticResource DataTableStyle}" Padding="6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding MemoryBytes, Converter={StaticResource BytesConverter}}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" Padding="6,0" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="GPU %" Width="85">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding GpuPercent, StringFormat='\{0:F1\} %'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" FontWeight="SemiBold" Padding="6,0" VerticalAlignment="Center"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
@@ -104,12 +187,12 @@
                         <DataGridTemplateColumn Header="Yol" Width="*">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding ExecutablePath}" Style="{StaticResource CaptionTextStyle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ExecutablePath}" Padding="6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding ExecutablePath}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ExecutablePath}" Padding="6,0" VerticalAlignment="Center"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                    </ui:DataGrid.Columns>
-                </ui:DataGrid>
+                    </DataGrid.Columns>
+                </DataGrid>
             </Border>
 
             <!-- Process Detail Panel -->
@@ -127,6 +210,7 @@
                                 <StackPanel>
                                     <TextBlock Text="{Binding SelectedProcess.CpuPercent, StringFormat='CPU: \{0:F1\} %'}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
                                     <TextBlock Text="{Binding SelectedProcess.MemoryBytes, Converter={StaticResource BytesConverter}, StringFormat='Bellek: \{0\}'}" Style="{StaticResource DataTableStyle}" Margin="0,4,0,0"/>
+                                    <TextBlock Text="{Binding SelectedProcess.GpuPercent, StringFormat='GPU: \{0:F1\} %'}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,0"/>
                                 </StackPanel>
                             </Border>
 

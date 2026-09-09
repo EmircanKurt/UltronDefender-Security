@@ -7,6 +7,10 @@ namespace AegisPC.Contracts.Services;
 
 public interface IQuarantineService
 {
+    event System.Action<QuarantineEntry>? OnFileQuarantined;
+    event System.Action<int>? OnFileRestored;
+    event System.Action<int>? OnFileDeleted;
+
     Task<bool> QuarantineFileAsync(string path, string reason, CancellationToken cancellationToken = default);
     Task<bool> RestoreFileAsync(int id, CancellationToken cancellationToken = default);
     Task<bool> RestoreFileAsync(int id, string? customDestinationPath, CancellationToken cancellationToken = default);

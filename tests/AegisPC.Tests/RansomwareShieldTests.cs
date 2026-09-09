@@ -118,7 +118,18 @@ namespace AegisPC.Tests
             Thread.Sleep(100);
 
             var renamedPath = Path.Combine(_testDir, "test.encrypted");
-            File.Move(filePath, renamedPath);
+            for (int r = 0; r < 10; r++)
+            {
+                try
+                {
+                    File.Move(filePath, renamedPath);
+                    break;
+                }
+                catch (IOException) when (r < 9)
+                {
+                    Thread.Sleep(100);
+                }
+            }
 
             for (int i = 0; i < 20 && !alertTriggered; i++)
             {

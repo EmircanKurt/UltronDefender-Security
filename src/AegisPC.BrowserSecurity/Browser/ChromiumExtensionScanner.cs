@@ -111,10 +111,14 @@ namespace AegisPC.BrowserSecurity.Browser
                 string description = root.TryGetProperty("description", out var d) ? d.GetString() ?? string.Empty : string.Empty;
                 string? updateUrl = root.TryGetProperty("update_url", out var u) ? u.GetString() : null;
 
-                // Handle localization placeholders like __MSG_appName__
-                if (name.StartsWith("__MSG_"))
+                // Handle localization placeholders like __MSG_appName__ or __MSG_description__
+                if (name.StartsWith("__MSG_") || name.StartsWith("MSG_"))
                 {
                     name = id;
+                }
+                if (description.StartsWith("__MSG_") || description.StartsWith("MSG_") || description.Equals("Açıklama yok", StringComparison.OrdinalIgnoreCase))
+                {
+                    description = string.Empty;
                 }
 
                 var permissions = new List<string>();

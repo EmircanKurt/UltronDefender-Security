@@ -51,7 +51,7 @@ namespace AegisPC.Security.PE
             try
             {
                 await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 8192, FileOptions.SequentialScan | FileOptions.Asynchronous);
-                long readLen = Math.Min(fs.Length, 256 * 1024); // Maks 256 KB analiz sınırı — PE başlıkları ve tabloları için yeterli
+                long readLen = Math.Min(fs.Length, 2 * 1024 * 1024); // 2 MB analiz tamponu — PE başlıkları, section tabloları ve gömülü kodlar için kapsamlı
                 int bytesToRead = (int)readLen;
                 
                 // ArrayPool: GC baskısını azaltır — her dosya için yeni byte[] alloc edilmez
@@ -71,6 +71,13 @@ namespace AegisPC.Security.PE
                 }
 
                 var result = Analyze(buffer, filePath);
+                
+                // Authenticode sertifika doğrulaması — asenkron olarak yapılır (deadlock önlemi)
+                if (result.IsPeFile)
+                {
+                    var peFile = new PeFile(buffer);
+                    await ParseAuthenticodeAsync(filePath, peFile, result).ConfigureAwait(false);
+                }
                 
                 return result;
             }
@@ -151,8 +158,7 @@ namespace AegisPC.Security.PE
             // 7. İçe Aktarılan API'lar (Imports)
             ParseImports(peFile, result);
 
-            // 8. Authenticode Sertifika Zinciri Analizi
-            ParseAuthenticode(filePath, peFile, result);
+            // 8. Authenticode Sertifika Zinciri Analizi → AnalyzeAsync'te asenkron olarak yapılır
 
             return result;
         }
@@ -385,13 +391,13 @@ namespace AegisPC.Security.PE
             }
         }
 
-        private void ParseAuthenticode(string filePath, PeFile peFile, PeDeepAnalysisResult result)
+        private async Task ParseAuthenticodeAsync(string filePath, PeFile peFile, PeDeepAnalysisResult result)
         {
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return;
 
             try
             {
-                var sigInfo = _signatureVerifier.VerifySignatureAsync(filePath).GetAwaiter().GetResult();
+                var sigInfo = await _signatureVerifier.VerifySignatureAsync(filePath).ConfigureAwait(false);
                 if (sigInfo != null && sigInfo.IsSigned)
                 {
                     result.Certificate.IsSigned = true;

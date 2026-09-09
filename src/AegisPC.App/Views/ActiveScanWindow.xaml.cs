@@ -23,6 +23,32 @@ namespace AegisPC.App.Views
 
             Loaded += OnWindowLoaded;
             Closed += OnWindowClosed;
+            ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        }
+
+        private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(ScanViewModel.IsPaused))
+            {
+                Dispatcher.InvokeAsync(() =>
+                {
+                    if (ViewModel.IsPaused)
+                    {
+                        _animTimer?.Stop();
+                    }
+                    else if (ViewModel.IsScanning)
+                    {
+                        _animTimer?.Start();
+                    }
+                });
+            }
+            else if (e.PropertyName == nameof(ScanViewModel.IsScanning) && !ViewModel.IsScanning)
+            {
+                Dispatcher.InvokeAsync(() =>
+                {
+                    _animTimer?.Stop();
+                });
+            }
         }
 
         private void OnWindowLoaded(object sender, RoutedEventArgs e)
@@ -50,12 +76,16 @@ namespace AegisPC.App.Views
                     Canvas.SetLeft(LaserLine, _laserPos);
                 }
             };
-            _animTimer.Start();
+            if (ViewModel.IsScanning && !ViewModel.IsPaused)
+            {
+                _animTimer.Start();
+            }
         }
 
         private void OnWindowClosed(object? sender, EventArgs e)
         {
             _animTimer?.Stop();
+            ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
             if (_activeInstance == this) _activeInstance = null;
         }
 

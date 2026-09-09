@@ -330,7 +330,7 @@ namespace AegisPC.App.ViewModels
             _latestRawProcesses = procs;
 
             // UI Güncellemeleri
-            Application.Current?.Dispatcher?.Invoke(() =>
+            DispatchToUi(() =>
             {
                 UltronPid = pid;
                 UltronCpuUsage = $"{Math.Max(ultronCpu, 0.1):0.0} %";
@@ -516,10 +516,31 @@ namespace AegisPC.App.ViewModels
                 return list;
             });
 
-            Application.Current?.Dispatcher?.Invoke(() =>
+            DispatchToUi(() =>
             {
                 Drives = driveList;
             });
+        }
+
+        private static void DispatchToUi(Action action)
+        {
+            var app = Application.Current;
+            var dispatcher = app?.Dispatcher;
+            if (dispatcher != null && dispatcher.Thread.IsAlive && !dispatcher.HasShutdownStarted)
+            {
+                if (dispatcher.CheckAccess())
+                {
+                    action();
+                }
+                else
+                {
+                    dispatcher.BeginInvoke(action);
+                }
+            }
+            else
+            {
+                action();
+            }
         }
 
         public void Dispose()

@@ -49,11 +49,12 @@ namespace AegisPC.Security.RealTime
             IQuarantineService quarantineService,
             ISecurityFindingService findingService,
             IAuditLogService? auditLogService = null,
+            IReputationService? reputationService = null,
             ILogger<RealTimeProtectionEngine>? logger = null)
             : this(
                 new RealTimeEventIngestor(),
                 new RealTimeStabilityChecker(),
-                new RealTimeVerdictProcessor(hashService, signatureVerifier, riskScoringEngine, logger),
+                new RealTimeVerdictProcessor(hashService, signatureVerifier, riskScoringEngine, (fileScanner as AegisPC.Security.Scanning.FileScannerService)?.HashMatcher, reputationService, logger),
                 new RealTimePolicyEnforcer(quarantineService, findingService, auditLogService, logger),
                 logger)
         {
@@ -218,7 +219,7 @@ namespace AegisPC.Security.RealTime
                     Verdict = verdict.Verdict.ToString(),
                     TimeToDetectMs = verdict.TimeToDetectMs,
                     Message = $"Risk Skoru: {verdict.RiskScore}/100 ({verdict.Verdict}) - TTD: {verdict.TimeToDetectMs:F1}ms",
-                    Severity = verdict.RiskScore >= 70 ? "Danger" : (verdict.RiskScore >= 50 ? "Warning" : "Success"),
+                    Severity = verdict.RiskScore >= 85 ? "Danger" : (verdict.RiskScore >= 60 ? "Warning" : "Success"),
                     Timestamp = DateTime.Now
                 });
 

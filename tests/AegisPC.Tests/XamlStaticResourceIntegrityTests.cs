@@ -42,7 +42,7 @@ namespace AegisPC.Tests
 
             Assert.True(definedKeys.Count > 100, $"Expected >100 defined keys, but found {definedKeys.Count}");
 
-            // 2. Scan every XAML file for {StaticResource Key}
+            // 2. Scan every XAML file for {StaticResource Key} and {DynamicResource Key}
             var missingStaticList = new List<string>();
             foreach (var file in xamlFiles)
             {
@@ -50,7 +50,7 @@ namespace AegisPC.Tests
                 for (int i = 0; i < lines.Length; i++)
                 {
                     var line = lines[i];
-                    var matches = Regex.Matches(line, @"\{StaticResource\s+([^}]+)\}");
+                    var matches = Regex.Matches(line, @"\{(?:StaticResource|DynamicResource)\s+([^,}\s]+)[^}]*\}");
                     foreach (Match m in matches)
                     {
                         var key = m.Groups[1].Value.Trim();
@@ -62,7 +62,7 @@ namespace AegisPC.Tests
 
                         if (!definedKeys.Contains(key))
                         {
-                            missingStaticList.Add($"{Path.GetFileName(file)}:L{i + 1} Missing StaticResource: '{key}'");
+                            missingStaticList.Add($"{Path.GetFileName(file)}:L{i + 1} Missing resource: '{key}'");
                         }
                     }
                 }
@@ -94,7 +94,7 @@ namespace AegisPC.Tests
                         var dicts = new[]
                         {
                             "pack://application:,,,/UltronDefender;component/Resources/Themes/Typography.xaml",
-                            "pack://application:,,,/UltronDefender;component/Resources/Themes/Colors.Dark.xaml",
+                            "pack://application:,,,/UltronDefender;component/Resources/Themes/Colors.Light.xaml",
                             "pack://application:,,,/UltronDefender;component/Resources/Themes/Components.xaml",
                             "pack://application:,,,/UltronDefender;component/Resources/Themes/SharedStyles.xaml"
                         };
@@ -106,9 +106,9 @@ namespace AegisPC.Tests
                                 var dict = new ResourceDictionary { Source = new Uri(uriStr, UriKind.Absolute) };
                                 app.Resources.MergedDictionaries.Add(dict);
                             }
-                            catch
+                            catch (Exception ex)
                             {
-                                // Component pack URIs might require standalone pack registration in unit test runners
+                                throw new InvalidOperationException($"Could not load required theme dictionary {uriStr}.", ex);
                             }
                         }
                     }

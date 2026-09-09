@@ -28,5 +28,12 @@ namespace AegisPC.Infrastructure.Configuration
         public bool IsProcessMonitoringEnabled { get; set; } = true;
         public int ScheduledScanHour { get; set; } = 12;
         public string ScheduledScanDay { get; set; } = "Her Gün";
+        public int ScheduledScanIntervalHours { get; set; } = 24;
+        public ScanResourceMode ScanResourceMode { get; set; } = ScanResourceMode.Balanced;
+        public bool RememberScanResourceMode { get; set; } = false;
+        public string? MalwareBazaarApiKey { get; set; }
+        public DateTime? LastThreatFeedUpdateUtc { get; set; }
+        public bool EnableWscRegistration { get; set; } = false; // Ürün henüz birincil AV olarak konumlanamaz
+        public System.Collections.Generic.List<string> DismissedIncidentIds { get; set; } = new();
     }
 }

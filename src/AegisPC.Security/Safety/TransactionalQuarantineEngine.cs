@@ -365,6 +365,65 @@ namespace AegisPC.Security.Safety
                     Directory.CreateDirectory(destDir);
                 }
 
+                // GÜVENLİK: Restore öncesi hedef yolda Symlink/Junction/Reparse Point kontrolü
+                // Saldırgan hedef dizine junction koyarsa, SYSTEM yetkisiyle arbitrary file write (LPE) mümkün olur
+                if (_reparsePointGuard != null)
+                {
+                    // Hedef dizini kontrol et
+                    if (!string.IsNullOrEmpty(destDir))
+                    {
+                        var dirReparseInfo = _reparsePointGuard.Inspect(destDir);
+                        if (dirReparseInfo.IsReparsePoint)
+                        {
+                            result.Message = $"Geri yükleme engellendi: Hedef dizin bir {dirReparseInfo.Type} (hedef: {dirReparseInfo.TargetPath}). Yol: '{destDir}'";
+                            _logger?.LogWarning("Restore blocked: destination directory is a reparse point: {Dir}, Type: {Type}, Target: {Target}", destDir, dirReparseInfo.Type, dirReparseInfo.TargetPath);
+                            return result;
+                        }
+                    }
+                    // Hedef dosyayı kontrol et (varsa)
+                    if (File.Exists(destPath))
+                    {
+                        var fileReparseInfo = _reparsePointGuard.Inspect(destPath);
+                        if (fileReparseInfo.IsReparsePoint)
+                        {
+                            result.Message = $"Geri yükleme engellendi: Hedef dosya bir {fileReparseInfo.Type} (hedef: {fileReparseInfo.TargetPath}). Yol: '{destPath}'";
+                            _logger?.LogWarning("Restore blocked: destination file is a reparse point: {Path}, Type: {Type}, Target: {Target}", destPath, fileReparseInfo.Type, fileReparseInfo.TargetPath);
+                            return result;
+                        }
+                    }
+                }
+                else
+                {
+                    // ReparsePointGuard yoksa en azından temel kontrol yap
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(destDir) && Directory.Exists(destDir))
+                        {
+                            var dirInfo = new DirectoryInfo(destDir);
+                            if (dirInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                            {
+                                result.Message = $"Geri yükleme engellendi: Hedef dizin bir symlink/junction. Yol: '{destDir}'";
+                                _logger?.LogWarning("Restore blocked: destination directory is a reparse point: {Dir}", destDir);
+                                return result;
+                            }
+                        }
+                        if (File.Exists(destPath))
+                        {
+                            var fileInfo = new FileInfo(destPath);
+                            if (fileInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                            {
+                                result.Message = $"Geri yükleme engellendi: Hedef dosya bir symlink. Yol: '{destPath}'";
+                                _logger?.LogWarning("Restore blocked: destination file is a reparse point: {Path}", destPath);
+                                return result;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Reparse point check failed for restore destination: {Path}", destPath);
+                    }
+                }
+
                 await File.WriteAllBytesAsync(destPath, rawPlaintext, cancellationToken);
                 result.Success = true;
                 result.RestoredPath = destPath;
@@ -404,10 +463,16 @@ namespace AegisPC.Security.Safety
                             audit.Add($"Dosyayı çalıştıran süreç sonlandırıldı (PID: {p.Id}, Ad: {p.ProcessName}).");
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        audit.Add($"Süreç sonlandırma hatası (PID: {p.Id}): {ex.Message}");
+                    }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                audit.Add($"Süreç arama hatası: {ex.Message}");
+            }
         }
 
         private void EnsureMasterKey()
@@ -430,8 +495,9 @@ namespace AegisPC.Security.Safety
                     _cachedMasterKey = newKey;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                _logger?.LogWarning(ex, "Master key initialization failed, using fallback seed.");
                 _cachedMasterKey = FallbackSeed;
             }
         }
@@ -453,7 +519,10 @@ namespace AegisPC.Security.Safety
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to load quarantine index from {Path}", _indexFilePath);
+            }
         }
 
         private void SaveIndex()
@@ -463,7 +532,10 @@ namespace AegisPC.Security.Safety
                 var json = JsonSerializer.Serialize(_quarantinedItems, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(_indexFilePath, json);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to save quarantine index to {Path}", _indexFilePath);
+            }
         }
     }
 }

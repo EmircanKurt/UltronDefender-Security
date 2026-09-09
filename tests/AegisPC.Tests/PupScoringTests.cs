@@ -89,5 +89,79 @@ namespace AegisPC.Tests
             Assert.True(score >= 60);
             Assert.Contains(reasons, r => r.Contains("Shannon entropisi"));
         }
+
+        [Fact]
+        public async Task CalculateRiskScore_MalwareInRepackNamedFolder_CannotBypassPupDetection()
+        {
+            // Verifies P0 #2 fix: Dropping a PUP / unsigned tool into a folder named 'fitgirl'
+            // must NOT bypass PUP detection or receive automatic negative score exemptions.
+            var analysis = new FileAnalysisResult
+            {
+                FileName = "miner_payload.exe",
+                FilePath = @"C:\Users\PC\Downloads\fitgirl\miner_payload.exe",
+                IsExecutable = true,
+                IsSigned = false,
+                Entropy = 6.8,
+                IsKnownLocation = false
+            };
+
+            var (score, level, reasons) = await _engine.CalculateRiskScoreAsync(analysis);
+
+            Assert.True(score >= 50, $"Expected risk score >= 50, but got {score}");
+            Assert.True(level >= RiskLevel.Suspicious);
+            Assert.Contains(reasons, r => r.Contains("PUP/Crack/Keygen"));
+            Assert.DoesNotContain(reasons, r => r.Contains("Gamer Protection Shield"));
+        }
+
+        [Fact]
+        public async Task NegativeMatrix_FilePathCannotAlterSecurityVerdictOrExemptMalware()
+        {
+            // Section 5 Mandatory Negative Matrix:
+            // Verifies that path name NEVER acts as a trust override for malware.
+            var testPaths = new[]
+            {
+                @"C:\Temp\sample.exe",
+                @"C:\Games\sample.exe",
+                @"C:\Games\SubFolder\sample.exe",
+                @"C:\Oyunlar\sample.exe",
+                @"C:\Temp\fitgirl\sample.exe",
+                @"C:\Temp\dodi\sample.exe",
+                @"C:\Temp\codex\sample.exe"
+            };
+
+            int? baselineScore = null;
+            RiskLevel? baselineLevel = null;
+
+            foreach (var path in testPaths)
+            {
+                var analysis = new FileAnalysisResult
+                {
+                    FileName = "sample.exe",
+                    FilePath = path,
+                    IsExecutable = true,
+                    IsSigned = false,
+                    Entropy = 6.8,
+                    IsKnownLocation = false,
+                    SHA256 = "E8B5D34789A5034633215975A0E72C4119B213D5E412A34A9F8BC331D45F8586"
+                };
+
+                var (score, level, reasons) = await _engine.CalculateRiskScoreAsync(analysis);
+
+                // No folder discount should ever be awarded
+                Assert.DoesNotContain(reasons, r => r.Contains("Gamer Protection Shield"));
+                Assert.DoesNotContain(reasons, r => r.Contains("-20"));
+
+                if (baselineScore == null)
+                {
+                    baselineScore = score;
+                    baselineLevel = level;
+                }
+                else
+                {
+                    Assert.Equal(baselineScore, score);
+                    Assert.Equal(baselineLevel, level);
+                }
+            }
+        }
     }
 }

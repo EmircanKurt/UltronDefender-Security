@@ -258,13 +258,13 @@ namespace AegisPC.Tests
         }
 
         [Fact]
-        public void Scenario08_ExcludedDirectoryNames_ContainsDevAndSystemDirs()
+        public void Scenario08_ExcludedDirectoryNames_DoesNotContainAttackerControlledDevNames()
         {
-            Assert.True(FileScannerService.ExcludedDirectoryNames.Contains("node_modules"));
-            Assert.True(FileScannerService.ExcludedDirectoryNames.Contains(".git"));
-            Assert.True(FileScannerService.ExcludedDirectoryNames.Contains("obj"));
-            Assert.True(FileScannerService.ExcludedDirectoryNames.Contains("bin"));
-            Assert.True(FileScannerService.ExcludedDirectoryNames.Contains("WinSxS"));
+            Assert.DoesNotContain("node_modules", FileScannerService.ExcludedDirectoryNames);
+            Assert.DoesNotContain(".git", FileScannerService.ExcludedDirectoryNames);
+            Assert.DoesNotContain("obj", FileScannerService.ExcludedDirectoryNames);
+            Assert.DoesNotContain("bin", FileScannerService.ExcludedDirectoryNames);
+            Assert.Contains("WinSxS", FileScannerService.ExcludedDirectoryNames);
         }
 
         // =========================================================================

@@ -1,6 +1,9 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using AegisPC.App.ViewModels;
 using AegisPC.App.Views;
 using Wpf.Ui.Controls;
@@ -33,6 +36,14 @@ namespace AegisPC.App
                 Dispatcher.InvokeAsync(UpdateThemeButtonState);
             };
 
+            RootNavigation.Navigated += (sender, args) =>
+            {
+                if (args.Page is FrameworkElement fe)
+                {
+                    ApplyPageEntranceAnimation(fe);
+                }
+            };
+
             // Auto-navigate to Dashboard or Scan when window loads
             Loaded += (s, e) =>
             {
@@ -49,7 +60,10 @@ namespace AegisPC.App
                         RootNavigation.Navigate(typeof(DashboardView));
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine($"MainWindow initial navigation failed: {ex}");
+                }
             };
         }
 
@@ -134,6 +148,24 @@ namespace AegisPC.App
             });
         }
 
+        public void NavigateToQuarantine(bool showIncidentsTab = false)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    RootNavigation.Navigate(typeof(Views.QuarantineView));
+                    var vm = App.ServiceProvider?.GetService(typeof(ViewModels.QuarantineViewModel)) as ViewModels.QuarantineViewModel
+                             ?? ViewModels.QuarantineViewModel.Current;
+                    if (vm != null)
+                    {
+                        vm.NavigateToTab(showIncidentsTab);
+                    }
+                }
+                catch { }
+            });
+        }
+
         private void OnThemeToggleClicked(object sender, RoutedEventArgs e)
         {
             AegisPC.App.Services.AppThemeManager.ToggleTheme();
@@ -153,6 +185,81 @@ namespace AegisPC.App
                     NavThemeToggle.Content = "Koyu Tema";
                     NavThemeIcon.Symbol = SymbolRegular.DarkTheme24;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Sayfa geçişlerinde 180 ms'lik opaklık 0→1 ve 12 px yukarı kayma giriş animasyonu uygular.
+        /// Windows "Animasyonları kapat" (ReduceMotion) ayarı aktifse animasyon atlanır.
+        /// </summary>
+        private void ApplyPageEntranceAnimation(FrameworkElement element)
+        {
+            if (element == null) return;
+
+            // ReduceMotion: Windows "Animasyonları kapat" ayarı açıksa animasyonları atla
+            if (!SystemParameters.ClientAreaAnimation)
+            {
+                element.Opacity = 1.0;
+                if (element.RenderTransform is TranslateTransform ttReset)
+                {
+                    ttReset.Y = 0;
+                }
+                return;
+            }
+
+            try
+            {
+                var duration = TimeSpan.FromMilliseconds(180);
+                var cubicEase = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+                var opacityAnim = new DoubleAnimation
+                {
+                    From = 0.0,
+                    To = 1.0,
+                    Duration = duration,
+                    EasingFunction = cubicEase,
+                    FillBehavior = FillBehavior.HoldEnd
+                };
+
+                TranslateTransform translateTransform;
+                if (element.RenderTransform is TranslateTransform tt)
+                {
+                    translateTransform = tt;
+                }
+                else if (element.RenderTransform is TransformGroup tg)
+                {
+                    var existingTt = tg.Children.OfType<TranslateTransform>().FirstOrDefault();
+                    if (existingTt != null)
+                    {
+                        translateTransform = existingTt;
+                    }
+                    else
+                    {
+                        translateTransform = new TranslateTransform(0, 12);
+                        tg.Children.Add(translateTransform);
+                    }
+                }
+                else
+                {
+                    translateTransform = new TranslateTransform(0, 12);
+                    element.RenderTransform = translateTransform;
+                }
+
+                var translateAnim = new DoubleAnimation
+                {
+                    From = 12.0,
+                    To = 0.0,
+                    Duration = duration,
+                    EasingFunction = cubicEase,
+                    FillBehavior = FillBehavior.HoldEnd
+                };
+
+                element.BeginAnimation(UIElement.OpacityProperty, opacityAnim);
+                translateTransform.BeginAnimation(TranslateTransform.YProperty, translateAnim);
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Sayfa geçiş animasyonu uygulanırken hata oluştu.");
             }
         }
     }

@@ -37,8 +37,14 @@
                            Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
             </StackPanel>
 
-            <Button Grid.Column="1" HorizontalAlignment="Right" Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
-                    Command="{Binding RefreshAllDataCommand}" VerticalAlignment="Center" Padding="14,6"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Content="Her Şeyi Karantinadan Kaldır" Style="{StaticResource DangerButtonStyle}" 
+                        Command="{Binding RemoveAllFromQuarantineCommand}" 
+                        IsEnabled="{Binding CanRemoveAll}"
+                        Margin="0,0,8,0" Padding="14,6"/>
+                <Button Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
+                        Command="{Binding RefreshAllDataCommand}" VerticalAlignment="Center" Padding="14,6"/>
+            </StackPanel>
         </Grid>
 
         <!-- 2. Segmented Tab Selector -->
@@ -246,7 +252,9 @@
                                 <Button Content="Dosyayı Geri Yükle" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Stretch"
                                         Command="{Binding RestoreItemCommand}" Margin="0,0,0,8"/>
                                 <Button Content="Kalıcı Olarak Sil" Style="{StaticResource DangerButtonStyle}" HorizontalAlignment="Stretch"
-                                        Command="{Binding DeleteItemCommand}"/>
+                                        Command="{Binding DeleteItemCommand}" Margin="0,0,0,8"/>
+                                <Button Content="Her Şeyi Karantinadan Kaldır" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Stretch"
+                                        Command="{Binding RemoveAllFromQuarantineCommand}" IsEnabled="{Binding CanRemoveAll}"/>
                             </StackPanel>
                         </StackPanel>
 
@@ -396,9 +404,11 @@
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button Content="Kaynak Dosyayı Karantinaya Al" 
                                         Command="{Binding DataContext.QuarantineSourceFileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                        CommandParameter="{Binding}"
                                         Style="{StaticResource DangerActionButtonStyle}" Margin="0,0,10,0" Padding="16,8"/>
                                 <Button Content="Çözüldü Olarak İşaretle" 
                                         Command="{Binding DataContext.RemediateIncidentCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                        CommandParameter="{Binding}"
                                         Style="{StaticResource SecondaryButtonStyle}" Padding="14,8"/>
                             </StackPanel>
                         </StackPanel>

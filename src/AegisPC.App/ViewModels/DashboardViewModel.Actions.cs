@@ -78,13 +78,11 @@ namespace AegisPC.App.ViewModels
 
             if (_scanCoordinator.IsScanning)
             {
-                _scanCoordinator.CancelScan();
-                IsScanning = false;
-                QuickScanButtonText = "TARAMAYI BAŞLAT";
-                ProtectionStatusText = "GÜVENDESİNİZ";
-                ProtectionBadgeText = "GERÇEK ZAMANLI KORUMA AKTİF";
-                ProtectionStatusColor = "#4CAF50";
-                TriggerToast("Hızlı tarama kullanıcı tarafından durduruldu.", "Info");
+                var runningVm = App.ServiceProvider?.GetService<ScanViewModel>();
+                if (runningVm != null)
+                {
+                    Views.ActiveScanWindow.ShowScanWindow(runningVm);
+                }
                 return;
             }
 
@@ -92,9 +90,9 @@ namespace AegisPC.App.ViewModels
             ScanProgress = 0;
             ScanScannedCount = 0;
             ScanThreatCount = 0;
-            QuickScanButtonText = "DURDUR";
-            ProtectionStatusText = "SİSTEM TARANIYOR...";
-            ProtectionBadgeText = "HIZLI TARAMA ÇALIŞIYOR";
+            QuickScanButtonText = "Durdur";
+            ProtectionStatusText = "Sistem taranıyor...";
+            ProtectionBadgeText = "Hızlı tarama çalışıyor";
             ProtectionStatusColor = "#2196F3";
 
             TriggerToast("Hızlı sistem taraması başlatıldı...", "Info");
@@ -104,6 +102,7 @@ namespace AegisPC.App.ViewModels
                 var scanVm = App.ServiceProvider?.GetService<ScanViewModel>();
                 if (scanVm != null)
                 {
+                    scanVm.ResetScanState(AegisPC.Core.Enums.ScanType.Quick);
                     Views.ActiveScanWindow.ShowScanWindow(scanVm);
                 }
 
@@ -113,7 +112,7 @@ namespace AegisPC.App.ViewModels
             {
                 TriggerToast($"Tarama sırasında hata: {ex.Message}", "Warning");
                 IsScanning = false;
-                QuickScanButtonText = "TARAMAYI BAŞLAT";
+                QuickScanButtonText = "Taramayı Başlat";
             }
         }
 
@@ -134,8 +133,8 @@ namespace AegisPC.App.ViewModels
                 if (res == MessageBoxResult.Yes)
                 {
                     IsRealTimeProtectionActive = false;
-                    ProtectionStatusText = "KORUMA DEVRE DIŞI";
-                    ProtectionBadgeText = "GERÇEK ZAMANLI KORUMA KAPALI";
+                    ProtectionStatusText = "Koruma devre dışı";
+                    ProtectionBadgeText = "Gerçek zamanlı koruma kapalı";
                     ProtectionStatusColor = "#C41E1E";
                     TriggerToast("⚠️ Gerçek Zamanlı Koruma kullanıcı tarafından kapatıldı!", "Warning");
                     UpdateProtectionUptime();
@@ -144,8 +143,8 @@ namespace AegisPC.App.ViewModels
             else
             {
                 IsRealTimeProtectionActive = true;
-                ProtectionStatusText = "GÜVENDESİNİZ";
-                ProtectionBadgeText = "GERÇEK ZAMANLI KORUMA AKTİF";
+                ProtectionStatusText = "Sisteminiz güvende";
+                ProtectionBadgeText = "Gerçek zamanlı koruma aktif";
                 ProtectionStatusColor = "#4CAF50";
                 TriggerToast("🛡️ Gerçek Zamanlı Koruma başarıyla etkinleştirildi.", "Success");
                 UpdateProtectionUptime();
@@ -330,12 +329,52 @@ namespace AegisPC.App.ViewModels
         }
 
         /// <summary>
-        /// Tespit edilen tehditleri incelemek üzere Karantina sayfasına yönlendirir.
+        /// Tespit edilen tehditleri akıllıca incelemek üzere ilgili sayfaya yönlendirir.
         /// </summary>
         [RelayCommand]
         public void ReviewThreats()
         {
-            NavigateToTarget("quarantine");
+            // 1. Eğer son taramadan kalan aktif, çözülmemiş bulgular varsa Aktif Tarama Penceresini / Tarama sayfasını aç
+            var scanVm = App.ServiceProvider?.GetService<ScanViewModel>();
+            bool hasScanFindings = (_scanCoordinator?.CurrentFindings != null && 
+                                    _scanCoordinator.CurrentFindings.Any(f => f.Status == AegisPC.Core.Enums.FindingStatus.Active && !f.IsAllowlisted)) ||
+                                   (scanVm?.ThreatResults != null && scanVm.ThreatResults.Any(f => f.Finding.Status == AegisPC.Core.Enums.FindingStatus.Active && !f.Finding.IsAllowlisted));
+
+            if (hasScanFindings && scanVm != null)
+            {
+                Views.ActiveScanWindow.ShowScanWindow(scanVm);
+                return;
+            }
+
+            // 2. Karantina veya Olay Merkezi kontrolü
+            var quarantineVm = App.ServiceProvider?.GetService<QuarantineViewModel>() ?? QuarantineViewModel.Current;
+            if (quarantineVm != null)
+            {
+                // Eğer Karantina kasası boş ama Olay Geçmişinde kayıt varsa, doğrudan Olaylar sekmesine yönlendir
+                if (quarantineVm.QuarantinedItems.Count == 0 && quarantineVm.Incidents.Count > 0)
+                {
+                    var mainWindow = Application.Current?.MainWindow as MainWindow ?? MainWindow.Instance;
+                    if (mainWindow != null)
+                    {
+                        mainWindow.NavigateToQuarantine(showIncidentsTab: true);
+                        return;
+                    }
+                }
+            }
+
+            // 3. Genel Karantina sayfasına yönlendir
+            var mw = Application.Current?.MainWindow as MainWindow ?? MainWindow.Instance;
+            if (mw != null)
+            {
+                mw.NavigateToQuarantine(showIncidentsTab: false);
+            }
+            else
+            {
+                NavigateToTarget("quarantine");
+            }
+
+            // 4. Tehdit durumunu senkronize et
+            _ = RefreshThreatStatusAsync();
         }
 
         /// <summary>

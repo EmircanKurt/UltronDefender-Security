@@ -19,7 +19,7 @@ namespace AegisPC.Security.Caching
         private readonly ILogger<MultiLayerScanCache>? _logger;
         private readonly string _cacheDirectory;
         private readonly string _cacheDbPath;
-        private const int MaxL1Entries = 5000;
+        private readonly int _maxL1Entries;
 
         // L1: In-Memory Fast Cache: CompositeKey -> CachedScanVerdict
         private readonly ConcurrentDictionary<string, CachedScanVerdict> _l1Cache = new(StringComparer.OrdinalIgnoreCase);
@@ -37,6 +37,11 @@ namespace AegisPC.Security.Caching
             _logger = logger;
             _cacheDirectory = cacheDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AegisPC", "ScanCache");
             _cacheDbPath = Path.Combine(_cacheDirectory, "scan_cache_v2.json");
+
+            // RAM'e göre L1 cache boyutu: her MB RAM için 6 entry (16 GB RAM → ~96K entry)
+            long ramMb = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / (1024 * 1024);
+            if (ramMb <= 0) ramMb = 8192;
+            _maxL1Entries = (int)Math.Clamp(ramMb * 6, 5_000, 100_000);
 
             try
             {
@@ -108,7 +113,7 @@ namespace AegisPC.Security.Caching
             verdict.CachedAtUtc = DateTime.UtcNow;
 
             // LRU Sınırı Denetimi
-            if (_l1Cache.Count >= MaxL1Entries)
+            if (_l1Cache.Count >= _maxL1Entries)
             {
                 TrimL1Cache();
             }
@@ -119,7 +124,7 @@ namespace AegisPC.Security.Caching
                 _pathToKeyMap[verdict.FilePath] = key;
             }
 
-            // Debounced L2 persist: 50ms gecikmeli arka plan yazımı (toplu yazım optimizasyonu)
+            // Debounced L2 persist: 3000ms gecikmeli arka plan yazımı (toplu yazım optimizasyonu)
             _isDirty = true;
             if (!_isPersisting)
             {
@@ -133,7 +138,7 @@ namespace AegisPC.Security.Caching
 
                     try
                     {
-                        await Task.Delay(50);
+                        await Task.Delay(3000);
                         while (_isDirty)
                         {
                             _isDirty = false;
@@ -181,6 +186,15 @@ namespace AegisPC.Security.Caching
             catch { }
         }
 
+        /// <summary>
+        /// Önbellekteki verileri diske (L2) anında yazar (testler veya uygulama kapanışı için).
+        /// </summary>
+        public async Task FlushAsync(CancellationToken ct = default)
+        {
+            _isDirty = false;
+            await PersistL2CacheToDiskAsync(ct);
+        }
+
         private static string GenerateKey(string sha256, long fileSize, DateTime lastWriteUtc)
         {
             return $"{sha256.ToLowerInvariant()}::{fileSize}::{lastWriteUtc.Ticks}";
@@ -191,7 +205,7 @@ namespace AegisPC.Security.Caching
             try
             {
                 // En eski %20'yi temizle
-                int toRemove = MaxL1Entries / 5;
+                int toRemove = Math.Max(1, _maxL1Entries / 5);
                 int removed = 0;
                 foreach (var k in _l1Cache.Keys)
                 {
@@ -213,8 +227,8 @@ namespace AegisPC.Security.Caching
                     return;
                 }
 
-                var json = File.ReadAllText(_cacheDbPath);
-                var items = JsonSerializer.Deserialize<Dictionary<string, CachedScanVerdict>>(json);
+                using var fs = new FileStream(_cacheDbPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
+                var items = JsonSerializer.Deserialize<Dictionary<string, CachedScanVerdict>>(fs);
                 if (items != null)
                 {
                     foreach (var (k, v) in items)
@@ -244,9 +258,11 @@ namespace AegisPC.Security.Caching
             try
             {
                 var dict = new Dictionary<string, CachedScanVerdict>(_l1Cache);
-                var json = JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = false });
                 var tempPath = _cacheDbPath + ".tmp";
-                await File.WriteAllTextAsync(tempPath, json, ct);
+                await using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, useAsync: true))
+                {
+                    await JsonSerializer.SerializeAsync(fs, dict, new JsonSerializerOptions { WriteIndented = false }, ct);
+                }
                 File.Move(tempPath, _cacheDbPath, overwrite: true);
             }
             catch { }

@@ -7,12 +7,12 @@
         Background="Transparent"
         Topmost="True"
         ShowInTaskbar="False"
-        Width="440"
-        Height="150"
+        Width="460"
+        Height="154"
         WindowStartupLocation="Manual">
 
     <!-- Outer Notification Container with Theme-Adaptive Background -->
-    <Border x:Name="CardBorder" Background="{DynamicResource BrushCardBg}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BrushCardBorder}" Padding="0" Cursor="Hand" MouseLeftButtonDown="OnCardClicked">
+    <Border x:Name="CardBorder" Background="{DynamicResource BrushCardBg}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BrushCardBorder}" Padding="0" Cursor="Hand" MouseLeftButtonDown="OnCardClicked" MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave">
         <Border.Effect>
             <DropShadowEffect BlurRadius="20" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.25"/>
         </Border.Effect>
@@ -70,15 +70,15 @@
 
                     <!-- Message Details -->
                     <StackPanel Grid.Column="1" VerticalAlignment="Top">
-                        <TextBlock x:Name="ToastTitle" Text="Tehdit engellendi ve karantinaya alındı" FontSize="13.5" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock x:Name="ToastMessage" Text="Zararlı kod içeren dosya yakalandı ve sistemden temizlendi." FontSize="11.5" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" Margin="0,3,0,2" MaxHeight="40" TextTrimming="CharacterEllipsis" LineHeight="16"/>
+                        <TextBlock x:Name="ToastTitle" Text="Tehdit engellendi ve karantinaya alındı" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" TextWrapping="Wrap" MaxHeight="38" TextTrimming="CharacterEllipsis" LineHeight="17"/>
+                        <TextBlock x:Name="ToastMessage" Text="Zararlı kod içeren dosya yakalandı ve sistemden temizlendi." FontSize="11.5" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" Margin="0,2,0,2" MaxHeight="36" TextTrimming="CharacterEllipsis" LineHeight="15"/>
                         <TextBlock x:Name="ToastActionStatus" Text="Dosya AES-256 Karantina Kasasına kilitlendi." FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource BrushStatusSafeDark}"/>
                     </StackPanel>
                 </Grid>
 
                 <!-- Footer Section: More info action link -->
-                <Grid Grid.Row="2" Margin="0,6,0,0">
-                    <TextBlock Text="Detayları ve karantina kaydını incelemek için tıklayın →" FontSize="10.5" Foreground="{DynamicResource BrushBrandPrimary}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                <Grid Grid.Row="2" Margin="0,4,0,0">
+                    <TextBlock x:Name="ToastFooterAction" Text="Detayları ve karantina kaydını incelemek için tıklayın →" FontSize="10.5" Foreground="{DynamicResource BrushBrandPrimary}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                 </Grid>
             </Grid>
         </Grid>

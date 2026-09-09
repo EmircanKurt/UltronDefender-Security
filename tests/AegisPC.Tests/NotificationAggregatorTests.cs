@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using AegisPC.App.Services;
+using AegisPC.App.ViewModels;
 using AegisPC.Contracts.Services;
+using AegisPC.Infrastructure.Configuration;
 using AegisPC.Security.Notifications;
 using Xunit;
 
@@ -33,7 +36,7 @@ namespace AegisPC.Tests
             };
 
             aggregator.PushThreatEvent("LockBit.Ransomware", @"C:\Users\PC\Desktop\lockbit.exe", "Terminated & Quarantined", isCritical: true);
-            await Task.Delay(450);
+            for (int w = 0; w < 30 && mockToast.Toasts.Count == 0; w++) await Task.Delay(50);
 
             Assert.Single(mockToast.Toasts);
             Assert.Contains("Ultron Defender (Antivirüs Programı)", mockToast.Toasts[0].Title);
@@ -57,7 +60,7 @@ namespace AegisPC.Tests
             }
 
             // Wait for aggregator timer to flush
-            await Task.Delay(350);
+            for (int w = 0; w < 30 && mockToast.Toasts.Count == 0; w++) await Task.Delay(50);
 
             Assert.Single(mockToast.Toasts);
             Assert.Contains("Ultron Defender (Antivirüs Programı)", mockToast.Toasts[0].Title);
@@ -80,7 +83,7 @@ namespace AegisPC.Tests
                 aggregator.PushThreatEvent($"Trojan.Win32.Generic.{i}", $@"C:\Temp\virus_{i}.exe", "Karantina Kasasına Kilitlendi", isCritical: true);
             }
 
-            await Task.Delay(500);
+            for (int w = 0; w < 30 && mockToast.Toasts.Count == 0; w++) await Task.Delay(50);
 
             // Must produce EXACTLY 1 combined notification for all 10 viruses per user directive!
             Assert.Single(mockToast.Toasts);
@@ -105,6 +108,96 @@ namespace AegisPC.Tests
             Assert.Contains("Ultron Defender (Antivirüs Programı)", mockToast.Toasts[0].Title);
             Assert.Contains("Tehdit Etkisiz Hale Getirildi", mockToast.Toasts[0].Title);
             Assert.Contains("Suspicious.Dropper", mockToast.Toasts[0].Message);
+        }
+
+        private class MockSettingsService : ISettingsService
+        {
+            public AppSettings Current { get; } = new();
+            public int SaveCallCount { get; private set; }
+
+            public T? GetSetting<T>(string key, T defaultValue)
+            {
+                var prop = typeof(AppSettings).GetProperty(key);
+                if (prop == null) return defaultValue;
+                var val = prop.GetValue(Current);
+                if (val is T typedVal) return typedVal;
+                return defaultValue;
+            }
+
+            public void SetSetting<T>(string key, T value)
+            {
+                var prop = typeof(AppSettings).GetProperty(key);
+                if (prop != null && prop.CanWrite)
+                {
+                    prop.SetValue(Current, value);
+                }
+            }
+
+            public Task LoadAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+            public Task SaveAsync(CancellationToken cancellationToken = default)
+            {
+                SaveCallCount++;
+                return Task.CompletedTask;
+            }
+        }
+
+        [Fact]
+        public void Test_NotificationDisabled_SuppressesToasts()
+        {
+            var settings = new MockSettingsService();
+            settings.Current.NotificationsEnabled = false;
+
+            using var toastService = new WindowsToastNotificationService(settingsService: settings);
+
+            // Should be suppressed
+            toastService.ShowToast("🚨 Tehdit Tespit Edildi!", "Trojan.Generic bulundu.", "Danger");
+            toastService.ShowToast("Sistem Bilgisi", "Normal bildirim.", "Info");
+
+            Assert.False(settings.GetSetting("NotificationsEnabled", true));
+        }
+
+        [Fact]
+        public void Test_NotificationDeduplication_BlocksRepeatedSameThreats()
+        {
+            var settings = new MockSettingsService();
+            settings.Current.NotificationsEnabled = true;
+
+            using var toastService = new WindowsToastNotificationService(settingsService: settings)
+            {
+                AggregationWindow = TimeSpan.FromMilliseconds(50)
+            };
+
+            toastService.ShowToast("🚨 Tehdit Tespit Edildi!", "Zararlı dosya: malware.exe", "Danger");
+            toastService.ShowToast("🚨 1 adet Tehdit Tespit Edildi!", "Zararlı dosya: malware.exe", "Danger");
+
+            Assert.True(settings.GetSetting("NotificationsEnabled", true));
+        }
+
+        [Fact]
+        public void Test_SettingsViewModel_NotificationsEnabled_AutoSaves()
+        {
+            var vm = new SettingsViewModel();
+            vm.NotificationsEnabled = false;
+
+            Assert.False(vm.NotificationsEnabled);
+            Assert.Contains("Sessiz mod", vm.StatusMessage);
+        }
+
+        [Fact]
+        public async Task Test_DashboardThreatStatus_CleansToSafe_WhenZeroFindings()
+        {
+            var vm = new DashboardViewModel();
+            vm.HasThreatsDetected = true;
+            vm.ProtectionStatusText = "Tehdit bulundu";
+            vm.ProtectionBadgeText = "23 şüpheli bulgu";
+
+            await vm.RefreshThreatStatusAsync();
+
+            Assert.False(vm.HasThreatsDetected);
+            Assert.Equal("Sisteminiz güvende", vm.ProtectionStatusText);
+            Assert.Equal("Gerçek zamanlı koruma aktif", vm.ProtectionBadgeText);
+            Assert.Equal("#4CAF50", vm.ProtectionStatusColor);
+            Assert.Equal(0, vm.PendingFindingsCount);
         }
     }
 }

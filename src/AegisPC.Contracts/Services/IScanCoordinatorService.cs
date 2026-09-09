@@ -18,7 +18,10 @@ namespace AegisPC.Contracts.Services
         string StatusText { get; }
         IReadOnlyList<SecurityFinding> CurrentFindings { get; }
         bool IsPaused { get; }
+        TimeSpan ElapsedTime { get; }
+        IScanSession? CurrentSession { get; }
 
+        event Action<IScanSession>? ScanSessionStarted;
         event Action<ScanProgress>? ProgressChanged;
         event Action<ScanResult>? ScanCompleted;
 

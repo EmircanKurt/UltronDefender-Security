@@ -16,12 +16,12 @@
     <StartupObject>AegisPC.App.Program</StartupObject>
     <ApplicationIcon>Resources\Images\app.ico</ApplicationIcon>
     <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
-    <!-- Bellek Optimizasyonu: Masaüstü uygulaması için Workstation GC kullan -->
-    <!-- Server GC web sunucuları için tasarlanmıştır ve 2-4× fazla RAM tutar -->
+    <!-- Bellek Politikası: Workstation GC + 4 GB tarama bütçesi.
+         ConserveMemory kaldırıldı (tarama sırasında tahsisi boğuyordu);
+         boştayken geri kazanım yine de ConcurrentGarbageCollection ile yapılır. -->
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
-    <GarbageCollectionConserveMemory>9</GarbageCollectionConserveMemory>
-    <GCHeapHardLimit>0x80000000</GCHeapHardLimit>
+    <GCHeapHardLimit>0x100000000</GCHeapHardLimit>
     <GCLargeObjectHeapCompactionMode>1</GCLargeObjectHeapCompactionMode>
   </PropertyGroup>
   <ItemGroup>
@@ -60,5 +60,8 @@
     <Content Include="Resources\Images\ultron_logo.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Resources\Fonts\*.ttf" />
   </ItemGroup>
 </Project>

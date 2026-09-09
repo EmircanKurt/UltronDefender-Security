@@ -56,3 +56,10 @@ knowledge/
 memory-bank/
 AI_GUIDELINES.md
 
+## Temporary build and trace files
+*_wpftmp.csproj
+host_trace.txt
+last_prompt.txt
+tools/uninstaller_out/
+
+

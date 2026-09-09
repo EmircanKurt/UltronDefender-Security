@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -56,60 +57,88 @@ namespace AegisPC.Security.Scanning
         {
             if (string.IsNullOrWhiteSpace(dirPath) || !Directory.Exists(dirPath) || cancellationToken.IsCancellationRequested) return;
 
-            var dirQueue = new Queue<string>();
+            var dirQueue = new ConcurrentQueue<string>();
+            var visitedDirs = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+
             dirQueue.Enqueue(dirPath);
+            visitedDirs.TryAdd(dirPath, 0);
 
-            while (dirQueue.Count > 0 && !cancellationToken.IsCancellationRequested)
+            // Paralel klasör gezeri (I/O saturasyonu ve sıfır bekleme) — Modern CPU çekirdeklerine göre 4-16 arası
+            int walkerCount = Math.Clamp(Environment.ProcessorCount, 4, 16);
+            int activeWalkers = 0;
+
+            var walkerTasks = Enumerable.Range(0, walkerCount).Select(async _ =>
             {
-                pauseEvent?.Wait(cancellationToken);
-                string currentDir = dirQueue.Dequeue();
-
-                try
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    // 1. Dizin içindeki dosyaları kuyruğa ekle
-                    foreach (var file in Directory.EnumerateFiles(currentDir))
+                    pauseEvent?.Wait(cancellationToken);
+
+                    if (!dirQueue.TryDequeue(out var currentDir))
                     {
-                        if (cancellationToken.IsCancellationRequested) break;
-                        pauseEvent?.Wait(cancellationToken);
-                        await tryQueueFileAsync(file);
+                        if (Volatile.Read(ref activeWalkers) == 0 && dirQueue.IsEmpty)
+                        {
+                            break;
+                        }
+                        await Task.Yield();
+                        if (Volatile.Read(ref activeWalkers) == 0 && dirQueue.IsEmpty)
+                        {
+                            break;
+                        }
+                        continue;
                     }
 
-                    // 2. Alt dizinleri kuyruğa ekle (Junction / ReparsePoint atlayarak sonsuz döngüyü engelle)
-                    if (recursive)
+                    Interlocked.Increment(ref activeWalkers);
+                    try
                     {
-                        bool isWindowsRoot = currentDir.Equals(KnownPaths.WindowsDir, StringComparison.OrdinalIgnoreCase);
-
-                        foreach (var subDir in Directory.EnumerateDirectories(currentDir))
+                        // 1. Dizin içindeki dosyaları kuyruğa ekle
+                        foreach (var file in Directory.EnumerateFiles(currentDir))
                         {
                             if (cancellationToken.IsCancellationRequested) break;
+                            if (ScanFilterPolicy.IsSelfOwnedPath(file)) continue;
+                            pauseEvent?.Wait(cancellationToken);
+                            await tryQueueFileAsync(file).ConfigureAwait(false);
+                        }
 
-                            try
+                        // 2. Alt dizinleri kuyruğa ekle (Junction / ReparsePoint atlayarak sonsuz döngüyü engelle)
+                        if (recursive)
+                        {
+                            foreach (var subDir in Directory.EnumerateDirectories(currentDir))
                             {
-                                var dirInfo = new DirectoryInfo(subDir);
-                                if ((dirInfo.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+                                if (cancellationToken.IsCancellationRequested) break;
 
-                                // Windows kök dizinindeyken yalnızca tehdit barındırabilecek kritik çalışma alanlarını kuyruğa ekle
-                                if (isWindowsRoot)
+                                try
                                 {
-                                    if (!dirInfo.Name.Equals("System32", StringComparison.OrdinalIgnoreCase) &&
-                                        !dirInfo.Name.Equals("SysWOW64", StringComparison.OrdinalIgnoreCase) &&
-                                        !dirInfo.Name.Equals("Temp", StringComparison.OrdinalIgnoreCase))
+                                    var dirInfo = new DirectoryInfo(subDir);
+                                    if ((dirInfo.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+
+                                    // TAM KAPSAM: Windows kökünde de tüm alt dizinler taranır (WinSxS, Installer,
+                                    // assembly, ProgramData dahil). Yalnızca ExcludedDirectoryNames listesi dışlanır.
+                                    if (ExcludedDirectoryNames.Contains(dirInfo.Name) || ScanFilterPolicy.IsSelfOwnedPath(subDir)) continue;
+
+                                    if (visitedDirs.TryAdd(subDir, 0))
                                     {
-                                        continue;
+                                        dirQueue.Enqueue(subDir);
                                     }
                                 }
-
-                                if (ExcludedDirectoryNames.Contains(dirInfo.Name) ||
-                                    dirInfo.Name.StartsWith("AegisLabSuite_", StringComparison.OrdinalIgnoreCase) ||
-                                    dirInfo.Name.StartsWith("AegisPC_", StringComparison.OrdinalIgnoreCase)) continue;
-
-                                dirQueue.Enqueue(subDir);
+                                catch { }
                             }
-                            catch { }
                         }
                     }
+                    catch { } // Bir dizindeki erişim hatası diğer dizinleri durdurmaz
+                    finally
+                    {
+                        Interlocked.Decrement(ref activeWalkers);
+                    }
                 }
-                catch { } // Bir dizindeki erişim hatası diğer dizinleri durdurmaz
+            });
+
+            try
+            {
+                await Task.WhenAll(walkerTasks).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Tarama iptali durumunda temiz çıkış
             }
         }
 

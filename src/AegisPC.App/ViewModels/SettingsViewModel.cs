@@ -20,6 +20,7 @@ namespace AegisPC.App.ViewModels
         private readonly IRansomwareProtectionEngine? _ransomwareProtectionEngine;
         private readonly IAuditLogService? _auditLogService;
         private readonly IWindowsToastNotificationService? _toastNotificationService;
+        private readonly IReputationService? _reputationService;
 
         [ObservableProperty]
         private string pageTitle = "Uygulama ve Güvenlik Ayarları";
@@ -130,18 +131,51 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty]
         private string protectionWarningText = string.Empty;
 
+        [ObservableProperty]
+        private ScanResourceMode selectedResourceMode = ScanResourceMode.Auto;
+
+        [ObservableProperty]
+        private ObservableCollection<ResourceModeItem> resourceModes = new()
+        {
+            new ResourceModeItem { Mode = ScanResourceMode.Auto, Title = "Otomatik (Adaptif Akıllı Yönetim)", Description = "Sistem donanımına, batarya durumuna ve disk türüne (SSD/HDD) göre hızı anlık uyarlar." },
+            new ResourceModeItem { Mode = ScanResourceMode.VeryLow, Title = "Çok Düşük (Sıfır Kasma - 1 Çekirdek)", Description = "En fazla 1 çekirdek ve 128 MB RAM kullanır. Günlük işlerde hiçbir yavaşlama hissettirmez." },
+            new ResourceModeItem { Mode = ScanResourceMode.Low, Title = "Düşük (Oyun ve Çalışma Modu)", Description = "2 çekirdek sınırı ve 256 MB RAM kotası ile sessiz ve hafif arka plan taraması yapar." },
+            new ResourceModeItem { Mode = ScanResourceMode.Balanced, Title = "Dengeli (Standart Kullanım)", Description = "İşlemci çekirdeklerinin yarısını kullanır; hız ve kaynak tasarrufunu dengeler." },
+            new ResourceModeItem { Mode = ScanResourceMode.High, Title = "Yüksek (Hızlı Güvenlik Taraması)", Description = "İşlemci gücünün %75'ini kullanarak taramayı kısa sürede tamamlar." },
+            new ResourceModeItem { Mode = ScanResourceMode.Maximum, Title = "Maksimum (Tam Güç - Tüm Çekirdekler)", Description = "Tüm CPU çekirdeklerini ve yüksek RAM kotasını kullanarak en yüksek hızda çalışır." }
+        };
+
+        [ObservableProperty]
+        private ResourceModeItem? selectedResourceModeItem;
+
+        [ObservableProperty]
+        private bool isResourceThrottlingWarningVisible = false;
+
+        partial void OnSelectedResourceModeItemChanged(ResourceModeItem? value)
+        {
+            if (value != null)
+            {
+                SelectedResourceMode = value.Mode;
+                IsResourceThrottlingWarningVisible = value.Mode == ScanResourceMode.VeryLow || value.Mode == ScanResourceMode.Low;
+                _ = SaveSettingsAsync();
+                _ = LogAuditAsync("Tarama Kaynak Modu", value.Title);
+            }
+        }
+
         public SettingsViewModel(
             SettingsService? settingsService = null,
             IBackgroundProtectionService? backgroundProtectionService = null,
             IRansomwareProtectionEngine? ransomwareProtectionEngine = null,
             IAuditLogService? auditLogService = null,
-            IWindowsToastNotificationService? toastNotificationService = null)
+            IWindowsToastNotificationService? toastNotificationService = null,
+            IReputationService? reputationService = null)
         {
             _settingsService = settingsService;
             _backgroundProtectionService = backgroundProtectionService;
             _ransomwareProtectionEngine = ransomwareProtectionEngine;
             _auditLogService = auditLogService;
             _toastNotificationService = toastNotificationService;
+            _reputationService = reputationService;
             AppThemeManager.ThemeChanged += OnAppThemeChanged;
             LoadSettings();
         }
@@ -210,8 +244,17 @@ namespace AegisPC.App.ViewModels
                 IsFileProtectionEnabled = s.IsFileProtectionEnabled;
                 IsRansomwareShieldEnabled = s.IsRansomwareShieldEnabled;
                 IsProcessMonitoringEnabled = s.IsProcessMonitoringEnabled;
+                IsCloudLookupEnabled = s.IsCloudReputationEnabled;
                 ScheduledScanHour = s.ScheduledScanHour;
                 ScheduledScanDay = s.ScheduledScanDay;
+                SelectedResourceMode = s.ScanResourceMode;
+                SelectedResourceModeItem = ResourceModes.FirstOrDefault(m => m.Mode == s.ScanResourceMode) ?? ResourceModes[0];
+                IsResourceThrottlingWarningVisible = SelectedResourceMode == ScanResourceMode.VeryLow || SelectedResourceMode == ScanResourceMode.Low;
+            }
+            else
+            {
+                IsCloudLookupEnabled = _reputationService?.IsCloudLookupEnabled ?? AegisPC.Core.Configuration.FeatureFlags.IsCloudLookupActive;
+                SelectedResourceModeItem = ResourceModes[0];
             }
 
             ScanHours.Clear();
@@ -297,8 +340,37 @@ namespace AegisPC.App.ViewModels
         partial void OnIsCloudLookupEnabledChanged(bool value)
         {
             AegisPC.Core.Configuration.FeatureFlags.IsCloudLookupActive = value;
+            if (_reputationService != null)
+            {
+                _reputationService.IsCloudLookupEnabled = value;
+            }
+            if (_settingsService != null)
+            {
+                _settingsService.Current.IsCloudReputationEnabled = value;
+            }
             _ = SaveSettingsAsync();
             _ = LogAuditAsync("Bulut Tehdit Sorgulama", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı");
+        }
+
+        partial void OnNotificationsEnabledChanged(bool value)
+        {
+            if (_settingsService != null)
+            {
+                _settingsService.Current.NotificationsEnabled = value;
+            }
+            _ = SaveSettingsAsync();
+            _ = LogAuditAsync("Bildirimler", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı (Sessiz Mod)");
+            StatusMessage = value ? "Kritik tehdit bildirimleri etkinleştirildi." : "Bildirimler kapatıldı (Sessiz mod devrede).";
+        }
+
+        partial void OnIsRealTimeMonitoringEnabledChanged(bool value)
+        {
+            if (_settingsService != null)
+            {
+                _settingsService.Current.IsRealTimeMonitoringEnabled = value;
+            }
+            _ = SaveSettingsAsync();
+            _ = LogAuditAsync("Donanım İzleme", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı");
         }
 
         partial void OnIsNetworkProtectionEnabledChanged(bool value)
@@ -341,11 +413,31 @@ namespace AegisPC.App.ViewModels
             s.IsFileProtectionEnabled = IsFileProtectionEnabled;
             s.IsRansomwareShieldEnabled = IsRansomwareShieldEnabled;
             s.IsProcessMonitoringEnabled = IsProcessMonitoringEnabled;
+            s.IsCloudReputationEnabled = IsCloudLookupEnabled;
             s.ScheduledScanHour = ScheduledScanHour;
             s.ScheduledScanDay = ScheduledScanDay;
+            s.ScanResourceMode = SelectedResourceMode;
+            s.ScheduledScanIntervalHours = SelectedScanPeriod switch
+            {
+                var p when p.Contains("12 Saat") => 12,
+                var p when p.Contains("6 Saat") => 6,
+                var p when p.Contains("3 Saat") => 3,
+                var p when p.Contains("1 Saat") => 1,
+                var p when p.Contains("30 Dakika") => 0,
+                _ => 24
+            };
 
             await _settingsService.SaveAsync();
             StatusMessage = "Ayarlar başarıyla kaydedildi.";
         }
+    }
+
+    public class ResourceModeItem
+    {
+        public ScanResourceMode Mode { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+
+        public override string ToString() => Title;
     }
 }

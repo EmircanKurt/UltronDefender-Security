@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Windows.Threading;
 using AegisPC.Contracts.Services;
+using AegisPC.Core.Enums;
 using AegisPC.Core.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -20,9 +21,13 @@ namespace AegisPC.App.ViewModels
         private readonly IQuarantineService? _quarantineService;
         private readonly IAllowlistService? _allowlistService;
         private readonly IWindowsToastNotificationService? _toastService;
+        private readonly IScanResourceManager? _resourceManager;
+        private readonly ISettingsService? _settingsService;
 
         private DispatcherTimer? _timer;
         private Stopwatch _stopwatch = new();
+        private TimeSpan _engineElapsedTime = TimeSpan.Zero;
+        private DateTime _lastEngineUpdateUtc = DateTime.UtcNow;
 
         #region UI Başlık ve Tarama Durum Özellikleri
         /// <summary>
@@ -59,6 +64,19 @@ namespace AegisPC.App.ViewModels
         /// Duraklat / Devam Et butonunun anlık durumuna göre gösterilecek metin.
         /// </summary>
         public string PauseButtonText => IsPaused ? "Devam Et" : "Duraklat";
+
+        private volatile bool _isCancellationRequested;
+        public bool IsCancellationRequested => _isCancellationRequested;
+        public string ScanResultTitle => _isCancellationRequested ? "Tehdit Taraması İptal Edildi" : "Tehdit Taraması Sonuçları";
+        public string CleanStateTitle => _isCancellationRequested ? "Tarama İptal Edildi" : "Sisteminiz temiz";
+        public string CleanStateSubtitle => _isCancellationRequested 
+            ? $"Tarama kullanıcı tarafından durduruldu. İncelenen {ScannedItemsFormatted} öğede herhangi bir tehdit tespit edilmedi." 
+            : "Taranan dosyalarda herhangi bir zararlı kod veya tehdit bulunamadı.";
+
+        partial void OnIsPausedChanged(bool value)
+        {
+            OnPropertyChanged(nameof(PauseButtonText));
+        }
         #endregion
 
         #region İlerleme ve Sayaç Metrikleri
@@ -87,10 +105,16 @@ namespace AegisPC.App.ViewModels
         private string scannedItemsFormatted = "0";
 
         /// <summary>
-        /// Tarama başlangıcından bu yana geçen sürenin biçimlendirilmiş metni (ör. 1d 24s).
+        /// Tarama başlangıcından bu yana geçen sürenin biçimlendirilmiş metni (ör. 1 dk 24 sn veya 1 sa 05 dk 12 sn).
         /// </summary>
         [ObservableProperty]
-        private string scanDurationFormatted = "0d 00s";
+        private string scanDurationFormatted = "0 dk 00 sn";
+
+        /// <summary>
+        /// Kalan tahmini tarama süresi ve dosya oranı metni (ör. Kalan: ~4 dk 12 sn (12.340 / 210.547 dosya)).
+        /// </summary>
+        [ObservableProperty]
+        private string remainingEtaFormatted = string.Empty;
 
         /// <summary>
         /// Taranması planlanan toplam tahmini dosya sayısı.
@@ -127,6 +151,67 @@ namespace AegisPC.App.ViewModels
         /// </summary>
         [ObservableProperty]
         private string scanStatusText = "Taramaya hazır.";
+
+        /// <summary>
+        /// Atlanan dosya sayısı.
+        /// </summary>
+        [ObservableProperty]
+        private int skippedCount;
+
+        /// <summary>
+        /// Taraması başarısız olan (I/O, bozuk dosya vb.) dosya sayısı.
+        /// </summary>
+        [ObservableProperty]
+        private int failedCount;
+
+        /// <summary>
+        /// Per-file timeout (10s) sınırını aşarak zaman aşımına uğrayan dosya sayısı.
+        /// </summary>
+        [ObservableProperty]
+        private int timedOutCount;
+
+        /// <summary>
+        /// Anlık işlemci kullanım yüzdesi.
+        /// </summary>
+        [ObservableProperty]
+        private double cpuUsagePercent;
+
+        /// <summary>
+        /// Anlık bellek kullanım miktarı (MB).
+        /// </summary>
+        [ObservableProperty]
+        private double ramUsageMb;
+
+        /// <summary>
+        /// Aktif tarama kaynak profili adı.
+        /// </summary>
+        [ObservableProperty]
+        private string activeResourceProfileText = "Auto";
+
+        /// <summary>
+        /// Kullanıcı tarafından seçilen tarama kaynak modu.
+        /// </summary>
+        [ObservableProperty]
+        private ScanResourceMode selectedResourceMode = ScanResourceMode.Auto;
+
+        /// <summary>
+        /// Anlık CPU ve RAM kullanım metni (ör. CPU: %14 • RAM: 180 MB).
+        /// </summary>
+        public string CpuAndRamFormatted => $"CPU: %{CpuUsagePercent:F0} • RAM: {RamUsageMb:F0} MB";
+        #endregion
+
+        #region Donanım Kaynak Uyarlaması ve Donma Önleme
+        /// <summary>
+        /// Algılanan sistem donanım profili ve bellek kotası özeti (Örn: 16 GB RAM • 1024 MB Kota • 6/8 Çekirdek).
+        /// </summary>
+        [ObservableProperty]
+        private string hardwareTuningText = "⚡ Donanım Algılanıyor...";
+
+        /// <summary>
+        /// Donanım optimizasyonu ve donma önleme mekanizması detay açıklaması.
+        /// </summary>
+        [ObservableProperty]
+        private string hardwareProfileDetail = "Sistem donmasını önlemek için bellek tavanı ve arka plan iş parçacığı önceliği devrededir.";
         #endregion
 
         #region 5 Adımlı Kontrol Listesi (Checklist) Göstergeleri
@@ -245,31 +330,136 @@ namespace AegisPC.App.ViewModels
             ISecurityFindingService? findingService = null,
             IQuarantineService? quarantineService = null,
             IAllowlistService? allowlistService = null,
-            IWindowsToastNotificationService? toastService = null)
+            IWindowsToastNotificationService? toastService = null,
+            IScanResourceManager? resourceManager = null,
+            ISettingsService? settingsService = null)
         {
             _scanCoordinator = scanCoordinator;
             _findingService = findingService;
             _quarantineService = quarantineService;
             _allowlistService = allowlistService;
             _toastService = toastService;
+            _resourceManager = resourceManager;
+            _settingsService = settingsService;
+
+            if (_resourceManager != null)
+            {
+                _resourceManager.ProfileChanged += profile =>
+                {
+                    System.Windows.Application.Current?.Dispatcher?.Invoke(() =>
+                    {
+                        HardwareTuningText = profile.SummaryText;
+                        ActiveResourceProfileText = profile.SummaryText;
+                    });
+                };
+                HardwareTuningText = _resourceManager.ActiveProfile.SummaryText;
+                ActiveResourceProfileText = _resourceManager.ActiveProfile.SummaryText;
+            }
+            else
+            {
+                HardwareTuningText = AegisPC.Security.Scanning.ScanQueueCoordinator.ActiveResourceSummary;
+                ActiveResourceProfileText = AegisPC.Security.Scanning.ScanQueueCoordinator.ActiveResourceSummary;
+            }
+
+            var profile = ScanHardwareProfile.Detect();
+            HardwareProfileDetail = $"{profile.TotalRamGb:F0} GB RAM için azami {profile.MaxMemoryBudgetMb} MB bellek kotası ve {profile.Concurrency} iş parçacığı tahsis edildi. Arka plan önceliği (BelowNormal) ile sistem donması önlenir.";
 
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _timer.Tick += (s, e) =>
             {
-                if (IsScanning)
+                if (IsScanning && !IsPaused)
                 {
-                    var elapsed = _stopwatch.Elapsed;
-                    ScanDurationFormatted = $"{elapsed.Minutes}d {elapsed.Seconds:D2}s";
+                    var currentElapsed = _engineElapsedTime > TimeSpan.Zero
+                        ? _engineElapsedTime + (DateTime.UtcNow - _lastEngineUpdateUtc)
+                        : _stopwatch.Elapsed;
+                    ScanDurationFormatted = FormatDuration(currentElapsed);
                 }
             };
 
             if (_scanCoordinator != null)
             {
+                _scanCoordinator.ScanSessionStarted += OnScanSessionStarted;
                 _scanCoordinator.ProgressChanged += OnScanProgressChanged;
                 _scanCoordinator.ScanCompleted += OnScanCompleted;
 
                 SyncWithScanCoordinator();
             }
+        }
+
+        private void OnScanSessionStarted(IScanSession session)
+        {
+            System.Windows.Application.Current?.Dispatcher?.Invoke(() =>
+            {
+                ResetScanState(session.ScanType);
+                Views.ActiveScanWindow.ShowScanWindow(this);
+            });
+        }
+
+        /// <summary>
+        /// Yeni bir tarama başlatılmadan önce arayüz durumunu, sayaçları ve süre izleyicilerini sıfırlar.
+        /// </summary>
+        public void ResetScanState(ScanType scanType = ScanType.Quick)
+        {
+            IsScanning = true;
+            IsNotScanning = false;
+            IsScanFinishedView = false;
+            IsPaused = false;
+            ProgressPercentage = 0;
+            ScannedCount = 0;
+            ScannedItemsFormatted = "0";
+            TotalCount = 0;
+            FindingsCount = 0;
+            DetectionsCount = 0;
+            ScanFindings.Clear();
+            ThreatResults.Clear();
+            HasFindings = false;
+            HasNoFindings = true;
+            _engineElapsedTime = TimeSpan.Zero;
+            _lastEngineUpdateUtc = DateTime.UtcNow;
+            ScanDurationFormatted = "0 dk 00 sn";
+            RemainingEtaFormatted = string.Empty;
+            ScanStatusText = $"{scanType} taraması işleniyor...";
+            _stopwatch.Restart();
+            _timer?.Start();
+            _isCancellationRequested = false;
+            OnPropertyChanged(nameof(ScanResultTitle));
+            OnPropertyChanged(nameof(CleanStateTitle));
+            OnPropertyChanged(nameof(CleanStateSubtitle));
+            OnPropertyChanged(nameof(PauseButtonText));
+        }
+
+        public static string FormatDuration(TimeSpan elapsed)
+        {
+            if (elapsed < TimeSpan.Zero)
+            {
+                elapsed = TimeSpan.Zero;
+            }
+
+            if (elapsed.TotalHours >= 1)
+            {
+                return $"{(int)elapsed.TotalHours} sa {elapsed.Minutes:D2} dk {elapsed.Seconds:D2} sn";
+            }
+            return $"{elapsed.Minutes} dk {elapsed.Seconds:D2} sn";
+        }
+
+        public static string FormatEta(double? remainingSeconds, int scanned, int total)
+        {
+            string counts = total > 0 ? $"({scanned:N0} / {total:N0} dosya)" : $"({scanned:N0} dosya)";
+            if (!remainingSeconds.HasValue || remainingSeconds.Value <= 0)
+            {
+                return $"Kalan: tahmin ediliyor {counts}";
+            }
+
+            var ts = TimeSpan.FromSeconds(remainingSeconds.Value);
+            if (ts.TotalHours >= 1)
+            {
+                return $"Kalan: ~{(int)ts.TotalHours} sa {ts.Minutes} dk {ts.Seconds} sn {counts}";
+            }
+            if (ts.TotalMinutes >= 1)
+            {
+                return $"Kalan: ~{ts.Minutes} dk {ts.Seconds} sn {counts}";
+            }
+            return $"Kalan: ~{ts.Seconds} sn {counts}";
         }
     }
 }
