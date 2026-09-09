@@ -14,8 +14,8 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 - **MOCK:** Gerçek OS entegrasyonu yerine bellek içi simülasyon kullanan kod.
 
 > **Son Güncelleme:** 2026-09-09  
-> **Toplam Test Sayısı:** 572 Unit/Entegrasyon Testi (**572 Başarılı, 0 Atlanan, 0 Başarısız**)  
-> **Test Başarı Oranı:** %100 (Koşum Süresi: 1 dk 57 sn — %112 Hızlanma)
+> **Toplam Test Sayısı:** 586 Unit/Entegrasyon Testi (**586 Başarılı, 0 Atlanan, 0 Başarısız**)  
+> **Test Başarı Oranı:** %100 (Koşum Süresi: 1 dk 55 sn)
 
 ---
 
@@ -41,7 +41,7 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 | **16** | **Süreç Enjeksiyonu Tespiti** | `VERIFIED` | Process Hollowing, Early Bird APC, Remote Thread tespiti. |
 | **17** | **Anti-Evasion & Bellek Tarayıcı** | `VERIFIED` | Indirect Syscall (`4C 8B D1 B8 .. 0F 05 C3`), CobaltStrike / Meterpreter stager tespiti. |
 | **18** | **AMSI Script Koruması (İstemci/Tüketici)** | `VERIFIED` | `amsi.dll` Win32 P/Invoke üzerinden canlı bellek içi PowerShell/VBS tespiti. |
-| **19** | **Ransomware Kalkanı** | `VERIFIED` | Yazma patlaması, hızlı yeniden adlandırma, entropi artışı ve kanarya dosyası takibi. |
+| **19** | **Ransomware Kalkanı** | `VERIFIED (PID-REUSE GUARD + DUAL CANARIES + RESTART MGR)` | Çift yönlü canary tuzakları (Alpha docx + Omega docx), Win32 Restart Manager (`rstrtmgr.dll`) kilitli süreç tespiti, StartTime tabanlı PID-reuse koruması, System32/WinSxS ve kritik süreç dokunulmazlığı; tarama motorundan canary'ler muaf tutulur (29 test). |
 | **20** | **Öz-Koruma (Self Protection)** | `VERIFIED (PROCESS DACL & SCM HARDENING) / READY (RING-0)` | Win32 Process DACL ve SCM Service DACL (`OpenSCManager`/`SetServiceObjectSecurity`) sıkılaştırması devrede. Sessiz hata yutma kaldırıldı; Win32 hata kodları açıkça loglanır. Ring-0 tarafında `ObRegisterCallbacks` ile handle access stripping sürücüde hazır. |
 | **21** | **Kernel Minifilter Sürücüsü** | `BUILD PIPELINE READY / WDK AUTOMATION` | `drivers/AegisFilter/` C kaynakları tamdır. `drivers/Test-DriverPrerequisites.ps1` tanı ve `drivers/Build-And-Sign-Driver.ps1` otomatik WDK derleme/imzalama/kurulum boru hattı sağlandı. |
 | **22** | **Kernel <-> User-Mode IPC** | `VERIFIED (NATIVE FLTLIB P/INVOKE & PACKET FRAMING)` | `KernelIpcService.cs` gerçek `fltlib.dll` (`FilterConnectCommunicationPort`, `FilterGetMessage`, `FilterReplyMessage`, `FilterSendMessage`) sarmalayıcısına, x64 16-bayt başlık hizalamasına ve 4 iş parçacıklı worker havuzuna sahiptir. Sürücü yoksa dürüstçe `NotInstalled/Degraded` raporlar. |
