@@ -208,12 +208,14 @@ namespace AegisPC.Security.Scanning
                 };
             }
 
-            // Detect AMSI Bypass attempts & Obfuscated PowerShell Droppers
+            // Detect AMSI Bypass attempts & Obfuscated PowerShell Droppers & Recovery Tampering (MITRE T1490)
             var lower = content.ToLowerInvariant();
             if (lower.Contains("amsiinitfailed") || 
                 lower.Contains("amsiutils") && lower.Contains("nonpublic") ||
                 lower.Contains("[ref].assembly.gettype('system.management.automation.amsiutils')") ||
-                lower.Contains("downloadstring") && lower.Contains("iex") && lower.Contains("bypass"))
+                lower.Contains("downloadstring") && lower.Contains("iex") && lower.Contains("bypass") ||
+                (lower.Contains("vssadmin") && lower.Contains("delete") && lower.Contains("shadows")) ||
+                (lower.Contains("bcdedit") && lower.Contains("recoveryenabled") && lower.Contains("no")))
             {
                 return new AmsiScanResult
                 {
@@ -221,7 +223,7 @@ namespace AegisPC.Security.Scanning
                     Result = AmsiDetectionResult.Malicious,
                     RawResultCode = AMSI_RESULT_DETECTED,
                     ContentName = contentName,
-                    Details = "Şüpheli AMSI Bypass veya Obfuscated PowerShell Kodu Tespit Edildi",
+                    Details = "Şüpheli AMSI Bypass, Dropper veya Sistem Kurtarma Müdahalesi Tespit Edildi (MITRE T1490)",
                     ScanDuration = duration
                 };
             }

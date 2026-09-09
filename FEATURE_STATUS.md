@@ -14,8 +14,8 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 - **MOCK:** Gerçek OS entegrasyonu yerine bellek içi simülasyon kullanan kod.
 
 > **Son Güncelleme:** 2026-09-09  
-> **Toplam Test Sayısı:** 597 Unit/Entegrasyon Testi (**597 Başarılı, 0 Atlanan, 0 Başarısız**)  
-> **Test Başarı Oranı:** %100 (Koşum Süresi: 2 dk 01 sn)
+> **Toplam Test Sayısı:** 601 Unit/Entegrasyon Testi (**601 Başarılı, 0 Atlanan, 0 Başarısız**)  
+> **Test Başarı Oranı:** %100 (Koşum Süresi: 1 dk 54 sn)
 
 ---
 
@@ -40,7 +40,7 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 | **15** | **Saldırı Zinciri Korelasyonu** | `VERIFIED` | 60s kayan pencere, MITRE ATT&CK aşama korelasyonu. |
 | **16** | **Süreç Enjeksiyonu Tespiti** | `VERIFIED` | Process Hollowing, Early Bird APC, Remote Thread tespiti. |
 | **17** | **Anti-Evasion & Bellek Tarayıcı** | `VERIFIED` | Indirect Syscall (`4C 8B D1 B8 .. 0F 05 C3`), CobaltStrike / Meterpreter stager tespiti. |
-| **18** | **AMSI Script Koruması (İstemci/Tüketici)** | `VERIFIED (IN-PROCESS SCANNER + BUFFER + SCRIPT HEURISTICS)` | `amsi.dll` Win32 P/Invoke ve derin metin/tampon sezgisel analizi üzerinden canlı bellek içi PowerShell/VBS tespiti (13 test). |
+| **18** | **AMSI Script Koruması (İstemci/Tüketici)** | `VERIFIED (IN-PROCESS SCANNER + BUFFER + SCRIPT HEURISTICS)` | `amsi.dll` Win32 P/Invoke ve derin metin/tampon sezgisel analizi üzerinden canlı bellek içi PowerShell/VBS tespiti; fidye yazılımı ve kurtarma müdahalesi (vssadmin/bcdedit - MITRE T1490) düşürücüleri engeller (13 test). |
 | **19** | **Ransomware Kalkanı** | `VERIFIED (PID-REUSE GUARD + DUAL CANARIES + RESTART MGR)` | Çift yönlü canary tuzakları (Alpha docx + Omega docx), Win32 Restart Manager (`rstrtmgr.dll`) kilitli süreç tespiti, StartTime tabanlı PID-reuse koruması, System32/WinSxS ve kritik süreç dokunulmazlığı; tarama motorundan canary'ler muaf tutulur (29 test). |
 | **20** | **Öz-Koruma (Self Protection)** | `VERIFIED (PROCESS DACL & SCM HARDENING) / READY (RING-0)` | Win32 Process DACL ve SCM Service DACL (`OpenSCManager`/`SetServiceObjectSecurity`) sıkılaştırması devrede. Sessiz hata yutma kaldırıldı; Win32 hata kodları açıkça loglanır. Ring-0 tarafında `ObRegisterCallbacks` ile handle access stripping sürücüde hazır. |
 | **21** | **Kernel Minifilter Sürücüsü** | `BUILD PIPELINE READY / WDK AUTOMATION` | `drivers/AegisFilter/` C kaynakları tamdır. `drivers/Test-DriverPrerequisites.ps1` tanı ve `drivers/Build-And-Sign-Driver.ps1` (-Install, -Uninstall, -Verify, WDK version discovery) otomatik WDK derleme/imzalama/kurulum/doğrulama boru hattı sağlandı. |

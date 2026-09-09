@@ -6,11 +6,16 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using AegisPC.Contracts.Behavior;
 using AegisPC.Contracts.Detection;
+using AegisPC.Contracts.Kernel;
 using AegisPC.Contracts.Services;
+using AegisPC.Core.Models;
+using AegisPC.Security.Behavior;
 using AegisPC.Security.Detection;
 using AegisPC.Security.Detection.Detectors;
 using AegisPC.Security.Detection.YaraEngine;
+using AegisPC.Security.Kernel;
 using AegisPC.Security.RealTime;
 using AegisPC.Security.Scanning;
 using Xunit;
@@ -206,6 +211,161 @@ namespace AegisPC.Tests
                 {
                     File.Delete(sampleOutputPath);
                 }
+            }
+        }
+
+        [Fact]
+        public async Task Test_LiveValidation_Eicar_FullChainVerification_AcrossAllEngines()
+        {
+            string tempEicar = Path.Combine(_tempWorkingDir, $"fullchain_eicar_{Guid.NewGuid():N}.com");
+            await File.WriteAllTextAsync(tempEicar, EicarPayload);
+
+            try
+            {
+                // 1. Hash Database
+                var hashService = new HashService();
+                string hash = await hashService.ComputeSha256Async(tempEicar);
+                var hashMatch = MalwareSignatureDatabase.CheckHash(hash);
+                Assert.True(hashMatch.IsMatched);
+                Assert.Equal(100, hashMatch.SeverityScore);
+
+                // 2. YARA Engine
+                var yaraEngine = new YaraEngine();
+                var yaraMatches = await yaraEngine.ScanFileAsync(tempEicar);
+                Assert.Contains(yaraMatches, m => m.RuleName.Contains("EICAR", StringComparison.OrdinalIgnoreCase));
+
+                // 3. AMSI Engine
+                using var amsiService = new AmsiScanService();
+                var amsiResult = await amsiService.ScanStringAsync(EicarPayload, "eicar.com");
+                Assert.True(amsiResult.IsMalicious);
+
+                // 4. Kernel Gating Engine
+                var kernelEngine = new KernelGatingEngine();
+                var kernelDecision = await kernelEngine.EvaluatePreOpDecisionAsync(new KernelIpcMessage
+                {
+                    MessageId = 9001,
+                    OpCode = MinifilterOperationType.PreCreate,
+                    ProcessId = 7777,
+                    FilePath = tempEicar,
+                    TimeoutMs = 500
+                });
+                Assert.True(kernelDecision.IsBlocked);
+                Assert.Equal(0xC0000022u, kernelDecision.NtStatus);
+                Assert.True(kernelDecision.ShouldQuarantine);
+                Assert.True(kernelDecision.RiskScore >= 85);
+            }
+            finally
+            {
+                if (File.Exists(tempEicar)) File.Delete(tempEicar);
+            }
+        }
+
+        [Fact]
+        public async Task Test_LiveValidation_BatchScriptDropper_BlockedAcrossEngines()
+        {
+            string dropperScript = "@echo off\r\nvssadmin delete shadows /all /quiet\r\nbcdedit /set {default} recoveryenabled No\r\npowershell -w hidden -enc JABhID0A...";
+            string tempDropper = Path.Combine(_tempWorkingDir, "vssadmin_drop.bat");
+            await File.WriteAllTextAsync(tempDropper, dropperScript);
+
+            try
+            {
+                // 1. AMSI Script Scanner
+                using var amsi = new AmsiScanService();
+                var amsiRes = await amsi.ScanStringAsync(dropperScript, "vssadmin_drop.bat");
+                Assert.True(amsiRes.IsMalicious);
+
+                // 2. Kernel Gating Pre-Op
+                var kernelGating = new KernelGatingEngine();
+                var gatingDecision = await kernelGating.EvaluatePreOpDecisionAsync(new KernelIpcMessage
+                {
+                    MessageId = 9002,
+                    OpCode = MinifilterOperationType.PreCreate,
+                    ProcessId = 8888,
+                    FilePath = tempDropper,
+                    TimeoutMs = 500
+                });
+
+                Assert.True(gatingDecision.IsBlocked);
+                Assert.Equal(0xC0000022u, gatingDecision.NtStatus);
+                Assert.True(gatingDecision.RiskScore >= 85);
+            }
+            finally
+            {
+                if (File.Exists(tempDropper)) File.Delete(tempDropper);
+            }
+        }
+
+        [Fact]
+        public void Test_LiveValidation_ProcessHollowing_DetectedByBehaviorEngine()
+        {
+            var detector = new ProcessInjectionDetector();
+            var hollowingApis = new[]
+            {
+                "ZwUnmapViewOfSection",
+                "VirtualAllocEx",
+                "WriteProcessMemory",
+                "SetThreadContext"
+            };
+
+            var eval = detector.EvaluateApiSequence(1234, 5678, hollowingApis, "malware_loader.exe", "svchost.exe");
+
+            Assert.True(eval.IsInjectionDetected);
+            Assert.Equal(ProcessInjectionTechnique.ProcessHollowing, eval.Technique);
+            Assert.True(eval.SeverityScore >= 90);
+            Assert.Contains("Process Hollowing", eval.Explanation, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task Test_LiveValidation_BenignCommercialInstaller_PermittedWithoutFalsePositive()
+        {
+            string installerPath = Path.Combine(_tempWorkingDir, "GoogleChromeStandaloneEnterprise64.exe");
+            await File.WriteAllTextAsync(installerPath, "MZ-simulated-benign-google-installer-payload");
+
+            try
+            {
+                var fakeVerifier = new LiveSampleFakeSignatureVerifier("Google LLC", isValid: true);
+                var kernelGating = new KernelGatingEngine(signatureVerifier: fakeVerifier);
+
+                var decision = await kernelGating.EvaluatePreOpDecisionAsync(new KernelIpcMessage
+                {
+                    MessageId = 9003,
+                    OpCode = MinifilterOperationType.PreCreate,
+                    ProcessId = 9999,
+                    FilePath = installerPath,
+                    TimeoutMs = 500
+                });
+
+                Assert.False(decision.IsBlocked);
+                Assert.Equal(0x00000000u, decision.NtStatus);
+                Assert.Equal(KernelGatingStatus.BypassedTrustedProcess, decision.Status);
+                Assert.False(decision.ShouldQuarantine);
+                Assert.Equal(0, decision.RiskScore);
+            }
+            finally
+            {
+                if (File.Exists(installerPath)) File.Delete(installerPath);
+            }
+        }
+
+        private class LiveSampleFakeSignatureVerifier : ISignatureVerifier
+        {
+            private readonly string _publisher;
+            private readonly bool _isValid;
+
+            public LiveSampleFakeSignatureVerifier(string publisher, bool isValid = true)
+            {
+                _publisher = publisher;
+                _isValid = isValid;
+            }
+
+            public Task<SignatureInfo> VerifySignatureAsync(string filePath, CancellationToken cancellationToken = default)
+            {
+                return Task.FromResult(new SignatureInfo
+                {
+                    IsSigned = true,
+                    IsValid = _isValid,
+                    Publisher = _publisher
+                });
             }
         }
     }
