@@ -21,6 +21,7 @@ namespace AegisPC.Service.Workers
         private readonly AegisPC.Service.DriverBridge.IKernelBridge? _kernelBridge;
         private readonly AegisPC.Service.RealTime.EtwProcessMonitor? _processMonitor;
         private readonly AegisPC.Service.RealTime.EtwImageLoadMonitor? _imageLoadMonitor;
+        private readonly AegisPC.Service.Network.INetworkProtectionService? _networkProtectionService;
 
         public ProtectionWorker(
             ILogger<ProtectionWorker> logger,
@@ -32,7 +33,8 @@ namespace AegisPC.Service.Workers
             IEtwPreExecProtectionService? etwPreExecService = null,
             AegisPC.Service.DriverBridge.IKernelBridge? kernelBridge = null,
             AegisPC.Service.RealTime.EtwProcessMonitor? processMonitor = null,
-            AegisPC.Service.RealTime.EtwImageLoadMonitor? imageLoadMonitor = null)
+            AegisPC.Service.RealTime.EtwImageLoadMonitor? imageLoadMonitor = null,
+            AegisPC.Service.Network.INetworkProtectionService? networkProtectionService = null)
         {
             _logger = logger;
             _fileProtectionService = fileProtectionService;
@@ -44,6 +46,7 @@ namespace AegisPC.Service.Workers
             _kernelBridge = kernelBridge;
             _processMonitor = processMonitor;
             _imageLoadMonitor = imageLoadMonitor;
+            _networkProtectionService = networkProtectionService;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -106,6 +109,16 @@ namespace AegisPC.Service.Workers
                     {
                         _logger.LogWarning(ex, "Failed to connect Kernel Driver Bridge (continuing in user-mode).");
                     }
+
+                    try
+                    {
+                        _logger.LogInformation("Starting Network & DNS Protection Service...");
+                        _networkProtectionService?.Start();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to start Network Protection Service.");
+                    }
                 }
 
                 if (_settingsService.Current.IsRansomwareShieldEnabled)
@@ -127,8 +140,8 @@ namespace AegisPC.Service.Workers
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
-                    _logger.LogDebug("ProtectionWorker heartbeat: FileProtection={FileActive}, RansomwareShield={RansomwareActive}, KernelBridge={KernelActive}",
-                        _fileProtectionService.IsProtectionActive, _ransomwareEngine.IsShieldActive, _kernelBridge?.IsDriverConnected ?? false);
+                    _logger.LogDebug("ProtectionWorker heartbeat: FileProtection={FileActive}, RansomwareShield={RansomwareActive}, KernelBridge={KernelActive}, NetworkProtection={NetworkActive}",
+                        _fileProtectionService.IsProtectionActive, _ransomwareEngine.IsShieldActive, _kernelBridge?.IsDriverConnected ?? false, _networkProtectionService?.IsRunning ?? false);
                 }
             }
             catch (OperationCanceledException)
@@ -145,6 +158,7 @@ namespace AegisPC.Service.Workers
                 try { _realTimeProtectionEngine?.Stop(); } catch { }
                 try { _fileProtectionService?.StopProtection(); } catch { }
                 try { _ransomwareEngine?.StopShield(); } catch { }
+                try { _networkProtectionService?.Stop(); } catch { }
                 try { _etwPreExecService?.Stop(); } catch { }
                 try { _processMonitor?.Stop(); } catch { }
                 try { _imageLoadMonitor?.Stop(); } catch { }

@@ -108,6 +108,12 @@ namespace AegisPC.Service
                         services.AddSingleton<AegisPC.Service.Network.UrlBlocklistManager>();
                         services.AddSingleton<AegisPC.Service.Network.DnsFilterService>();
                         services.AddSingleton<AegisPC.Service.Network.ThreatFeedManager>();
+                        services.AddSingleton<AegisPC.Service.Network.INetworkProtectionService, AegisPC.Service.Network.NetworkProtectionService>();
+                        services.AddSingleton<AegisPC.Service.Network.NetworkProtectionService>(sp => (AegisPC.Service.Network.NetworkProtectionService)sp.GetRequiredService<AegisPC.Service.Network.INetworkProtectionService>());
+
+                        // Update & Rollback Engine
+                        services.AddSingleton<AegisPC.Service.Update.IAutoUpdateService, AegisPC.Service.Update.AutoUpdateService>();
+                        services.AddSingleton<AegisPC.Service.Update.AutoUpdateService>(sp => (AegisPC.Service.Update.AutoUpdateService)sp.GetRequiredService<AegisPC.Service.Update.IAutoUpdateService>());
 
                         // SmartScreen & MOTW Download Guard
                         services.AddSingleton<AegisPC.Service.SmartScreen.ZoneIdentifierAnalyzer>();

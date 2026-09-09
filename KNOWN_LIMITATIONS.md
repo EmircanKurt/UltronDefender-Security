@@ -6,13 +6,14 @@ Bu doküman, **Ultron Defender Total Security** platformunun mevcut mimarisindek
 
 ## 1. Çekirdek ve Sürücü Sınırları (Kernel & Driver Gaps)
 
-1. **Derlenmiş Çekirdek Sürücüsü Yoktur:**
-   - `drivers/AegisPC.Driver/` altında C kaynak kodları bulunmaktadır ancak Windows WDK ile derlenmiş geçerli bir `.sys` ikili dosyası mevcut değildir.
-   - Sürücü Windows işletim sistemine yüklenmiş ve aktif değildir.
-2. **Kullanıcı Modu Kernel Simülasyonu:**
-   - `KernelIpcService.cs` ve `KernelGatingEngine.cs` sınıfları gerçek `fltlib.dll` (`FilterConnectCommunicationPort`, `FilterGetMessage`, `FilterReplyMessage`) P/Invoke çağrıları yapmamakta, C# bellek içi simülasyon olarak çalışmaktadır.
-3. **Pre-Operation Koruması Eksikliği:**
-   - Mevcut Real-Time koruma `FileSystemWatcher` (Post-Operation / dosya oluştuktan sonra) ile çalışmaktadır. Kötü amaçlı bir dosya diskte açılırken veya çalıştırılmaya başlanırken henüz IRP seviyesinde durdurulamaz.
+1. **WDK İle Derlenmiş İkili (.sys) Dağıtımı:**
+   - `drivers/AegisFilter/` altında C WDK kaynak kodları tamamlanmıştır (`IRP_MJ_CREATE`, `IRP_MJ_WRITE`, `PsSetCreateProcessNotifyRoutineEx`, `PsSetLoadImageNotifyRoutine`, `ObRegisterCallbacks` ve `AegisFilter.vcxproj`).
+   - Geliştirme makinesinde WDK kurulu olmadığı için `.sys` ikilisi derlenmemiş ve test-signing ile yüklenmemiştir. Sürücü ikilisi derlenene ve `fltmc load AegisFilter` yapılana kadar sistem otomatik olarak ETW Pre-Execution + FileSystemWatcher kullanıcı modu korumasına geri döner.
+2. **Kullanıcı Modu Kernel IPC Köprüsü:**
+   - `AegisPC.Infrastructure/Kernel/KernelIpcService.cs` gerçek `fltlib.dll` (`FilterConnectCommunicationPort`, `FilterGetMessage`, `FilterReplyMessage`, `FilterSendMessage`) Win32 P/Invoke altyapısına kavuşturulmuş, x64 16-bayt hizalama ve 4-worker havuzu eklenmiştir.
+   - Sürücü yokken dürüstçe `NotInstalled / Degraded (User-Mode Fallback)` raporlar ve sistemi kilitlemez.
+3. **Pre-Operation Koruması Durumu:**
+   - Sürücü aktifken kernel düzeyinde `STATUS_ACCESS_DENIED` ve `FLT_PREOP_COMPLETE` döner; sürücü pasifken `EtwPreExecProtectionService` (`NtSuspendProcess`) kullanıcı modu dondurma katmanı devreye girer.
 
 ---
 

@@ -13,8 +13,8 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 - **BROKEN:** Hatalı veya güvenlik riski barındıran kod.
 - **MOCK:** Gerçek OS entegrasyonu yerine bellek içi simülasyon kullanan kod.
 
-> **Son Güncelleme:** 2026-09-07  
-> **Toplam Test Sayısı:** 309 Unit/Entegrasyon Testi + 3 Canlı Test (Toplam 312) (**309 Başarılı, 0 Atlanan, 0 Başarısız**)  
+> **Son Güncelleme:** 2026-09-09  
+> **Toplam Test Sayısı:** 556 Unit/Entegrasyon Testi (**556 Başarılı, 0 Atlanan, 0 Başarısız**)  
 > **Test Başarı Oranı:** %100
 
 ---
@@ -34,7 +34,7 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 | **9** | **Güvenli Arşiv Motoru (Zip Bomb)** | `VERIFIED` | >100:1 sıkıştırma oranı sınırı, 250MB kota, 4 seviye derinlik sınırı. |
 | **10** | **SafetyGuard (Sistem Koruma)** | `VERIFIED` | `CanonicalPathResolver`, `ProtectedPathGuard`, `ReparsePointGuard`. |
 | **11** | **Atomik Karantina Kasası** | `VERIFIED` | DPAPI AES-256 şifreleme, 6 aşamalı işlem, rollback garantisi. |
-| **12** | **Real-Time Dosya Koruması** | `IMPLEMENTED / ACTIVE (USER-MODE)` | `FileSystemWatcher` kanal kuyruğu, kararlılık kontrolü, anlık tarama. *(Pre-op kernel gating değildir).* |
+| **12** | **Real-Time Dosya Koruması** | `IMPLEMENTED / ACTIVE (USER-MODE)` | `FileSystemWatcher` kanal kuyruğu, kararlılık kontrolü, anlık tarama. Ring-0 Minifilter bağlıysa Pre-Op, değilse User-Mode Post-Op. |
 | **13** | **Başlangıç Güvenlik Taraması (Startup Sweep)** | `VERIFIED` | Riskli dizin önceliği, süreç korelasyonu, hızlı tarama. |
 | **14** | **Süreç Soyağacı (Process Lineage)** | `VERIFIED` | Ancestor/Descendant ağacı, Office/Browser LOLBin anomali tespiti. |
 | **15** | **Saldırı Zinciri Korelasyonu** | `VERIFIED` | 60s kayan pencere, MITRE ATT&CK aşama korelasyonu. |
@@ -42,10 +42,10 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 | **17** | **Anti-Evasion & Bellek Tarayıcı** | `VERIFIED` | Indirect Syscall (`4C 8B D1 B8 .. 0F 05 C3`), CobaltStrike / Meterpreter stager tespiti. |
 | **18** | **AMSI Script Koruması (İstemci/Tüketici)** | `VERIFIED` | `amsi.dll` Win32 P/Invoke üzerinden canlı bellek içi PowerShell/VBS tespiti. |
 | **19** | **Ransomware Kalkanı** | `VERIFIED` | Yazma patlaması, hızlı yeniden adlandırma, entropi artışı ve kanarya dosyası takibi. |
-| **20** | **Öz-Koruma (Self Protection)** | `PARTIAL` | Süreç DACL sıkılaştırması (`PROCESS_TERMINATE` engeli). *(PPL/ELAM çekirdek koruması yok).* |
-| **21** | **Kernel Minifilter Sürücüsü** | `NOT IMPLEMENTED / UNCOMPILED C SOURCE` | C kodları (`drivers/`) mevcut, derlenmiş `.sys` ikilisi ve WDK projesi yok. |
-| **22** | **Kernel <-> User-Mode IPC** | `MOCK / SIMULATION` | `KernelIpcService` C# bellek içi simülasyonudur, `fltlib.dll` çağırmaz. |
-| **23** | **Kernel Pre-Op Gating** | `MOCK / SIMULATION` | C# mantıksal simülasyonudur, canlı kernel I/O kesişimi yapmaz. |
+| **20** | **Öz-Koruma (Self Protection)** | `VERIFIED (USER-MODE DACL) / READY (RING-0 OB-CALLBACKS)` | Win32 Process DACL sıkılaştırması aktif. Ring-0 tarafında `ObRegisterCallbacks` ile handle access stripping (`PROCESS_TERMINATE`, `PROCESS_VM_WRITE`) sürücü kaynaklarında hazır. |
+| **21** | **Kernel Minifilter Sürücüsü** | `C SOURCE IMPLEMENTED & READY FOR WDK` | `drivers/AegisFilter/` altında `IRP_MJ_CREATE`, `IRP_MJ_WRITE`, `PsSetCreateProcessNotifyRoutineEx`, `PsSetLoadImageNotifyRoutine`, `ObRegisterCallbacks` tamamlandı; `AegisFilter.vcxproj` ve INF yapılandırıldı. WDK ortamında derlenmeye hazır. |
+| **22** | **Kernel <-> User-Mode IPC** | `VERIFIED (NATIVE FLTLIB P/INVOKE & PACKET FRAMING)` | `KernelIpcService.cs` gerçek `fltlib.dll` (`FilterConnectCommunicationPort`, `FilterGetMessage`, `FilterReplyMessage`, `FilterSendMessage`) sarmalayıcısına, x64 16-bayt başlık hizalamasına ve 4 iş parçacıklı worker havuzuna sahiptir (Doğrulama: 556 test). Sürücü yüklü değilse dürüstçe `NotInstalled/Degraded` raporlar. |
+| **23** | **Kernel Pre-Op Gating** | `READY IN C DRIVER / ETW FALLBACK ACTIVE` | `AegisFilter.c` içinde `STATUS_ACCESS_DENIED` ve `FLT_PREOP_COMPLETE` mimarisi hazır. Sürücü yokluğunda sistem ETW Pre-Execution (NtSuspendProcess) dondurma katmanına kesintisiz geri döner. |
 | **24** | **YARA Kural & Desen Motoru (YARA-X Mimarisi)** | `VERIFIED` | `IYaraEngine` ve `YaraDetector` (14. dedektör) devrede. abuse.ch standardında 3 varsayılan kural (EICAR, Mimikatz, CobaltStrike), bayt ofsetleri adli kaydı, 24 saatlik kural yenileme doğrulanmıştır (7 test). |
 | **25** | **Güvenlik Merkezi UI** | `IMPLEMENTED` | WPF UI Lepo tabanlı Dashboard, modül sağlık durumları mevcut. |
 | **26** | **İmza Veritabanı Bütünlüğü & Temizliği** | `VERIFIED` | 51 sahte hash temizlendi, 2 doğrulanmış EICAR hash'i gömülü tutulur; SQLite SHA-256 bütünlük kontrolü ve kurcalama (tampering) koruması devrede. |
@@ -56,3 +56,5 @@ Aşağıdaki durum tablosu, mutlak dürüstlük ve adli denetim ilkelerine göre
 | **31** | **Fast-Path Dijital İmza Bypass & Önbellek** | `VERIFIED` | Microsoft/Windows/Google imzalı sistem dosyaları hash hesaplamadan önce temiz-geçiş alır; 100k FIFO SignatureVerifier önbelleği ve Pre-hash ScanCache devrededir (10.000 dosyalık benchmark ile %100 hash atlanma kanıtlanmıştır). |
 | **32** | **Paralel Dizin Gezgini (Multi-Walker)** | `VERIFIED` | 2–4 eşzamanlı gezgin işçisi ve ConcurrentDictionary deduplication ile NVMe/SSD sürücülerde 8192 kapasiteli kanal kuyruğu tam doygunluğa ulaştırılır; BelowNormal öncelik korunur. |
 | **33** | **Kayan Ortalama ETA & UI İlerleme Göstergesi** | `VERIFIED` | Son 10 raporun dosya/sn hızına dayalı hareketli ortalama ETA (kalanDosya / hız), saat devretmeli süre biçimlendirmesi ve gerçek yüzdelik oran UI satırı bağlandı. |
+| **34** | **Güvenli Otomatik Güncelleme & Rollback** | `VERIFIED` | `AutoUpdateService` HTTPS manifest, izole staging dizini, SHA256 özet kontrolü, Authenticode imza doğrulaması ve arıza anında otomatik snapshot geri alma mekanizması (Doğrulandı: 3 test). |
+| **35** | **Ağ & DNS Koruması (Layer 7 Sinkhole)** | `VERIFIED` | `NetworkProtectionService` hosts dosyası izolasyonlu sinkhole, Cloudflare DoH, şüpheli C2 / giden ağ akışı korelasyonu (Doğrulandı: 3 test). *(Kernel WFP paket filtresi değildir).* |

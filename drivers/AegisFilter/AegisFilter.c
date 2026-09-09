@@ -5,12 +5,16 @@
 #pragma prefast(disable:__WARNING_ENCODE_MEMBER_FUNCTION_POINTER, "Minifilter callbacks do not require encoded function pointers")
 
 // ============================================================================
-// SABITLER VE BELLEK HAVUZU TANIMLARI
+// SABİTLER VE BELLEK HAVUZU TANIMLARI
 // ============================================================================
 
 #define AEGIS_FILTER_TAG          'sgeA'          // Bellek etiketimiz: 'Aegs'
 #define AEGIS_PORT_NAME           L"\\AegisFilterPort"
 #define AEGIS_MAX_PATH_CHARS      512
+
+// Kontrol mesajı kodları (User-Mode -> Kernel-Mode)
+#define AEGIS_MSG_REGISTER_PROTECTED_PID 0x1001
+#define AEGIS_MSG_QUERY_STATUS           0x1002
 
 // ExAllocatePool2 (Modern WDK / Windows 10 2004+ / Windows 11) geriye dönük uyumluluk makrosu
 #if !defined(ExAllocatePool2)
@@ -37,6 +41,12 @@ typedef struct _AEGIS_SCAN_RESPONSE {
     BOOLEAN BlockAccess;
 } AEGIS_SCAN_RESPONSE, *PAEGIS_SCAN_RESPONSE;
 
+// User-Mode tarafından gönderilen kontrol komutu yapısı
+typedef struct _AEGIS_CONTROL_COMMAND {
+    ULONG CommandCode;
+    ULONG ProcessId;
+} AEGIS_CONTROL_COMMAND, *PAEGIS_CONTROL_COMMAND;
+
 // Pre-Create aşamasından Post-Create aşamasına güvenle aktarılan bağlam verisi
 typedef struct _AEGIS_PRE_2_POST_CONTEXT {
     BOOLEAN IsCreationAttempt;
@@ -49,9 +59,12 @@ typedef struct _AEGIS_PRE_2_POST_CONTEXT {
 // GLOBAL SÜRÜCÜ DEĞİŞKENLERİ
 // ============================================================================
 
-PFLT_FILTER gFilterHandle = NULL;
-PFLT_PORT   gServerPort   = NULL;
-PFLT_PORT   gClientPort   = NULL;
+PFLT_FILTER gFilterHandle          = NULL;
+PFLT_PORT   gServerPort            = NULL;
+PFLT_PORT   gClientPort            = NULL;
+PDRIVER_OBJECT gDriverObject       = NULL;
+PVOID       gObRegistrationHandle  = NULL;
+ULONG       gProtectedPid          = 0;
 
 // ============================================================================
 // FONKSİYON BİLDİRİMLERİ (FORWARD DECLARATIONS)
@@ -91,6 +104,28 @@ FLT_POSTOP_CALLBACK_STATUS AegisPostCreate(
     _In_opt_ PVOID CompletionContext,
     _In_ FLT_POST_OPERATION_FLAGS Flags);
 
+FLT_PREOP_CALLBACK_STATUS AegisPreWrite(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext);
+
+VOID AegisProcessNotifyRoutine(
+    _Inout_ PEPROCESS Process,
+    _In_ HANDLE ProcessId,
+    _Inout_opt_ PPS_CREATE_NOTIFY_INFO CreateInfo);
+
+VOID AegisImageLoadNotifyRoutine(
+    _In_opt_ PUNICODE_STRING FullImageName,
+    _In_ HANDLE ProcessId,
+    _In_ PIMAGE_INFO ImageInfo);
+
+OB_PREOP_CALLBACK_STATUS AegisPreOpenProcess(
+    _In_ PVOID RegistrationContext,
+    _Inout_ POB_PRE_OPERATION_INFORMATION OperationInformation);
+
+NTSTATUS RegisterObjectCallbacks(VOID);
+VOID UnregisterObjectCallbacks(VOID);
+
 NTSTATUS AegisConnectNotifyCallback(
     _In_ PFLT_PORT ClientPort,
     _In_opt_ PVOID ServerPortCookie,
@@ -117,6 +152,7 @@ NTSTATUS AegisMessageNotifyCallback(
 #pragma alloc_text(PAGE, AegisInstanceTeardownStart)
 #pragma alloc_text(PAGE, AegisInstanceTeardownComplete)
 #pragma alloc_text(PAGE, AegisPreCreate)
+#pragma alloc_text(PAGE, AegisPreWrite)
 #pragma alloc_text(PAGE, AegisConnectNotifyCallback)
 #pragma alloc_text(PAGE, AegisDisconnectNotifyCallback)
 #pragma alloc_text(PAGE, AegisMessageNotifyCallback)
@@ -125,7 +161,6 @@ NTSTATUS AegisMessageNotifyCallback(
 // MINIFILTER OPERASYON VE KAYIT TABLOLARI (FLT_REGISTRATION)
 // ============================================================================
 
-// Yakalanacak dosya sistemi I/O işlemleri (Pre/Post Callbacks)
 CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
     {
         IRP_MJ_CREATE,
@@ -133,10 +168,15 @@ CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
         AegisPreCreate,
         AegisPostCreate
     },
+    {
+        IRP_MJ_WRITE,
+        0,
+        AegisPreWrite,
+        NULL
+    },
     { IRP_MJ_OPERATION_END }
 };
 
-// Minifilter kayıt yapısı
 CONST FLT_REGISTRATION FilterRegistration = {
     sizeof(FLT_REGISTRATION),           // Size
     FLT_REGISTRATION_VERSION,           // Version
@@ -169,6 +209,7 @@ NTSTATUS DriverEntry(
     UNREFERENCED_PARAMETER(RegistryPath);
     PAGED_CODE();
 
+    gDriverObject = DriverObject;
     KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[AegisFilter] DriverEntry baslatiliyor...\n"));
 
     // 1. Minifilter sürücüsünü Filtre Yöneticisine (Filter Manager) kaydet
@@ -178,16 +219,36 @@ NTSTATUS DriverEntry(
         return status;
     }
 
-    // 2. İletişim portu için varsayılan güvenlik tanımlayıcısını oluştur
-    // Bu işlem, yalnızca Yöneticilerin (Administrators) ve LocalSystem hesabının porta bağlanabilmesini sağlar
+    // 2. Pre-Execution Süreç Oluşturma Callback'ini kaydet (PsSetCreateProcessNotifyRoutineEx)
+    status = PsSetCreateProcessNotifyRoutineEx(AegisProcessNotifyRoutine, FALSE);
+    if (!NT_SUCCESS(status)) {
+        KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL, "[AegisFilter] PsSetCreateProcessNotifyRoutineEx basarisiz: 0x%08X (Devam ediliyor)\n", status));
+    }
+
+    // 3. İmaj / DLL Yükleme Bildirim Callback'ini kaydet (PsSetLoadImageNotifyRoutine)
+    status = PsSetLoadImageNotifyRoutine(AegisImageLoadNotifyRoutine);
+    if (!NT_SUCCESS(status)) {
+        KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL, "[AegisFilter] PsSetLoadImageNotifyRoutine basarisiz: 0x%08X (Devam ediliyor)\n", status));
+    }
+
+    // 4. Ring-0 Self-Defense Callback'ini kaydet (ObRegisterCallbacks)
+    status = RegisterObjectCallbacks();
+    if (!NT_SUCCESS(status)) {
+        KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL, "[AegisFilter] RegisterObjectCallbacks basarisiz: 0x%08X (Devam ediliyor)\n", status));
+    }
+
+    // 5. İletişim portu için varsayılan güvenlik tanımlayıcısını oluştur
     status = FltBuildDefaultSecurityDescriptor(&sd, FLT_PORT_ALL_ACCESS);
     if (!NT_SUCCESS(status)) {
         KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "[AegisFilter] FltBuildDefaultSecurityDescriptor hatasi: 0x%08X\n", status));
+        UnregisterObjectCallbacks();
+        PsRemoveLoadImageNotifyRoutine(AegisImageLoadNotifyRoutine);
+        PsSetCreateProcessNotifyRoutineEx(AegisProcessNotifyRoutine, TRUE);
         FltUnregisterFilter(gFilterHandle);
         return status;
     }
 
-    // 3. İletişim Portu nesne niteliklerini ilklendir
+    // 6. İletişim Portu nesne niteliklerini ilklendir
     RtlInitUnicodeString(&portName, AEGIS_PORT_NAME);
     InitializeObjectAttributes(
         &oa,
@@ -196,7 +257,7 @@ NTSTATUS DriverEntry(
         NULL,
         sd);
 
-    // 4. Çift yönlü filtre iletişim portunu oluştur (\AegisFilterPort)
+    // 7. Çift yönlü filtre iletişim portunu oluştur (\AegisFilterPort)
     status = FltCreateCommunicationPort(
         gFilterHandle,
         &gServerPort,
@@ -207,26 +268,31 @@ NTSTATUS DriverEntry(
         AegisMessageNotifyCallback,
         1); // Maksimum eşzamanlı kullanıcı modu bağlantısı (AegisPC.Service)
 
-    // Güvenlik tanımlayıcısını serbest bırak (Port oluşturulduktan sonra gerek kalmaz)
     FltFreeSecurityDescriptor(sd);
 
     if (!NT_SUCCESS(status)) {
         KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "[AegisFilter] FltCreateCommunicationPort hatasi: 0x%08X\n", status));
+        UnregisterObjectCallbacks();
+        PsRemoveLoadImageNotifyRoutine(AegisImageLoadNotifyRoutine);
+        PsSetCreateProcessNotifyRoutineEx(AegisProcessNotifyRoutine, TRUE);
         FltUnregisterFilter(gFilterHandle);
         return status;
     }
 
-    // 5. Dosya I/O filtrelemeyi resmi olarak başlat
+    // 8. Dosya I/O filtrelemeyi resmi olarak başlat
     status = FltStartFiltering(gFilterHandle);
     if (!NT_SUCCESS(status)) {
         KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "[AegisFilter] FltStartFiltering hatasi: 0x%08X\n", status));
         FltCloseCommunicationPort(gServerPort);
         gServerPort = NULL;
+        UnregisterObjectCallbacks();
+        PsRemoveLoadImageNotifyRoutine(AegisImageLoadNotifyRoutine);
+        PsSetCreateProcessNotifyRoutineEx(AegisProcessNotifyRoutine, TRUE);
         FltUnregisterFilter(gFilterHandle);
         return status;
     }
 
-    KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[AegisFilter] Sürücü basariyla yüklendi ve filtreleme aktif.\n"));
+    KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[AegisFilter] Sürücü basariyla yüklendi: Minifilter, ProcessNotify ve ObCallbacks devrede.\n"));
     return STATUS_SUCCESS;
 }
 
@@ -248,13 +314,18 @@ NTSTATUS AegisFilterUnload(
         gServerPort = NULL;
     }
 
-    // 2. Filtre kaydını düşür (Bu çağrı tüm instance'ları ve bekleyen I/O'ları güvenle sonlandırır)
+    // 2. ObRegisterCallbacks ve bildirim rutinlerini kaldır
+    UnregisterObjectCallbacks();
+    PsRemoveLoadImageNotifyRoutine(AegisImageLoadNotifyRoutine);
+    PsSetCreateProcessNotifyRoutineEx(AegisProcessNotifyRoutine, TRUE);
+
+    // 3. Filtre kaydını düşür
     if (gFilterHandle != NULL) {
         FltUnregisterFilter(gFilterHandle);
         gFilterHandle = NULL;
     }
 
-    KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[AegisFilter] Minifilter basariyla kaldirildi.\n"));
+    KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[AegisFilter] Minifilter ve güvenlik rutinleri basariyla temizlendi.\n"));
     return STATUS_SUCCESS;
 }
 
@@ -273,13 +344,6 @@ NTSTATUS AegisInstanceSetup(
     UNREFERENCED_PARAMETER(VolumeDeviceType);
     PAGED_CODE();
 
-    // Sadece desteklenen dosya sistemlerine bağlan (NTFS, ReFS, FAT, vb.)
-    // Sanal veya geçici cihazları filtrelemeye gerek yoktur
-    if (VolumeFilesystemType == FLT_FSTYPE_MUP ||
-        VolumeFilesystemType == FLT_FSTYPE_UNKNOWN) {
-        // İsteğe bağlı olarak ağ paylaşımları da taranabilir
-    }
-
     KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[AegisFilter] Yeni birim instance'ina baglanildi (FS Type: %d)\n", VolumeFilesystemType));
     return STATUS_SUCCESS;
 }
@@ -292,7 +356,6 @@ NTSTATUS AegisInstanceQueryTeardown(
     UNREFERENCED_PARAMETER(Flags);
     PAGED_CODE();
 
-    // fltmc detach komutlarına ve dinamik ayrılmaya izin ver
     return STATUS_SUCCESS;
 }
 
@@ -338,7 +401,7 @@ FLT_PREOP_CALLBACK_STATUS AegisPreCreate(
     *CompletionContext = NULL;
     PAGED_CODE();
 
-    // 1. Çekirdek modu çağrılarını ve paging file işlemlerini atla (Deadlock / Paging I/O koruması)
+    // 1. Çekirdek modu çağrılarını ve paging file işlemlerini atla
     if (Data->RequestorMode == KernelMode) {
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
@@ -348,14 +411,14 @@ FLT_PREOP_CALLBACK_STATUS AegisPreCreate(
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
-    // 2. Kullanıcı modu servisi (AegisPC.Service) porta bağlı değilse I/O akışını kesme (Fail-open)
+    // 2. Kullanıcı modu servisi (AegisPC.Service) bağlı değilse fail-open
     if (gClientPort == NULL) {
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
     currentPid = (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
-    if (currentPid <= 4) {
-        return FLT_PREOP_SUCCESS_NO_CALLBACK; // System (PID 4) bypass
+    if (currentPid <= 4 || (gProtectedPid != 0 && currentPid == gProtectedPid)) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK; // System veya kendi servisimiz bypass
     }
 
     // 3. Dosya creation ve write niyetlerini belirle
@@ -371,7 +434,6 @@ FLT_PREOP_CALLBACK_STATUS AegisPreCreate(
     // 4. Dosya adını güvenli ve normalize biçimde çek
     status = FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
     if (!NT_SUCCESS(status)) {
-        // Dosya adı çözülemezse açılış adını dene
         status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
         if (!NT_SUCCESS(status)) {
             return FLT_PREOP_SUCCESS_NO_CALLBACK;
@@ -384,27 +446,25 @@ FLT_PREOP_CALLBACK_STATUS AegisPreCreate(
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
-    // 5. Havuzdan güvenli bellek tahsisi yap (ExAllocatePool2 / IRQL safe paged pool)
+    // 5. Havuzdan güvenli bellek tahsisi yap
     scanRequest = (PAEGIS_SCAN_REQUEST)AegisAllocatePaged(sizeof(AEGIS_SCAN_REQUEST));
     if (scanRequest == NULL) {
         FltReleaseFileNameInformation(nameInfo);
-        return FLT_PREOP_SUCCESS_NO_CALLBACK; // Bellek yetersizliğinde sistemi kilitleme
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
     RtlZeroMemory(scanRequest, sizeof(AEGIS_SCAN_REQUEST));
     scanRequest->ProcessId = currentPid;
     scanRequest->IsWriteOperation = isWriteOperation;
 
-    // Dosya yolunu sınırları taşmayacak şekilde kopyala
     RtlCopyMemory(
         scanRequest->FilePath,
         nameInfo->Name.Buffer,
         min(nameInfo->Name.Length, (AEGIS_MAX_PATH_CHARS - 1) * sizeof(WCHAR)));
     scanRequest->FilePath[min(nameInfo->Name.Length / sizeof(WCHAR), AEGIS_MAX_PATH_CHARS - 1)] = L'\0';
 
-    // 6. Ring-3 Kullanıcı Modu Servisine mesaj gönder (FltSendMessage)
-    // 200 ms timeout: Kullanıcı modu geç yanıt verse dahi sistem kilitlenmesini (hang) önler
-    timeout.QuadPart = -2000000LL; // 200 ms (100-nanosaniyelik birimler)
+    // 6. Ring-3 Kullanıcı Modu Servisine mesaj gönder (FltSendMessage, 200ms fail-open timeout)
+    timeout.QuadPart = -2000000LL;
 
     status = FltSendMessage(
         gFilterHandle,
@@ -421,8 +481,6 @@ FLT_PREOP_CALLBACK_STATUS AegisPreCreate(
             "[AegisFilter] BLOKLANDI! Zararlı I/O engellendi. PID: %u, Dosya: %ws\n", 
             currentPid, scanRequest->FilePath));
 
-        // Bellekleri temizle ve işlemi STATUS_ACCESS_DENIED ile durdur
-        AegisAllocatePaged(0); // Dummy çağrı önleme
         ExFreePoolWithTag(scanRequest, AEGIS_FILTER_TAG);
         FltReleaseFileNameInformation(nameInfo);
 
@@ -431,7 +489,7 @@ FLT_PREOP_CALLBACK_STATUS AegisPreCreate(
         return FLT_PREOP_COMPLETE;
     }
 
-    // 8. Eğer dosya yazma veya yeni oluşturma ise, Post-Create aşamasında izlemek için context hazırla
+    // 8. Post-Create takibi gerekiyorsa bağlam hazırla
     if (isCreationAttempt || isWriteOperation) {
         PAEGIS_PRE_2_POST_CONTEXT postContext = (PAEGIS_PRE_2_POST_CONTEXT)AegisAllocateNonPaged(sizeof(AEGIS_PRE_2_POST_CONTEXT));
         if (postContext != NULL) {
@@ -454,6 +512,103 @@ FLT_PREOP_CALLBACK_STATUS AegisPreCreate(
 }
 
 // ============================================================================
+// PRE-OPERATION CALLBACK: IRP_MJ_WRITE (PRE-WRITE DATA PROTECTION)
+// ============================================================================
+
+FLT_PREOP_CALLBACK_STATUS AegisPreWrite(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext)
+{
+    NTSTATUS status;
+    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+    PAEGIS_SCAN_REQUEST scanRequest = NULL;
+    AEGIS_SCAN_RESPONSE scanResponse = { 0 };
+    ULONG replyLength = sizeof(AEGIS_SCAN_RESPONSE);
+    LARGE_INTEGER timeout;
+    ULONG currentPid;
+
+    UNREFERENCED_PARAMETER(FltObjects);
+    *CompletionContext = NULL;
+    PAGED_CODE();
+
+    if (Data->RequestorMode == KernelMode) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    if (FlagOn(Data->Iopb->OperationFlags, SL_OPEN_PAGING_FILE)) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    if (gClientPort == NULL) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    currentPid = (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
+    if (currentPid <= 4 || (gProtectedPid != 0 && currentPid == gProtectedPid)) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    status = FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
+    if (!NT_SUCCESS(status)) {
+        status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
+        if (!NT_SUCCESS(status)) {
+            return FLT_PREOP_SUCCESS_NO_CALLBACK;
+        }
+    }
+
+    status = FltParseFileNameInformation(nameInfo);
+    if (!NT_SUCCESS(status) || nameInfo->Name.Length == 0) {
+        FltReleaseFileNameInformation(nameInfo);
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    scanRequest = (PAEGIS_SCAN_REQUEST)AegisAllocatePaged(sizeof(AEGIS_SCAN_REQUEST));
+    if (scanRequest == NULL) {
+        FltReleaseFileNameInformation(nameInfo);
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    RtlZeroMemory(scanRequest, sizeof(AEGIS_SCAN_REQUEST));
+    scanRequest->ProcessId = currentPid;
+    scanRequest->IsWriteOperation = TRUE;
+
+    RtlCopyMemory(
+        scanRequest->FilePath,
+        nameInfo->Name.Buffer,
+        min(nameInfo->Name.Length, (AEGIS_MAX_PATH_CHARS - 1) * sizeof(WCHAR)));
+    scanRequest->FilePath[min(nameInfo->Name.Length / sizeof(WCHAR), AEGIS_MAX_PATH_CHARS - 1)] = L'\0';
+
+    timeout.QuadPart = -2000000LL; // 200 ms timeout
+
+    status = FltSendMessage(
+        gFilterHandle,
+        &gClientPort,
+        scanRequest,
+        sizeof(AEGIS_SCAN_REQUEST),
+        &scanResponse,
+        &replyLength,
+        &timeout);
+
+    if (NT_SUCCESS(status) && scanResponse.BlockAccess) {
+        KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL, 
+            "[AegisFilter] YAZMA İŞLEMİ BLOKLANDI! PID: %u, Dosya: %ws\n", 
+            currentPid, scanRequest->FilePath));
+
+        ExFreePoolWithTag(scanRequest, AEGIS_FILTER_TAG);
+        FltReleaseFileNameInformation(nameInfo);
+
+        Data->IoStatus.Status = STATUS_ACCESS_DENIED;
+        Data->IoStatus.Information = 0;
+        return FLT_PREOP_COMPLETE;
+    }
+
+    ExFreePoolWithTag(scanRequest, AEGIS_FILTER_TAG);
+    FltReleaseFileNameInformation(nameInfo);
+    return FLT_PREOP_SUCCESS_NO_CALLBACK;
+}
+
+// ============================================================================
 // POST-OPERATION CALLBACK: IRP_MJ_CREATE (FILE WRITE & CREATION MONITORING)
 // ============================================================================
 
@@ -466,7 +621,6 @@ FLT_POSTOP_CALLBACK_STATUS AegisPostCreate(
     PAEGIS_PRE_2_POST_CONTEXT postContext = (PAEGIS_PRE_2_POST_CONTEXT)CompletionContext;
     UNREFERENCED_PARAMETER(FltObjects);
 
-    // Draining kontrolü: Filtre kaldırılıyorsa hemen çık
     if (FlagOn(Flags, FLTFL_CALLBACK_DATA_DRAINING)) {
         if (postContext != NULL) {
             ExFreePoolWithTag(postContext, AEGIS_FILTER_TAG);
@@ -474,12 +628,10 @@ FLT_POSTOP_CALLBACK_STATUS AegisPostCreate(
         return FLT_POSTOP_FINISHED_PROCESSING;
     }
 
-    // Bağlam yoksa veya I/O başarısız olduysa temizle ve dön
     if (postContext == NULL) {
         return FLT_POSTOP_FINISHED_PROCESSING;
     }
 
-    // Dosya başarıyla oluşturuldu mu veya üzerine yazıldı mı?
     if (NT_SUCCESS(Data->IoStatus.Status)) {
         ULONG_PTR createResult = Data->IoStatus.Information;
 
@@ -494,9 +646,152 @@ FLT_POSTOP_CALLBACK_STATUS AegisPostCreate(
         }
     }
 
-    // Post-op bağlam belleğini serbest bırak
     ExFreePoolWithTag(postContext, AEGIS_FILTER_TAG);
     return FLT_POSTOP_FINISHED_PROCESSING;
+}
+
+// ============================================================================
+// PRE-EXECUTION SÜREÇ YARATMA CALLBACK'İ (PsSetCreateProcessNotifyRoutineEx)
+// ============================================================================
+
+VOID AegisProcessNotifyRoutine(
+    _Inout_ PEPROCESS Process,
+    _In_ HANDLE ProcessId,
+    _Inout_opt_ PPS_CREATE_NOTIFY_INFO CreateInfo)
+{
+    UNREFERENCED_PARAMETER(Process);
+
+    ULONG pid = (ULONG)(ULONG_PTR)ProcessId;
+
+    // Süreç sonlanma bildirimi
+    if (CreateInfo == NULL) {
+        if (gProtectedPid != 0 && pid == gProtectedPid) {
+            KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[AegisFilter] Korunan servis süreci kapandı.\n"));
+            gProtectedPid = 0;
+        }
+        return;
+    }
+
+    // Süreç başlatma öncesi (Pre-Execution Gating)
+    if (pid <= 4 || (gProtectedPid != 0 && pid == gProtectedPid)) {
+        return;
+    }
+
+    if (gClientPort == NULL) {
+        return; // User-mode bağlı değilse fail-open
+    }
+
+    if (CreateInfo->ImageFileName != NULL && CreateInfo->ImageFileName->Length > 0) {
+        AEGIS_SCAN_REQUEST scanReq;
+        AEGIS_SCAN_RESPONSE scanResp = { 0 };
+        ULONG replyLen = sizeof(AEGIS_SCAN_RESPONSE);
+        LARGE_INTEGER timeout;
+        NTSTATUS status;
+
+        RtlZeroMemory(&scanReq, sizeof(AEGIS_SCAN_REQUEST));
+        scanReq.ProcessId = pid;
+        scanReq.IsWriteOperation = FALSE;
+
+        ULONG copyLen = min(CreateInfo->ImageFileName->Length, (AEGIS_MAX_PATH_CHARS - 1) * sizeof(WCHAR));
+        RtlCopyMemory(scanReq.FilePath, CreateInfo->ImageFileName->Buffer, copyLen);
+        scanReq.FilePath[copyLen / sizeof(WCHAR)] = L'\0';
+
+        timeout.QuadPart = -2000000LL; // 200 ms timeout
+
+        status = FltSendMessage(
+            gFilterHandle,
+            &gClientPort,
+            &scanReq,
+            sizeof(AEGIS_SCAN_REQUEST),
+            &scanResp,
+            &replyLen,
+            &timeout);
+
+        if (NT_SUCCESS(status) && scanResp.BlockAccess) {
+            KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
+                "[AegisFilter] ÇEKİRDEKTE SÜREÇ ENGELLEMESİ! STATUS_ACCESS_DENIED, PID: %u, İmaj: %ws\n",
+                pid, scanReq.FilePath));
+            CreateInfo->CreationStatus = STATUS_ACCESS_DENIED;
+        }
+    }
+}
+
+// ============================================================================
+// İMAJ / DİNAMİK KÜTÜPHANE YÜKLEME BİLDİRİMİ (PsSetLoadImageNotifyRoutine)
+// ============================================================================
+
+VOID AegisImageLoadNotifyRoutine(
+    _In_opt_ PUNICODE_STRING FullImageName,
+    _In_ HANDLE ProcessId,
+    _In_ PIMAGE_INFO ImageInfo)
+{
+    UNREFERENCED_PARAMETER(ImageInfo);
+    UNREFERENCED_PARAMETER(ProcessId);
+
+    if (FullImageName == NULL || FullImageName->Length == 0) {
+        return;
+    }
+}
+
+// ============================================================================
+// ÇEKİRDEK SELF-DEFENSE (ObRegisterCallbacks - HANDLE STRIPPING)
+// ============================================================================
+
+OB_PREOP_CALLBACK_STATUS AegisPreOpenProcess(
+    _In_ PVOID RegistrationContext,
+    _Inout_ POB_PRE_OPERATION_INFORMATION OperationInformation)
+{
+    UNREFERENCED_PARAMETER(RegistrationContext);
+
+    if (OperationInformation->ObjectType != *PsProcessType) {
+        return OB_PREOP_SUCCESS;
+    }
+
+    PEPROCESS targetProcess = (PEPROCESS)OperationInformation->Object;
+    ULONG targetPid = (ULONG)(ULONG_PTR)PsGetProcessId(targetProcess);
+
+    // Korunan güvenlik servisi PID'si ise yetkileri kırp (Anti-Tamper Ring-0)
+    if (targetPid == gProtectedPid && gProtectedPid != 0) {
+        if (OperationInformation->Operation == OB_OPERATION_HANDLE_CREATE ||
+            OperationInformation->Operation == OB_OPERATION_HANDLE_DUPLICATE) {
+            
+            OperationInformation->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_TERMINATE;
+            OperationInformation->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_WRITE;
+            OperationInformation->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_VM_OPERATION;
+            OperationInformation->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_SUSPEND_RESUME;
+        }
+    }
+
+    return OB_PREOP_SUCCESS;
+}
+
+NTSTATUS RegisterObjectCallbacks(VOID)
+{
+    OB_CALLBACK_REGISTRATION callbackReg;
+    OB_OPERATION_REGISTRATION opReg;
+
+    RtlZeroMemory(&opReg, sizeof(opReg));
+    opReg.ObjectType = PsProcessType;
+    opReg.Operations = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
+    opReg.PreOperation = AegisPreOpenProcess;
+    opReg.PostOperation = NULL;
+
+    RtlZeroMemory(&callbackReg, sizeof(callbackReg));
+    callbackReg.Version = OB_FLT_REGISTRATION_VERSION;
+    callbackReg.OperationRegistrationCount = 1;
+    RtlInitUnicodeString(&callbackReg.Altitude, L"320500");
+    callbackReg.RegistrationContext = NULL;
+    callbackReg.OperationRegistration = &opReg;
+
+    return ObRegisterCallbacks(&callbackReg, &gObRegistrationHandle);
+}
+
+VOID UnregisterObjectCallbacks(VOID)
+{
+    if (gObRegistrationHandle != NULL) {
+        ObUnRegisterCallbacks(gObRegistrationHandle);
+        gObRegistrationHandle = NULL;
+    }
 }
 
 // ============================================================================
@@ -518,7 +813,6 @@ NTSTATUS AegisConnectNotifyCallback(
 
     KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[AegisFilter] Kullanıcı modu servisi baglandi (AegisPC.Service).\n"));
 
-    // Kullanıcı modu istemci portunu sakla
     gClientPort = ClientPort;
     return STATUS_SUCCESS;
 }
@@ -531,7 +825,6 @@ VOID AegisDisconnectNotifyCallback(
 
     KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[AegisFilter] Kullanıcı modu baglantisi koptu.\n"));
 
-    // İstemci portunu kapat ve sıfırla
     if (gClientPort != NULL) {
         FltCloseClientPort(gFilterHandle, &gClientPort);
         gClientPort = NULL;
@@ -547,8 +840,6 @@ NTSTATUS AegisMessageNotifyCallback(
     _Out_ PULONG ReturnOutputBufferLength)
 {
     UNREFERENCED_PARAMETER(PortCookie);
-    UNREFERENCED_PARAMETER(InputBuffer);
-    UNREFERENCED_PARAMETER(InputBufferSize);
     UNREFERENCED_PARAMETER(OutputBuffer);
     UNREFERENCED_PARAMETER(OutputBufferSize);
     PAGED_CODE();
@@ -557,6 +848,15 @@ NTSTATUS AegisMessageNotifyCallback(
         *ReturnOutputBufferLength = 0;
     }
 
-    // Kullanıcı modundan gelen doğrudan kontrol mesajları için genişletilebilir
+    if (InputBuffer != NULL && InputBufferSize >= sizeof(AEGIS_CONTROL_COMMAND)) {
+        PAEGIS_CONTROL_COMMAND cmd = (PAEGIS_CONTROL_COMMAND)InputBuffer;
+        if (cmd->CommandCode == AEGIS_MSG_REGISTER_PROTECTED_PID) {
+            gProtectedPid = cmd->ProcessId;
+            KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, 
+                "[AegisFilter] Korunan Servis PID kaydedildi: %u. ObRegisterCallbacks koruması devrede.\n", gProtectedPid));
+            return STATUS_SUCCESS;
+        }
+    }
+
     return STATUS_SUCCESS;
 }

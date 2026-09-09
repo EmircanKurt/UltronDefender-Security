@@ -57,19 +57,21 @@ namespace AegisPC.Service.DriverBridge
 
                 if (_isDriverConnected)
                 {
-                    _logger?.LogInformation("Connected successfully to AegisFilter communication port (\\AegisFilterPort). Starting listener...");
-                    _kernelIpc.StartListener(EvaluateKernelScanRequest);
+                    uint currentPid = (uint)Environment.ProcessId;
+                    bool registered = _kernelIpc.RegisterProtectedProcess(currentPid);
+                    _logger?.LogInformation("Connected successfully to AegisFilter communication port (\\AegisFilterPort). Protected PID {Pid} registered for Ring-0 Anti-Tamper (Success: {Registered}). Starting listener worker pool...", currentPid, registered);
+                    _kernelIpc.StartListener(EvaluateKernelScanRequest, workerThreads: 4);
                     return true;
                 }
                 else
                 {
-                    _logger?.LogInformation("AegisFilter kernel driver not active or not loaded. System operating in User-Mode Progressive Protection fallback.");
+                    _logger?.LogInformation("AegisFilter kernel driver (.sys) is NOT active or not loaded on port \\AegisFilterPort. System operating in Truthful User-Mode Progressive Protection fallback (ETW Pre-Exec + FileSystemWatcher). Gating status: DEGRADED (USER-MODE ONLY).");
                     return false;
                 }
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "Failed to initialize kernel bridge connection. Continuing with user-mode telemetry.");
+                _logger?.LogWarning(ex, "Failed to initialize kernel bridge connection. Continuing with truthful user-mode telemetry.");
                 _isDriverConnected = false;
                 return false;
             }

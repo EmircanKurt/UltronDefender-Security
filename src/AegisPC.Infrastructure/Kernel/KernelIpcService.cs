@@ -7,12 +7,23 @@ using Microsoft.Win32.SafeHandles;
 
 namespace AegisPC.Infrastructure.Kernel
 {
+    /// <summary>
+    /// Ring-0 Kernel Minifilter (AegisFilter.sys) ile Ring-3 Windows Servisi arasındaki
+    /// FilterCommunicationPort çift yönlü haberleşme ve I/O gating altyapı servisi.
+    /// 64-bit bellek hizalaması (x64 structure alignment), çok kanallı worker havuzu
+    /// ve sistem kilitlenmelerini önleyen fail-open zaman aşımı mekanizması içerir.
+    /// </summary>
     public class KernelIpcService : IDisposable
     {
-        private const string PortName = "\\AegisFilterPort";
+        public const string DefaultPortName = "\\AegisFilterPort";
         private SafeFileHandle? _portHandle;
         private CancellationTokenSource? _cts;
+        private bool _isConnected;
+        private readonly object _lock = new();
 
+        public bool IsConnected => _isConnected && _portHandle != null && !_portHandle.IsInvalid;
+
+        #region Protocol Structs Matching AegisFilter.sys Ring-0
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         public struct ScanRequest
         {
@@ -30,24 +41,129 @@ namespace AegisPC.Infrastructure.Kernel
             public bool BlockAccess;
         }
 
+        /// <summary>
+        /// Windows Filter Manager FILTER_MESSAGE_HEADER yapısı (x64'te 16 bayt: 4b ReplyLength + 4b Padding + 8b MessageId).
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        public struct FilterMessageHeader
+        {
+            public uint ReplyLength;
+            public uint Reserved;
+            public ulong MessageId;
+        }
+
+        /// <summary>
+        /// Windows Filter Manager FILTER_REPLY_HEADER yapısı (x64'te 16 bayt: 4b Status + 4b Padding + 8b MessageId).
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        public struct FilterReplyHeader
+        {
+            public int Status;      // NTSTATUS (0x00000000 = STATUS_SUCCESS)
+            public int Reserved;    // x64 8-bayt hizalama padding
+            public ulong MessageId; // Kernel FltSendMessage ile eşleşen kimlik
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct ScanReplyPacket
+        {
+            public FilterReplyHeader Header;
+            public ScanResponse Response;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AegisControlCommand
+        {
+            public uint CommandCode;
+            public uint ProcessId;
+        }
+        #endregion
+
+        #region Win32 FltLib P/Invoke
         [DllImport("fltLib.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern int FilterConnectCommunicationPort(
-            string lpPortName, uint dwOptions, IntPtr lpContext, ushort wSizeOfContext, IntPtr lpSecurityAttributes, out SafeFileHandle hPort);
+            string lpPortName,
+            uint dwOptions,
+            IntPtr lpContext,
+            ushort wSizeOfContext,
+            IntPtr lpSecurityAttributes,
+            out SafeFileHandle hPort);
 
         [DllImport("fltLib.dll", SetLastError = true)]
         private static extern int FilterGetMessage(
-            SafeFileHandle hPort, IntPtr lpMessageBuffer, uint dwMessageBufferSize, IntPtr lpOverlapped);
+            SafeFileHandle hPort,
+            IntPtr lpMessageBuffer,
+            uint dwMessageBufferSize,
+            IntPtr lpOverlapped);
 
         [DllImport("fltLib.dll", SetLastError = true)]
         private static extern int FilterReplyMessage(
-            SafeFileHandle hPort, IntPtr lpReplyBuffer, uint dwReplyBufferSize);
+            SafeFileHandle hPort,
+            IntPtr lpReplyBuffer,
+            uint dwReplyBufferSize);
 
-        public bool ConnectToDriver()
+        [DllImport("fltLib.dll", SetLastError = true)]
+        private static extern int FilterSendMessage(
+            SafeFileHandle hPort,
+            IntPtr lpInBuffer,
+            uint dwInBufferSize,
+            IntPtr lpOutBuffer,
+            uint dwOutBufferSize,
+            out uint lpBytesReturned);
+        #endregion
+
+        public bool ConnectToDriver(string portName = DefaultPortName)
         {
+            lock (_lock)
+            {
+                if (IsConnected) return true;
+
+                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    _isConnected = false;
+                    return false;
+                }
+
+                try
+                {
+                    int hResult = FilterConnectCommunicationPort(portName, 0, IntPtr.Zero, 0, IntPtr.Zero, out _portHandle);
+                    _isConnected = (hResult == 0 && _portHandle != null && !_portHandle.IsInvalid);
+                    return _isConnected;
+                }
+                catch
+                {
+                    _isConnected = false;
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Ring-0 ObRegisterCallbacks koruması için mevcut korunan antivirüs servis sürecinin PID'sini sürücüye kaydeder.
+        /// </summary>
+        public bool RegisterProtectedProcess(uint pid)
+        {
+            if (!IsConnected || _portHandle == null) return false;
+
             try
             {
-                int hResult = FilterConnectCommunicationPort(PortName, 0, IntPtr.Zero, 0, IntPtr.Zero, out _portHandle);
-                return hResult == 0 && _portHandle != null && !_portHandle.IsInvalid;
+                var cmd = new AegisControlCommand
+                {
+                    CommandCode = 0x1001, // AEGIS_MSG_REGISTER_PROTECTED_PID
+                    ProcessId = pid
+                };
+
+                int cmdSize = Marshal.SizeOf<AegisControlCommand>();
+                IntPtr inBuffer = Marshal.AllocHGlobal(cmdSize);
+                try
+                {
+                    Marshal.StructureToPtr(cmd, inBuffer, false);
+                    int hr = FilterSendMessage(_portHandle, inBuffer, (uint)cmdSize, IntPtr.Zero, 0, out _);
+                    return hr == 0;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(inBuffer);
+                }
             }
             catch
             {
@@ -55,77 +171,106 @@ namespace AegisPC.Infrastructure.Kernel
             }
         }
 
-        public void StartListener(Func<ScanRequest, bool> evaluationCallback)
+        /// <summary>
+        /// Kernelden gelen dosya/süreç I/O isteklerini çok iş parçacıklı (worker pool) olarak dinler ve yanıtlar.
+        /// </summary>
+        public void StartListener(Func<ScanRequest, bool> evaluationCallback, int workerThreads = 4)
         {
-            if (_portHandle == null || _portHandle.IsInvalid) return;
+            if (!IsConnected || _portHandle == null) return;
             _cts = new CancellationTokenSource();
 
-            Task.Run(() =>
+            int headerSize = Marshal.SizeOf<FilterMessageHeader>();
+            int requestSize = Marshal.SizeOf<ScanRequest>();
+            int bufferSize = headerSize + requestSize;
+            int replySize = Marshal.SizeOf<ScanReplyPacket>();
+
+            for (int i = 0; i < Math.Max(1, workerThreads); i++)
             {
-                // Buffer size for kernel messages (header + ScanRequest)
-                const int headerSize = 16; // FILTER_MESSAGE_HEADER size
-                uint bufferSize = (uint)(headerSize + Marshal.SizeOf<ScanRequest>());
-                IntPtr msgBuffer = Marshal.AllocHGlobal((int)bufferSize);
-
-                try
+                Task.Factory.StartNew(() =>
                 {
-                    while (!_cts.Token.IsCancellationRequested)
+                    IntPtr msgBuffer = Marshal.AllocHGlobal(bufferSize);
+                    IntPtr replyBuffer = Marshal.AllocHGlobal(replySize);
+
+                    try
                     {
-                        int hr = FilterGetMessage(_portHandle, msgBuffer, bufferSize, IntPtr.Zero);
-                        if (hr != 0)
+                        while (!_cts.Token.IsCancellationRequested && IsConnected)
                         {
-                            if (_cts.Token.IsCancellationRequested) break;
-                            Thread.Sleep(50); // Brief pause on error before retry
-                            continue;
-                        }
-
-                        try
-                        {
-                            // Extract message ID from header (first 8 bytes = length, next 8 = message ID)
-                            long messageId = Marshal.ReadInt64(msgBuffer, 8);
-
-                            // Parse ScanRequest from buffer after header
-                            var request = Marshal.PtrToStructure<ScanRequest>(msgBuffer + headerSize);
-
-                            // Evaluate via callback (true = block, false = allow)
-                            bool shouldBlock = evaluationCallback(request);
-
-                            // Build reply: FILTER_REPLY_HEADER (messageId) + ScanResponse
-                            int replyHeaderSize = 12; // Status(4) + MessageId(8)
-                            int replySize = replyHeaderSize + Marshal.SizeOf<ScanResponse>();
-                            IntPtr replyBuffer = Marshal.AllocHGlobal(replySize);
+                            int hr = FilterGetMessage(_portHandle, msgBuffer, (uint)bufferSize, IntPtr.Zero);
+                            if (hr != 0)
+                            {
+                                if (_cts.Token.IsCancellationRequested) break;
+                                Thread.Sleep(20);
+                                continue;
+                            }
 
                             try
                             {
-                                Marshal.WriteInt32(replyBuffer, 0); // STATUS_SUCCESS
-                                Marshal.WriteInt64(replyBuffer, 4, messageId);
-                                var response = new ScanResponse { BlockAccess = shouldBlock };
-                                Marshal.StructureToPtr(response, replyBuffer + replyHeaderSize, false);
+                                var msgHeader = Marshal.PtrToStructure<FilterMessageHeader>(msgBuffer);
+                                var request = Marshal.PtrToStructure<ScanRequest>(msgBuffer + headerSize);
 
+                                bool shouldBlock = false;
+                                try
+                                {
+                                    shouldBlock = evaluationCallback(request);
+                                }
+                                catch
+                                {
+                                    // Fail-open: Hata durumunda işletim sistemini kilitlememek için izin ver
+                                    shouldBlock = false;
+                                }
+
+                                var reply = new ScanReplyPacket
+                                {
+                                    Header = new FilterReplyHeader
+                                    {
+                                        Status = 0, // STATUS_SUCCESS
+                                        Reserved = 0,
+                                        MessageId = msgHeader.MessageId
+                                    },
+                                    Response = new ScanResponse
+                                    {
+                                        BlockAccess = shouldBlock
+                                    }
+                                };
+
+                                Marshal.StructureToPtr(reply, replyBuffer, false);
                                 FilterReplyMessage(_portHandle, replyBuffer, (uint)replySize);
                             }
-                            finally
+                            catch (Exception ex)
                             {
-                                Marshal.FreeHGlobal(replyBuffer);
+                                System.Diagnostics.Trace.WriteLine($"KernelIpc worker error: {ex.Message}");
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Trace.WriteLine($"KernelIpc message processing error: {ex.Message}");
-                        }
                     }
-                }
-                finally
+                    finally
+                    {
+                        Marshal.FreeHGlobal(msgBuffer);
+                        Marshal.FreeHGlobal(replyBuffer);
+                    }
+                }, _cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            }
+        }
+
+        public void Disconnect()
+        {
+            lock (_lock)
+            {
+                _cts?.Cancel();
+                _cts?.Dispose();
+                _cts = null;
+
+                if (_portHandle != null && !_portHandle.IsInvalid)
                 {
-                    Marshal.FreeHGlobal(msgBuffer);
+                    _portHandle.Dispose();
+                    _portHandle = null;
                 }
-            }, _cts.Token);
+                _isConnected = false;
+            }
         }
 
         public void Dispose()
         {
-            _cts?.Cancel();
-            _portHandle?.Dispose();
+            Disconnect();
         }
     }
 }
