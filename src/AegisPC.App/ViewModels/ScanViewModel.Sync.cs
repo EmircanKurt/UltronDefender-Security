@@ -153,20 +153,36 @@ namespace AegisPC.App.ViewModels
                 }
 
                 ScanDurationFormatted = FormatDuration(elapsed);
-                RemainingEtaFormatted = string.Empty;
 
-                ProgressPercentage = 100;
+                bool wasCancelled = result.Status == ScanStatus.Cancelled || _isCancellationRequested;
+
+                if (wasCancelled)
+                {
+                    _isCancellationRequested = true;
+                    if (result.TotalFiles > 0 && result.ScannedFiles > 0)
+                    {
+                        ProgressPercentage = Math.Clamp((int)(((double)result.ScannedFiles / result.TotalFiles) * 100), 0, 99);
+                    }
+                    RemainingEtaFormatted = "İptal edildi";
+                    CurrentFile = "İptal edildi";
+                }
+                else
+                {
+                    ProgressPercentage = 100;
+                    RemainingEtaFormatted = string.Empty;
+                    CurrentFile = "Tamamlandı";
+                    IsStep1Done = true;
+                    IsStep2Done = true;
+                    IsStep3Done = true;
+                    IsStep4Done = true;
+                    IsStep5Active = false;
+                }
+
                 ScannedCount = result.ScannedFiles;
                 ScannedItemsFormatted = $"{ScannedCount:N0}";
                 TotalCount = result.TotalFiles;
                 FindingsCount = result.Findings.Count;
                 DetectionsCount = FindingsCount;
-
-                IsStep1Done = true;
-                IsStep2Done = true;
-                IsStep3Done = true;
-                IsStep4Done = true;
-                IsStep5Active = false;
 
                 ScanFindings.Clear();
                 ThreatResults.Clear();

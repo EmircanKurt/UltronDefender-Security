@@ -176,6 +176,10 @@ namespace AegisPC.Security.Scanning
                 {
                     // Tarama iptal edildiğinde beklenen durum
                 }
+                catch (ChannelClosedException)
+                {
+                    // Kanal kapatıldığında / iptal edildiğinde beklenen durum
+                }
                 catch (Exception ex)
                 {
                     _logger?.LogTrace(ex, "Dosya kuyruğa eklenirken hata: {Path}", filePath);
@@ -190,15 +194,23 @@ namespace AegisPC.Security.Scanning
                     await producerAction(TryQueueFileAsync);
                 }
                 catch (OperationCanceledException) { }
+                catch (ChannelClosedException) { }
                 catch (Exception ex)
                 {
                     _logger?.LogTrace(ex, "Producer task encountered an error.");
                 }
                 finally
                 {
-                    channel.Writer.Complete();
+                    channel.Writer.TryComplete();
                 }
             }, cancellationToken);
+
+            // İptal durumunda kanal kapatma ve bekleyen işçileri anında uyandırma kaydı
+            using var cancelRegistration = cancellationToken.Register(() =>
+            {
+                channel.Writer.TryComplete();
+                _pauseEvent.Set();
+            });
 
             // Tüketici İşçileri: Dinamik Concurrency Slot Gate ile yönetilir (Asgari 32 veya 4x çekirdek)
             int maxParallelWorkers = Math.Max(32, Math.Max(Environment.ProcessorCount * 4, activeProfile.Concurrency * 2));
@@ -212,8 +224,18 @@ namespace AegisPC.Security.Scanning
 
                     try
                     {
-                        await foreach (var filePath in channel.Reader.ReadAllAsync(cancellationToken))
+                        while (!cancellationToken.IsCancellationRequested && await channel.Reader.WaitToReadAsync(cancellationToken))
                         {
+                            // Duraklatma etkinse kuyruktan yeni dosya çekmeyi hemen dondur
+                            _pauseEvent.Wait(cancellationToken);
+
+                            if (!channel.Reader.TryRead(out var filePath))
+                            {
+                                continue;
+                            }
+
+                            if (cancellationToken.IsCancellationRequested) break;
+
                             // Adaptif Concurrency: Aktif profil kotası kadar işçinin eşzamanlı çalışmasına izin ver
                             await resourceManager.EnterWorkerSlotAsync(cancellationToken);
 
@@ -244,33 +266,41 @@ namespace AegisPC.Security.Scanning
                                         break;
                                 }
                             }
-                            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                            {
+                                break;
+                            }
+                            catch (OperationCanceledException)
                             {
                                 // Tekil dosya zaman aşımı
                                 Interlocked.Increment(ref timedOutFiles);
                             }
-                            catch
+                            catch (Exception ex)
                             {
+                                _logger?.LogTrace(ex, "Dosya taranırken hata: {Path}", filePath);
                                 Interlocked.Increment(ref failedFiles);
                             }
                             finally
                             {
                                 resourceManager.ExitWorkerSlot();
 
-                                int currentScanned = Interlocked.Increment(ref scannedFiles);
-                                fileProcessCounter++;
-
-                                // Kooperatif gecikme ve bellek temizliği (Yalnızca profil pacing gerektiriyorsa)
-                                if (activeProfile.DelayBetweenFilesMs > 0 || (activeProfile.YieldFrequency > 0 && (fileProcessCounter % activeProfile.YieldFrequency == 0)))
+                                if (!cancellationToken.IsCancellationRequested)
                                 {
-                                    await resourceManager.ApplyPacingAsync(fileProcessCounter, cancellationToken);
-                                }
+                                    int currentScanned = Interlocked.Increment(ref scannedFiles);
+                                    fileProcessCounter++;
 
-                                int curTot = Volatile.Read(ref totalFiles);
-                                int curSkp = Volatile.Read(ref skippedFiles);
-                                int curFail = Volatile.Read(ref failedFiles);
-                                int curTout = Volatile.Read(ref timedOutFiles);
-                                reportProgressWithCounters(filePath, curTot, currentScanned, curSkp, curFail, curTout);
+                                    // Kooperatif gecikme ve bellek temizliği (Yalnızca profil pacing gerektiriyorsa)
+                                    if (activeProfile.DelayBetweenFilesMs > 0 || (activeProfile.YieldFrequency > 0 && (fileProcessCounter % activeProfile.YieldFrequency == 0)))
+                                    {
+                                        await resourceManager.ApplyPacingAsync(fileProcessCounter, cancellationToken);
+                                    }
+
+                                    int curTot = Volatile.Read(ref totalFiles);
+                                    int curSkp = Volatile.Read(ref skippedFiles);
+                                    int curFail = Volatile.Read(ref failedFiles);
+                                    int curTout = Volatile.Read(ref timedOutFiles);
+                                    reportProgressWithCounters(filePath, curTot, currentScanned, curSkp, curFail, curTout);
+                                }
                             }
                         }
                     }
@@ -283,7 +313,11 @@ namespace AegisPC.Security.Scanning
             }
 
             workerTasks.Add(producerTask);
-            await Task.WhenAll(workerTasks);
+            try
+            {
+                await Task.WhenAll(workerTasks);
+            }
+            catch (OperationCanceledException) { }
 
             return (
                 Volatile.Read(ref totalFiles),

@@ -140,7 +140,6 @@ namespace AegisPC.App.ViewModels
             if (_scanCoordinator != null)
             {
                 _isCancellationRequested = true;
-                _scanCoordinator.CancelScan();
                 _stopwatch.Stop();
                 _timer?.Stop();
                 IsScanning = false;
@@ -149,10 +148,13 @@ namespace AegisPC.App.ViewModels
                 IsScanFinishedView = true;
                 ScanStatusText = "Tarama kullanıcı tarafından durduruldu.";
                 RemainingEtaFormatted = "İptal edildi";
+                CurrentFile = "İptal edildi.";
                 OnPropertyChanged(nameof(PauseButtonText));
                 OnPropertyChanged(nameof(ScanResultTitle));
                 OnPropertyChanged(nameof(CleanStateTitle));
                 OnPropertyChanged(nameof(CleanStateSubtitle));
+
+                _scanCoordinator.CancelScan();
             }
         }
 

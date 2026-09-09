@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Enums;
@@ -26,7 +27,11 @@ namespace AegisPC.Security.Scanning
 
         private bool _isExternalScanRunning = false;
         public bool IsExternalScanRunning => _isExternalScanRunning;
-        public bool IsScanning { get; private set; }
+        private volatile ScanState _state = ScanState.Idle;
+        public ScanState State => _state;
+        private volatile ScanStopReason _stopReason = ScanStopReason.None;
+        public ScanStopReason StopReason => _stopReason;
+        public bool IsScanning => _state == ScanState.Scanning || _state == ScanState.Paused || _state == ScanState.Cancelling;
         public ScanType CurrentScanType { get; private set; } = ScanType.Quick;
         public double ProgressPercent { get; private set; }
         public string CurrentFile { get; private set; } = string.Empty;
@@ -77,7 +82,8 @@ namespace AegisPC.Security.Scanning
             lock (_lock)
             {
                 _isExternalScanRunning = true;
-                IsScanning = true;
+                _state = ScanState.Scanning;
+                _stopReason = ScanStopReason.None;
                 CurrentScanType = progress.ScanType;
                 ProgressPercent = progress.ProgressPercent;
                 CurrentFile = progress.CurrentFile;
@@ -98,7 +104,8 @@ namespace AegisPC.Security.Scanning
             lock (_lock)
             {
                 _isExternalScanRunning = false;
-                IsScanning = false;
+                _state = ScanState.Completed;
+                _stopReason = ScanStopReason.CompletedNormally;
                 ProgressPercent = 100;
                 ScannedFiles = result.ScannedFiles;
                 TotalFiles = result.TotalFiles;
@@ -147,7 +154,8 @@ namespace AegisPC.Security.Scanning
             lock (_lock)
             {
                 _isExternalScanRunning = false;
-                IsScanning = true;
+                _state = ScanState.Scanning;
+                _stopReason = ScanStopReason.None;
                 CurrentScanType = scanType;
                 ProgressPercent = 0;
                 CurrentFile = "Tarama başlatılıyor...";
@@ -311,14 +319,18 @@ namespace AegisPC.Security.Scanning
                     StatusText = $"Tarama tamamlandı. {result?.ScannedFiles:N0} dosya incelendi, {_currentFindings.Count} riskli bulgu.";
                     ProgressPercent = 100;
                     CurrentFile = "Tarama tamamlandı.";
+                    _state = ScanState.Completed;
+                    _stopReason = ScanStopReason.CompletedNormally;
                 }
             }
-            catch (OperationCanceledException)
+            catch (Exception ex) when (cancellationToken.IsCancellationRequested || ex is OperationCanceledException || ex is ChannelClosedException)
             {
                 lock (_lock)
                 {
+                    _state = ScanState.Cancelled;
+                    _stopReason = ScanStopReason.UserCancelled;
                     StatusText = "Tarama kullanıcı tarafından durduruldu.";
-                    CurrentFile = "Durduruldu.";
+                    CurrentFile = "İptal edildi.";
 
                     result = new ScanResult
                     {
@@ -339,6 +351,8 @@ namespace AegisPC.Security.Scanning
                 _logger?.LogError(ex, "Scan failed with error: {Message}", ex.Message);
                 lock (_lock)
                 {
+                    _state = ScanState.Failed;
+                    _stopReason = ScanStopReason.Error;
                     StatusText = $"Tarama hatası: {ex.Message}";
                     CurrentFile = "Hata oluştu.";
                 }
@@ -349,7 +363,11 @@ namespace AegisPC.Security.Scanning
 
                 lock (_lock)
                 {
-                    IsScanning = false;
+                    if (_state == ScanState.Scanning)
+                    {
+                        _state = ScanState.Completed;
+                        _stopReason = ScanStopReason.CompletedNormally;
+                    }
                     _currentSession = null;
                     _activeScanTask = null;
                     _scanCts?.Dispose();
@@ -372,14 +390,15 @@ namespace AegisPC.Security.Scanning
             return result;
         }
 
-        public bool IsPaused => _fileScanner.IsPaused;
+        public bool IsPaused => _state == ScanState.Paused || _fileScanner.IsPaused;
 
         public void PauseScan()
         {
             lock (_lock)
             {
-                if (!IsScanning) return;
+                if (!IsScanning && _state != ScanState.Scanning) return;
                 _fileScanner.PauseScan();
+                _state = ScanState.Paused;
                 StatusText = "Tarama duraklatıldı.";
             }
         }
@@ -388,8 +407,9 @@ namespace AegisPC.Security.Scanning
         {
             lock (_lock)
             {
-                if (!IsScanning) return;
+                if (!IsScanning && _state != ScanState.Paused) return;
                 _fileScanner.ResumeScan();
+                _state = ScanState.Scanning;
                 StatusText = $"{CurrentScanType} taraması çalışıyor...";
             }
         }
@@ -398,14 +418,16 @@ namespace AegisPC.Security.Scanning
         {
             lock (_lock)
             {
-                if (!IsScanning || _scanCts == null) return;
+                if (_state != ScanState.Scanning && _state != ScanState.Paused) return;
+                _state = ScanState.Cancelling;
+                _stopReason = ScanStopReason.UserCancelled;
                 try
                 {
                     if (IsPaused)
                     {
                         _fileScanner.ResumeScan(); // Ensure workers unblock to process cancellation
                     }
-                    _scanCts.Cancel();
+                    _scanCts?.Cancel();
                     StatusText = "Tarama iptal ediliyor...";
                 }
                 catch { }

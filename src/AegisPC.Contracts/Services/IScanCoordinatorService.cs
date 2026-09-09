@@ -9,6 +9,8 @@ namespace AegisPC.Contracts.Services
     public interface IScanCoordinatorService
     {
         bool IsScanning { get; }
+        ScanState State { get; }
+        ScanStopReason StopReason { get; }
         ScanType CurrentScanType { get; }
         double ProgressPercent { get; }
         string CurrentFile { get; }

@@ -42,8 +42,23 @@ namespace AegisPC.Security.Scanning
         public static HashSet<string> ExcludedDirectoryNames => ScanFilterPolicy.ExcludedDirectoryNames;
         public static bool IsInspectableCandidate(string path) => ScanFilterPolicy.IsInspectableCandidate(path);
 
-        public void PauseScan() => _queueCoordinator.PauseScan();
-        public void ResumeScan() => _queueCoordinator.ResumeScan();
+        public void PauseScan()
+        {
+            lock (_pauseLock)
+            {
+                _activeScanStopwatch?.Stop();
+            }
+            _queueCoordinator.PauseScan();
+        }
+
+        public void ResumeScan()
+        {
+            lock (_pauseLock)
+            {
+                _activeScanStopwatch?.Start();
+            }
+            _queueCoordinator.ResumeScan();
+        }
 
         public static bool IsSelfOwnedPath(string path) => ScanFilterPolicy.IsSelfOwnedPath(path);
 
@@ -118,6 +133,8 @@ namespace AegisPC.Security.Scanning
             CancellationToken cancellationToken = default)
         {
             var sw = Stopwatch.StartNew();
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (!File.Exists(path))
             {
                 return FileScanDetailedResult.CreateSkipped(path, "Dosya mevcut değil");
@@ -161,6 +178,8 @@ namespace AegisPC.Security.Scanning
                     _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, null);
                     return FileScanDetailedResult.CreateSuccess(path, null, sw.Elapsed);
                 }
+
+                cancellationToken.ThrowIfCancellationRequested();
 
                 // 2. Arşiv Dosyası Güvenlik Taraması (Zip bomb, path traversal, nested payload)
                 // Kural 27 gereğince: Yol güveni tamamen kaldırıldı (isGameDir = false)
@@ -208,6 +227,8 @@ namespace AegisPC.Security.Scanning
                     return FileScanDetailedResult.CreateSuccess(path, osFinding, sw.Elapsed);
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // 3. Bütünleşik DetectionHub ve PUP/Risk Eşik Değerlendirmesi
                 // Kural 27: Yol indirimleri kaldırıldı (isGameDir = false)
                 var finding = await _pupCoordinator.AnalyzeAsync(path, fileInfo, sha256, false, linkedCts.Token);
@@ -219,7 +240,12 @@ namespace AegisPC.Security.Scanning
                 _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, finding);
                 return FileScanDetailedResult.CreateSuccess(path, finding, sw.Elapsed);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Global tarama iptali: İşçiyi ve kuyruğu hemen durdurmak için istisnayı yukarı fırlat
+                throw;
+            }
+            catch (OperationCanceledException)
             {
                 // Tekil dosya per-file timeout'a uğradı
                 _logger?.LogWarning("Per-file scan timed out for {Path} after {Timeout}s", path, perFileTimeout.TotalSeconds);
@@ -394,10 +420,48 @@ namespace AegisPC.Security.Scanning
                 }
             }
 
+            if (cancellationToken.IsCancellationRequested)
+            {
+                progress?.Report(new ScanProgress
+                {
+                    ScanType = scanType,
+                    TotalFiles = Math.Max(finalTotal, finalScanned),
+                    ScannedFiles = finalScanned,
+                    SkippedFiles = finalSkipped,
+                    FailedFiles = finalFailed,
+                    TimedOutFiles = finalTimedOut,
+                    FindingsCount = findings.Count,
+                    CurrentFile = "İptal edildi",
+                    ProgressPercent = maxReportedPercent,
+                    ElapsedTime = stopwatch.Elapsed,
+                    ElapsedSeconds = stopwatch.Elapsed.TotalSeconds,
+                    EstimatedRemainingSeconds = 0,
+                    FormattedEta = "İptal edildi",
+                    EtaConfidence = ConfidenceLevel.High,
+                    IsCompleted = false
+                });
+
+                return new ScanResult
+                {
+                    ScanType = scanType,
+                    StartedAt = DateTime.UtcNow.Subtract(stopwatch.Elapsed),
+                    CompletedAt = DateTime.UtcNow,
+                    Status = ScanStatus.Cancelled,
+                    TotalFiles = finalTotal,
+                    ScannedFiles = finalScanned,
+                    SkippedFiles = finalSkipped,
+                    FailedFiles = finalFailed,
+                    TimedOutFiles = finalTimedOut,
+                    CustomPath = path,
+                    ElapsedMs = stopwatch.ElapsedMilliseconds,
+                    Findings = findings.ToList()
+                };
+            }
+
             progress?.Report(new ScanProgress
             {
                 ScanType = scanType,
-                TotalFiles = finalTotal,
+                TotalFiles = Math.Max(finalTotal, finalScanned),
                 ScannedFiles = finalScanned,
                 SkippedFiles = finalSkipped,
                 FailedFiles = finalFailed,
@@ -418,7 +482,7 @@ namespace AegisPC.Security.Scanning
                 ScanType = scanType,
                 StartedAt = DateTime.UtcNow.Subtract(stopwatch.Elapsed),
                 CompletedAt = DateTime.UtcNow,
-                Status = cancellationToken.IsCancellationRequested ? ScanStatus.Cancelled : ScanStatus.Completed,
+                Status = ScanStatus.Completed,
                 TotalFiles = finalTotal,
                 ScannedFiles = finalScanned,
                 SkippedFiles = finalSkipped,
