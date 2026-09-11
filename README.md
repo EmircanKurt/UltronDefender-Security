@@ -27,13 +27,16 @@ Designed from real-world adversarial incident forensics, Ultron Defender brings 
 
 
 ### 2. ESET Tarzı Canlı Animasyonlu Tarayıcı Penceresi (Active Scanner)
-![Active Scanner](docs/screenshots/scanner_animated.png)
+<img width="866" height="566" alt="Ekran görüntüsü 2026-09-09 161057 - Kopya" src="https://github.com/user-attachments/assets/03536966-a5e3-4848-9414-97cd015a0083" />
+
 
 ### 3. Çoklu Seçimli Tehdit Analiz Tablosu (Threat Scan Results)
-![Threat Results](docs/screenshots/threat_results.png)
+<img width="1289" height="1027" alt="Ekran görüntüsü 2026-09-11 113613" src="https://github.com/user-attachments/assets/b5b80432-182a-465f-ac4c-f742c7a160a8" />
+
 
 ### 4. Sessiz & Kayan ESET Bildirim Kartı (Silent Threat Notification)
-![ESET Toast Card](docs/screenshots/eset_toast.png)
+<img width="464" height="160" alt="Ekran görüntüsü 2026-09-10 160532" src="https://github.com/user-attachments/assets/43cd542c-0ed3-45c6-953f-b3f2779bc7be" />
+
 
 ---
 
