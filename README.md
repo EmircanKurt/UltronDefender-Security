@@ -23,7 +23,8 @@ Designed from real-world adversarial incident forensics, Ultron Defender brings 
 ![Official Logo](docs/screenshots/logo.png)
 
 ### 1. Modern & Sade Kontrol Paneli (Executive Dashboard)
-<img width="1295" height="881" alt="Ekran görüntüsü 2026-09-09 160429" src="https://github.com/user-attachments/assets/62f3ed7e-91b1-46b6-90dd-e03913fd17d3" />
+<img width="1296" height="873" alt="Ekran görüntüsü 2026-09-09 160358" src="https://github.com/user-attachments/assets/153efeae-9fc4-49b5-a9b3-ac93db7ca65a" />
+
 
 
 ### 2. ESET Tarzı Canlı Animasyonlu Tarayıcı Penceresi (Active Scanner)
