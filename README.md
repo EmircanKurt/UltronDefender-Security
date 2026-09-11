@@ -81,11 +81,11 @@ Başarılı!  - Başarısız: 0, Başarılı: 616, Atlanan: 0, Toplam: 616, Sür
 
 | Senaryo | Dosya Türü | Tespit Türü | Sonuç |
 |---|---|---|:---:|
-| **EICAR Testi** | `.txt / .com` | Bilinen Zararlı İmza | **✅ 100/100 (Engellendi)** |
-| **Fidye Yazılımı** | `.bat / .locked` | Gölge Kopyaları Silme / Şifreleme Uzantısı | **✅ 100/100 (Engellendi)** |
-| **CSV Enjeksiyonu**| `.csv` | DDE Formül Enjeksiyonu (`=cmd\|...`) | **✅ 50/100 (Yakaladı)** |
-| **Arşiv Dropper** | `.zip` | ZIP İçi Powershell Dropper | **✅ 90/100 (Engellendi)** |
-| **Meşru Kurulum / Oyun Yaması** | `.exe / .dll` | Dijital İmza / Meşru Dizin Güveni | **✅ 0/100 (Temiz Kabul Edildi)** |
+| **EICAR Testi** | `.txt / .com` | Bilinen Zararlı İmza | ** 60/100 (Engellendi)** |
+| **Fidye Yazılımı** | `.bat / .locked` | Gölge Kopyaları Silme / Şifreleme Uzantısı | ** 70/100 (Engellendi)** |
+| **CSV Enjeksiyonu**| `.csv` | DDE Formül Enjeksiyonu (`=cmd\|...`) | ** 50/100 (Yakaladı)** |
+| **Arşiv Dropper** | `.zip` | ZIP İçi Powershell Dropper | ** 70/100 (Engellendi)** |
+| **Meşru Kurulum / Oyun Yaması** | `.exe / .dll` | Dijital İmza / Meşru Dizin Güveni | ** 50/100 (Temiz Kabul Edildi)** |
 
 ---
 
