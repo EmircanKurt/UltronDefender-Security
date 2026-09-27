@@ -224,7 +224,7 @@ public sealed class ProcessArchiveWorkflowTests : IDisposable
     private static string FindProjectRoot()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory != null; directory = directory.Parent)
-            if (File.Exists(Path.Combine(directory.FullName, "MASTER_PLAN.md"))) return directory.FullName;
+            if (File.Exists(Path.Combine(directory.FullName, "AegisPC.sln"))) return directory.FullName;
         throw new DirectoryNotFoundException("Project instruction root was not found.");
     }
 

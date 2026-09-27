@@ -61,6 +61,7 @@ AI_GUIDELINES.md
 ## Temporary build and trace files
 artifacts/
 docs/ai/
+/MASTER_PLAN.md
 artifacts/final-review-2026-09-27/
 artifacts/release-3.2.1/
 artifacts/workflow-review-2026-09-27/

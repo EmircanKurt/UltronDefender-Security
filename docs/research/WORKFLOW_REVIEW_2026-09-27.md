@@ -31,6 +31,8 @@ Win11,12 logical CPU,~15.9 GiB RAM,80×16 KiB inert dosya mikro ölçümü:
 
 ## Araştırma ve gerçek sınırlar
 
+Son paket kanıtı: App/Service/Helper self-contained win-x64 publish; Review Release build **0 uyarı/0 hata**, installer kaynak sözleşmeleri **7/7**. Inno Setup compile exit0, paket `artifacts/release-3.2.1/UltronDefenderSetup.exe`,123351050byte; SHA256 `91D3641CFED48D36F5A3F6497ED79D67BB5F5E3CF7660C45D442491F85FFEB5D`, Authenticode `NotSigned`. App DLL SHA256 `0F592958FA9804ED791FEF6A836847E6C2F20595234075DE54D2A48309AFCDB1`; Service DLL `E3B0A8896B38361920196348F078BDEBEA90A161202FAE738E37FB74ED335F88`. Paket çalıştırılmadı; kurulu eski dosyalar/masaüstü/servis değiştirilmedi.
+
 Modern .NET8 Windows7 desteklemez; tek bir ayarla bu bağımlılıklar taşınamaz. Windows10 sürüm/edition/ESU koşulları ayrıdır; antivirüs OS yamalarının yerini alamaz. [Microsoft .NET Windows desteği](https://learn.microsoft.com/en-us/dotnet/core/install/windows), [Windows10 ESU](https://www.microsoft.com/en-us/windows/extended-security-updates).
 
 Kernel dağıtımı gerçek imzalama, uygun sürücü teslimi, HVCI/Secure Boot ve Windows VM testleri ister. Burada sürücü yüklenmedi veya testsigning açılmadı. [Microsoft sürücü imzalama](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/driver-signing). Seçili process exit bütün alt süreçlerin çıktığını kanıtlamaz. [Process.Kill sözleşmesi](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.kill).
