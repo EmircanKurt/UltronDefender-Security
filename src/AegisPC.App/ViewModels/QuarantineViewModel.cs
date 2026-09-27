@@ -536,7 +536,11 @@ namespace AegisPC.App.ViewModels
             }
             else
             {
-                StatusMessage = "Dosya geri yüklenemedi.";
+                var errorReason = _quarantineService.LastError ?? "Bilinmeyen bir hata oluştu veya dosya geri yüklenemedi.";
+                StatusMessage = $"Geri yükleme başarısız: {errorReason}";
+                _toastService?.ShowToast("Geri Yükleme Başarısız", StatusMessage, "Warning");
+                await LoadItemsAsync();
+                await LoadIncidentsAsync();
             }
             IsLoading = false;
         }

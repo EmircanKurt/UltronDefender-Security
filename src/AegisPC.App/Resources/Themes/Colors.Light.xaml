@@ -243,4 +243,12 @@
     <SolidColorBrush x:Key="BrushCloudLogo" Color="#000000"/>
     <SolidColorBrush x:Key="BrushCloudCursor" Color="#000000"/>
 
+    <!-- ── 8. SCROLLBAR TOKENS (LIGHT) ── -->
+    <Color x:Key="ColorScrollThumb">#CBD5E1</Color>
+    <Color x:Key="ColorScrollThumbHover">#94A3B8</Color>
+    <Color x:Key="ColorScrollThumbActive">#64748B</Color>
+    <SolidColorBrush x:Key="BrushScrollThumb" Color="{StaticResource ColorScrollThumb}"/>
+    <SolidColorBrush x:Key="BrushScrollThumbHover" Color="{StaticResource ColorScrollThumbHover}"/>
+    <SolidColorBrush x:Key="BrushScrollThumbActive" Color="{StaticResource ColorScrollThumbActive}"/>
+
 </ResourceDictionary>

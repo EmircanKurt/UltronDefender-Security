@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using AegisPC.Core.Helpers;
 using Xunit;
 
@@ -49,6 +49,44 @@ namespace AegisPC.Tests
             // User idle for 15 mins, but scan ran 10 mins ago -> False
             var recentRun = DateTime.UtcNow.AddMinutes(-10);
             Assert.False(ScanScheduleEvaluator.IsIdleScanDue(TimeSpan.FromMinutes(15), idleThreshold, recentRun, minInterval));
+        }
+
+        [Fact]
+        public void ScanScheduler2_BatteryMode_AppliesCalmProfile()
+        {
+            // On battery -> Low (Calm)
+            var profileOnBattery = ScanScheduleEvaluator.DetermineScheduledScanProfile(isOnBattery: true, AegisPC.Core.Enums.ScanResourceMode.Maximum);
+            Assert.Equal(AegisPC.Core.Enums.ScanResourceMode.Low, profileOnBattery);
+
+            // On AC power -> Preserves preferred mode
+            var profileOnAc = ScanScheduleEvaluator.DetermineScheduledScanProfile(isOnBattery: false, AegisPC.Core.Enums.ScanResourceMode.Maximum);
+            Assert.Equal(AegisPC.Core.Enums.ScanResourceMode.Maximum, profileOnAc);
+        }
+
+        [Fact]
+        public void ScanScheduler2_FullscreenGame_DefersScheduledScan()
+        {
+            // Fullscreen active + Game mode enabled -> Should defer
+            Assert.True(ScanScheduleEvaluator.ShouldDeferForFullscreenOrGame(isFullscreenActive: true, isGamingModeEnabled: true));
+
+            // Fullscreen not active -> Do not defer
+            Assert.False(ScanScheduleEvaluator.ShouldDeferForFullscreenOrGame(isFullscreenActive: false, isGamingModeEnabled: true));
+
+            // Gaming mode disabled -> Do not defer
+            Assert.False(ScanScheduleEvaluator.ShouldDeferForFullscreenOrGame(isFullscreenActive: true, isGamingModeEnabled: false));
+        }
+
+        [Fact]
+        public void ScanScheduler2_HighDiskActivity_ThrottlesScan()
+        {
+            // Disk activity 85% (> 80%) -> Should throttle
+            Assert.True(ScanScheduleEvaluator.ShouldThrottleForDiskBusy(85.0, 80.0));
+
+            // Disk activity 40% (< 80%) -> Should not throttle
+            Assert.False(ScanScheduleEvaluator.ShouldThrottleForDiskBusy(40.0, 80.0));
+
+            // Exactly 80% -> Should throttle
+            Assert.True(ScanScheduleEvaluator.ShouldThrottleForDiskBusy(80.0, 80.0));
         }
     }
 }

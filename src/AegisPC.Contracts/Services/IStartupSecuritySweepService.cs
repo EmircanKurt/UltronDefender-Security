@@ -14,7 +14,8 @@ namespace AegisPC.Contracts.Services
         ThreatsFound,
         Clean,
         Completed,
-        Failed
+        Failed,
+        Cancelled
     }
 
     public class StartupSweepProgress
@@ -71,10 +72,14 @@ namespace AegisPC.Contracts.Services
     {
         StartupSweepStatus Status { get; }
         bool IsRunning { get; }
+        bool IsPaused { get; }
         StartupSweepResult? LastResult { get; }
         event Action<StartupSweepProgress>? OnProgressChanged;
         event Action<StartupSweepFinding>? OnThreatDiscovered;
         event Action<StartupSweepResult>? OnSweepCompleted;
         Task<StartupSweepResult> RunSweepAsync(IEnumerable<string>? customTargetDirs = null, CancellationToken cancellationToken = default);
+        void Pause();
+        void Resume();
+        void Cancel();
     }
 }

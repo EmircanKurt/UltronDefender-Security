@@ -17,10 +17,14 @@ namespace AegisPC.App.Converters
             {
                 var trimmed = text.Trim();
                 if (string.IsNullOrWhiteSpace(trimmed)) return Visibility.Collapsed;
-                if (trimmed.StartsWith("__MSG_", StringComparison.OrdinalIgnoreCase) ||
+                if (trimmed.StartsWith("___MSG_", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.StartsWith("__MSG_", StringComparison.OrdinalIgnoreCase) ||
                     trimmed.StartsWith("MSG_", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.IndexOf("MSG_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    trimmed.StartsWith("@@", StringComparison.OrdinalIgnoreCase) ||
                     trimmed.Equals("Açıklama yok", StringComparison.OrdinalIgnoreCase) ||
-                    trimmed.Equals("No description", StringComparison.OrdinalIgnoreCase))
+                    trimmed.Equals("No description", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.Equals("Yok", StringComparison.OrdinalIgnoreCase))
                 {
                     return Visibility.Collapsed;
                 }

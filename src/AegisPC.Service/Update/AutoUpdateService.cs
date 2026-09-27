@@ -1,242 +1,249 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Core.Models;
 using Microsoft.Extensions.Logging;
 
-namespace AegisPC.Service.Update
+namespace AegisPC.Service.Update;
+
+public interface IAutoUpdateService
 {
-    public interface IAutoUpdateService
+    Task<UpdateManifest?> CheckForUpdatesAsync(string manifestUrl, CancellationToken ct = default);
+    Task<string> DownloadAndVerifyAsync(UpdateManifest manifest, IProgress<double>? progress = null, CancellationToken ct = default);
+    Task<bool> ApplyUpdateAsync(string stagedPackagePath, string targetDirectory, CancellationToken ct = default);
+    Task<bool> RollbackUpdateAsync(string targetDirectory, CancellationToken ct = default);
+}
+
+/// <summary>Stages signed releases and applies only packages authenticated by this service instance.
+/// Restarting requires re-downloading metadata/packages. Missing release keys disable updates.</summary>
+public class AutoUpdateService : IAutoUpdateService
+{
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<AutoUpdateService>? _logger;
+    private readonly UpdateManifestVerifier _verifier;
+    private readonly string _baseDirectory;
+    private readonly SemaphoreSlim _operations = new(1, 1);
+    private readonly ConcurrentDictionary<string, Receipt> _receipts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Backup> _backups = new(StringComparer.OrdinalIgnoreCase);
+    private Version _installedVersion;
+    private sealed record Receipt(string Hash, long Size, string FileName, Version Version, DateTimeOffset ExpiresUtc);
+    private sealed record Backup(string Destination, string Path, string Hash);
+
+    public static readonly string DefaultUpdateBaseDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "UltronDefender", "Updates");
+    public static readonly string StagingDirectory = Path.Combine(DefaultUpdateBaseDir, "staging");
+    public static readonly string BackupDirectory = Path.Combine(DefaultUpdateBaseDir, "backup");
+
+    /// <summary>Uses a pinned release key and installed version supplied by trusted deployment.
+    /// A custom base directory isolates tests; it does not change trust requirements.</summary>
+    public AutoUpdateService(HttpClient? httpClient = null, ILogger<AutoUpdateService>? logger = null,
+        string? trustedManifestPublicKeyPem = null, Version? installedVersion = null, string? updateBaseDirectory = null)
     {
-        Task<UpdateManifest?> CheckForUpdatesAsync(string manifestUrl, CancellationToken ct = default);
-        Task<string> DownloadAndVerifyAsync(UpdateManifest manifest, IProgress<double>? progress = null, CancellationToken ct = default);
-        Task<bool> ApplyUpdateAsync(string stagedPackagePath, string targetDirectory, CancellationToken ct = default);
-        Task<bool> RollbackUpdateAsync(string targetDirectory, CancellationToken ct = default);
+        _httpClient = httpClient ?? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+            { Timeout = TimeSpan.FromSeconds(60) };
+        _logger = logger;
+        _installedVersion = installedVersion ?? typeof(AutoUpdateService).Assembly.GetName().Version ?? new Version(0, 0);
+        _verifier = new UpdateManifestVerifier(trustedManifestPublicKeyPem, _installedVersion);
+        _baseDirectory = Path.GetFullPath(updateBaseDirectory ?? DefaultUpdateBaseDir);
     }
 
-    /// <summary>
-    /// Güvenli Otomatik Güncelleme ve Geri Alma (Secure Auto-Update & Atomic Rollback) Servisi.
-    /// HTTPS üzerinden indirme, SHA256 özet doğrulama, Windows Authenticode dijital imza denetimi,
-    /// izole hazırlık dizini (isolated staging) ve arıza durumunda otomatik geri alma (rollback) sağlar.
-    /// </summary>
-    public class AutoUpdateService : IAutoUpdateService
+    /// <summary>Fetches bounded HTTPS metadata and authenticates its release signature. Cancellation propagates.</summary>
+    public async Task<UpdateManifest?> CheckForUpdatesAsync(string manifestUrl, CancellationToken ct = default)
     {
-        private readonly HttpClient _httpClient;
-        private readonly ILogger<AutoUpdateService>? _logger;
-
-        public static readonly string DefaultUpdateBaseDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "UltronDefender", "Updates");
-
-        public static readonly string StagingDirectory = Path.Combine(DefaultUpdateBaseDir, "staging");
-        public static readonly string BackupDirectory = Path.Combine(DefaultUpdateBaseDir, "backup");
-
-        public AutoUpdateService(HttpClient? httpClient = null, ILogger<AutoUpdateService>? logger = null)
+        ct.ThrowIfCancellationRequested();
+        var uri = UpdateManifestVerifier.RequireHttps(manifestUrl);
+        try
         {
-            _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-            _logger = logger;
+            using var response = await _httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct);
+            ValidateResponse(response);
+            await using var input = await response.Content.ReadAsStreamAsync(ct);
+            using var buffer = new MemoryStream();
+            await CopyBoundedAsync(input, buffer, 64 * 1024, null, ct);
+            var manifest = JsonSerializer.Deserialize<UpdateManifest>(buffer.ToArray(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (manifest is null) throw new CryptographicException("Empty release manifest.");
+            _verifier.Verify(manifest);
+            return manifest;
         }
-
-        /// <summary>
-        /// Güncelleme manifestini HTTPS üzerinden çeker ve doğrular.
-        /// </summary>
-        public async Task<UpdateManifest?> CheckForUpdatesAsync(string manifestUrl, CancellationToken ct = default)
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or CryptographicException)
         {
-            if (string.IsNullOrWhiteSpace(manifestUrl))
-            {
-                throw new ArgumentException("Manifest URL boş olamaz.", nameof(manifestUrl));
-            }
-
-            try
-            {
-                _logger?.LogInformation("Güncelleme manifesti sorgulanıyor: {Url}", manifestUrl);
-                var response = await _httpClient.GetAsync(manifestUrl, ct).ConfigureAwait(false);
-                response.EnsureSuccessStatusCode();
-
-                var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                var manifest = JsonSerializer.Deserialize<UpdateManifest>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-
-                if (manifest == null || string.IsNullOrWhiteSpace(manifest.Version) || string.IsNullOrWhiteSpace(manifest.SHA256))
-                {
-                    _logger?.LogWarning("Güncelleme manifesti geçersiz veya eksik alanlar içeriyor.");
-                    return null;
-                }
-
-                _logger?.LogInformation("Güncelleme manifesti alındı: Sürüm {Version}, Yayın: {Date}", manifest.Version, manifest.ReleaseDate);
-                return manifest;
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Güncelleme manifesti alınırken hata oluştu.");
-                return null;
-            }
+            _logger?.LogWarning(ex, "Release metadata rejected.");
+            return null;
         }
+    }
 
-        /// <summary>
-        /// Güncelleme paketini izole staging dizinine indirir ve kriptografik SHA256 özetini doğrular.
-        /// </summary>
-        public async Task<string> DownloadAndVerifyAsync(UpdateManifest manifest, IProgress<double>? progress = null, CancellationToken ct = default)
+    /// <summary>Downloads a signed, size-bounded package into a unique directory; failed downloads are removed.</summary>
+    public async Task<string> DownloadAndVerifyAsync(UpdateManifest manifest, IProgress<double>? progress = null, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        // Snapshot mutable caller-owned metadata before verification or the first await.
+        var snapshot = JsonSerializer.Deserialize<UpdateManifest>(JsonSerializer.Serialize(manifest))
+            ?? throw new CryptographicException("Missing release manifest.");
+        _verifier.Verify(snapshot);
+        var uri = UpdateManifestVerifier.RequireHttps(snapshot.DownloadUrl);
+        string fileName = Path.GetFileName(uri.LocalPath);
+        if (string.IsNullOrWhiteSpace(fileName) || fileName is "." or ".." ||
+            fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            throw new CryptographicException("Invalid package filename.");
+        string directory = Path.Combine(_baseDirectory, "staging", Guid.NewGuid().ToString("N"));
+        RejectReparsePoints(directory);
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, fileName);
+        try
         {
-            if (manifest == null) throw new ArgumentNullException(nameof(manifest));
-
-            string targetDir = Path.Combine(StagingDirectory, manifest.Version);
-            Directory.CreateDirectory(targetDir);
-
-            string fileName = Path.GetFileName(new Uri(manifest.DownloadUrl).LocalPath);
-            if (string.IsNullOrWhiteSpace(fileName)) fileName = $"update_{manifest.Version}.bin";
-            string stagedFilePath = Path.Combine(targetDir, fileName);
-
-            _logger?.LogInformation("Güncelleme paketi indiriliyor: {Url} -> {Path}", manifest.DownloadUrl, stagedFilePath);
-
-            // 1. Dosyayı indir
-            using (var response = await _httpClient.GetAsync(manifest.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
-            {
-                response.EnsureSuccessStatusCode();
-                long? totalBytes = response.Content.Headers.ContentLength;
-
-                using (var contentStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
-                using (var fileStream = new FileStream(stagedFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
-                {
-                    var buffer = new byte[81920];
-                    long totalRead = 0;
-                    int bytesRead;
-
-                    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false)) > 0)
-                    {
-                        await fileStream.WriteAsync(buffer, 0, bytesRead, ct).ConfigureAwait(false);
-                        totalRead += bytesRead;
-                        if (totalBytes.HasValue && totalBytes.Value > 0)
-                        {
-                            progress?.Report((double)totalRead / totalBytes.Value);
-                        }
-                    }
-                }
-            }
-
-            // 2. Kriptografik SHA256 Özet Kontrolü
-            string computedHash = ComputeSha256(stagedFilePath);
-            if (!string.Equals(computedHash, manifest.SHA256, StringComparison.OrdinalIgnoreCase))
-            {
-                File.Delete(stagedFilePath);
-                _logger?.LogError("GÜVENLİK İHLALİ: İndirilen paketin SHA256 özeti eşleşmiyor! Beklenen: {Expected}, Hesaplanan: {Computed}",
-                    manifest.SHA256, computedHash);
-                throw new CryptographicException($"Güncelleme paketi bütünlük denetiminden geçemedi (Hash mismatch).");
-            }
-
-            // 3. Windows Authenticode İmza Doğrulaması (.exe veya .dll ise)
-            string ext = Path.GetExtension(stagedFilePath).ToLowerInvariant();
-            if (ext == ".exe" || ext == ".dll")
-            {
-                VerifyAuthenticodeSignature(stagedFilePath);
-            }
-
-            _logger?.LogInformation("Güncelleme paketi doğrulandı ve hazır: {Path}", stagedFilePath);
-            return stagedFilePath;
+            using var response = await _httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct);
+            ValidateResponse(response);
+            await using var input = await response.Content.ReadAsStreamAsync(ct);
+            await using var output = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, true);
+            await CopyBoundedAsync(input, output, snapshot.PackageSize, progress, ct);
+            if (output.Length != snapshot.PackageSize) throw new CryptographicException("Package length mismatch.");
+            output.Position = 0;
+            var hash = Convert.ToHexString(await SHA256.HashDataAsync(output, ct));
+            if (!string.Equals(hash, snapshot.SHA256, StringComparison.OrdinalIgnoreCase))
+                throw new CryptographicException("Package digest mismatch.");
+            _receipts[path] = new Receipt(hash, output.Length, fileName, Version.Parse(snapshot.Version), snapshot.ExpiresUtc);
+            return path;
         }
-
-        /// <summary>
-        /// Güncellemeyi hedef dizine uygular. Öncesinde mevcut dosyaların geri alma yedeğini (backup snapshot) alır.
-        /// </summary>
-        public async Task<bool> ApplyUpdateAsync(string stagedPackagePath, string targetDirectory, CancellationToken ct = default)
+        catch
         {
-            if (!File.Exists(stagedPackagePath))
-            {
-                throw new FileNotFoundException("Hazırlık paketi bulunamadı.", stagedPackagePath);
-            }
-
-            Directory.CreateDirectory(targetDirectory);
-            Directory.CreateDirectory(BackupDirectory);
-
-            string targetFileName = Path.GetFileName(stagedPackagePath);
-            string destinationFile = Path.Combine(targetDirectory, targetFileName);
-            string backupFile = Path.Combine(BackupDirectory, targetFileName + ".bak");
-
-            try
-            {
-                _logger?.LogInformation("Güncelleme uygulanıyor: {Source} -> {Destination}", stagedPackagePath, destinationFile);
-
-                // 1. Mevcut dosyanın yedeğini al (Snapshot)
-                if (File.Exists(destinationFile))
-                {
-                    File.Copy(destinationFile, backupFile, overwrite: true);
-                    _logger?.LogInformation("Geri alma yedeği oluşturuldu: {Backup}", backupFile);
-                }
-
-                // 2. Yeni dosyayı atomik olarak kopyala
-                await Task.Run(() => File.Copy(stagedPackagePath, destinationFile, overwrite: true), ct).ConfigureAwait(false);
-
-                _logger?.LogInformation("Güncelleme başarıyla uygulandı.");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Güncelleme uygulanırken hata oluştu! Otomatik geri alma başlatılıyor...");
-                await RollbackUpdateAsync(targetDirectory, ct).ConfigureAwait(false);
-                return false;
-            }
+            TryDelete(path);
+            throw;
         }
+    }
 
-        /// <summary>
-        /// Başarısız güncelleme durumunda yedek snapshot'tan dosyaları aslına döndürür.
-        /// </summary>
-        public Task<bool> RollbackUpdateAsync(string targetDirectory, CancellationToken ct = default)
+    /// <summary>Applies only an authenticated package, rechecking its bytes under the same read lock used for copying.</summary>
+    public async Task<bool> ApplyUpdateAsync(string stagedPackagePath, string targetDirectory, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        string source = Path.GetFullPath(stagedPackagePath);
+        if (!_receipts.TryGetValue(source, out var receipt))
+            throw new CryptographicException("Package was not authenticated by this updater.");
+        await _operations.WaitAsync(ct);
+        string? temporary = null;
+        try
         {
-            try
+            if (receipt.ExpiresUtc <= DateTimeOffset.UtcNow) throw new CryptographicException("Staged release authorization expired.");
+            if (receipt.Version <= _installedVersion) throw new CryptographicException("Release downgrade or replay rejected.");
+            RejectReparsePoints(source);
+            string target = Path.GetFullPath(targetDirectory);
+            RejectReparsePoints(target);
+            await using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
+            if (input.Length != receipt.Size ||
+                !string.Equals(Convert.ToHexString(await SHA256.HashDataAsync(input, ct)), receipt.Hash, StringComparison.Ordinal))
+                throw new CryptographicException("Staged package changed after authentication.");
+            input.Position = 0;
+            Directory.CreateDirectory(target);
+            string destination = Path.Combine(target, receipt.FileName);
+            RejectReparsePoints(destination);
+            temporary = Path.Combine(target, "." + Guid.NewGuid().ToString("N") + ".update");
+            await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
             {
-                if (!Directory.Exists(BackupDirectory)) return Task.FromResult(false);
-
-                var backupFiles = Directory.GetFiles(BackupDirectory, "*.bak");
-                foreach (var bFile in backupFiles)
-                {
-                    string originalFileName = Path.GetFileNameWithoutExtension(bFile);
-                    string destPath = Path.Combine(targetDirectory, originalFileName);
-
-                    File.Copy(bFile, destPath, overwrite: true);
-                    _logger?.LogWarning("Geri alma tamamlandı: {Dest} yedekten geri yüklendi.", destPath);
-                }
-
-                return Task.FromResult(true);
+                await input.CopyToAsync(output, ct);
+                await output.FlushAsync(ct);
+                output.Flush(true);
             }
-            catch (Exception ex)
+            Backup? backup = null;
+            if (File.Exists(destination))
             {
-                _logger?.LogCritical(ex, "KRİTİK HATA: Güncelleme geri alma (Rollback) başarısız oldu!");
-                return Task.FromResult(false);
+                string backupDir = Path.Combine(_baseDirectory, "backup", Guid.NewGuid().ToString("N"));
+                RejectReparsePoints(backupDir);
+                Directory.CreateDirectory(backupDir);
+                string backupPath = Path.Combine(backupDir, receipt.FileName);
+                await using var original = new FileStream(destination, FileMode.Open, FileAccess.Read, FileShare.Read);
+                await using var copy = new FileStream(backupPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+                await original.CopyToAsync(copy, ct);
+                copy.Position = 0;
+                backup = new Backup(destination, backupPath, Convert.ToHexString(await SHA256.HashDataAsync(copy, ct)));
             }
+            ct.ThrowIfCancellationRequested();
+            File.Move(temporary, destination, overwrite: true);
+            temporary = null;
+            if (backup is not null) _backups[target] = backup;
+            else _backups.TryRemove(target, out _);
+            _installedVersion = receipt.Version;
+            _receipts.TryRemove(source, out _);
+            return true;
         }
-
-        private static string ComputeSha256(string filePath)
+        finally
         {
-            using var sha = SHA256.Create();
-            using var stream = File.OpenRead(filePath);
-            byte[] hash = sha.ComputeHash(stream);
-            return Convert.ToHexString(hash).ToLowerInvariant();
+            if (temporary is not null) TryDelete(temporary);
+            _operations.Release();
         }
+    }
 
-        private void VerifyAuthenticodeSignature(string filePath)
+    /// <summary>Restores only this instance's last backup for the exact target after checking its recorded digest.</summary>
+    public async Task<bool> RollbackUpdateAsync(string targetDirectory, CancellationToken ct = default)
+    {
+        await _operations.WaitAsync(ct);
+        string? temporary = null;
+        try
         {
-            try
+            string target = Path.GetFullPath(targetDirectory);
+            if (!_backups.TryGetValue(target, out var backup)) return false;
+            RejectReparsePoints(backup.Path);
+            RejectReparsePoints(backup.Destination);
+            await using var input = new FileStream(backup.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (Convert.ToHexString(await SHA256.HashDataAsync(input, ct)) != backup.Hash)
+                throw new CryptographicException("Rollback backup was modified.");
+            input.Position = 0;
+            temporary = Path.Combine(target, "." + Guid.NewGuid().ToString("N") + ".rollback");
+            await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                using var cert = new X509Certificate2(X509Certificate.CreateFromSignedFile(filePath));
-                if (cert == null)
-                {
-                    throw new CryptographicException("Yürütülebilir dosya geçerli bir dijital imza içermiyor.");
-                }
-
-                _logger?.LogInformation("Authenticode İmzası Doğrulandı: Yayıncı={Subject}, Seri={Serial}",
-                    cert.Subject, cert.SerialNumber);
+                await input.CopyToAsync(output, ct);
+                output.Flush(true);
             }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "Authenticode imza kontrolü bildirimi: {Msg}", ex.Message);
-            }
+            ct.ThrowIfCancellationRequested();
+            File.Move(temporary, backup.Destination, overwrite: true);
+            temporary = null;
+            _backups.TryRemove(target, out _);
+            return true;
         }
+        finally
+        {
+            if (temporary is not null) TryDelete(temporary);
+            _operations.Release();
+        }
+    }
+
+    private static void ValidateResponse(HttpResponseMessage response)
+    {
+        response.EnsureSuccessStatusCode();
+        if ((int)response.StatusCode >= 300) throw new HttpRequestException("Update redirects are not accepted.");
+        if (response.RequestMessage?.RequestUri is { } finalUri) UpdateManifestVerifier.RequireHttps(finalUri.AbsoluteUri);
+    }
+
+    private static async Task CopyBoundedAsync(Stream input, Stream output, long limit, IProgress<double>? progress, CancellationToken ct)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = await input.ReadAsync(buffer, ct)) != 0)
+        {
+            total += read;
+            if (total > limit) throw new CryptographicException("Update response exceeds its size limit.");
+            await output.WriteAsync(buffer.AsMemory(0, read), ct);
+            progress?.Report((double)total / limit);
+        }
+    }
+
+    private static void RejectReparsePoints(string path)
+    {
+        for (string? current = Path.GetFullPath(path); current is not null; current = Path.GetDirectoryName(current))
+            if ((File.Exists(current) || Directory.Exists(current)) &&
+                (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("Update paths must not traverse reparse points.");
+    }
+
+    private void TryDelete(string path)
+    {
+        try { File.Delete(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { _logger?.LogWarning(ex, "Unable to remove temporary update file {Path}", path); }
     }
 }

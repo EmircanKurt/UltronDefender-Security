@@ -66,7 +66,10 @@ namespace AegisPC.Infrastructure.Database
                 pragma.CommandText = "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;";
                 pragma.ExecuteNonQuery();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"PRAGMA setup non-critical failure: {ex.Message}");
+            }
             return connection;
         }
 
@@ -362,10 +365,20 @@ namespace AegisPC.Infrastructure.Database
                     Date TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS Exclusions (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Type INTEGER NOT NULL,
+                    Value TEXT NOT NULL,
+                    AddedUtc TEXT NOT NULL,
+                    Reason TEXT,
+                    IncludeSubdirectories INTEGER DEFAULT 1
+                );
+
                 CREATE INDEX IF NOT EXISTS IX_RealTimeEvents_Time ON RealTimeEvents(DetectedAt);
                 CREATE INDEX IF NOT EXISTS IX_BlockedConnections_Time ON BlockedConnections(BlockedAt);
                 CREATE INDEX IF NOT EXISTS IX_ThreatFeeds_Indicator ON ThreatFeeds(Indicator);
                 CREATE INDEX IF NOT EXISTS IX_AppUsage_Date ON AppUsageHistory(Date);
+                CREATE INDEX IF NOT EXISTS IX_Exclusions_Value ON Exclusions(Value);
 
                 CREATE INDEX IF NOT EXISTS IX_SecurityFindings_Risk ON SecurityFindings(RiskLevel);
                 CREATE INDEX IF NOT EXISTS IX_ScanHistory_Started ON ScanHistory(StartedAt);

@@ -139,7 +139,10 @@ namespace AegisPC.Service.DriverBridge
                             return false;
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogTrace(ex, "Failed to query scan cache in kernel evaluation for {Path}", filePath);
+                    }
                 }
 
                 // 3. Tespit Motoruyla Degerlendirme
@@ -304,7 +307,10 @@ namespace AegisPC.Service.DriverBridge
                                             AuditResult.Success);
                                     }
                                 }
-                                catch { }
+                                catch (Exception ex)
+                                {
+                                    _logger?.LogTrace(ex, "Background telemetry logging failed for '{Path}'", filePath);
+                                }
                             });
 
                             return false; // ALLOW ACCESS (TELEMETRY ONLY)

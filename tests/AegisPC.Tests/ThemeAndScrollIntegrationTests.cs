@@ -116,14 +116,15 @@ namespace AegisPC.Tests
         }
 
         [Fact]
-        public void ProcessListView_HasSmoothScrollingConfigured()
+        public void ProcessListView_HasVirtualizationConfigured()
         {
             var appDir = GetAppDir();
             var path = Path.Combine(appDir, "Views", "ProcessListView.xaml");
             Assert.True(File.Exists(path));
 
             string content = File.ReadAllText(path);
-            Assert.Contains("ScrollViewer.CanContentScroll=\"False\"", content);
+            Assert.Contains("ScrollViewer.CanContentScroll=\"True\"", content);
+            Assert.Contains("VirtualizingPanel.IsVirtualizing=\"True\"", content);
             Assert.Contains("ScrollViewer.VerticalScrollBarVisibility=\"Auto\"", content);
         }
 

@@ -33,7 +33,10 @@ namespace AegisPC.BrowserSecurity.Browser
                     });
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Firefox profilleri taranırken hata: {firefoxProfilesPath} - {ex.Message}");
+            }
 
             return profiles;
         }
@@ -76,7 +79,10 @@ namespace AegisPC.BrowserSecurity.Browser
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Firefox extensions.json ayrıştırılamadı: {extensionsJsonPath} - {ex.Message}");
+            }
 
             return extensions;
         }

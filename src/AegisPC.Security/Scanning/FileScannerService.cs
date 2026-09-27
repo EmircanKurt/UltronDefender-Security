@@ -71,12 +71,13 @@ namespace AegisPC.Security.Scanning
             IDetectionHub? detectionHub = null,
             ArchiveSafetyScanner? archiveScanner = null,
             IScanResourceManager? resourceManager = null,
-            ILogger<FileScannerService>? logger = null)
+            ILogger<FileScannerService>? logger = null,
+            IExclusionService? exclusionService = null)
             : this(
                 new DirectoryWalker(),
                 new ScanQueueCoordinator(resourceManager),
-                new FileHashMatcher(hashService, signatureVerifier, allowlistService),
-                new PupAnalysisCoordinator(detectionHub ?? DetectionHubFactory.CreateDefault(hashService, signatureVerifier), findingService),
+                new FileHashMatcher(hashService, signatureVerifier, allowlistService, exclusionService),
+                new PupAnalysisCoordinator(detectionHub ?? DetectionHubFactory.CreateDefault(hashService, signatureVerifier, exclusionService: exclusionService), findingService),
                 archiveScanner,
                 findingService,
                 logger)
@@ -91,11 +92,12 @@ namespace AegisPC.Security.Scanning
             ArchiveSafetyScanner? archiveScanner = null,
             ISecurityFindingService? findingService = null,
             IScanResourceManager? resourceManager = null,
-            ILogger<FileScannerService>? logger = null)
+            ILogger<FileScannerService>? logger = null,
+            IExclusionService? exclusionService = null)
             : this(
                 new DirectoryWalker(),
                 new ScanQueueCoordinator(resourceManager),
-                new FileHashMatcher(hashService, signatureVerifier, allowlistService),
+                new FileHashMatcher(hashService, signatureVerifier, allowlistService, exclusionService),
                 new PupAnalysisCoordinator(detectionHub, findingService),
                 archiveScanner,
                 findingService,
@@ -133,6 +135,7 @@ namespace AegisPC.Security.Scanning
             CancellationToken cancellationToken = default)
         {
             var sw = Stopwatch.StartNew();
+            long policyRevision = DetectionPolicyRevision.Current;
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!File.Exists(path))
@@ -152,6 +155,8 @@ namespace AegisPC.Security.Scanning
 
             try
             {
+                // Hold identity stable across hash, analysis and publication of the completed cache entry.
+                using var scanLock = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
                 var fileInfo = new FileInfo(path);
                 if (fileInfo.Length == 0)
                 {
@@ -159,47 +164,80 @@ namespace AegisPC.Security.Scanning
                 }
 
                 var ext = fileInfo.Extension.ToLowerInvariant();
+                ArchiveScanResult? completedArchiveInspection = null;
 
                 // Multi-Tier Caching: Değişmemiş temiz dosyalar için derin dedektör taramasını atla
-                if (_hashMatcher.TryGetCached(path, fileInfo, false, out var cachedFinding))
+                var cache = await _hashMatcher.TryGetCachedAsync(path, fileInfo, linkedCts.Token);
+                var cachedFinding = cache.Finding;
+                if (cache.Hit)
                 {
                     if (cachedFinding == null || cachedFinding.Status == FindingStatus.Resolved || cachedFinding.IsAllowlisted)
                     {
-                        return FileScanDetailedResult.CreateSuccess(path, null, sw.Elapsed);
+                        return FileScanDetailedResult.CreateSuccess(path, null, sw.Elapsed, isFromCache: true);
                     }
-                    return FileScanDetailedResult.CreateSuccess(path, cachedFinding, sw.Elapsed);
+                    return FileScanDetailedResult.CreateSuccess(path, cachedFinding, sw.Elapsed, isFromCache: true);
                 }
 
                 // 1. SHA256 Hesaplama & Güvenli Beyaz Liste / Çözüldü & Fast-Path WHQL İmza
-                var (sha256, isAllowlisted, isMicrosoftBypassed) = await _hashMatcher.EvaluateHashAndAllowlistAsync(path, linkedCts.Token);
+                var (sha256, isAllowlisted, isMicrosoftBypassed) = await _hashMatcher.EvaluateHashAndAllowlistAsync(path, linkedCts.Token, cache.VerifiedHash);
                 if (isAllowlisted || isMicrosoftBypassed)
                 {
                     fileInfo.Refresh();
-                    _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, null);
-                    return FileScanDetailedResult.CreateSuccess(path, null, sw.Elapsed);
+                    _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, null, sha256, isAllowlisted, isMicrosoftBypassed, policyRevision);
+                    return FileScanDetailedResult.CreateSuccess(path, null, sw.Elapsed, isSignedClean: true);
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
 
+                // A positive whole-file hash must not be lost behind a container parser limit.
+                if (MalwareSignatureDatabase.CheckHash(sha256).IsMatched)
+                {
+                    var knownFinding = await _pupCoordinator.AnalyzeAsync(path, fileInfo, sha256, false, linkedCts.Token);
+                    if (knownFinding != null)
+                    {
+                        _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, knownFinding, sha256, false, false, policyRevision);
+                        return FileScanDetailedResult.CreateSuccess(path, knownFinding, sw.Elapsed);
+                    }
+                }
+
                 // 2. Arşiv Dosyası Güvenlik Taraması (Zip bomb, path traversal, nested payload)
                 // Kural 27 gereğince: Yol güveni tamamen kaldırıldı (isGameDir = false)
-                if (ext is ".zip" or ".jar" or ".nupkg" or ".apk")
+                byte[] containerHeader = new byte[6];
+                int headerBytes = await scanLock.ReadAtLeastAsync(containerHeader,
+                    (int)Math.Min(fileInfo.Length, containerHeader.Length), false, linkedCts.Token);
+                bool zipHeader = headerBytes >= 2 && containerHeader[0] == 0x50 && containerHeader[1] == 0x4b;
+                if (zipHeader || ext is ".zip" or ".jar" or ".nupkg" or ".apk" or ".docx" or ".xlsx" or ".pptx" or ".docm" or ".xlsm" or ".pptm" or ".odt" or ".ods" or ".whl")
                 {
                     var archiveResult = await _archiveScanner.ScanArchiveAsync(path, linkedCts.Token);
+                    completedArchiveInspection = archiveResult;
                     if (archiveResult.Findings.Count > 0)
                     {
                         var topFinding = archiveResult.Findings.OrderByDescending(f => f.RiskScore).First();
                         if (topFinding.Status != FindingStatus.Resolved && !topFinding.IsAllowlisted)
                         {
+                            // Containment targets the outer, locked container, not a synthetic "zip -> member" path.
+                            topFinding.RiskReasons.Add($"Archive member: {topFinding.ObjectPath}; member SHA-256: {topFinding.SHA256}");
+                            topFinding.ObjectPath = path;
+                            topFinding.ObjectName = fileInfo.Name;
+                            topFinding.SHA256 = sha256;
                             if (_findingService != null)
                             {
                                 await _findingService.AddFindingAsync(topFinding, linkedCts.Token);
                             }
                             fileInfo.Refresh();
-                            _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, topFinding);
-                            return FileScanDetailedResult.CreateSuccess(path, topFinding, sw.Elapsed);
+                            if (archiveResult.IsComplete)
+                                _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, topFinding, sha256, false, false, policyRevision);
+                            return FileScanDetailedResult.CreateSuccess(path, topFinding, sw.Elapsed, isFromCache: false, isSignedClean: false);
                         }
                     }
+                    if (!archiveResult.IsComplete)
+                        return FileScanDetailedResult.CreateFailed(path, archiveResult.CoverageLimitation ?? "Arşiv incelemesi kısmi kaldı.", sw.Elapsed);
+                }
+                else if (ArchiveEntryInspector.HasContainerHeader(containerHeader.AsSpan(0, headerBytes)) ||
+                    ext is ".7z" or ".rar" or ".iso" or ".img" or ".tar" or ".gz" or ".cab" or ".bz2" or ".xz")
+                {
+                    // Whole-file hash remains checked; unsupported unpacking must never be cached as full coverage.
+                    return FileScanDetailedResult.CreateFailed(path, "Bu kapsayıcının içeriğini açma desteği yok; tam tarama sonucu verilemedi.", sw.Elapsed);
                 }
 
                 if (sha256 == "VIRUS_INFECTED_OS_BLOCKED")
@@ -223,22 +261,24 @@ namespace AegisPC.Security.Scanning
                         await _findingService.AddFindingAsync(osFinding, linkedCts.Token);
                     }
                     fileInfo.Refresh();
-                    _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, osFinding);
-                    return FileScanDetailedResult.CreateSuccess(path, osFinding, sw.Elapsed);
+                    _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, osFinding, null, false, false, policyRevision);
+                    return FileScanDetailedResult.CreateSuccess(path, osFinding, sw.Elapsed, isFromCache: false, isSignedClean: false);
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
 
                 // 3. Bütünleşik DetectionHub ve PUP/Risk Eşik Değerlendirmesi
                 // Kural 27: Yol indirimleri kaldırıldı (isGameDir = false)
-                var finding = await _pupCoordinator.AnalyzeAsync(path, fileInfo, sha256, false, linkedCts.Token);
+                var finding = completedArchiveInspection != null
+                    ? await _pupCoordinator.AnalyzeArchiveAsync(path, fileInfo, sha256, completedArchiveInspection, linkedCts.Token)
+                    : await _pupCoordinator.AnalyzeAsync(path, fileInfo, sha256, false, linkedCts.Token);
                 if (finding != null && (finding.Status == FindingStatus.Resolved || finding.IsAllowlisted))
                 {
                     finding = null;
                 }
                 fileInfo.Refresh();
-                _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, finding);
-                return FileScanDetailedResult.CreateSuccess(path, finding, sw.Elapsed);
+                _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, finding, sha256, false, false, policyRevision);
+                return FileScanDetailedResult.CreateSuccess(path, finding, sw.Elapsed, isFromCache: false, isSignedClean: false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -264,11 +304,17 @@ namespace AegisPC.Security.Scanning
             IProgress<ScanProgress>? progress = null,
             CancellationToken cancellationToken = default)
         {
-            var stopwatch = Stopwatch.StartNew();
-            lock (_pauseLock)
+            _hashMatcher.IsScanActive = true;
+            _hashMatcher.ResetCounters();
+
+            try
             {
-                _activeScanStopwatch = stopwatch;
-            }
+                var stopwatch = Stopwatch.StartNew();
+                using var processTelemetry = new ScanProcessTelemetry(_logger);
+                lock (_pauseLock)
+                {
+                    _activeScanStopwatch = stopwatch;
+                }
             var findings = new ConcurrentBag<SecurityFinding>();
             var etaEstimator = new ScanEtaEstimator();
 
@@ -288,7 +334,17 @@ namespace AegisPC.Security.Scanning
             {
                 if (progress == null) return;
 
-                lock (progressLock)
+                if (!force)
+                {
+                    if (lastReport.ElapsedMilliseconds < 100) return;
+                    if (!Monitor.TryEnter(progressLock)) return;
+                }
+                else
+                {
+                    Monitor.Enter(progressLock);
+                }
+
+                try
                 {
                     if (!force && lastReport.ElapsedMilliseconds < 100)
                     {
@@ -328,14 +384,16 @@ namespace AegisPC.Security.Scanning
                     int reportedPercent = Math.Max(maxReportedPercent, calculatedPercent);
                     maxReportedPercent = reportedPercent;
 
-                    // Canlı bellek kullanımı
-                    double ramMb = GC.GetTotalMemory(false) / (1024.0 * 1024.0);
+                    var metrics = processTelemetry.Sample();
 
                     progress.Report(new ScanProgress
                     {
                         ScanType = scanType,
                         TotalFiles = Math.Max(tot, scn),
                         ScannedFiles = scn,
+                        ScannedFromCache = _queueCoordinator.ScannedFromCache,
+                        SkippedSignedClean = _queueCoordinator.SkippedSignedClean,
+                        NewlyScanned = _queueCoordinator.NewlyScanned,
                         SkippedFiles = skp,
                         FailedFiles = fail,
                         TimedOutFiles = tout,
@@ -347,9 +405,16 @@ namespace AegisPC.Security.Scanning
                         EstimatedRemainingSeconds = remainingSeconds,
                         EtaConfidence = confidence,
                         FormattedEta = formattedEta,
-                        RamUsageMb = ramMb,
+                        CpuUsagePercent = metrics.CpuPercent,
+                        IsCpuTelemetryAvailable = metrics.HasCpuSample,
+                        RamUsageMb = metrics.WorkingSetMb,
+                        ResourceProfileName = ScanQueueCoordinator.ActiveResourceSummary,
                         IsCompleted = false
                     });
+                }
+                finally
+                {
+                    Monitor.Exit(progressLock);
                 }
             }
 
@@ -420,6 +485,7 @@ namespace AegisPC.Security.Scanning
                 }
             }
 
+            var finalMetrics = processTelemetry.Sample();
             if (cancellationToken.IsCancellationRequested)
             {
                 progress?.Report(new ScanProgress
@@ -427,6 +493,9 @@ namespace AegisPC.Security.Scanning
                     ScanType = scanType,
                     TotalFiles = Math.Max(finalTotal, finalScanned),
                     ScannedFiles = finalScanned,
+                    ScannedFromCache = _queueCoordinator.ScannedFromCache,
+                    SkippedSignedClean = _queueCoordinator.SkippedSignedClean,
+                    NewlyScanned = _queueCoordinator.NewlyScanned,
                     SkippedFiles = finalSkipped,
                     FailedFiles = finalFailed,
                     TimedOutFiles = finalTimedOut,
@@ -438,6 +507,10 @@ namespace AegisPC.Security.Scanning
                     EstimatedRemainingSeconds = 0,
                     FormattedEta = "İptal edildi",
                     EtaConfidence = ConfidenceLevel.High,
+                    CpuUsagePercent = finalMetrics.CpuPercent,
+                    IsCpuTelemetryAvailable = finalMetrics.HasCpuSample,
+                    RamUsageMb = finalMetrics.WorkingSetMb,
+                    ResourceProfileName = ScanQueueCoordinator.ActiveResourceSummary,
                     IsCompleted = false
                 });
 
@@ -463,6 +536,9 @@ namespace AegisPC.Security.Scanning
                 ScanType = scanType,
                 TotalFiles = Math.Max(finalTotal, finalScanned),
                 ScannedFiles = finalScanned,
+                ScannedFromCache = _queueCoordinator.ScannedFromCache,
+                SkippedSignedClean = _queueCoordinator.SkippedSignedClean,
+                NewlyScanned = _queueCoordinator.NewlyScanned,
                 SkippedFiles = finalSkipped,
                 FailedFiles = finalFailed,
                 TimedOutFiles = finalTimedOut,
@@ -474,6 +550,10 @@ namespace AegisPC.Security.Scanning
                 EstimatedRemainingSeconds = 0,
                 FormattedEta = "Tamamlandı",
                 EtaConfidence = ConfidenceLevel.High,
+                CpuUsagePercent = finalMetrics.CpuPercent,
+                IsCpuTelemetryAvailable = finalMetrics.HasCpuSample,
+                RamUsageMb = finalMetrics.WorkingSetMb,
+                ResourceProfileName = ScanQueueCoordinator.ActiveResourceSummary,
                 IsCompleted = true
             });
 
@@ -492,6 +572,11 @@ namespace AegisPC.Security.Scanning
                 ElapsedMs = stopwatch.ElapsedMilliseconds,
                 Findings = findings.ToList()
             };
+            }
+            finally
+            {
+                _hashMatcher.IsScanActive = false;
+            }
         }
     }
 }

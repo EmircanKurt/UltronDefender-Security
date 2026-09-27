@@ -17,6 +17,11 @@ namespace AegisPC.App.Views
             {
                 await ViewModel.LoadIncidentsAsync();
             };
+
+            Unloaded += (s, e) =>
+            {
+                ViewModel.Dispose();
+            };
         }
     }
 }

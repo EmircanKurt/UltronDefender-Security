@@ -110,6 +110,10 @@ namespace AegisPC.Service.Workers
                         _logger.LogWarning(ex, "Failed to connect Kernel Driver Bridge (continuing in user-mode).");
                     }
 
+                }
+
+                if (_settingsService.Current.IsNetworkProtectionEnabled)
+                {
                     try
                     {
                         _logger.LogInformation("Starting Network & DNS Protection Service...");
@@ -155,14 +159,14 @@ namespace AegisPC.Service.Workers
             finally
             {
                 _logger.LogInformation("Stopping protection engines during service shutdown.");
-                try { _realTimeProtectionEngine?.Stop(); } catch { }
-                try { _fileProtectionService?.StopProtection(); } catch { }
-                try { _ransomwareEngine?.StopShield(); } catch { }
-                try { _networkProtectionService?.Stop(); } catch { }
-                try { _etwPreExecService?.Stop(); } catch { }
-                try { _processMonitor?.Stop(); } catch { }
-                try { _imageLoadMonitor?.Stop(); } catch { }
-                try { _kernelBridge?.StopBridge(); } catch { }
+                try { _realTimeProtectionEngine?.Stop(); } catch (Exception ex) { _logger.LogWarning(ex, "Error stopping RealTimeProtectionEngine"); }
+                try { _fileProtectionService?.StopProtection(); } catch (Exception ex) { _logger.LogWarning(ex, "Error stopping FileProtectionService"); }
+                try { _ransomwareEngine?.StopShield(); } catch (Exception ex) { _logger.LogWarning(ex, "Error stopping RansomwareEngine"); }
+                try { _networkProtectionService?.Stop(); } catch (Exception ex) { _logger.LogWarning(ex, "Error stopping NetworkProtectionService"); }
+                try { _etwPreExecService?.Stop(); } catch (Exception ex) { _logger.LogWarning(ex, "Error stopping EtwPreExecService"); }
+                try { _processMonitor?.Stop(); } catch (Exception ex) { _logger.LogWarning(ex, "Error stopping ProcessMonitor"); }
+                try { _imageLoadMonitor?.Stop(); } catch (Exception ex) { _logger.LogWarning(ex, "Error stopping ImageLoadMonitor"); }
+                try { _kernelBridge?.StopBridge(); } catch (Exception ex) { _logger.LogWarning(ex, "Error stopping KernelBridge"); }
             }
         }
     }

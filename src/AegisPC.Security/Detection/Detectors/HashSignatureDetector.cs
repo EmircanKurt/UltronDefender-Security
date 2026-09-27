@@ -112,19 +112,49 @@ namespace AegisPC.Security.Detection.Detectors
             var patternMatch = await MalwareSignatureDatabase.CheckFileContentPatternsAsync(context.FilePath, cancellationToken);
             if (patternMatch.IsMatched)
             {
-                list.Add(new SecurityEvidence
+                bool isExactTestSignature =
+                    patternMatch.DetectionMethod.Equals("Statik İçerik İmzası", StringComparison.OrdinalIgnoreCase) ||
+                    patternMatch.ThreatCategory.Equals("TestMalware", StringComparison.OrdinalIgnoreCase);
+
+                string ext = Path.GetExtension(context.FilePath).ToLowerInvariant();
+                bool isDocOrText = ext is ".txt" or ".md" or ".doc" or ".docx" or ".pdf" or ".rtf" or ".log" or ".csv" or ".tsv" or ".html" or ".htm" or ".xml" or ".json";
+
+                // Zararsız metin belgelerinde, ders notlarında ve dokümanlarda geçen genel komut sözcükleri (Örn: sekurlsa)
+                // çalıştırılamaz içerik olduğu için yüksek puanlı statik imza olarak işaretlenmez.
+                if (isDocOrText && !isExactTestSignature)
                 {
-                    Category = EvidenceCategory.StaticSignature,
-                    SourceDetector = DisplayName,
-                    RuleName = $"Pattern.{patternMatch.ThreatCategory}",
-                    Description = $"İçerik İmzası / Exploit Deseni: {patternMatch.ThreatName}",
-                    ScoreContribution = patternMatch.SeverityScore,
-                    Confidence = EvidenceConfidence.High,
-                    FilePath = context.FilePath,
-                    SHA256 = context.SHA256,
-                    ProcessId = context.ProcessId,
-                    ParentProcessId = context.ParentProcessId
-                });
+                    list.Add(new SecurityEvidence
+                    {
+                        Category = EvidenceCategory.ScriptHeuristic,
+                        SourceDetector = DisplayName,
+                        RuleName = $"Documentation.Content.{patternMatch.ThreatCategory}",
+                        Description = $"Metin/Doküman İçi Referans: {patternMatch.ThreatName}",
+                        ScoreContribution = Math.Min(15, patternMatch.SeverityScore),
+                        Confidence = EvidenceConfidence.Low,
+                        CorrelationGroup = "DocumentationText",
+                        FilePath = context.FilePath,
+                        SHA256 = context.SHA256,
+                        ProcessId = context.ProcessId,
+                        ParentProcessId = context.ParentProcessId
+                    });
+                }
+                else
+                {
+                    list.Add(new SecurityEvidence
+                    {
+                        Category = isExactTestSignature ? EvidenceCategory.StaticSignature : EvidenceCategory.ScriptHeuristic,
+                        SourceDetector = DisplayName,
+                        RuleName = $"Signature.Content.{patternMatch.ThreatCategory}",
+                        Description = $"İçerik İmzası: {patternMatch.ThreatName}",
+                        ScoreContribution = isExactTestSignature ? patternMatch.SeverityScore : Math.Min(65, patternMatch.SeverityScore),
+                        Confidence = isExactTestSignature ? EvidenceConfidence.Absolute : EvidenceConfidence.High,
+                        CorrelationGroup = isExactTestSignature ? "ExactContentSignature" : "HeuristicCommandText",
+                        FilePath = context.FilePath,
+                        SHA256 = context.SHA256,
+                        ProcessId = context.ProcessId,
+                        ParentProcessId = context.ParentProcessId
+                    });
+                }
             }
 
             return list;

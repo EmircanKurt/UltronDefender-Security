@@ -21,22 +21,5 @@ namespace AegisPC.App.Views
                 ViewModel.SyncWithScanCoordinator();
             };
         }
-
-        private void OnPagePreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            if (RootScrollViewer != null && e.Delta != 0)
-            {
-                RootScrollViewer.ScrollToVerticalOffset(RootScrollViewer.VerticalOffset - (e.Delta * 0.75));
-                e.Handled = true;
-            }
-        }
-
-        private static T? FindVisualParent<T>(DependencyObject child) where T : DependencyObject
-        {
-            var parentObj = VisualTreeHelper.GetParent(child);
-            if (parentObj == null) return null;
-            if (parentObj is T parent) return parent;
-            return FindVisualParent<T>(parentObj);
-        }
     }
 }

@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using AegisPC.Core.Constants;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Helpers;
+using Serilog;
 
 namespace AegisPC.Security.Scanning
 {
@@ -63,8 +64,9 @@ namespace AegisPC.Security.Scanning
             dirQueue.Enqueue(dirPath);
             visitedDirs.TryAdd(dirPath, 0);
 
-            // Paralel klasör gezeri (I/O saturasyonu ve sıfır bekleme) — Modern CPU çekirdeklerine göre 4-16 arası
-            int walkerCount = Math.Clamp(Environment.ProcessorCount, 4, 16);
+            // Keep directory enumeration bounded on small CPUs. File scanning has a separate
+            // worker pool; 4-16 walkers on a 1-2 core machine only add contention and memory use.
+            int walkerCount = Math.Clamp(Environment.ProcessorCount, 1, 4);
             int activeWalkers = 0;
 
             var walkerTasks = Enumerable.Range(0, walkerCount).Select(async _ =>
@@ -113,18 +115,24 @@ namespace AegisPC.Security.Scanning
 
                                     // TAM KAPSAM: Windows kökünde de tüm alt dizinler taranır (WinSxS, Installer,
                                     // assembly, ProgramData dahil). Yalnızca ExcludedDirectoryNames listesi dışlanır.
-                                    if (ExcludedDirectoryNames.Contains(dirInfo.Name) || ScanFilterPolicy.IsSelfOwnedPath(subDir)) continue;
+                                    if (ScanFilterPolicy.IsSelfOwnedPath(subDir)) continue;
 
                                     if (visitedDirs.TryAdd(subDir, 0))
                                     {
                                         dirQueue.Enqueue(subDir);
                                     }
                                 }
-                                catch { }
+                                catch (Exception ex)
+                                {
+                                    Log.Debug(ex, "Failed to inspect directory attribute or filter {SubDir}", subDir);
+                                }
                             }
                         }
                     }
-                    catch { } // Bir dizindeki erişim hatası diğer dizinleri durdurmaz
+                    catch (Exception ex)
+                    {
+                        Log.Debug(ex, "Failed to enumerate directory during walk");
+                    } // Bir dizindeki erişim hatası diğer dizinleri durdurmaz
                     finally
                     {
                         Interlocked.Decrement(ref activeWalkers);
@@ -175,8 +183,9 @@ namespace AegisPC.Security.Scanning
                     foreach (var proc in activeProcesses)
                     {
                         if (cancellationToken.IsCancellationRequested) break;
+                        using (proc)
+                        {
                         if (proc.Id <= 4) continue;
-
                         try
                         {
                             string? mainModule = proc.MainModule?.FileName;
@@ -193,10 +202,17 @@ namespace AegisPC.Security.Scanning
                                 }
                             }
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            Log.Debug(ex, "Failed to read modules for process {Pid}", proc.Id);
+                        }
+                        }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Log.Debug(ex, "Failed to iterate running processes during quick scan");
+                }
 
                 // Başlangıç ve Otomatik Çalıştırma Klasörleri
                 reportProgress("Başlangıç ve Otomatik Çalıştırma Dizinleri taranıyor...");
@@ -234,7 +250,10 @@ namespace AegisPC.Security.Scanning
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Log.Debug(ex, "Failed to enumerate registry run keys during quick scan");
+                }
 
                 // İndirilenler & Masaüstü (En yaygın indirme bulaşma noktaları)
                 await EnumerateDirectorySafelyAsync(KnownPaths.Downloads, false, tryQueueFileAsync, cancellationToken, pauseEvent);

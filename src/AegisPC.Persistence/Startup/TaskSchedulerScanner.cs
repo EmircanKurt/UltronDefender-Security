@@ -58,7 +58,10 @@ namespace AegisPC.Persistence.Startup
 
                 process.WaitForExit(3000);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"schtasks.exe ile zamanlanmış görevler sorgulanırken hata oluştu: {ex.Message}");
+            }
 
             return items;
         }

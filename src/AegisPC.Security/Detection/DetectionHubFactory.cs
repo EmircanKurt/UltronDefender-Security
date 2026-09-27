@@ -31,7 +31,8 @@ namespace AegisPC.Security.Detection
             INetworkProcessCorrelator? networkCorrelator = null,
             IYaraEngine? yaraEngine = null,
             IReputationService? reputationService = null,
-            AegisPC.Contracts.ThreatIntelligence.IThreatIntelligenceStore? threatStore = null)
+            AegisPC.Contracts.ThreatIntelligence.IThreatIntelligenceStore? threatStore = null,
+            IExclusionService? exclusionService = null)
         {
             var hash = hashService ?? new HashService();
             var sigVerifier = signatureVerifier ?? new SignatureVerifier();
@@ -51,7 +52,7 @@ namespace AegisPC.Security.Detection
                 new EntropyDetector(),
                 new PersistenceDetector(),
                 new ScriptHeuristicDetector(),
-                new ArchiveDetectorPlugin(archive),
+                new ArchiveDetectorPlugin(archive, new ArchiveSafetyScanner(yaraEngine: yara)),
                 new AntiEvasionDetectorPlugin(evasion),
                 new ProcessBehaviorDetector(lineageTracker, chainCorrelator),
                 new MemoryBehaviorDetector(injectionDetector, memoryScanner),
@@ -59,7 +60,7 @@ namespace AegisPC.Security.Detection
                 new YaraDetector(yara)
             };
 
-            return new DetectionHub(detectors);
+            return new DetectionHub(detectors, exclusionService: exclusionService);
         }
     }
 }

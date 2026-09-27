@@ -41,15 +41,24 @@ namespace AegisPC.Security.RealTime
         Task EnforceQuarantineAsync(NormalizedFileEvent evt, RealTimeVerdictResult verdict, CancellationToken ct);
     }
 
+    /// <summary>Provides the actual quarantine outcome so telemetry never reports an uncommitted action.</summary>
+    public interface IRealTimePolicyOutcomeEnforcer
+    {
+        /// <summary>Returns true only after a confirmed, content-bound quarantine is committed.</summary>
+        Task<bool> EnforceQuarantineWithOutcomeAsync(NormalizedFileEvent evt, RealTimeVerdictResult verdict, CancellationToken ct);
+    }
+
     /// <summary>
     /// Gerçek zamanlı güvenlik politikası infaz sınıfı.
     /// </summary>
-    public class RealTimePolicyEnforcer : IRealTimePolicyEnforcer
+    public class RealTimePolicyEnforcer : IRealTimePolicyEnforcer, IRealTimePolicyOutcomeEnforcer
     {
         private readonly IQuarantineService _quarantineService;
         private readonly ISecurityFindingService _findingService;
         private readonly IAuditLogService? _auditLogService;
         private readonly ILogger? _logger;
+        private readonly Func<bool> _enableAutoQuarantine;
+        private readonly Func<int> _autoQuarantineThreshold;
 
         public event Action<SecurityFinding>? OnThreatDetected;
         public event Action<SecurityIncident>? OnIncidentCreated;
@@ -59,12 +68,16 @@ namespace AegisPC.Security.RealTime
             IQuarantineService quarantineService,
             ISecurityFindingService findingService,
             IAuditLogService? auditLogService = null,
-            ILogger? logger = null)
+            ILogger? logger = null,
+            Func<bool>? enableAutoQuarantine = null,
+            Func<int>? autoQuarantineThreshold = null)
         {
             _quarantineService = quarantineService;
             _findingService = findingService;
             _auditLogService = auditLogService;
             _logger = logger;
+            _enableAutoQuarantine = enableAutoQuarantine ?? (() => true);
+            _autoQuarantineThreshold = autoQuarantineThreshold ?? (() => 85);
         }
 
         public async Task EnforceWarningAsync(NormalizedFileEvent evt, RealTimeVerdictResult verdict, CancellationToken ct)
@@ -112,14 +125,39 @@ namespace AegisPC.Security.RealTime
                         cancellationToken: ct);
                 }
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger?.LogTrace(ex, "Failed to enforce warning for {Path}", evt.NormalizedPath);
             }
         }
 
+        /// <summary>Compatibility adapter for callers that do not consume action outcomes.</summary>
         public async Task EnforceQuarantineAsync(NormalizedFileEvent evt, RealTimeVerdictResult verdict, CancellationToken ct)
+            => await EnforceQuarantineWithOutcomeAsync(evt, verdict, ct);
+
+        /// <summary>Enforces exact, hash-bound findings; unconfirmed or stale findings leave the file intact.</summary>
+        public async Task<bool> EnforceQuarantineWithOutcomeAsync(NormalizedFileEvent evt, RealTimeVerdictResult verdict, CancellationToken ct)
         {
+            ct.ThrowIfCancellationRequested();
+            if (!_enableAutoQuarantine() || verdict.RiskScore < Math.Clamp(_autoQuarantineThreshold(), 1, 100))
+            {
+                await EnforceWarningAsync(evt, verdict, ct);
+                return false;
+            }
+            if (verdict.Verdict != RealTimeVerdict.ConfirmedMalicious ||
+                verdict.RecommendedPolicy != RealTimePolicyAction.BlockAndQuarantine ||
+                verdict.SHA256.Length != 64 || !System.Linq.Enumerable.All(verdict.SHA256, Uri.IsHexDigit))
+            {
+                _logger?.LogWarning("Rejected automatic action without an exact, content-bound verdict for {Path}", evt.NormalizedPath);
+                return false;
+            }
+            if (_quarantineService is not IContentBoundQuarantineService contentBound)
+            {
+                _logger?.LogWarning("Automatic quarantine requires a content-bound vault implementation for {Path}", evt.NormalizedPath);
+                return false;
+            }
+            bool quarantined = false;
             try
             {
                 var fileInfo = new FileInfo(evt.NormalizedPath);
@@ -142,18 +180,17 @@ namespace AegisPC.Security.RealTime
                     Status = FindingStatus.Active
                 };
 
-                // 1. ACTIVE PROCESS CONTAINMENT & TERMINATION
-                var (terminatedPid, terminatedProcName) = ProcessMitigationHelper.ContainAndTerminateTargetProcess(
-                    evt.NormalizedPath, evt.ProcessId, _logger);
+                // File arrivals do not carry verified process identity. Never terminate a process by
+                // a recycled PID or path alone; the ETW observer verifies its captured identity separately.
+                int terminatedPid = 0;
+                string terminatedProcName = string.Empty;
 
                 // 2. Perform Secure AES-256 Quarantine with resilient retry
-                bool quarantined = false;
                 for (int retry = 0; retry < 5; retry++)
                 {
-                    quarantined = await _quarantineService.QuarantineFileAsync(evt.NormalizedPath, verdict.ThreatTitle, ct);
-                    if (quarantined || !File.Exists(evt.NormalizedPath))
+                    quarantined = await contentBound.TryQuarantineFileAsync(evt.NormalizedPath, verdict.ThreatTitle, verdict.SHA256, ct);
+                    if (quarantined)
                     {
-                        quarantined = true;
                         break;
                     }
                     await Task.Delay(40, ct);
@@ -181,12 +218,19 @@ namespace AegisPC.Security.RealTime
                     RiskLevel = verdict.RiskLevel.ToString().ToUpperInvariant(),
                     CreatedAt = DateTime.UtcNow,
                     Status = quarantined ? "Quarantined" : "Active",
-                    ActionTaken = terminatedPid > 0 
-                        ? $"Aktif zararlı süreç (PID: {terminatedPid}) sonlandırıldı ve dosya AES-256 Karantina Kasasına kilitlendi."
-                        : (quarantined ? "Dosya engellendi ve AES-256 Karantina Kasasına kilitlendi." : "Tespit Edildi"),
+                    ActionTaken = quarantined
+                        ? (terminatedPid > 0
+                            ? $"Aktif zararlı süreç (PID: {terminatedPid}) sonlandırıldı ve dosya AES-256 Karantina Kasasına kilitlendi."
+                            : "Dosya engellendi ve AES-256 Karantina Kasasına kilitlendi.")
+                        : (terminatedPid > 0
+                            ? $"Aktif süreç (PID: {terminatedPid}) sonlandırıldı; dosya karantinası başarısız oldu."
+                            : "Tehdit tespit edildi; karantina başarısız oldu."),
                     HumanExplanation = $"Gerçek zamanlı koruma kalkanı '{fileInfo.Name}' dosyasında kritik tehdit tespit etti." + 
-                        (terminatedPid > 0 ? $" Çalışan zararlı süreç (PID: {terminatedPid}) derhal durduruldu." : "") + " Dosya güvenli şekilde karantinaya alındı.",
-                    RecommendedUserAction = "Tehdit başarıyla etkisiz hale getirilmiştir. Gerekirse Karantina Kasası sayfasından inceleyebilirsiniz."
+                        (terminatedPid > 0 ? $" Çalışan süreç (PID: {terminatedPid}) derhal durduruldu." : "") +
+                        (quarantined ? " Dosya güvenli şekilde karantinaya alındı." : " Dosya karantinaya alınamadı ve yeniden incelenmelidir."),
+                    RecommendedUserAction = quarantined
+                        ? "Tehdit başarıyla etkisiz hale getirilmiştir. Gerekirse Karantina Kasası sayfasından inceleyebilirsiniz."
+                        : "Dosya kullanımda veya erişim engelli olabilir. Yönetici yetkisiyle yeniden tarayın ve dosyayı çalıştırmayın."
                 };
                 incident.Timeline.Add($"[{DateTime.UtcNow:HH:mm:ss}] Gerçek Zamanlı Koruma: '{fileInfo.Name}' tehdit deseni algılandı.");
                 incident.Timeline.Add($"[{DateTime.UtcNow:HH:mm:ss}] Analiz Sonucu: Risk Skoru {verdict.RiskScore}/100 ({verdict.Verdict}).");
@@ -203,10 +247,14 @@ namespace AegisPC.Security.RealTime
                 OnThreatDetected?.Invoke(finding);
                 OnIncidentCreated?.Invoke(incident);
 
-                string toastTitle = terminatedPid > 0 ? "🛑 Aktif Zararlı Süreç Durduruldu ve Kilitlendi!" : (quarantined ? "🛡️ Tehdit Engellendi ve Karantinaya Alındı!" : "🚨 Tehdit Tespit Edildi!");
-                string toastMsg = terminatedPid > 0
-                    ? $"'{terminatedProcName}' (PID: {terminatedPid}) süreci durduruldu ve '{fileInfo.Name}' dosyası karantinaya kilitlendi."
-                    : $"'{fileInfo.Name}' dosyasında kritik tehdit tespit edildi ve anında engellendi.";
+                string toastTitle = quarantined
+                    ? (terminatedPid > 0 ? "🛑 Aktif Zararlı Süreç Durduruldu ve Kilitlendi!" : "🛡️ Tehdit Engellendi ve Karantinaya Alındı!")
+                    : "🚨 Tehdit Tespit Edildi — Karantina Başarısız!";
+                string toastMsg = quarantined
+                    ? (terminatedPid > 0
+                        ? $"'{terminatedProcName}' (PID: {terminatedPid}) süreci durduruldu ve '{fileInfo.Name}' dosyası karantinaya kilitlendi."
+                        : $"'{fileInfo.Name}' dosyası karantinaya alındı.")
+                    : $"'{fileInfo.Name}' dosyası karantinaya alınamadı; dosyayı çalıştırmayın ve yeniden tarayın.";
 
                 OnNotificationRaised?.Invoke(toastTitle, toastMsg, "Danger");
 
@@ -218,13 +266,16 @@ namespace AegisPC.Security.RealTime
                         fileInfo.Name,
                         evt.NormalizedPath,
                         $"{verdict.ThreatTitle} - Skor: {verdict.RiskScore}" + (terminatedPid > 0 ? $" - Süreç PID: {terminatedPid} sonlandırıldı." : ""),
-                        AuditResult.Success,
+                        quarantined ? AuditResult.Success : AuditResult.Failed,
                         cancellationToken: ct);
                 }
+                return quarantined;
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Failed to enforce quarantine for {Path}", evt.NormalizedPath);
+                return quarantined;
             }
         }
     }

@@ -69,6 +69,19 @@ namespace AegisPC.App.ViewModels
         // ═══════════════════════════════════════════════
 
         /// <summary>
+        /// Devam eden veya sonlanan aktif tarayıcı penceresini ekranda öne getirir.
+        /// </summary>
+        [RelayCommand]
+        public void OpenActiveScanWindow()
+        {
+            var scanVm = App.ServiceProvider?.GetService<ScanViewModel>();
+            if (scanVm != null)
+            {
+                Views.ActiveScanWindow.ShowScanWindow(scanVm);
+            }
+        }
+
+        /// <summary>
         /// Hızlı sistem taramasını başlatır veya tarama zaten çalışıyorsa iptal eder.
         /// </summary>
         [RelayCommand]
@@ -318,7 +331,8 @@ namespace AegisPC.App.ViewModels
                     }
                     else
                     {
-                        TriggerToast("Geri yükleme başarısız oldu!", "Warning");
+                        var reason = _quarantineService.LastError ?? "Geri yükleme başarısız oldu!";
+                        TriggerToast(reason, "Warning");
                     }
                 }
                 else

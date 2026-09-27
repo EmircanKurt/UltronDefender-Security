@@ -12,9 +12,10 @@ namespace AegisPC.Security.Scanning
     public class ScanSession : IScanSession
     {
         private readonly CancellationTokenSource _cts;
-        private readonly Action _onPause;
-        private readonly Action _onResume;
-        private readonly Action _onCancel;
+        private Action _onPause;
+        private Action _onResume;
+        private Action _onCancel;
+        private readonly CancellationToken _token;
 
         public Guid SessionId { get; }
         public ScanType ScanType { get; }
@@ -23,7 +24,7 @@ namespace AegisPC.Security.Scanning
         public bool IsActive { get; internal set; }
         public bool IsPaused { get; internal set; }
         public ScanProgress? LatestProgress { get; internal set; }
-        public CancellationToken CancellationToken => _cts.Token;
+        public CancellationToken CancellationToken => _token;
 
         public ScanSession(
             ScanType scanType,
@@ -40,6 +41,14 @@ namespace AegisPC.Security.Scanning
             IsActive = true;
             IsPaused = false;
             _cts = cts;
+            _token = cts.Token;
+            _onPause = onPause;
+            _onResume = onResume;
+            _onCancel = onCancel;
+        }
+
+        internal void SetOwnerActions(Action onPause, Action onResume, Action onCancel)
+        {
             _onPause = onPause;
             _onResume = onResume;
             _onCancel = onCancel;

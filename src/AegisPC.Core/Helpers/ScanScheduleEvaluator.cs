@@ -11,7 +11,7 @@ namespace AegisPC.Core.Helpers
             return true;
         }
 
-        public static bool IsIntervalScanDue(DateTime now, int intervalHours, DateTime? lastRunTime)
+        public static bool IsIntervalScanDue(DateTime now, double intervalHours, DateTime? lastRunTime)
         {
             if (intervalHours <= 0) intervalHours = 24;
             if (!lastRunTime.HasValue) return true;
@@ -31,6 +31,31 @@ namespace AegisPC.Core.Helpers
             if (idleDuration < idleThreshold) return false;
             if (lastRunDate.HasValue && (DateTime.UtcNow - lastRunDate.Value) < minIntervalBetweenIdleScans) return false;
             return true;
+        }
+
+        /// <summary>
+        /// Pil modunda otomatik Sakin (Low) profil uygular; AC gücünde ise kullanıcının tercih ettiği modu korur.
+        /// </summary>
+        public static Enums.ScanResourceMode DetermineScheduledScanProfile(bool isOnBattery, Enums.ScanResourceMode preferredMode)
+        {
+            return isOnBattery && preferredMode != Enums.ScanResourceMode.VeryLow
+                ? Enums.ScanResourceMode.Low : preferredMode;
+        }
+
+        /// <summary>
+        /// Kullanıcı tam ekranda oyun oynarken veya sunum yaparken planlı taramayı erteleme kararı verir.
+        /// </summary>
+        public static bool ShouldDeferForFullscreenOrGame(bool isFullscreenActive, bool isGamingModeEnabled = true)
+        {
+            return isGamingModeEnabled && isFullscreenActive;
+        }
+
+        /// <summary>
+        /// Disk aktivitesi belirlenen eşiği (varsayılan %80) aştığında taramayı sınırlama veya erteleme kararı verir.
+        /// </summary>
+        public static bool ShouldThrottleForDiskBusy(double diskBusyPercent, double thresholdPercent = 80.0)
+        {
+            return diskBusyPercent >= thresholdPercent;
         }
     }
 }

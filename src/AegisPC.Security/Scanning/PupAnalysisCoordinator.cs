@@ -22,6 +22,9 @@ namespace AegisPC.Security.Scanning
         /// Dosyayı DetectionHub 13 dedektörü üzerinden değerlendirir ve tehdit bulunursa SecurityFinding üretir.
         /// </summary>
         Task<SecurityFinding?> AnalyzeAsync(string path, FileInfo fileInfo, string sha256, bool isGameDir, CancellationToken ct);
+        /// <summary>Reuses an actual bounded container inspection while preserving compatibility with other coordinators.</summary>
+        Task<SecurityFinding?> AnalyzeArchiveAsync(string path, FileInfo fileInfo, string sha256, ArchiveScanResult archiveResult, CancellationToken ct)
+            => AnalyzeAsync(path, fileInfo, sha256, false, ct);
     }
 
     /// <summary>
@@ -40,7 +43,15 @@ namespace AegisPC.Security.Scanning
             _findingService = findingService;
         }
 
-        public async Task<SecurityFinding?> AnalyzeAsync(string path, FileInfo fileInfo, string sha256, bool isGameDir, CancellationToken ct)
+        /// <summary>Analyzes a stable whole-file identity through the shared detector pipeline.</summary>
+        public Task<SecurityFinding?> AnalyzeAsync(string path, FileInfo fileInfo, string sha256, bool isGameDir, CancellationToken ct)
+            => AnalyzeCoreAsync(path, fileInfo, sha256, ct, null);
+
+        /// <summary>Passes real member findings and coverage to the hub without decompressing the same container twice.</summary>
+        public Task<SecurityFinding?> AnalyzeArchiveAsync(string path, FileInfo fileInfo, string sha256, ArchiveScanResult archiveResult, CancellationToken ct)
+            => AnalyzeCoreAsync(path, fileInfo, sha256, ct, archiveResult);
+
+        private async Task<SecurityFinding?> AnalyzeCoreAsync(string path, FileInfo fileInfo, string sha256, CancellationToken ct, ArchiveScanResult? archiveResult)
         {
             var context = new DetectionContext
             {
@@ -50,22 +61,27 @@ namespace AegisPC.Security.Scanning
                 ProcessId = 0,
                 CorrelationId = Guid.NewGuid().ToString("N")
             };
+            context.SharedScan = new ScanContext(path, sha256, fileInfo.Length) { LastWriteTimeUtc = fileInfo.LastWriteTimeUtc };
+            if (archiveResult != null) context.Properties["Ultron.ArchiveInspectionResult"] = archiveResult;
 
             var detectionResult = await _detectionHub.EvaluateAsync(context, ct);
 
             // Eşik Değeri ve Risk Kararı Haritalaması (Oyun ve geliştirici paket klasörlerinde 85 eşik, genel sistemde 50 eşik)
-            bool isDevDir = PathHelper.IsDevelopmentOrPackageDirectory(path);
-            int minThreshold = (isGameDir || isDevDir) ? 85 : 50;
-            bool hasExplicitSignature = detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.StaticSignature && e.ScoreContribution >= 80);
+            int minThreshold = 50; // Directory names never weaken evidence thresholds.
+            bool hasExplicitSignature = detectionResult.Evidences.Any(e =>
+                e.Category == EvidenceCategory.StaticSignature &&
+                e.Confidence == EvidenceConfidence.Absolute &&
+                e.ScoreContribution >= 80);
+            bool hasConfirmedMalwareEvidence = hasExplicitSignature;
+            if (!detectionResult.IsComplete && !hasExplicitSignature)
+                throw new IOException($"Dosya analizi tamamlanamadı: {detectionResult.FailedDetectorCount} dedektör hatası. " +
+                    string.Join(" ", detectionResult.CoverageLimitations));
 
             if ((detectionResult.Verdict >= DetectionVerdict.Suspicious && detectionResult.RiskScore >= minThreshold) || hasExplicitSignature)
             {
-                RiskLevel riskLevel = detectionResult.RiskScore switch
-                {
-                    >= 85 => RiskLevel.ConfirmedMalicious,
-                    >= 70 => RiskLevel.HighRisk,
-                    _ => RiskLevel.Suspicious
-                };
+                RiskLevel riskLevel = hasConfirmedMalwareEvidence
+                    ? RiskLevel.ConfirmedMalicious
+                    : detectionResult.RiskScore >= 70 ? RiskLevel.HighRisk : RiskLevel.Suspicious;
 
                 var reasons = detectionResult.Evidences
                     .Select(e => $"[{e.Category}] {e.Description} (+{e.ScoreContribution})")
@@ -77,7 +93,10 @@ namespace AegisPC.Security.Scanning
                 }
 
                 FindingCategory findingCat = FindingCategory.SuspiciousLocation;
-                if (detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.StaticSignature))
+                if (detectionResult.Evidences.Any(e =>
+                    e.Category == EvidenceCategory.StaticSignature &&
+                    e.Confidence == EvidenceConfidence.Absolute &&
+                    e.ScoreContribution > 0))
                     findingCat = FindingCategory.KnownMalwareHash;
                 else if (detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.StaticPeStructure || e.Category == EvidenceCategory.StaticApi))
                     findingCat = FindingCategory.MalwareSuspicion;
@@ -88,7 +107,7 @@ namespace AegisPC.Security.Scanning
 
                 string threatTitle = !string.IsNullOrEmpty(detectionResult.ThreatTitle)
                     ? detectionResult.ThreatTitle
-                    : (riskLevel == RiskLevel.ConfirmedMalicious ? $"Zararlı Yazılım Tespit Edildi: {fileInfo.Name}" : $"Yüksek Riskli Şüpheli Dosya: {fileInfo.Name}");
+                    : (riskLevel == RiskLevel.ConfirmedMalicious ? $"Zararlı Yazılım Tespit Edildi: {fileInfo.Name}" : $"Şüpheli Dosya: {fileInfo.Name}");
 
                 var finding = new SecurityFinding
                 {

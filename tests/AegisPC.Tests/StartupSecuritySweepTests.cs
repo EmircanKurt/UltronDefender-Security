@@ -422,5 +422,101 @@ namespace AegisPC.Tests
             var result = await task;
             Assert.NotNull(result);
         }
+
+        [Fact]
+        public async Task Test_StartupSweep_CanBePausedAndResumed()
+        {
+            for (int i = 0; i < 30; i++)
+            {
+                await File.WriteAllTextAsync(Path.Combine(_downloadsDir, $"file_{i:D3}.exe"), "clean content");
+            }
+
+            int scannedBeforePause = 0;
+            var pauseTcs = new TaskCompletionSource<bool>();
+
+            _sweepService.OnProgressChanged += p =>
+            {
+                if (p.ScannedFiles >= 5 && !pauseTcs.Task.IsCompleted)
+                {
+                    scannedBeforePause = p.ScannedFiles;
+                    _sweepService.Pause();
+                    pauseTcs.TrySetResult(true);
+                }
+            };
+
+            var sweepTask = _sweepService.RunSweepAsync(new[] { _downloadsDir });
+            await pauseTcs.Task;
+
+            Assert.True(_sweepService.IsPaused, "Sweep must report IsPaused = true.");
+            await Task.Delay(100);
+
+            // While paused, resume it
+            _sweepService.Resume();
+            Assert.False(_sweepService.IsPaused, "Sweep must report IsPaused = false after Resume.");
+
+            var result = await sweepTask;
+            Assert.Equal(StartupSweepStatus.Clean, result.FinalStatus);
+            Assert.True(result.TotalScanned >= 30);
+        }
+
+        [Fact]
+        public async Task Test_StartupSweep_CanBeCancelled()
+        {
+            for (int i = 0; i < 50; i++)
+            {
+                await File.WriteAllTextAsync(Path.Combine(_downloadsDir, $"cancel_test_{i:D3}.exe"), "clean content");
+            }
+
+            var cancelTcs = new TaskCompletionSource<bool>();
+            _sweepService.OnProgressChanged += p =>
+            {
+                if (p.ScannedFiles >= 5 && !cancelTcs.Task.IsCompleted)
+                {
+                    _sweepService.Cancel();
+                    cancelTcs.TrySetResult(true);
+                }
+            };
+
+            var sweepTask = _sweepService.RunSweepAsync(new[] { _downloadsDir });
+            await cancelTcs.Task;
+
+            var result = await sweepTask;
+            Assert.Equal(StartupSweepStatus.Cancelled, result.FinalStatus);
+            Assert.Equal(StartupSweepStatus.Cancelled, _sweepService.Status);
+            Assert.True(result.TotalScanned < 50, "Cancelled sweep must stop early.");
+        }
+
+        [Fact]
+        public async Task Test_StartupSweep_CoordinatedWithScanCoordinator_PauseAndCancel()
+        {
+            for (int i = 0; i < 40; i++)
+            {
+                await File.WriteAllTextAsync(Path.Combine(_downloadsDir, $"coord_test_{i:D3}.exe"), "clean content");
+            }
+
+            var coordinator = new ScanCoordinatorService(_fileScanner, _findingService);
+            var coordinatedSweep = new StartupSecuritySweepService(
+                _realTimeEngine,
+                _quarantineService,
+                scanCoordinator: coordinator);
+
+            var cancelTcs = new TaskCompletionSource<bool>();
+            coordinator.ProgressChanged += p =>
+            {
+                if (p.ScannedFiles >= 5 && !cancelTcs.Task.IsCompleted)
+                {
+                    coordinator.CancelScan();
+                    cancelTcs.TrySetResult(true);
+                }
+            };
+
+            var sweepTask = coordinatedSweep.RunSweepAsync(new[] { _downloadsDir });
+            await cancelTcs.Task;
+
+            var result = await sweepTask;
+            Assert.Equal(StartupSweepStatus.Cancelled, result.FinalStatus);
+            Assert.Equal(ScanState.Cancelled, coordinator.State);
+            Assert.Equal(ScanStopReason.UserCancelled, coordinator.StopReason);
+        }
     }
 }

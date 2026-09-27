@@ -32,6 +32,13 @@ namespace AegisPC.Security.Kernel
         private readonly ISignatureVerifier? _signatureVerifier;
         private readonly IQuarantineService? _quarantineService;
         private readonly ILogger<KernelGatingEngine>? _logger;
+        private int _timeoutFallbackCount;
+        private DateTime _lastTimeoutAlert = DateTime.MinValue;
+
+        /// <summary>
+        /// Timeout nedeniyle fail-open izin verilen toplam dosya sayısı.
+        /// </summary>
+        public int TimeoutFallbackCount => _timeoutFallbackCount;
 
         public KernelGatingEngine(
             IDetectionHub? detectionHub = null,
@@ -132,43 +139,10 @@ namespace AegisPC.Security.Kernel
                     {
                         throw;
                     }
-                    catch { }
-                }
-
-                // 5. TrustedSoftwarePolicy: Dijital İmza ve Güvenilir Ticari Yayımcı Fast-Path
-                if (File.Exists(request.FilePath))
-                {
-                    try
+                    catch (Exception ex)
                     {
-                        var verifier = _signatureVerifier ?? new SignatureVerifier();
-                        var sigInfo = await verifier.VerifySignatureAsync(request.FilePath, linkedCts.Token);
-                        if (sigInfo.IsSigned && sigInfo.IsValid)
-                        {
-                            var trust = TrustedSoftwarePolicy.EvaluateTrust(
-                                request.FilePath,
-                                sigInfo.Publisher,
-                                sigInfo.IsSigned,
-                                sigInfo.IsValid,
-                                TrustedSoftwarePolicy.IsLegitimateInstallLocation(request.FilePath));
-
-                            if (trust.IsFullyTrusted || trust.IsOsComponent || trust.IsCommercialTrusted)
-                            {
-                                decision.IsBlocked = false;
-                                decision.NtStatus = STATUS_SUCCESS;
-                                decision.Status = KernelGatingStatus.BypassedTrustedProcess;
-                                decision.BlockReason = $"Güvenilir Yayımcı: {trust.Reason}";
-                                decision.RiskScore = 0;
-                                decision.ShouldQuarantine = false;
-                                decision.ElapsedMs = sw.Elapsed.TotalMilliseconds;
-                                return decision;
-                            }
-                        }
+                        _logger?.LogTrace(ex, "Failed to query cache in KernelGatingEngine for {Path}", request.FilePath);
                     }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch { }
                 }
 
                 // 6. Statik Hızlı Desen / İmza ve Tehdit Analizi
@@ -182,6 +156,29 @@ namespace AegisPC.Security.Kernel
                     {
                         riskScore = Math.Max(riskScore, match.SeverityScore);
                         threatTitle = match.ThreatName;
+                    }
+                }
+
+                // 6.1 TrustedSoftwarePolicy: Temiz içerikli ve güvenilir yayıncı imzalı dosyalar için hızlı geçiş (BypassedTrustedProcess)
+                if (riskScore == 0 && _signatureVerifier != null && File.Exists(request.FilePath))
+                {
+                    try
+                    {
+                        var sig = await _signatureVerifier.VerifySignatureAsync(request.FilePath, linkedCts.Token);
+                        if (sig.IsSigned && sig.IsValid && (TrustedSoftwarePolicy.IsTrustedOsPublisher(sig.Publisher) || TrustedSoftwarePolicy.IsTrustedCommercialPublisher(sig.Publisher)))
+                        {
+                            decision.IsBlocked = false;
+                            decision.NtStatus = STATUS_SUCCESS;
+                            decision.Status = KernelGatingStatus.BypassedTrustedProcess;
+                            decision.BlockReason = $"Güvenilir Dijital İmza: {sig.Publisher}";
+                            decision.ElapsedMs = sw.Elapsed.TotalMilliseconds;
+                            return decision;
+                        }
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogTrace(ex, "Failed signature verification in KernelGatingEngine for {Path}", request.FilePath);
                     }
                 }
 
@@ -294,6 +291,13 @@ namespace AegisPC.Security.Kernel
                 decision.RiskScore = 0;
                 decision.BlockReason = "Zaman aşımı nedeniyle fail-open izni verildi.";
                 _logger?.LogWarning("Kernel gating timeout exceeded ({Timeout}ms) for {Path}. Fail-open granted.", request.TimeoutMs, request.FilePath);
+                var count = Interlocked.Increment(ref _timeoutFallbackCount);
+                // Kısa sürede çok sayıda timeout → potansiyel DoS/stres saldırısı uyarısı
+                if (count > 50 && (DateTime.UtcNow - _lastTimeoutAlert).TotalMinutes >= 5)
+                {
+                    _lastTimeoutAlert = DateTime.UtcNow;
+                    _logger?.LogError("⚠️ UYARI: Son dönemde {Count} dosya timeout nedeniyle bypass edildi. Potansiyel I/O stres saldırısı!", count);
+                }
             }
             catch (Exception ex)
             {

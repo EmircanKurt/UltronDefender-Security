@@ -9,6 +9,8 @@ namespace AegisPC.Contracts.Safety
         public string ThreatReason { get; set; } = "Genel Tehdit";
         public bool ForceKillHoldingProcesses { get; set; } = true;
         public bool WipeOriginalPayloadBytes { get; set; } = true;
+        /// <summary>Optional detected SHA-256; containment must not delete different content or kill holders.</summary>
+        public string? ExpectedSha256 { get; set; }
     }
 
     public enum QuarantineTransactionStatus

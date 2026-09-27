@@ -23,10 +23,5 @@ namespace AegisPC.App.Views
                 await ViewModel.LoadProcessesAsync();
             };
         }
-
-        private void OnPagePreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            // DataGrid and detail panel inner scrolling
-        }
     }
 }

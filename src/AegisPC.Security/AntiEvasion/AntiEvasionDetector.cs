@@ -100,13 +100,13 @@ namespace AegisPC.Security.AntiEvasion
                     bytes = rentedBuffer;
                 }
 
-                string asciiContent = Encoding.ASCII.GetString(bytes, 0, validLength);
+                ReadOnlySpan<byte> dataSpan = bytes.AsSpan(0, validLength);
 
                 // 1. Anti-Debug API Tespiti
                 int antiDebugCount = 0;
                 foreach (var (api, score, desc) in AntiDebugApis)
                 {
-                    if (asciiContent.Contains(api, StringComparison.OrdinalIgnoreCase))
+                    if (SpanContainsPattern(dataSpan, api))
                     {
                         antiDebugCount++;
                         result.DetectedTechniques |= AntiEvasionTechnique.AntiDebugging;
@@ -126,7 +126,7 @@ namespace AegisPC.Security.AntiEvasion
                 // 2. Anti-VM / Sandbox Tespiti
                 foreach (var (artifact, score, desc) in AntiVmArtifacts)
                 {
-                    if (asciiContent.Contains(artifact, StringComparison.OrdinalIgnoreCase))
+                    if (SpanContainsPattern(dataSpan, artifact))
                     {
                         result.DetectedTechniques |= AntiEvasionTechnique.AntiVmHypervisor;
                         result.TechniqueDescriptions.Add($"Anti-VM: {artifact}");
@@ -145,7 +145,7 @@ namespace AegisPC.Security.AntiEvasion
                 // 3. AMSI / ETW Bellek Yamalama Desenleri
                 foreach (var (pat, score, desc) in AmsiEtwBypassSignatures)
                 {
-                    if (asciiContent.Contains(pat, StringComparison.OrdinalIgnoreCase))
+                    if (SpanContainsPattern(dataSpan, pat))
                     {
                         result.DetectedTechniques |= AntiEvasionTechnique.AmsiEtwPatching;
                         result.TechniqueDescriptions.Add($"AMSI/ETW Patching: {pat}");
@@ -162,7 +162,7 @@ namespace AegisPC.Security.AntiEvasion
                 }
 
                 // 4. Indirect Syscall Stub Taraması (Statik Byte Taraması)
-                if (ContainsIndirectSyscallStub(bytes))
+                if (ContainsIndirectSyscallStub(dataSpan))
                 {
                     result.DetectedTechniques |= AntiEvasionTechnique.IndirectSyscallStubs;
                     result.TechniqueDescriptions.Add("Indirect Syscall: Doğrudan çekirdek çağrı (Hell's Gate / SysWhispers) taslağı");
@@ -247,7 +247,7 @@ namespace AegisPC.Security.AntiEvasion
             return result;
         }
 
-        private static bool ContainsIndirectSyscallStub(byte[] bytes)
+        private static bool ContainsIndirectSyscallStub(ReadOnlySpan<byte> bytes)
         {
             if (bytes.Length < 9) return false;
 
@@ -270,6 +270,51 @@ namespace AegisPC.Security.AntiEvasion
                         }
                     }
                 }
+            }
+
+            return false;
+        }
+
+        private static bool SpanContainsPattern(ReadOnlySpan<byte> source, string pattern)
+        {
+            if (pattern.Length == 0 || source.Length < pattern.Length) return false;
+
+            // 1. ASCII case-insensitive search
+            int pLen = pattern.Length;
+            int limit = source.Length - pLen;
+            for (int i = 0; i <= limit; i++)
+            {
+                bool match = true;
+                for (int j = 0; j < pLen; j++)
+                {
+                    byte b = source[i + j];
+                    char c = pattern[j];
+                    if (char.ToUpperInvariant((char)b) != char.ToUpperInvariant(c))
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) return true;
+            }
+
+            // 2. UTF-16 wide string search (common in Windows PE binaries)
+            int wideLen = pLen * 2;
+            int wideLimit = source.Length - wideLen;
+            for (int i = 0; i <= wideLimit; i += 2)
+            {
+                bool match = true;
+                for (int j = 0; j < pLen; j++)
+                {
+                    char c1 = (char)(source[i + (j * 2)] | (source[i + (j * 2) + 1] << 8));
+                    char c2 = pattern[j];
+                    if (char.ToUpperInvariant(c1) != char.ToUpperInvariant(c2))
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) return true;
             }
 
             return false;

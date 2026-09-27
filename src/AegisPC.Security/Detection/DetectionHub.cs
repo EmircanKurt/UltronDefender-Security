@@ -6,6 +6,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Detection;
+using AegisPC.Contracts.Services;
+using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.Detection
 {
@@ -19,6 +21,13 @@ namespace AegisPC.Security.Detection
     {
         private readonly List<IDetectorPlugin> _detectors = new();
         private readonly object _lock = new();
+        private readonly ILogger? _logger;
+        private int _failedDetectorCount;
+
+        /// <summary>
+        /// Son taramada sessizce başarısız olan dedektör sayısı.
+        /// </summary>
+        public int FailedDetectorCount => _failedDetectorCount;
 
         // Kategori Başına Puan Tavanı (Category Score Caps)
         // Tek bir kategorideki sinyallerin (örn. 5 adet API) tek başına sistemi yanıltmasını engeller
@@ -50,8 +59,15 @@ namespace AegisPC.Security.Detection
             }
         }
 
-        public DetectionHub(IEnumerable<IDetectorPlugin>? initialDetectors = null)
+        private readonly IExclusionService? _exclusionService;
+
+        public DetectionHub(
+            IEnumerable<IDetectorPlugin>? initialDetectors = null,
+            ILogger<DetectionHub>? logger = null,
+            IExclusionService? exclusionService = null)
         {
+            _logger = logger;
+            _exclusionService = exclusionService;
             if (initialDetectors != null)
             {
                 foreach (var d in initialDetectors)
@@ -83,20 +99,41 @@ namespace AegisPC.Security.Detection
         public async Task<DetectionResult> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
         {
             if (context == null) throw new ArgumentNullException(nameof(context));
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Kontrol Noktası (b): İstisna (Exclusion) Kontrolü (Dedektörler çalıştırılmadan ÖNCE)
+            // User exclusions never suppress a verified exact signature already in the local feed.
+            bool knownHash = Scanning.MalwareSignatureDatabase.CheckHash(context.SHA256 ?? string.Empty).IsMatched;
+            if (!knownHash && _exclusionService != null && _exclusionService.IsExcluded(context.FilePath, context.SHA256))
+            {
+                return new DetectionResult
+                {
+                    CorrelationId = context.CorrelationId,
+                    FilePath = context.FilePath,
+                    SHA256 = context.SHA256,
+                    Verdict = DetectionVerdict.Clean,
+                    RiskScore = 0,
+                    Evidences = new List<SecurityEvidence>(),
+                    LatencyMs = 0
+                };
+            }
 
             var stopwatch = Stopwatch.StartNew();
             var rawEvidences = new List<SecurityEvidence>();
+            int failedDetectorCount = 0;
+            context.SharedScan ??= new ScanContext(context.FilePath, context.SHA256, context.FileSize);
 
             List<IDetectorPlugin> activeDetectors;
             lock (_lock)
             {
                 activeDetectors = _detectors.Where(d => d.IsEnabled).OrderBy(d => d.Priority).ToList();
             }
+            if (activeDetectors.Count == 0) context.CoverageLimitations.Add("Etkin dedektör yok.");
 
             // 1. Run all active detectors
             foreach (var detector in activeDetectors)
             {
-                if (cancellationToken.IsCancellationRequested) break;
+                cancellationToken.ThrowIfCancellationRequested();
 
                 try
                 {
@@ -106,13 +143,19 @@ namespace AegisPC.Security.Detection
                         rawEvidences.AddRange(detectorEvidences);
                     }
                 }
-                catch (Exception)
+                catch (OutOfMemoryException) { throw; } // Kritik hatalar yutulmamalı
+                catch (StackOverflowException) { throw; }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (Exception ex)
                 {
-                    // Isolated plugin fault tolerance: One detector's error does not fail the entire hub
-                    // Hata loglaması bu seviyede yapılmaz çünkü DetectionHub'ın logger bağımlılığı yoktur.
-                    // Her dedektör kendi hatasını internal olarak yakalamalıdır.
+                    // Dedektör izolasyon hatası: Loglama yapılır ancak tarama devam eder
+                    failedDetectorCount++;
+                    _logger?.LogWarning(ex, "Dedektör '{DetectorName}' başarısız oldu. Tarama diğer dedektörlerle devam ediyor.",
+                        detector.GetType().Name);
                 }
             }
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Exchange(ref _failedDetectorCount, failedDetectorCount);
 
             // Fast-Path: Eğer hiçbir dedektör kanıt üretmediyse (Temiz Dosya), 0 bellek tahsisi ile anında dön
             if (rawEvidences.Count == 0)
@@ -123,15 +166,18 @@ namespace AegisPC.Security.Detection
                     CorrelationId = context.CorrelationId,
                     FilePath = context.FilePath,
                     SHA256 = context.SHA256,
-                    Verdict = DetectionVerdict.Clean,
-                    RecommendedPolicy = DetectionPolicy.Allow,
+                    Verdict = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0 ? DetectionVerdict.Clean : DetectionVerdict.Unknown,
+                    RecommendedPolicy = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0 ? DetectionPolicy.Allow : DetectionPolicy.Observe,
+                    IsComplete = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0,
+                    FailedDetectorCount = failedDetectorCount,
+                    CoverageLimitations = new List<string>(context.CoverageLimitations),
                     RiskScore = 0,
                     RawScore = 0,
                     DeduplicatedScore = 0,
                     CategoryAdjustedScore = 0,
                     ContextModifier = 1.0,
-                    ScoreTrace = "Clean (0 evidence)",
-                    OverallConfidence = EvidenceConfidence.High,
+                    ScoreTrace = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0 ? "Clean (0 evidence)" : "Incomplete detector coverage",
+                    OverallConfidence = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0 ? EvidenceConfidence.High : EvidenceConfidence.Low,
                     ThreatTitle = string.Empty,
                     Evidences = new List<SecurityEvidence>(),
                     LatencyMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 2),
@@ -141,7 +187,7 @@ namespace AegisPC.Security.Detection
 
             // 2. Deduplicate Evidence by RuleName and FilePath
             var uniqueEvidences = rawEvidences
-                .GroupBy(e => $"{e.RuleName}::{e.FilePath}")
+                .GroupBy(e => (e.RuleName, e.FilePath))
                 .Select(g => g.First())
                 .ToList();
 
@@ -196,7 +242,10 @@ namespace AegisPC.Security.Detection
 
             // 5. Context Modifier (Digital Trust / Safe Path / Game Crack Heuristic Calibration)
             double contextModifier = 1.0;
-            bool hasExplicitMalwareSignature = uniqueEvidences.Any(e => e.Category == EvidenceCategory.StaticSignature && e.ScoreContribution >= 80);
+            bool hasExplicitMalwareSignature = uniqueEvidences.Any(e =>
+                e.Category == EvidenceCategory.StaticSignature &&
+                e.Confidence == EvidenceConfidence.Absolute &&
+                e.ScoreContribution >= 80);
 
             bool isMicrosoftSigned = uniqueEvidences.Any(e => 
                 e.RuleName.Contains("ValidMicrosoft", StringComparison.OrdinalIgnoreCase) || 
@@ -302,6 +351,9 @@ namespace AegisPC.Security.Detection
                 FilePath = context.FilePath,
                 SHA256 = context.SHA256,
                 Verdict = verdict,
+                IsComplete = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0,
+                FailedDetectorCount = failedDetectorCount,
+                CoverageLimitations = new List<string>(context.CoverageLimitations),
                 RecommendedPolicy = policy,
                 RiskScore = finalScore,
                 RawScore = rawScore,
@@ -323,7 +375,10 @@ namespace AegisPC.Security.Detection
             List<SecurityEvidence> evidences)
         {
             // Exact Signature Match Override
-            var signatureMatch = evidences.FirstOrDefault(e => e.Category == EvidenceCategory.StaticSignature && e.ScoreContribution >= 90);
+            var signatureMatch = evidences.FirstOrDefault(e =>
+                e.Category == EvidenceCategory.StaticSignature &&
+                e.Confidence == EvidenceConfidence.Absolute &&
+                e.ScoreContribution >= 80);
             if (signatureMatch != null)
             {
                 return (DetectionVerdict.ConfirmedMalicious, DetectionPolicy.BlockAndQuarantine, signatureMatch.Description);
@@ -332,11 +387,23 @@ namespace AegisPC.Security.Detection
             // Calibrated multi-signal scoring:
             if (score >= 85)
             {
-                return (DetectionVerdict.ConfirmedMalicious, DetectionPolicy.BlockAndQuarantine, "Yüksek Riskli Zararlı Yazılım (Confirmed Malicious)");
+                bool hasAbsoluteMalwareSignature = evidences.Any(e =>
+                    e.Category == EvidenceCategory.StaticSignature &&
+                    e.Confidence == EvidenceConfidence.Absolute &&
+                    e.ScoreContribution >= 80);
+
+                if (hasAbsoluteMalwareSignature)
+                {
+                    return (DetectionVerdict.ConfirmedMalicious, DetectionPolicy.BlockAndQuarantine, "Doğrulanmış Zararlı Yazılım / Çoklu Sinyalli Tehdit");
+                }
+
+                return (DetectionVerdict.HighRisk, DetectionPolicy.Warn, "Çok Yüksek Sezgisel Risk (Doğrulama Gerekli)");
             }
             if (score >= 70)
             {
-                return (DetectionVerdict.HighRisk, DetectionPolicy.Quarantine, "Yüksek Risk / Potansiyel İstenmeyen Tehdit (High Risk)");
+                // Sezgisel yüksek risk, kesin zararlı imzası değildir. Kullanıcıya bildir,
+                // fakat doğrulanmış bir imza olmadan dosyayı otomatik olarak silme/karantinaya alma.
+                return (DetectionVerdict.HighRisk, DetectionPolicy.Warn, "Yüksek Risk / Potansiyel İstenmeyen Tehdit (High Risk)");
             }
             if (score >= 50)
             {

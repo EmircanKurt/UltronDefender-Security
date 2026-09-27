@@ -3,25 +3,26 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
       Title="{Binding PageTitle}"
       Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True"
       SnapsToDevicePixels="True"
       TextOptions.TextFormattingMode="Display"
-      TextOptions.TextRenderingMode="ClearType"
-      PreviewMouseWheel="OnPagePreviewMouseWheel">
+      TextOptions.TextRenderingMode="ClearType">
 
     <Page.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
     </Page.Resources>
 
     <ScrollViewer x:Name="RootScrollViewer" 
+                  helpers:WheelScrollHelper.EnableRootRedirect="True"
                   Margin="28,20,28,24"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
                   CanContentScroll="False"
                   Focusable="True">
-        <StackPanel MaxWidth="780" HorizontalAlignment="Left">
+        <StackPanel MaxWidth="880" HorizontalAlignment="Left">
             <!-- 1. Header -->
             <StackPanel Margin="0,0,0,20">
                 <TextBlock Style="{StaticResource PageHeadingStyle}" Text="Uygulama ve Güvenlik Ayarları" Margin="0,0,0,4"/>
@@ -67,7 +68,27 @@
                         <ui:ToggleSwitch IsChecked="{Binding IsRansomwareShieldEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
 
-                    <!-- Row 3: Process Monitoring -->
+                    <!-- Row 3: Auto-Quarantine -->
+                    <Grid Margin="0,0,0,14">
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,180,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Otomatik Karantina Politika Motoru" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                                <Border Style="{StaticResource BadgeSafeStyle}" Padding="6,1" Margin="8,0,0,0">
+                                    <TextBlock Text="ÖNERİLEN" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusSafeText}"/>
+                                </Border>
+                            </StackPanel>
+                            <TextBlock Text="Risk eşiği (varsayılan 85) aşılan kritik zararlıları otomatik engeller ve AES-256 kasaya kilitler. 60-84 arası şüpheli durumlar Olay Merkezine kaydedilir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <TextBlock Text="Eşik:" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" Margin="0,0,6,0"/>
+                            <TextBox Width="50" Margin="0,0,12,0"
+                                     Text="{Binding AutoQuarantineThreshold, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                                     HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
+                            <ui:ToggleSwitch IsChecked="{Binding EnableAutoQuarantine}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Row 4: Process Monitoring -->
                     <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
                             <TextBlock Text="Süreç ve Bellek İzleme" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
@@ -157,7 +178,7 @@
                     <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
                             <TextBlock Text="Otomatik Rutin Tarama" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
-                            <TextBlock Text="Belirlenen zaman aralıklarında otomatik hızlı tarama gerçekleştirir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Arka plan hizmeti bağlı ve ayar uygulanmışsa otomatik hızlı tarama yapar. Hizmet kullanıcının masaüstünü gözleyemediğinde düşük kaynak profili seçilir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding ScanScheduleEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
@@ -165,7 +186,7 @@
                     <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,160,0">
                             <TextBlock Text="Tarama Saati (Günlük Başlangıç)" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
-                            <TextBlock Text="Günlük tam taramanın veya ilk döngünün başlayacağı saat dilimi." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Günlük hızlı taramanın saati. Saat kaçırılırsa aynı gün sonraki uygun kontrolde çalışır; saatlik tekrarlar son tamamlanmaya göre hesaplanır." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
                         <ComboBox ItemsSource="{Binding ScanHours}" 
                                   SelectedItem="{Binding SelectedScanHourString}" 
@@ -195,7 +216,7 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <ui:SymbolIcon Symbol="Warning24" Foreground="{DynamicResource BrushStatusWarning}" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1" Text="⚠️ Dikkat: 30 dakikada bir tarama periyodu güvenlik düzeyini en üst seviyeye çıkarır ancak eski veya düşük donanımlı sistemlerde disk ve CPU işlemlerini sıklaştırabilir." 
+                            <TextBlock Grid.Column="1" Text="30 dakikada bir tarama, disk ve CPU yükünü sıklaştırabilir. Daha sık tarama daha yüksek tespit başarısını garanti etmez; günlük tarama çoğu kullanımda daha uygundur."
                                        Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusWarningText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
@@ -203,6 +224,24 @@
             </Border>
 
             <!-- 5b. Adaptif Kaynak ve Performans Yönetimi (Adaptive Resource Management) -->
+            <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
+                <StackPanel>
+                    <TextBlock Text="Boşta (AFK) Güvenlik Taraması" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,12"/>
+                    <CheckBox Content="Bilgisayar boşta olduğunda hızlı tarama yap" IsChecked="{Binding IdleScanEnabled}" Margin="0,0,0,10"/>
+                    <CheckBox Content="Pil kullanırken boşta taramayı ertele" IsChecked="{Binding SkipIdleScanOnBattery}" Margin="0,0,0,10"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock Text="Boşta bekleme (1–240 dakika):" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <TextBox Text="{Binding IdleScanThresholdMinutes, UpdateSourceTrigger=LostFocus}" Width="70"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock Text="Tekrarlama (1–168 saat):" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <TextBox Text="{Binding IdleScanIntervalHours, UpdateSourceTrigger=LostFocus}" Width="70"/>
+                    </StackPanel>
+                    <TextBlock Text="Arka plan servisi gerektirir. Kullanıma geri dönüldüğünde yalnız boşta tarama iptal edilir; elle başlatılan taramaya dokunulmaz. Yoğun disk ve bellek yükünde ertelenir."
+                               Style="{StaticResource CaptionTextStyle}" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
@@ -238,6 +277,98 @@
                                        Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusWarningText}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- 5c. Tarama Önbelleği Yönetimi (Scan Cache Management) -->
+            <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <ui:SymbolIcon Symbol="Storage24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Tarama Önbelleği Yönetimi" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <Grid Margin="0">
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,160,0">
+                            <TextBlock Text="Tarama ve İmza Doğrulama Önbelleği" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Daha önce taranmış değişmeyen dosyaların ve güvenilir dijital imzaların RAM önbelleğini sıfırlar. Bir sonraki tarama tüm dosyaları sıfırdan inceler." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <Button Content="Tarama Önbelleğini Temizle" 
+                                Command="{Binding ClearScanCacheCommand}" 
+                                HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Padding="16,8"
+                                Style="{StaticResource SecondaryButtonStyle}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- 5d. İstisnalar (Dışlanan Öğeler) Yönetimi -->
+            <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <ui:SymbolIcon Symbol="ShieldDismiss24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="İstisnalar (Dışlanan Öğeler)" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <TextBlock Text="İstisna bir dosyanın güvenli olduğunu kanıtlamaz. Dosya ekleme yalnız seçilen içeriğin SHA-256 kimliğine bağlıdır; klasör istisnası gelecekteki dosyaları da kapsar. Servise yenileme isteği yönetici yetkisi gerektirir."
+                               Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,0,14" TextWrapping="Wrap"/>
+
+                    <!-- Aksiyon Butonları -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                        <Button Content="Klasör Ekle" 
+                                Command="{Binding AddFolderExclusionCommand}" 
+                                Padding="14,7" Margin="0,0,10,0"
+                                Style="{StaticResource SecondaryButtonStyle}"/>
+                        <Button Content="Dosya Ekle" 
+                                Command="{Binding AddFileExclusionCommand}" 
+                                Padding="14,7"
+                                Style="{StaticResource SecondaryButtonStyle}"/>
+                    </StackPanel>
+
+                    <!-- Boş Durum Bildirimi -->
+                    <Border Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="16,12"
+                            Visibility="{Binding HasNoExclusions, Converter={StaticResource BoolToVis}}" Margin="0,0,0,4">
+                        <TextBlock Text="Henüz tanımlanmış bir istisna bulunmuyor." Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center"/>
+                    </Border>
+
+                    <!-- İstisnalar Listesi -->
+                    <ItemsControl ItemsSource="{Binding Exclusions}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="0,0,0,1" Padding="8,8" Margin="0,0,0,4">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="70"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="130"/>
+                                            <ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border Grid.Column="0" Background="{DynamicResource BrushBrandMinimal}" BorderBrush="{DynamicResource BrushBrandSubtle}" BorderThickness="1" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Type}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushBrandPrimary}" FontWeight="Bold" FontSize="10.5"/>
+                                        </Border>
+
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,12,0">
+                                            <TextBlock Text="{Binding Value}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding Reason}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+
+                                        <TextBlock Grid.Column="2" Text="{Binding AddedUtc, StringFormat='\{0:dd.MM.yyyy HH:mm\}'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,10,0"/>
+
+                                        <Button Grid.Column="3" 
+                                                Command="{Binding DataContext.RemoveExclusionCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip="İstisnayı Sil"
+                                                Width="30" Height="28" Padding="0"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                Style="{StaticResource SecondaryButtonStyle}">
+                                            <ui:SymbolIcon Symbol="Delete20" Foreground="{DynamicResource BrushStatusDanger}" FontSize="14"/>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
             </Border>
 
@@ -373,7 +504,7 @@
                         Content="Ayarları Kaydet" 
                         Padding="24,10"
                         Margin="0,0,16,0"/>
-                <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusSafeDark}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
             </StackPanel>
         </StackPanel>
     </ScrollViewer>

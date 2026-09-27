@@ -52,6 +52,15 @@
 
             <!-- 2. Options -->
             <StackPanel Margin="0,4,0,14">
+                <Border x:Name="BorderAuto" Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}"
+                        BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,10" Cursor="Hand" MouseLeftButtonDown="OnSelectAuto">
+                    <StackPanel>
+                        <RadioButton x:Name="RbAuto" GroupName="ResourceMode" Content="Otomatik (Uyarlanabilir)" Click="OnRadioClicked"
+                                     Foreground="{DynamicResource BrushTextPrimary}"/>
+                        <TextBlock Text="Sistem yüküne göre hızı artırır veya azaltır." FontSize="11.5"
+                                   Foreground="{DynamicResource BrushTextMuted}" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
                 <!-- Option 1: Sakin -->
                 <Border x:Name="BorderLow" Background="{DynamicResource BrushCardBgAlt}" BorderBrush="{DynamicResource BrushCardBorder}"
                         BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,10" Cursor="Hand" MouseLeftButtonDown="OnSelectLow">

@@ -1,4 +1,4 @@
-using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -9,14 +9,19 @@ using System.Threading.Tasks;
 using AegisPC.Contracts.Behavior;
 using AegisPC.Contracts.Detection;
 using AegisPC.Contracts.Kernel;
+using AegisPC.Contracts.Policy;
 using AegisPC.Contracts.Services;
+using AegisPC.Core.Constants;
+using AegisPC.Core.Enums;
 using AegisPC.Core.Models;
 using AegisPC.Security.Behavior;
 using AegisPC.Security.Detection;
 using AegisPC.Security.Detection.Detectors;
 using AegisPC.Security.Detection.YaraEngine;
 using AegisPC.Security.Kernel;
+using AegisPC.Security.Policy;
 using AegisPC.Security.RealTime;
+using AegisPC.Security.Safety;
 using AegisPC.Security.Scanning;
 using Xunit;
 
@@ -344,6 +349,232 @@ namespace AegisPC.Tests
             finally
             {
                 if (File.Exists(installerPath)) File.Delete(installerPath);
+            }
+        }
+
+        [Fact]
+        public async Task Test_Live_RealEicarDrop_PolicyEngine_AutoQuarantine_VaultAndUndoLog()
+        {
+            string vaultDir = Path.Combine(_tempWorkingDir, "QuarantineVault");
+            string undoDir = Path.Combine(_tempWorkingDir, "UndoStorage");
+            Directory.CreateDirectory(vaultDir);
+            Directory.CreateDirectory(undoDir);
+
+            string liveEicarFile = Path.Combine(_tempWorkingDir, $"live_drop_{Guid.NewGuid():N}.com");
+            await File.WriteAllTextAsync(liveEicarFile, EicarPayload);
+            Assert.True(File.Exists(liveEicarFile), "Canlı EICAR test dosyası diske başarıyla yazılmalıdır.");
+
+            try
+            {
+                var hashService = new HashService();
+                var sigVerifier = new SignatureVerifier();
+                var findingService = new SecurityFindingService();
+                var quarantineService = new QuarantineService(hashService, customVaultDir: vaultDir);
+                var undoLogService = new QuarantineUndoLogService(quarantineService, customStoragePath: undoDir);
+
+                var policyEngine = new PolicyEngine(
+                    quarantineService: quarantineService,
+                    findingService: findingService,
+                    signatureVerifier: sigVerifier,
+                    undoLogService: undoLogService);
+
+                var finding = new SecurityFinding
+                {
+                    Id = Guid.NewGuid(),
+                    ObjectName = Path.GetFileName(liveEicarFile),
+                    ObjectPath = liveEicarFile,
+                    RiskScore = 100,
+                    RiskLevel = RiskLevel.ConfirmedMalicious,
+                    Category = FindingCategory.KnownMalwareHash,
+                    Title = "EICAR-Standard-AV-Test-File"
+                };
+
+                // 1. Politika Motorunu İnfaz Et (Policy Enforcement)
+                var result = await policyEngine.EnforcePolicyAsync(finding);
+
+                // 2. Doğrulamalar: Karar Otomatik Karantina olmalı ve başarıyla sonuçlanmalı
+                Assert.Equal(PolicyDecisionAction.AutoQuarantine, result.Action);
+                Assert.True(result.QuarantinedSuccessfully, "PolicyEngine karantina infazı başarılı dönmelidir.");
+
+                // 3. Dosya Orijinal Konumundan Silinmiş/Taşınmış Olmalıdır
+                Assert.False(File.Exists(liveEicarFile), "Karantinaya alınan dosya orijinal disk yolundan kaldırılmış olmalıdır.");
+
+                // 4. Karantina Kasasında AES-256 Şifreli Olarak Mevcut Olmalıdır
+                var quarantinedList = await quarantineService.GetQuarantinedItemsAsync();
+                Assert.Single(quarantinedList);
+                var entry = quarantinedList[0];
+                Assert.Equal(Path.GetFileName(liveEicarFile), entry.FileName);
+                Assert.True(File.Exists(entry.QuarantinePath), "Karantina kasasındaki şifreli dosya diskte var olmalıdır.");
+                Assert.True(new FileInfo(entry.QuarantinePath).Length > 0, "Kasaya alınan dosya boyutu 0'dan büyük olmalıdır.");
+
+                // 5. 30 Günlük Geri Alma Günlüğünde (Undo Log) Kayıt Bulunmalıdır
+                var undoEntries = await undoLogService.GetUndoLogEntriesAsync();
+                Assert.Single(undoEntries);
+                var undoEntry = undoEntries[0];
+                Assert.Equal(100, undoEntry.RiskScore);
+                Assert.Equal(liveEicarFile, undoEntry.OriginalPath);
+                Assert.Contains("Otomatik Karantina", undoEntry.DecisionChain);
+                Assert.False(undoEntry.IsRestored);
+
+                // 6. Güvenli Geri Yükleme (Undo / Restore) Doğrulaması
+                int restoredCount = await undoLogService.BulkRestoreAsync(new[] { undoEntry.QuarantineId });
+                Assert.Equal(1, restoredCount);
+                Assert.True(File.Exists(liveEicarFile), "Geri yüklenen dosya orijinal konumunda yeniden var olmalıdır.");
+                string restoredPayload = await File.ReadAllTextAsync(liveEicarFile);
+                Assert.Equal(EicarPayload, restoredPayload);
+                Assert.True(undoEntry.IsRestored, "Geri alınan kaydın durumu IsRestored=true olmalıdır.");
+            }
+            finally
+            {
+                if (File.Exists(liveEicarFile))
+                {
+                    try { File.Delete(liveEicarFile); } catch { }
+                }
+            }
+        }
+
+        [Fact]
+        public async Task Test_Live_RealProcess_PreExecSuspension_And_ExplorerSafetyCheck()
+        {
+            // 1. Gerçek Bir Windows Süreci Başlat (cmd.exe /c ping ...)
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = "/c ping 127.0.0.1 -n 15 > nul",
+                CreateNoWindow = true,
+                UseShellExecute = false
+            };
+            using var dummyProc = Process.Start(psi);
+            Assert.NotNull(dummyProc);
+            Assert.False(dummyProc.HasExited, "Canlı test süreci başlatılmış ve çalışıyor olmalıdır.");
+            int livePid = dummyProc.Id;
+
+            string fakeMalwareFile = Path.Combine(_tempWorkingDir, $"live_threat_{Guid.NewGuid():N}.exe");
+            await File.WriteAllTextAsync(fakeMalwareFile, EicarPayload);
+
+            try
+            {
+                var hashService = new HashService();
+                var sigVerifier = new SignatureVerifier();
+                var riskScorer = new RiskScoringEngine();
+                var yaraEngine = new YaraEngine();
+                var detectionHub = DetectionHubFactory.CreateDefault(
+                    hashService: hashService,
+                    signatureVerifier: sigVerifier,
+                    yaraEngine: yaraEngine);
+
+                var etwPreExec = new EtwPreExecProtectionService(detectionHub, riskScorer, sigVerifier)
+                {
+                    ScanTimeout = TimeSpan.FromSeconds(5)
+                };
+
+                // 2. Canlı Süreç Değerlendirmesi: NtSuspendProcess + DetectionHub + KillProcessTree
+                var decision = await etwPreExec.EvaluateProcessAsync(livePid, fakeMalwareFile);
+
+                // 3. Askıya Alma ve Engelleme Doğrulaması
+                Assert.True(decision.WasSuspended, "Canlı süreç NtSuspendProcess ile başarıyla dondurulmalıdır.");
+                Assert.True(decision.WasBlocked, "Zararlı süreç engellenmelidir.");
+                Assert.True(decision.RiskScore >= 70, $"Risk skoru >= 70 olmalıdır (Gerçek: {decision.RiskScore}).");
+
+                // 4. Sürecin Sonlandırıldığını Doğrula (KillProcessTree)
+                dummyProc.WaitForExit(4000);
+                Assert.True(dummyProc.HasExited, "Zararlı süreç derhal öldürülmüş olmalıdır (HasExited == true).");
+
+                // 5. Kritik Sistem Süreci (explorer.exe) Whitelist ve Güvenlik Doğrulaması
+                var explorerProc = Process.GetProcessesByName("explorer").FirstOrDefault();
+                if (explorerProc != null)
+                {
+                    string explorerPath = explorerProc.MainModule?.FileName ?? @"C:\Windows\explorer.exe";
+                    var explorerDecision = await etwPreExec.EvaluateProcessAsync(explorerProc.Id, explorerPath);
+
+                    Assert.True(explorerDecision.Whitelisted, "explorer.exe kritik sistem süreci olarak hızlıca allowlist'e alınmalıdır.");
+                    Assert.False(explorerDecision.WasSuspended, "explorer.exe ASLA askıya alınmamalı veya rehin tutulmamalıdır (WasSuspended == false).");
+                    Assert.False(explorerDecision.WasBlocked, "explorer.exe ASLA engellenmemelidir (WasBlocked == false).");
+                    Assert.False(explorerProc.HasExited, "explorer.exe kesintisiz çalışmaya devam etmelidir.");
+                }
+
+                // 6. Kritik Süreç İsimleri Listesi (CriticalProcesses.List) Kontrolleri
+                string[] criticalNames = { "csrss.exe", "dwm.exe", "lsass.exe", "svchost.exe", "services.exe", "wininit.exe" };
+                foreach (var critName in criticalNames)
+                {
+                    string sysPath = Path.Combine(Environment.SystemDirectory, critName);
+                    var critDecision = await etwPreExec.EvaluateProcessAsync(99999, sysPath);
+                    Assert.True(critDecision.Whitelisted, $"{critName} kesinlikle kritik süreç listesinde olmalıdır.");
+                    Assert.False(critDecision.WasSuspended, $"{critName} asla askıya alınmamalıdır.");
+                    Assert.False(critDecision.WasBlocked, $"{critName} asla engellenmemelidir.");
+                }
+            }
+            finally
+            {
+                if (!dummyProc.HasExited)
+                {
+                    try { dummyProc.Kill(true); } catch { }
+                }
+                if (File.Exists(fakeMalwareFile))
+                {
+                    try { File.Delete(fakeMalwareFile); } catch { }
+                }
+            }
+        }
+
+        [Fact]
+        public async Task Test_Live_RealTimeWatcher_FileSystemWatcher_EicarDrop_AutoQuarantine()
+        {
+            string watchDir = Path.Combine(_tempWorkingDir, "RtWatchFolder");
+            string vaultDir = Path.Combine(_tempWorkingDir, "RtVault");
+            Directory.CreateDirectory(watchDir);
+            Directory.CreateDirectory(vaultDir);
+
+            var hashService = new HashService();
+            var sigVerifier = new SignatureVerifier();
+            var riskScorer = new RiskScoringEngine();
+            var allowlist = new AllowlistService(hashService);
+            var findingService = new SecurityFindingService();
+            var fileScanner = new FileScannerService(hashService, sigVerifier, riskScorer, allowlist, findingService);
+            var quarantineService = new QuarantineService(hashService, customVaultDir: vaultDir);
+
+            var rtEngine = new RealTimeProtectionEngine(
+                fileScanner,
+                hashService,
+                sigVerifier,
+                riskScorer,
+                quarantineService,
+                findingService);
+
+            try
+            {
+                // İzleyiciyi sadece özel test klasörümüzde başlat (default locations devre dışı)
+                rtEngine.Start(watchDefaultLocations: false);
+                rtEngine.AddWatchDirectory(watchDir);
+
+                // Real-time izleme altında klasöre EICAR bırak
+                string liveDropFile = Path.Combine(watchDir, "rt_drop_eicar.com");
+                await File.WriteAllTextAsync(liveDropFile, EicarPayload);
+                Assert.True(File.Exists(liveDropFile));
+
+                // FileSystemWatcher + Worker havuzunun tespit ve karantina infazını bekle
+                bool quarantined = false;
+                for (int i = 0; i < 60; i++)
+                {
+                    await Task.Delay(100);
+                    if (!File.Exists(liveDropFile))
+                    {
+                        quarantined = true;
+                        break;
+                    }
+                }
+
+                Assert.True(quarantined, "Real-time FileSystemWatcher, bırakılan EICAR dosyasını algılayıp otomatik karantinaya taşımalıdır.");
+
+                // Kasada dosyanın bulunduğunu doğrula
+                var quarantinedList = await quarantineService.GetQuarantinedItemsAsync();
+                Assert.NotEmpty(quarantinedList);
+                Assert.Equal("rt_drop_eicar.com", quarantinedList[0].FileName);
+                Assert.True(File.Exists(quarantinedList[0].QuarantinePath));
+            }
+            finally
+            {
+                rtEngine.Stop();
             }
         }
 

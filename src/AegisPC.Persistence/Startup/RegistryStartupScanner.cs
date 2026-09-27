@@ -33,7 +33,10 @@ namespace AegisPC.Persistence.Startup
                     if (set != null) return set;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Devre dışı başlangıç öğeleri dosyası okunamadı: {PersistentDisabledFile} - {ex.Message}");
+            }
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
@@ -49,7 +52,10 @@ namespace AegisPC.Persistence.Startup
                 var json = JsonSerializer.Serialize(set);
                 File.WriteAllText(PersistentDisabledFile, json);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Devre dışı başlangıç öğeleri dosyasına yazılamadı: {PersistentDisabledFile} - {ex.Message}");
+            }
         }
 
         public static List<StartupItem> ScanRegistryStartup()
@@ -144,7 +150,10 @@ namespace AegisPC.Persistence.Startup
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"StartupApproved\\Run kayıt defteri anahtarı okunamadı: {ex.Message}");
+            }
             return disabled;
         }
 

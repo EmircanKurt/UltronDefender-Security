@@ -60,7 +60,9 @@ namespace AegisPC.Security.Detection.Detectors
 
             try
             {
-                var sigInfo = await _signatureVerifier.VerifySignatureAsync(path, cancellationToken);
+                var sigInfo = context.SharedScan != null
+                    ? await context.SharedScan.GetOrVerifySignatureAsync(_signatureVerifier, cancellationToken)
+                    : await _signatureVerifier.VerifySignatureAsync(path, cancellationToken);
                 isSigned = sigInfo.IsSigned;
                 isSignatureValid = sigInfo.IsValid;
                 publisher = sigInfo.Publisher;
@@ -94,7 +96,7 @@ namespace AegisPC.Security.Detection.Detectors
                     });
                 }
             }
-            catch { }
+            catch { throw; }
 
             // 2. High-Risk Location Checks (ONLY for binaries/scripts)
             // 2. High-Risk Location Checks (ONLY for binaries/scripts, skip if inside verified development environment)

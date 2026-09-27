@@ -116,7 +116,7 @@ namespace AegisPC.Tests
         }
 
         [Fact]
-        public async Task Test08_KeyloggerInTempWithPersistence_ShouldBeConfirmedMalicious()
+        public async Task Test08_KeyloggerHeuristicsInTempWithPersistence_ShouldWarnWithoutAutomaticQuarantine()
         {
             var hub = new DetectionHub();
             var context = new DetectionContext { FilePath = @"C:\Users\User\AppData\Local\Temp\svchost.exe" };
@@ -128,7 +128,8 @@ namespace AegisPC.Tests
 
             var result = await hub.EvaluateAsync(context);
             Assert.True(result.RiskScore >= 85);
-            Assert.Equal(DetectionVerdict.ConfirmedMalicious, result.Verdict);
+            Assert.Equal(DetectionVerdict.HighRisk, result.Verdict);
+            Assert.Equal(DetectionPolicy.Warn, result.RecommendedPolicy);
         }
 
         [Fact]

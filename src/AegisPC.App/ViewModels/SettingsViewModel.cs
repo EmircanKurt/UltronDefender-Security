@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Enums;
@@ -10,10 +11,12 @@ using CommunityToolkit.Mvvm.Input;
 using Wpf.Ui.Appearance;
 using AegisPC.App.Services;
 using AegisPC.Security.RealTime;
+using AegisPC.ServiceContracts;
+using AegisPC.ServiceContracts.IpcMessages;
 
 namespace AegisPC.App.ViewModels
 {
-    public partial class SettingsViewModel : ObservableObject
+    public partial class SettingsViewModel : ObservableObject, IDisposable
     {
         private readonly SettingsService? _settingsService;
         private readonly IBackgroundProtectionService? _backgroundProtectionService;
@@ -21,6 +24,18 @@ namespace AegisPC.App.ViewModels
         private readonly IAuditLogService? _auditLogService;
         private readonly IWindowsToastNotificationService? _toastNotificationService;
         private readonly IReputationService? _reputationService;
+        private readonly AegisPC.Security.Scanning.IFileHashMatcher? _fileHashMatcher;
+        private readonly IScanCoordinatorService? _scanCoordinator;
+        private readonly IExclusionService? _exclusionService;
+        private readonly IServiceIpcClient? _ipcClient;
+        private bool _isApplyingServiceStatus;
+        private bool _isLoadingSettings = true;
+
+        [ObservableProperty]
+        private ObservableCollection<AegisPC.Core.Models.ExclusionEntry> exclusions = new();
+
+        [ObservableProperty]
+        private bool hasNoExclusions = true;
 
         [ObservableProperty]
         private string pageTitle = "Uygulama ve Güvenlik Ayarları";
@@ -60,6 +75,12 @@ namespace AegisPC.App.ViewModels
 
         [ObservableProperty]
         private bool isRansomwareShieldEnabled = true;
+
+        [ObservableProperty]
+        private bool enableAutoQuarantine = true;
+
+        [ObservableProperty]
+        private int autoQuarantineThreshold = 85;
 
         [ObservableProperty]
         private bool isGameCrackWatchdogEnabled = true;
@@ -112,6 +133,7 @@ namespace AegisPC.App.ViewModels
         {
             ScheduledScanDay = value;
             IsFrequentScanWarningVisible = value != null && value.Contains("30 Dakika");
+            if (!_isLoadingSettings && !_isApplyingServiceStatus) _ = SaveSettingsAsync();
         }
 
         partial void OnSelectedScanHourStringChanged(string value)
@@ -119,6 +141,7 @@ namespace AegisPC.App.ViewModels
             if (!string.IsNullOrEmpty(value) && int.TryParse(value.Split(':')[0].Trim(), out var h))
             {
                 ScheduledScanHour = h;
+                if (!_isLoadingSettings && !_isApplyingServiceStatus) _ = SaveSettingsAsync();
             }
         }
 
@@ -134,15 +157,33 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty]
         private ScanResourceMode selectedResourceMode = ScanResourceMode.Auto;
 
+        /// <summary>Controls idle maintenance independently from scheduled scans.</summary>
+        [ObservableProperty]
+        private bool idleScanEnabled = true;
+        /// <summary>Minutes of inactivity required before idle maintenance.</summary>
+        [ObservableProperty]
+        private int idleScanThresholdMinutes = 10;
+        /// <summary>Hours between completed idle maintenance scans.</summary>
+        [ObservableProperty]
+        private int idleScanIntervalHours = 24;
+        /// <summary>Defers idle maintenance on battery power.</summary>
+        [ObservableProperty]
+        private bool skipIdleScanOnBattery = true;
+
+        partial void OnIdleScanEnabledChanged(bool value) { if (!_isLoadingSettings && !_isApplyingServiceStatus) _ = SaveSettingsAsync(); }
+        partial void OnIdleScanThresholdMinutesChanged(int value) { if (!_isLoadingSettings && !_isApplyingServiceStatus) _ = SaveSettingsAsync(); }
+        partial void OnIdleScanIntervalHoursChanged(int value) { if (!_isLoadingSettings && !_isApplyingServiceStatus) _ = SaveSettingsAsync(); }
+        partial void OnSkipIdleScanOnBatteryChanged(bool value) { if (!_isLoadingSettings && !_isApplyingServiceStatus) _ = SaveSettingsAsync(); }
+
         [ObservableProperty]
         private ObservableCollection<ResourceModeItem> resourceModes = new()
         {
             new ResourceModeItem { Mode = ScanResourceMode.Auto, Title = "Otomatik (Adaptif Akıllı Yönetim)", Description = "Sistem donanımına, batarya durumuna ve disk türüne (SSD/HDD) göre hızı anlık uyarlar." },
-            new ResourceModeItem { Mode = ScanResourceMode.VeryLow, Title = "Çok Düşük (Sıfır Kasma - 1 Çekirdek)", Description = "En fazla 1 çekirdek ve 128 MB RAM kullanır. Günlük işlerde hiçbir yavaşlama hissettirmez." },
-            new ResourceModeItem { Mode = ScanResourceMode.Low, Title = "Düşük (Oyun ve Çalışma Modu)", Description = "2 çekirdek sınırı ve 256 MB RAM kotası ile sessiz ve hafif arka plan taraması yapar." },
-            new ResourceModeItem { Mode = ScanResourceMode.Balanced, Title = "Dengeli (Standart Kullanım)", Description = "İşlemci çekirdeklerinin yarısını kullanır; hız ve kaynak tasarrufunu dengeler." },
-            new ResourceModeItem { Mode = ScanResourceMode.High, Title = "Yüksek (Hızlı Güvenlik Taraması)", Description = "İşlemci gücünün %75'ini kullanarak taramayı kısa sürede tamamlar." },
-            new ResourceModeItem { Mode = ScanResourceMode.Maximum, Title = "Maksimum (Tam Güç - Tüm Çekirdekler)", Description = "Tüm CPU çekirdeklerini ve yüksek RAM kotasını kullanarak en yüksek hızda çalışır." }
+            new ResourceModeItem { Mode = ScanResourceMode.VeryLow, Title = "Çok Düşük (1 İşçi)", Description = "En fazla 1 işçi ve düşük bellek bütçesi; tarama daha uzun sürebilir." },
+            new ResourceModeItem { Mode = ScanResourceMode.Low, Title = "Düşük (Arka Plan)", Description = "Az sayıda işçi ve sınırlı bellek bütçesiyle günlük kullanıma öncelik verir." },
+            new ResourceModeItem { Mode = ScanResourceMode.Balanced, Title = "Dengeli (Standart Kullanım)", Description = "Donanım ve disk sınırları içinde hız ve kaynak kullanımını dengeler." },
+            new ResourceModeItem { Mode = ScanResourceMode.High, Title = "Yüksek (Hızlı Tarama)", Description = "Daha fazla eşzamanlı işçi kullanır; hız dosya türü ve disk kapasitesine bağlıdır." },
+            new ResourceModeItem { Mode = ScanResourceMode.Maximum, Title = "Maksimum (Donanım Sınırları İçinde)", Description = "Donanımın izin verdiği işçi bütçesini kullanır; HDD ve bellek baskısı sınırları korunur." }
         };
 
         [ObservableProperty]
@@ -157,6 +198,7 @@ namespace AegisPC.App.ViewModels
             {
                 SelectedResourceMode = value.Mode;
                 IsResourceThrottlingWarningVisible = value.Mode == ScanResourceMode.VeryLow || value.Mode == ScanResourceMode.Low;
+                if (_isLoadingSettings || _isApplyingServiceStatus) return;
                 _ = SaveSettingsAsync();
                 _ = LogAuditAsync("Tarama Kaynak Modu", value.Title);
             }
@@ -168,7 +210,11 @@ namespace AegisPC.App.ViewModels
             IRansomwareProtectionEngine? ransomwareProtectionEngine = null,
             IAuditLogService? auditLogService = null,
             IWindowsToastNotificationService? toastNotificationService = null,
-            IReputationService? reputationService = null)
+            IReputationService? reputationService = null,
+            AegisPC.Security.Scanning.IFileHashMatcher? fileHashMatcher = null,
+            IScanCoordinatorService? scanCoordinator = null,
+            IExclusionService? exclusionService = null,
+            IServiceIpcClient? ipcClient = null)
         {
             _settingsService = settingsService;
             _backgroundProtectionService = backgroundProtectionService;
@@ -176,8 +222,25 @@ namespace AegisPC.App.ViewModels
             _auditLogService = auditLogService;
             _toastNotificationService = toastNotificationService;
             _reputationService = reputationService;
+            _fileHashMatcher = fileHashMatcher;
+            _scanCoordinator = scanCoordinator;
+            _exclusionService = exclusionService;
+            _ipcClient = ipcClient;
+
+            if (_ipcClient != null)
+            {
+                _ipcClient.StatusChanged += ApplyServiceStatus;
+            }
+
+            if (_fileHashMatcher != null && _scanCoordinator != null)
+            {
+                _fileHashMatcher.ActiveScanChecker ??= () => _scanCoordinator.IsScanning;
+            }
+
             AppThemeManager.ThemeChanged += OnAppThemeChanged;
-            LoadSettings();
+            try { LoadSettings(); }
+            finally { _isLoadingSettings = false; }
+            _ = RequestServiceStatusAsync();
         }
 
         private void OnAppThemeChanged(ThemeMode mode)
@@ -240,9 +303,16 @@ namespace AegisPC.App.ViewModels
                 IsRealTimeMonitoringEnabled = s.IsRealTimeMonitoringEnabled;
                 NotificationsEnabled = s.NotificationsEnabled;
                 ScanScheduleEnabled = s.ScanScheduleEnabled;
+                IdleScanEnabled = s.IdleScanEnabled;
+                IdleScanThresholdMinutes = s.IdleScanThresholdMinutes;
+                IdleScanIntervalHours = s.IdleScanIntervalHours;
+                SkipIdleScanOnBattery = s.SkipIdleScanOnBattery;
                 SampleIntervalSeconds = Math.Max(1, s.PerformanceSampleIntervalMs / 1000);
                 IsFileProtectionEnabled = s.IsFileProtectionEnabled;
                 IsRansomwareShieldEnabled = s.IsRansomwareShieldEnabled;
+                IsNetworkProtectionEnabled = s.IsNetworkProtectionEnabled;
+                EnableAutoQuarantine = s.EnableAutoQuarantine;
+                AutoQuarantineThreshold = s.AutoQuarantineThreshold;
                 IsProcessMonitoringEnabled = s.IsProcessMonitoringEnabled;
                 IsCloudLookupEnabled = s.IsCloudReputationEnabled;
                 ScheduledScanHour = s.ScheduledScanHour;
@@ -273,11 +343,15 @@ namespace AegisPC.App.ViewModels
             }
 
             SelectedScanHourString = ScanHours.FirstOrDefault(h => h.StartsWith($"{ScheduledScanHour:D2}:00")) ?? $"{ScheduledScanHour:D2}:00";
-            SelectedScanPeriod = ScanPeriods.FirstOrDefault(p => p.Equals(ScheduledScanDay, StringComparison.OrdinalIgnoreCase)) 
-                ?? ScanPeriods.FirstOrDefault(p => p.Contains(ScheduledScanDay, StringComparison.OrdinalIgnoreCase)) 
-                ?? ScanPeriods[0];
+            // Numeric settings are authoritative; a stale presentation label must not reset a service-saved interval.
+            SelectedScanPeriod = (_settingsService?.Current.ScheduledScanIntervalHours ?? 24) switch
+            {
+                0 => ScanPeriods[5], 1 => ScanPeriods[4], 3 => ScanPeriods[3],
+                6 => ScanPeriods[2], 12 => ScanPeriods[1], _ => ScanPeriods[0]
+            };
 
             EvaluateProtectionWarning();
+            _ = LoadExclusionsAsync();
         }
 
         private void EvaluateProtectionWarning()
@@ -296,7 +370,17 @@ namespace AegisPC.App.ViewModels
 
         partial void OnIsFileProtectionEnabledChanged(bool value)
         {
-            if (value)
+            if (_isApplyingServiceStatus || _isLoadingSettings)
+            {
+                EvaluateProtectionWarning();
+                return;
+            }
+
+            if (_ipcClient?.IsConnected == true)
+            {
+                _ = SendServiceCommandAsync(value ? ServiceCommandType.EnableProtection : ServiceCommandType.DisableProtection);
+            }
+            else if (value)
             {
                 _backgroundProtectionService?.StartProtection();
             }
@@ -311,7 +395,17 @@ namespace AegisPC.App.ViewModels
 
         partial void OnIsRansomwareShieldEnabledChanged(bool value)
         {
-            if (value)
+            if (_isApplyingServiceStatus || _isLoadingSettings)
+            {
+                EvaluateProtectionWarning();
+                return;
+            }
+
+            if (_ipcClient?.IsConnected == true)
+            {
+                _ = SendServiceCommandAsync(value ? ServiceCommandType.EnableRansomwareShield : ServiceCommandType.DisableRansomwareShield);
+            }
+            else if (value)
             {
                 _ransomwareProtectionEngine?.StartShield();
             }
@@ -322,6 +416,37 @@ namespace AegisPC.App.ViewModels
             EvaluateProtectionWarning();
             _ = SaveSettingsAsync();
             _ = LogAuditAsync("Fidye Kalkanı", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı (UYARI)");
+        }
+
+        partial void OnEnableAutoQuarantineChanged(bool value)
+        {
+            if (_isApplyingServiceStatus || _isLoadingSettings) return;
+
+            if (_settingsService != null)
+            {
+                _settingsService.Current.EnableAutoQuarantine = value;
+            }
+            _ = SaveSettingsAsync();
+            _ = LogAuditAsync("Otomatik Karantina", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı");
+        }
+
+        partial void OnScanScheduleEnabledChanged(bool value)
+        {
+            if (_isApplyingServiceStatus || _isLoadingSettings) return;
+            if (_settingsService != null)
+                _settingsService.Current.ScanScheduleEnabled = value;
+            _ = SaveSettingsAsync();
+        }
+
+        partial void OnAutoQuarantineThresholdChanged(int value)
+        {
+            if (_isApplyingServiceStatus || _isLoadingSettings) return;
+
+            if (_settingsService != null)
+            {
+                _settingsService.Current.AutoQuarantineThreshold = Math.Clamp(value, 0, 100);
+            }
+            _ = SaveSettingsAsync();
         }
 
         partial void OnIsProcessMonitoringEnabledChanged(bool value)
@@ -375,7 +500,17 @@ namespace AegisPC.App.ViewModels
 
         partial void OnIsNetworkProtectionEnabledChanged(bool value)
         {
+            if (_isApplyingServiceStatus || _isLoadingSettings) return;
+
             AegisPC.Core.Configuration.FeatureFlags.IsNetworkShieldActive = value;
+            if (_settingsService != null)
+            {
+                _settingsService.Current.IsNetworkProtectionEnabled = value;
+            }
+            if (_ipcClient?.IsConnected == true)
+            {
+                _ = SendServiceCommandAsync(value ? ServiceCommandType.EnableNetworkProtection : ServiceCommandType.DisableNetworkProtection);
+            }
             StatusMessage = value ? "Ağ, DNS ve Web Kalkanı devrede." : "Ağ, DNS ve Web Kalkanı durduruldu.";
             _ = SaveSettingsAsync();
             _ = LogAuditAsync("Ağ ve Web Kalkanı", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı");
@@ -383,6 +518,7 @@ namespace AegisPC.App.ViewModels
 
         private async Task LogAuditAsync(string component, string action)
         {
+            if (_isLoadingSettings) return;
             if (_auditLogService != null)
             {
                 try
@@ -399,36 +535,345 @@ namespace AegisPC.App.ViewModels
             }
         }
 
+        private async Task SendServiceCommandAsync(ServiceCommandType commandType)
+        {
+            if (_ipcClient?.IsConnected != true) return;
+
+            try
+            {
+                await _ipcClient.SendCommandAsync(new ServiceCommand
+                {
+                    CommandType = commandType,
+                    Timestamp = DateTime.UtcNow
+                });
+                StatusMessage = _ipcClient.IsConnected
+                    ? "Koruma isteği servise gönderildi; uygulandığı henüz doğrulanmadı."
+                    : "Servis bağlantısı kesildi; koruma isteğinin uygulanması doğrulanamadı.";
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Koruma ayarı servise gönderilemedi.");
+                StatusMessage = "Koruma ayarı servise uygulanamadı.";
+            }
+            finally { await RequestServiceStatusAsync(); }
+        }
+
+        private async Task SendServiceSettingsAsync()
+        {
+            if (_ipcClient?.IsConnected != true) return;
+
+            try
+            {
+                await _ipcClient.SendCommandAsync(new ServiceCommand
+                {
+                    CommandType = ServiceCommandType.UpdateSettings,
+                    Payload = JsonSerializer.Serialize(new
+                    {
+                        EnableAutoQuarantine,
+                        AutoQuarantineThreshold = Math.Clamp(AutoQuarantineThreshold, 0, 100),
+                        ScanScheduleEnabled,
+                        ScheduledScanHour,
+                        ScheduledScanIntervalHours = GetScheduledScanIntervalHours(),
+                        IdleScanEnabled,
+                        IdleScanThresholdMinutes = Math.Clamp(IdleScanThresholdMinutes, 1, 240),
+                        IdleScanIntervalHours = Math.Clamp(IdleScanIntervalHours, 1, 168),
+                        SkipIdleScanOnBattery,
+                        ScanResourceMode = SelectedResourceMode
+                    }),
+                    Timestamp = DateTime.UtcNow
+                });
+                StatusMessage = _ipcClient.IsConnected
+                    ? "Yerel ayarlar kaydedildi; servise uygulama isteği gönderildi (henüz doğrulanmadı)."
+                    : "Yerel ayarlar kaydedildi, servis bağlantısı kesildi; servise uygulanmadı.";
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Güvenlik ayarları servise gönderilemedi.");
+                StatusMessage = "Güvenlik ayarları servise uygulanamadı.";
+            }
+            finally { await RequestServiceStatusAsync(); }
+        }
+
+        private async Task RequestServiceStatusAsync()
+        {
+            if (_ipcClient?.IsConnected != true) return;
+            try { await _ipcClient.GetStatusAsync(); }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Servis durumu yenilenemedi.");
+                StatusMessage = "Servis bağlantısı doğrulanamadı.";
+            }
+        }
+
+        private void ApplyServiceStatus(ProtectionStatus status)
+        {
+            _isApplyingServiceStatus = true;
+            try
+            {
+                IsFileProtectionEnabled = status.IsRealTimeEnabled;
+                IsRansomwareShieldEnabled = status.IsRansomwareShieldEnabled;
+                IsNetworkProtectionEnabled = status.IsNetworkProtectionEnabled;
+                ScanScheduleEnabled = status.ScanScheduleEnabled;
+                IdleScanEnabled = status.IdleScanEnabled;
+                IdleScanThresholdMinutes = Math.Clamp(status.IdleScanThresholdMinutes, 1, 240);
+                IdleScanIntervalHours = Math.Clamp(status.IdleScanIntervalHours, 1, 168);
+                SkipIdleScanOnBattery = status.SkipIdleScanOnBattery;
+                ScheduledScanHour = Math.Clamp(status.ScheduledScanHour, 0, 23);
+                SelectedScanHourString = ScanHours.FirstOrDefault(h => h.StartsWith($"{ScheduledScanHour:D2}:00")) ?? $"{ScheduledScanHour:D2}:00";
+                SelectedScanPeriod = status.ScheduledScanIntervalHours switch
+                {
+                    0 => ScanPeriods[5], 1 => ScanPeriods[4], 3 => ScanPeriods[3],
+                    6 => ScanPeriods[2], 12 => ScanPeriods[1], _ => ScanPeriods[0]
+                };
+                SelectedResourceModeItem = ResourceModes.FirstOrDefault(m => m.Mode == status.ScanResourceMode) ?? ResourceModes[0];
+                EnableAutoQuarantine = status.EnableAutoQuarantine;
+                AutoQuarantineThreshold = Math.Clamp(status.AutoQuarantineThreshold, 0, 100);
+                AegisPC.Core.Configuration.FeatureFlags.IsNetworkShieldActive = status.IsNetworkProtectionEnabled;
+                if (_settingsService != null)
+                {
+                    var settings = _settingsService.Current;
+                    settings.IsFileProtectionEnabled = IsFileProtectionEnabled;
+                    settings.IsRansomwareShieldEnabled = IsRansomwareShieldEnabled;
+                    settings.IsNetworkProtectionEnabled = IsNetworkProtectionEnabled;
+                    settings.ScanScheduleEnabled = ScanScheduleEnabled;
+                    settings.IdleScanEnabled = IdleScanEnabled;
+                    settings.IdleScanThresholdMinutes = IdleScanThresholdMinutes;
+                    settings.IdleScanIntervalHours = IdleScanIntervalHours;
+                    settings.SkipIdleScanOnBattery = SkipIdleScanOnBattery;
+                    settings.ScheduledScanHour = ScheduledScanHour;
+                    settings.ScheduledScanIntervalHours = GetScheduledScanIntervalHours();
+                    settings.ScheduledScanDay = ScheduledScanDay;
+                    settings.ScanResourceMode = SelectedResourceMode;
+                    settings.EnableAutoQuarantine = EnableAutoQuarantine;
+                    settings.AutoQuarantineThreshold = AutoQuarantineThreshold;
+                }
+                EvaluateProtectionWarning();
+            }
+            finally
+            {
+                _isApplyingServiceStatus = false;
+            }
+        }
+
+        /// <summary>Saves local preferences and requests service application; IPC transport is not an acknowledged settings commit.</summary>
         [RelayCommand]
         public async Task SaveSettingsAsync()
         {
-            if (_settingsService == null) return;
+            if (_isLoadingSettings || _isApplyingServiceStatus) return;
+            if (_settingsService == null)
+            {
+                await SendServiceSettingsAsync();
+                return;
+            }
 
             var s = _settingsService.Current;
             s.Theme = SelectedThemeMode;
             s.IsRealTimeMonitoringEnabled = IsRealTimeMonitoringEnabled;
             s.NotificationsEnabled = NotificationsEnabled;
             s.ScanScheduleEnabled = ScanScheduleEnabled;
+            s.IdleScanEnabled = IdleScanEnabled;
+            s.IdleScanThresholdMinutes = Math.Clamp(IdleScanThresholdMinutes, 1, 240);
+            s.IdleScanIntervalHours = Math.Clamp(IdleScanIntervalHours, 1, 168);
+            s.SkipIdleScanOnBattery = SkipIdleScanOnBattery;
             s.PerformanceSampleIntervalMs = SampleIntervalSeconds * 1000;
             s.IsFileProtectionEnabled = IsFileProtectionEnabled;
             s.IsRansomwareShieldEnabled = IsRansomwareShieldEnabled;
+            s.EnableAutoQuarantine = EnableAutoQuarantine;
+            s.AutoQuarantineThreshold = Math.Clamp(AutoQuarantineThreshold, 0, 100);
             s.IsProcessMonitoringEnabled = IsProcessMonitoringEnabled;
             s.IsCloudReputationEnabled = IsCloudLookupEnabled;
             s.ScheduledScanHour = ScheduledScanHour;
             s.ScheduledScanDay = ScheduledScanDay;
             s.ScanResourceMode = SelectedResourceMode;
-            s.ScheduledScanIntervalHours = SelectedScanPeriod switch
-            {
-                var p when p.Contains("12 Saat") => 12,
-                var p when p.Contains("6 Saat") => 6,
-                var p when p.Contains("3 Saat") => 3,
-                var p when p.Contains("1 Saat") => 1,
-                var p when p.Contains("30 Dakika") => 0,
-                _ => 24
-            };
+            s.ScheduledScanIntervalHours = GetScheduledScanIntervalHours();
 
-            await _settingsService.SaveAsync();
-            StatusMessage = "Ayarlar başarıyla kaydedildi.";
+            try { await _settingsService.SaveAsync(); }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Ayarlar diske kaydedilemedi.");
+                StatusMessage = "Ayarlar kaydedilemedi: " + ex.Message;
+                return;
+            }
+            StatusMessage = _ipcClient?.IsConnected == true
+                ? "Yerel ayarlar kaydedildi; servis isteği hazırlanıyor."
+                : "Yerel ayarlar kaydedildi. Arka plan hizmeti bağlı değil; zamanlayıcıya henüz uygulanmadı.";
+            await SendServiceSettingsAsync();
+        }
+
+        private int GetScheduledScanIntervalHours() => SelectedScanPeriod switch
+        {
+            var p when p?.Contains("12 Saat") == true => 12,
+            var p when p?.Contains("6 Saat") == true => 6,
+            var p when p?.Contains("3 Saat") == true => 3,
+            var p when p?.Contains("1 Saat") == true => 1,
+            var p when p?.Contains("30 Dakika") == true => 0,
+            _ => 24
+        };
+
+        /// <summary>Refreshes the persisted exclusion snapshot and presents detached rule copies; load failures are displayed rather than treated as an empty success.</summary>
+        [RelayCommand]
+        public async Task LoadExclusionsAsync()
+        {
+            if (_exclusionService == null) return;
+            try
+            {
+                if (_exclusionService is IExclusionRefreshService refresher) await refresher.ReloadAsync();
+                var items = await _exclusionService.GetAllExclusionsAsync();
+                Exclusions.Clear();
+                foreach (var item in items)
+                {
+                    Exclusions.Add(item);
+                }
+                HasNoExclusions = Exclusions.Count == 0;
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "İstisnalar yüklenirken hata oluştu.");
+                StatusMessage = "İstisnalar yüklenirken hata oluştu: " + ex.Message;
+            }
+        }
+
+        /// <summary>Lets the user explicitly select a broad folder exemption; protected roots are rejected and service refresh is requested separately.</summary>
+        [RelayCommand]
+        public async Task AddFolderExclusionAsync()
+        {
+            if (_exclusionService == null)
+            {
+                StatusMessage = "İstisna yönetimi kullanılamıyor; değişiklik yapılmadı.";
+                return;
+            }
+            try
+            {
+                var dialog = new Microsoft.Win32.OpenFolderDialog
+                {
+                    Title = "İstisna Tutulacak Klasörü Seçin"
+                };
+
+                if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
+                {
+                    if (_exclusionService.IsRootOrSystemDirectory(dialog.FolderName))
+                    {
+                        _toastNotificationService?.ShowToast(
+                            "⚠️ Geçersiz Klasör",
+                            "Kritik sistem dizinleri (C:\\, Windows, Program Files) kökten istisna yapılamaz.",
+                            "Warning");
+                        return;
+                    }
+
+                    if (System.Windows.MessageBox.Show(
+                        "Bu klasör ve altındaki gelecekte eklenecek dosyalar denetim dışında kalabilir. Yalnız güvendiğiniz dar kapsamlı bir klasör için kullanın. Devam edilsin mi?",
+                        "Geniş kapsamlı istisna", System.Windows.MessageBoxButton.YesNo,
+                        System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.Yes) return;
+
+                    var entry = await _exclusionService.AddPathExclusionAsync(dialog.FolderName, includeSubdirectories: true, reason: "Kullanıcı tercihi");
+                    Exclusions.Insert(0, entry);
+                    HasNoExclusions = Exclusions.Count == 0;
+                    await RefreshServiceExclusionsAsync();
+                    _toastNotificationService?.ShowToast(
+                        "İstisna Kaydedildi",
+                        $"'{System.IO.Path.GetFileName(dialog.FolderName)}' klasör kuralı yerelde kaydedildi. {StatusMessage}",
+                        "Warning");
+                }
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Klasör istisnası eklenirken hata oluştu.");
+                _toastNotificationService?.ShowToast("Hata", ex.Message, "Danger");
+            }
+        }
+
+        /// <summary>Creates a SHA-256-bound file exemption so a replacement at the same path cannot inherit the original content's rule.</summary>
+        [RelayCommand]
+        public async Task AddFileExclusionAsync()
+        {
+            if (_exclusionService == null)
+            {
+                StatusMessage = "İstisna yönetimi kullanılamıyor; değişiklik yapılmadı.";
+                return;
+            }
+            try
+            {
+                var dialog = new Microsoft.Win32.OpenFileDialog
+                {
+                    Title = "İstisna Tutulacak Dosyayı Seçin",
+                    Filter = "Tüm Dosyalar (*.*)|*.*|Uygulamalar (*.exe;*.dll)|*.exe;*.dll"
+                };
+
+                if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FileName))
+                {
+                    string hash;
+                    await using (var stream = new System.IO.FileStream(dialog.FileName, System.IO.FileMode.Open,
+                        System.IO.FileAccess.Read, System.IO.FileShare.Read, 81920, useAsync: true))
+                        hash = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(stream));
+                    var entry = await _exclusionService.AddSha256ExclusionAsync(hash,
+                        reason: "Kullanıcı tercihi; içerik kimliği: " + System.IO.Path.GetFileName(dialog.FileName));
+                    Exclusions.Insert(0, entry);
+                    HasNoExclusions = Exclusions.Count == 0;
+                    await RefreshServiceExclusionsAsync();
+                    _toastNotificationService?.ShowToast(
+                        "İçerik İstisnası Kaydedildi",
+                        $"'{System.IO.Path.GetFileName(dialog.FileName)}' için SHA-256 kuralı kaydedildi; değişen dosyaya uygulanmaz. {StatusMessage}",
+                        "Warning");
+                }
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Dosya istisnası eklenirken hata oluştu.");
+                _toastNotificationService?.ShowToast("Hata", ex.Message, "Danger");
+            }
+        }
+
+        /// <summary>Removes the persisted rule and requests refresh in the service; stale IDs are reloaded instead of reporting a false removal.</summary>
+        [RelayCommand]
+        public async Task RemoveExclusionAsync(AegisPC.Core.Models.ExclusionEntry? entry)
+        {
+            if (_exclusionService == null || entry == null) return;
+            try
+            {
+                bool removed = await _exclusionService.RemoveExclusionAsync(entry.Id);
+                if (removed)
+                {
+                    Exclusions.Remove(entry);
+                    HasNoExclusions = Exclusions.Count == 0;
+                    await RefreshServiceExclusionsAsync();
+                    _toastNotificationService?.ShowToast(
+                        "İstisna Kaldırıldı",
+                        $"'{System.IO.Path.GetFileName(entry.Value) ?? entry.Value}' yerel istisna listesinden çıkarıldı. {StatusMessage}",
+                        "Info");
+                }
+                else
+                {
+                    await LoadExclusionsAsync();
+                    StatusMessage = "İstisna daha önce kaldırılmış veya değişmiş; liste yeniden yüklendi.";
+                }
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "İstisna kaldırılırken hata oluştu: {Id}", entry.Id);
+                _toastNotificationService?.ShowToast("Hata", ex.Message, "Danger");
+            }
+        }
+
+        [RelayCommand]
+        public void ClearScanCache()
+        {
+            if (_scanCoordinator?.IsScanning == true || _fileHashMatcher?.IsScanActive == true)
+            {
+                Serilog.Log.Warning("Aktif tarama devam ederken önbellek temizleme işlemi reddedildi.");
+                _toastNotificationService?.ShowToast("İşlem Reddedildi", "Aktif tarama devam ederken tarama önbelleği temizlenemez.", "Warning");
+                return;
+            }
+
+            int count = _fileHashMatcher?.CachedEntriesCount ?? 0;
+            _fileHashMatcher?.ClearCache();
+            Serilog.Log.Information("Tarama önbelleği temizlendi. {Count} önbellek kaydı temizlendi.", count);
+            _toastNotificationService?.ShowToast("Önbellek Temizlendi", $"{count} önbellek kaydı temizlendi.", "Success");
+        }
+
+        public void Dispose()
+        {
+            AppThemeManager.ThemeChanged -= OnAppThemeChanged;
+            if (_ipcClient != null) _ipcClient.StatusChanged -= ApplyServiceStatus;
         }
     }
 

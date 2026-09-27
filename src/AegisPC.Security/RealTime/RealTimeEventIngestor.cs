@@ -33,7 +33,7 @@ namespace AegisPC.Security.RealTime
         long TotalProcessedEvents { get; }
 
         /// <summary>
-        /// Tampon doygunluğu nedeniyle düşürülen telemetri olay sayısı.
+        /// Either priority's arrivals lost because a bounded queue was full or stopped.
         /// </summary>
         long TotalDroppedEvents { get; }
 
@@ -48,7 +48,7 @@ namespace AegisPC.Security.RealTime
         long TotalEnqueuedEvents { get; }
 
         /// <summary>
-        /// Düşürülen olay tahmini sayısı.
+        /// Exact managed-queue loss count; operating-system watcher losses are reported separately.
         /// </summary>
         long DroppedEventsCount { get; }
 
@@ -84,13 +84,17 @@ namespace AegisPC.Security.RealTime
     }
 
     /// <summary>
-    /// Güvenlik açısından kritik olayları asla düşürmeyen ve telemetri olaylarını sınırlandıran iki kanallı (Dual-Priority) olay toplayıcı.
+    /// Bounded dual-priority arrival queues. Overflow is visible and requests reconciliation;
+    /// neither a managed queue nor FileSystemWatcher can promise lossless delivery.
     /// </summary>
     public class RealTimeEventIngestor : IRealTimeEventIngestor
     {
-        private readonly Channel<NormalizedFileEvent> _criticalChannel;
-        private readonly Channel<NormalizedFileEvent> _telemetryChannel;
-        private readonly List<Task> _workerTasks = new();
+        private QueueSession _session;
+        private readonly object _lifecycleLock = new();
+        private CancellationTokenSource? _workerCts;
+        private Task[] _workerTasks = Array.Empty<Task>();
+        private bool _stopped;
+        private bool _disposed;
         private readonly int _telemetryCapacity;
         private readonly ILogger<RealTimeEventIngestor>? _logger;
 
@@ -100,6 +104,7 @@ namespace AegisPC.Security.RealTime
         private long _totalDroppedEvents;
         private long _totalFailedEvents;
         private long _lastWarningLogged;
+        private long _totalCoalescedEvents;
 
         public long TotalProducedEvents => Interlocked.Read(ref _totalProducedEvents);
         public long TotalAcceptedEvents => Interlocked.Read(ref _totalAcceptedEvents);
@@ -110,159 +115,139 @@ namespace AegisPC.Security.RealTime
         // Backward compatibility
         public long TotalEnqueuedEvents => TotalAcceptedEvents;
         public long DroppedEventsCount => TotalDroppedEvents;
-        public int PendingEventsCount => _criticalChannel.Reader.Count + _telemetryChannel.Reader.Count;
-        public int PendingCriticalCount => _criticalChannel.Reader.Count;
-        public int PendingTelemetryCount => _telemetryChannel.Reader.Count;
+        public int PendingEventsCount => PendingCriticalCount + PendingTelemetryCount;
+        public int PendingCriticalCount => _session.Critical.Reader.Count;
+        public int PendingTelemetryCount => _session.Telemetry.Reader.Count;
+
+        /// <summary>Raised after event loss so the owner can inspect affected locations again.</summary>
+        public event Action<string>? OnReconciliationRequired;
+
+        /// <summary>Repeated path arrivals merged while that path is still queued; later writes are rescanned.</summary>
+        public long TotalCoalescedEvents => Interlocked.Read(ref _totalCoalescedEvents);
 
         private static readonly HashSet<string> CriticalExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
             ".exe", ".dll", ".sys", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".hta", ".cpl", ".msi", ".com", ".pif", ".vbe", ".wsf"
         };
 
-        private static readonly HashSet<string> TelemetryExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".txt", ".bin", ".dat", ".iso", ".zip", ".rar", ".7z", ".jar"
-        };
-
-        private static readonly string[] IgnoredDirectoryMarkers = new[]
-        {
-            @"\.git\", @"\.vs\", @"\node_modules\", @"\obj\Debug\", @"\obj\Release\", @"\bin\Debug\", @"\bin\Release\", @"\.cache\"
-        };
-
+        /// <summary>Creates independent bounded queues with a positive capacity per priority.</summary>
         public RealTimeEventIngestor(int channelCapacity = 2000, ILogger<RealTimeEventIngestor>? logger = null)
         {
+            if (channelCapacity <= 0) throw new ArgumentOutOfRangeException(nameof(channelCapacity));
             _telemetryCapacity = channelCapacity;
             _logger = logger;
-
-            // Security-critical events channel: Unbounded, NEVER drops security-critical events
-            _criticalChannel = Channel.CreateUnbounded<NormalizedFileEvent>(new UnboundedChannelOptions
-            {
-                SingleReader = false,
-                SingleWriter = false
-            });
-
-            // Informational telemetry channel: Bounded with Wait mode so TryWrite returns false when capacity is reached
-            _telemetryChannel = Channel.CreateBounded<NormalizedFileEvent>(new BoundedChannelOptions(channelCapacity)
-            {
-                FullMode = BoundedChannelFullMode.Wait,
-                SingleReader = false,
-                SingleWriter = false
-            });
+            _session = new QueueSession(channelCapacity);
         }
 
+        /// <summary>Normalizes an arrival without trusting its name, directory or extension.</summary>
         public void EnqueueEvent(RealTimeEventType type, string path, string? oldPath = null)
         {
             if (string.IsNullOrWhiteSpace(path)) return;
 
             Interlocked.Increment(ref _totalProducedEvents);
 
-            // Geliştirici ve IDE derleme gürültüsü filtresi (CPU spike ve buffer overflow önler)
-            foreach (var marker in IgnoredDirectoryMarkers)
+            string normalizedPath;
+            try { normalizedPath = Path.GetFullPath(path); }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
             {
-                if (path.Contains(marker, StringComparison.OrdinalIgnoreCase)) return;
+                Interlocked.Increment(ref _totalFailedEvents);
+                _logger?.LogWarning(ex, "Invalid arrival path {Path}", path);
+                return;
             }
-
-            // ── SELF-PROTECTION: Kendi imza/veritabanı/log/config dizinlerindeki olayları yok say ──
-            if (FileScannerService.IsSelfOwnedPath(path)) return;
-
-            var ext = Path.GetExtension(path).ToLowerInvariant();
+            var ext = Path.GetExtension(normalizedPath).ToLowerInvariant();
             bool isCritical = CriticalExtensions.Contains(ext);
-            bool isTelemetry = TelemetryExtensions.Contains(ext);
-
-            if (!isCritical && !isTelemetry) return;
 
             var normalizedEvent = new NormalizedFileEvent
             {
                 EventType = type,
                 FilePath = path,
-                NormalizedPath = Path.GetFullPath(path),
+                NormalizedPath = normalizedPath,
                 OldFilePath = oldPath,
                 Extension = ext,
                 Timestamp = DateTime.UtcNow
             };
 
-            if (isCritical)
+            bool accepted;
+            lock (_lifecycleLock)
             {
-                // Critical events are prioritized and never dropped
-                _criticalChannel.Writer.TryWrite(normalizedEvent);
-                Interlocked.Increment(ref _totalAcceptedEvents);
-            }
-            else
-            {
-                // Telemetry events: if queue is saturated, count exact drop and log warning
-                if (_telemetryChannel.Writer.TryWrite(normalizedEvent))
+                if (!_stopped && !_disposed && _session.QueuedPaths.Contains(normalizedPath))
                 {
-                    Interlocked.Increment(ref _totalAcceptedEvents);
+                    Interlocked.Increment(ref _totalCoalescedEvents);
+                    return;
                 }
-                else
+                accepted = !_stopped && !_disposed &&
+                    (isCritical ? _session.Critical.Writer : _session.Telemetry.Writer).TryWrite(normalizedEvent);
+                if (accepted)
                 {
-                    long dropped = Interlocked.Increment(ref _totalDroppedEvents);
-                    if (dropped == 1 || dropped - _lastWarningLogged >= 100)
-                    {
-                        _lastWarningLogged = dropped;
-                        _logger?.LogWarning("RealTimeEventIngestor telemetry queue is saturated ({Capacity} events). Dropped telemetry: {Dropped}", _telemetryCapacity, dropped);
-                    }
+                    _session.QueuedPaths.Add(normalizedPath);
+                    Interlocked.Increment(ref _totalAcceptedEvents);
+                    _session.Available.Release();
+                }
+            }
+            if (!accepted)
+            {
+                long dropped = Interlocked.Increment(ref _totalDroppedEvents);
+                if (dropped == 1 || dropped - Interlocked.Read(ref _lastWarningLogged) >= 100)
+                {
+                    Interlocked.Exchange(ref _lastWarningLogged, dropped);
+                    _logger?.LogWarning("Real-time arrival queue is saturated or stopped ({Capacity} per priority). Lost arrivals: {Dropped}", _telemetryCapacity, dropped);
+                }
+                try { OnReconciliationRequired?.Invoke(normalizedPath); }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Arrival reconciliation callback failed for {Path}", normalizedPath);
                 }
             }
         }
 
+        /// <summary>Starts one worker generation; a stopped instance can be restarted safely.</summary>
         public void StartWorkers(int workerCount, Func<NormalizedFileEvent, CancellationToken, Task> eventHandler, CancellationToken ct)
         {
-            _workerTasks.Clear();
-            for (int i = 0; i < workerCount; i++)
+            ArgumentNullException.ThrowIfNull(eventHandler);
+            if (workerCount <= 0) throw new ArgumentOutOfRangeException(nameof(workerCount));
+            lock (_lifecycleLock)
             {
-                int workerId = i;
-                _workerTasks.Add(Task.Run(() => ProcessEventLoopWorkerAsync(workerId, eventHandler, ct), ct));
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (_workerCts != null) throw new InvalidOperationException("Arrival workers have already started.");
+                if (_stopped) _session = new QueueSession(_telemetryCapacity);
+                _stopped = false;
+                _workerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                var session = _session;
+                var workerToken = _workerCts.Token;
+                _workerTasks = new Task[workerCount];
+                for (int i = 0; i < workerCount; i++)
+                {
+                    int workerId = i;
+                    _workerTasks[i] = Task.Run(() => ProcessEventLoopWorkerAsync(session, workerId, eventHandler, workerToken));
+                }
             }
         }
 
-        private async Task ProcessEventLoopWorkerAsync(int workerId, Func<NormalizedFileEvent, CancellationToken, Task> eventHandler, CancellationToken ct)
+        private async Task ProcessEventLoopWorkerAsync(QueueSession session, int workerId, Func<NormalizedFileEvent, CancellationToken, Task> eventHandler, CancellationToken ct)
         {
+            int criticalBurst = 0;
             while (!ct.IsCancellationRequested)
             {
+                try { await session.Available.WaitAsync(ct); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
                 NormalizedFileEvent? evt = null;
-
-                // 1. Highest Priority: drain all security-critical events
-                if (_criticalChannel.Reader.TryRead(out var critEvt))
+                // Fairness prevents renamed/disguised payloads in the normal queue starving forever.
+                if (criticalBurst >= 8 && session.Telemetry.Reader.TryRead(out evt))
                 {
-                    evt = critEvt;
+                    criticalBurst = 0;
                 }
-                // 2. Secondary Priority: drain telemetry events
-                else if (_telemetryChannel.Reader.TryRead(out var telemEvt))
+                else if (session.Critical.Reader.TryRead(out evt))
                 {
-                    evt = telemEvt;
+                    criticalBurst++;
                 }
-                else
+                else if (session.Telemetry.Reader.TryRead(out evt))
                 {
-                    // Await on either channel having data
-                    var critTask = _criticalChannel.Reader.WaitToReadAsync(ct).AsTask();
-                    var telemTask = _telemetryChannel.Reader.WaitToReadAsync(ct).AsTask();
-
-                    var completed = await Task.WhenAny(critTask, telemTask);
-                    if (ct.IsCancellationRequested) break;
-
-                    try
-                    {
-                        if (await completed)
-                        {
-                            if (_criticalChannel.Reader.TryRead(out critEvt))
-                            {
-                                evt = critEvt;
-                            }
-                            else if (_telemetryChannel.Reader.TryRead(out telemEvt))
-                            {
-                                evt = telemEvt;
-                            }
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
+                    criticalBurst = 0;
                 }
 
                 if (evt != null)
                 {
+                    lock (_lifecycleLock) session.QueuedPaths.Remove(evt.NormalizedPath);
                     try
                     {
                         await eventHandler(evt, ct);
@@ -275,22 +260,58 @@ namespace AegisPC.Security.RealTime
                     catch (Exception ex)
                     {
                         Interlocked.Increment(ref _totalFailedEvents);
-                        _logger?.LogTrace(ex, "Worker {WorkerId} error handling event {Path}", workerId, evt.FilePath);
+                        _logger?.LogWarning(ex, "Worker {WorkerId} error handling event {Path}", workerId, evt.FilePath);
                     }
                 }
             }
         }
 
+        /// <summary>Cancels this worker generation and closes its queues without busy spinning.</summary>
         public void Stop()
         {
-            _criticalChannel.Writer.TryComplete();
-            _telemetryChannel.Writer.TryComplete();
-            _workerTasks.Clear();
+            CancellationTokenSource? workers;
+            Task[] tasks;
+            QueueSession session;
+            lock (_lifecycleLock)
+            {
+                if (_stopped) return;
+                _stopped = true;
+                session = _session;
+                session.Critical.Writer.TryComplete();
+                session.Telemetry.Writer.TryComplete();
+                workers = _workerCts;
+                _workerCts = null;
+                tasks = _workerTasks;
+                _workerTasks = Array.Empty<Task>();
+            }
+            workers?.Cancel();
+            _ = Task.WhenAll(tasks).ContinueWith(completed =>
+            {
+                if (completed.IsFaulted) _logger?.LogError(completed.Exception, "Arrival worker generation failed during shutdown");
+                workers?.Dispose();
+                session.Available.Dispose();
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         }
 
+        /// <summary>Stops the ingestor permanently; later worker starts are rejected.</summary>
         public void Dispose()
         {
+            lock (_lifecycleLock) _disposed = true;
             Stop();
+        }
+
+        private sealed class QueueSession
+        {
+            internal readonly Channel<NormalizedFileEvent> Critical;
+            internal readonly Channel<NormalizedFileEvent> Telemetry;
+            internal readonly SemaphoreSlim Available = new(0);
+            internal readonly HashSet<string> QueuedPaths = new(StringComparer.OrdinalIgnoreCase);
+            internal QueueSession(int capacity)
+            {
+                var options = new BoundedChannelOptions(capacity) { FullMode = BoundedChannelFullMode.Wait };
+                Critical = Channel.CreateBounded<NormalizedFileEvent>(options);
+                Telemetry = Channel.CreateBounded<NormalizedFileEvent>(options);
+            }
         }
     }
 }

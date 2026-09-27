@@ -430,6 +430,38 @@ namespace AegisPC.Security.Scanning
             if (!_isInitialized) Initialize();
             if (string.IsNullOrEmpty(_dbPath) || !File.Exists(_dbPath)) return 0;
 
+            var pendingThreats = new List<(string Sha256, string Name, string Category, int Severity, string Source)>();
+            foreach (var threat in newThreats)
+            {
+                if (string.IsNullOrWhiteSpace(threat.Sha256) || threat.Sha256.Length < 32)
+                    continue;
+
+                string normalizedHash = threat.Sha256.Trim().ToLowerInvariant();
+                string source = threat.Source ?? "ThreatFeed";
+
+                if (!string.Equals(source, "MalwareBazaar", StringComparison.OrdinalIgnoreCase))
+                {
+                    Log.Warning("Rejected non-MalwareBazaar threat import source {Source} for hash {Hash}.", source, normalizedHash);
+                    continue;
+                }
+
+                if (_memoryCache.ContainsKey(normalizedHash))
+                {
+                    continue;
+                }
+
+                string name = threat.Name ?? "Generic.Malware";
+                string category = threat.Category ?? "Malware";
+                int severity = threat.Severity > 0 ? threat.Severity : 100;
+
+                pendingThreats.Add((normalizedHash, name, category, severity, source));
+            }
+
+            if (pendingThreats.Count == 0)
+            {
+                return 0;
+            }
+
             int imported = 0;
             try
             {
@@ -441,7 +473,7 @@ namespace AegisPC.Security.Scanning
                     using var cmd = conn.CreateCommand();
                     cmd.Transaction = trans;
                     cmd.CommandText = @"
-                        INSERT OR REPLACE INTO ThreatSignatures (Sha256, Name, Category, Severity, Source, AddedUtc)
+                        INSERT OR IGNORE INTO ThreatSignatures (Sha256, Name, Category, Severity, Source, AddedUtc)
                         VALUES ($sha256, $name, $category, $severity, $source, $addedUtc);
                     ";
 
@@ -454,37 +486,31 @@ namespace AegisPC.Security.Scanning
 
                     string nowIso = DateTime.UtcNow.ToString("o");
 
-                    foreach (var threat in newThreats)
+                    foreach (var threat in pendingThreats)
                     {
-                        if (string.IsNullOrWhiteSpace(threat.Sha256) || threat.Sha256.Length < 32)
-                            continue;
-
-                        string normalizedHash = threat.Sha256.Trim().ToLowerInvariant();
-                        string name = threat.Name ?? "Generic.Malware";
-                        string category = threat.Category ?? "Malware";
-                        int severity = threat.Severity > 0 ? threat.Severity : 100;
-                        string source = threat.Source ?? "ThreatFeed";
-
-                        pSha.Value = normalizedHash;
-                        pName.Value = name;
-                        pCat.Value = category;
-                        pSev.Value = severity;
-                        pSource.Value = source;
+                        pSha.Value = threat.Sha256;
+                        pName.Value = threat.Name;
+                        pCat.Value = threat.Category;
+                        pSev.Value = threat.Severity;
+                        pSource.Value = threat.Source;
                         pAdded.Value = nowIso;
 
-                        cmd.ExecuteNonQuery();
-
-                        // Güncel RAM önbelleğine de anında ekle
-                        EnforceCacheLimit();
-                        _memoryCache[normalizedHash] = (name, category, severity);
-                        imported++;
+                        int rowsInserted = cmd.ExecuteNonQuery();
+                        if (rowsInserted > 0)
+                        {
+                            imported++;
+                            EnforceCacheLimit();
+                            _memoryCache[threat.Sha256] = (threat.Name, threat.Category, threat.Severity);
+                        }
                     }
 
                     trans.Commit();
                 }
 
-                // Veritabanı dosyası güncellendiğinde SHA-256 sağlama toplamını güncelle
-                UpdateDatabaseChecksum(_dbPath);
+                if (imported > 0)
+                {
+                    UpdateDatabaseChecksum(_dbPath);
+                }
             }
             catch (Exception ex)
             {

@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <UseWPF>true</UseWPF>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ReviewTestDependencies.cs" />
+    <Compile Include="../AegisPC.Tests/WorkflowUiRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/ProcessArchiveWorkflowTests.cs" />
+    <Compile Include="../AegisPC.Tests/ExclusionScheduleWorkflowTests.cs" />
+    <Compile Include="../AegisPC.Tests/ResourceTelemetryWorkflowTests.cs" />
+    <Compile Include="../AegisPC.Tests/ExclusionDetectionPriorityTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanReportGeneratorTests.cs" />
+    <Compile Include="../AegisPC.Tests/InstallerWorkflowTests.cs" />
+    <!-- Inert file/decision fixtures only. Do not include live credential, process kill or deployment tests. -->
+    <Compile Include="../AegisPC.Tests/AdaptiveIdleReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/CachePolicyRevisionReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/DeploymentScriptReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/IdleSchedulerReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/IpcBoundaryReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/ProtectionCommandLifecycleReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/RealtimeReviewRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/ReviewFixRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/DetectionReviewFixTests.cs" />
+    <Compile Include="../AegisPC.Tests/PerformanceReviewFixTests.cs" />
+    <Compile Include="../AegisPC.Tests/FinalReviewScanRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/FinalReviewPerformanceTests.cs" />
+    <Compile Include="../AegisPC.Tests/DetectionRevisionRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/BugFixRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScoringRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineHardeningTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineVaultTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineRestoreTests.cs" />
+    <Compile Include="../AegisPC.Tests/AdaptiveResourceManagerTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanPerformanceBenchmarkTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanLifecycleCancellationTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScheduledScanRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/FalsePositiveRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/PhaseTwoTrustRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/YaraConditionParserTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanSessionAndWindowLifecycleTests.cs" />
+    <Compile Include="../AegisPC.Tests/GoldenTestSuite.cs" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <ProjectReference Include="../../src/AegisPC.App/AegisPC.App.csproj" />
+    <ProjectReference Include="../../src/AegisPC.Service/AegisPC.Service.csproj" />
+    <None Include="../AegisPC.Tests/xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

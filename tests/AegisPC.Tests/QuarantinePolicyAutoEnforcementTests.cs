@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Models;
+using AegisPC.Infrastructure.Configuration;
 using AegisPC.Security.Scanning;
 using Xunit;
 
@@ -101,6 +102,49 @@ namespace AegisPC.Tests
         }
 
         [Fact]
+        public async Task AutoQuarantine_DisabledBySetting_LeavesHighRiskFindingUnquarantined()
+        {
+            var threatFilePath = Path.Combine(_testSandbox, "eicar_manual_control.exe");
+            await File.WriteAllTextAsync(threatFilePath, "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*");
+
+            var settingsService = new SettingsService();
+            settingsService.Current.EnableAutoQuarantine = false;
+            settingsService.Current.AutoQuarantineThreshold = 85;
+
+            var stubScanner = new StubFileScanner(new List<SecurityFinding>
+            {
+                new SecurityFinding
+                {
+                    Id = Guid.NewGuid(),
+                    ObjectName = "eicar_manual_control.exe",
+                    ObjectPath = threatFilePath,
+                    Title = "🚨 Zararlı Yazılım / EICAR: eicar_manual_control.exe",
+                    RiskScore = 95,
+                    RiskLevel = RiskLevel.ConfirmedMalicious,
+                    Status = FindingStatus.Active,
+                    Category = FindingCategory.KnownMalwareHash
+                }
+            });
+
+            var coordinator = new ScanCoordinatorService(
+                stubScanner,
+                _findingService,
+                _quarantineService,
+                _auditLogService,
+                settingsService: settingsService);
+
+            var result = await coordinator.StartScanAsync(ScanType.Custom, _testSandbox);
+
+            Assert.NotNull(result);
+            Assert.Single(result.Findings);
+            Assert.Equal(FindingStatus.Active, result.Findings[0].Status);
+            Assert.True(File.Exists(threatFilePath));
+
+            var quarantinedItems = await _quarantineService.GetQuarantinedItemsAsync();
+            Assert.Empty(quarantinedItems);
+        }
+
+        [Fact]
         public async Task AutoQuarantine_SuspiciousRiskScore75_WarnsWithoutDeletingFile()
         {
             // 1. Create a suspicious script file
@@ -150,6 +194,59 @@ namespace AegisPC.Tests
             // Audit log should record the warning/scan completed event
             var auditLogs = await _auditLogService.GetLogsAsync();
             Assert.Contains(auditLogs, a => a.TargetPath == suspiciousFilePath && a.Details != null && a.Details.Contains("uyarıldı"));
+        }
+
+        [Theory]
+        [InlineData(RiskLevel.HighRisk)]
+        [InlineData(RiskLevel.ConfirmedMalicious)]
+        public async Task AutoQuarantine_HeuristicScore99WithoutPolicyEngine_PreservesFile(RiskLevel riskLevel)
+        {
+            var path = Path.Combine(_testSandbox, "administration.ps1");
+            const string payload = "Get-Process | Select-Object Name";
+            await File.WriteAllTextAsync(path, payload);
+            var finding = new SecurityFinding
+            {
+                ObjectPath = path, ObjectName = "administration.ps1", Title = "Script heuristic",
+                RiskScore = 99, RiskLevel = riskLevel,
+                Category = FindingCategory.SuspiciousScript, Status = FindingStatus.Active
+            };
+            var coordinator = new ScanCoordinatorService(
+                new StubFileScanner(new List<SecurityFinding> { finding }),
+                _findingService, _quarantineService, _auditLogService);
+
+            var result = await coordinator.StartScanAsync(ScanType.Custom, _testSandbox);
+
+            Assert.NotNull(result);
+            Assert.Equal(ScanStatus.Completed, result.Status);
+            Assert.Equal(payload, await File.ReadAllTextAsync(path));
+            Assert.Equal(FindingStatus.Active, finding.Status);
+            Assert.Empty(await _quarantineService.GetQuarantinedItemsAsync());
+            Assert.Contains(await _auditLogService.GetLogsAsync(), entry => entry.Details?.Contains("uyarıldı") == true);
+        }
+
+        [Theory]
+        [InlineData(FindingStatus.Resolved, false)]
+        [InlineData(FindingStatus.Ignored, false)]
+        [InlineData(FindingStatus.Active, true)]
+        public async Task AutoQuarantine_InactiveOrAllowlistedFindingWithoutPolicyEngine_PreservesFile(FindingStatus status, bool allowlisted)
+        {
+            var path = Path.Combine(_testSandbox, "retained.bin");
+            await File.WriteAllTextAsync(path, "harmless test payload");
+            var finding = new SecurityFinding
+            {
+                ObjectPath = path, ObjectName = "retained.bin", RiskScore = 99,
+                RiskLevel = RiskLevel.ConfirmedMalicious, Category = FindingCategory.KnownMalwareHash,
+                Status = status, IsAllowlisted = allowlisted
+            };
+            var coordinator = new ScanCoordinatorService(
+                new StubFileScanner(new List<SecurityFinding> { finding }),
+                _findingService, _quarantineService, _auditLogService);
+
+            await coordinator.StartScanAsync(ScanType.Custom, _testSandbox);
+
+            Assert.True(File.Exists(path));
+            Assert.Equal(status, finding.Status);
+            Assert.Empty(await _quarantineService.GetQuarantinedItemsAsync());
         }
 
         private sealed class StubFileScanner : IFileScanner

@@ -88,6 +88,15 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty] private int scanThreatCount = 0;
         [ObservableProperty] private string quickScanButtonText = "Taramayı Başlat";
 
+        partial void OnIsScanningChanged(bool value)
+        {
+            OnPropertyChanged(nameof(QuickScanCardTitle));
+            OnPropertyChanged(nameof(QuickScanCardSubtitle));
+        }
+
+        public string QuickScanCardTitle => IsScanning ? "Taramayı İzle (Çalışıyor)" : "Hızlı Tarama Başlat";
+        public string QuickScanCardSubtitle => IsScanning ? "Devam eden aktif virüs taramasını ve bulunan tehditleri görüntüle" : "Kritik sistem dizinlerini, belleği ve başlangıç dosyalarını tara";
+
 
 
         // Interactive Feature 4: Device & License Modal
@@ -278,17 +287,30 @@ namespace AegisPC.App.ViewModels
                     });
                 };
 
-                // Launch initial non-blocking background sweep
+                // Launch initial automatic scan on startup
                 Task.Run(async () =>
                 {
                     try
                     {
-                        await Task.Delay(1200);
-                        await _startupSweepService.RunSweepAsync();
+                        await Task.Delay(2500);
+                        if (!App.IsStartMinimized && _scanCoordinator != null && !_scanCoordinator.IsScanning)
+                        {
+                            if (Application.Current?.Dispatcher != null)
+                            {
+                                await Application.Current.Dispatcher.InvokeAsync(async () =>
+                                {
+                                    await StartQuickScanAsync();
+                                });
+                            }
+                        }
+                        else if (_startupSweepService != null && (_scanCoordinator == null || !_scanCoordinator.IsScanning))
+                        {
+                            await _startupSweepService.RunSweepAsync();
+                        }
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Trace.WriteLine(ex);
+                        System.Diagnostics.Trace.WriteLine($"Initial startup scan error: {ex}");
                     }
                 });
             }
@@ -359,7 +381,9 @@ namespace AegisPC.App.ViewModels
                         ScanThreatCount = p.FindingsCount;
                         QuickScanButtonText = "Durdur";
                         ProtectionStatusText = "Sistem taranıyor...";
-                        ProtectionBadgeText = "Hızlı tarama çalışıyor";
+                        string scanTypeName = p.ScanType == AegisPC.Core.Enums.ScanType.Full ? "Tam tarama" :
+                                              p.ScanType == AegisPC.Core.Enums.ScanType.Custom ? "Özel tarama" : "Hızlı tarama";
+                        ProtectionBadgeText = $"{scanTypeName} çalışıyor";
                         ProtectionStatusColor = "#2196F3";
                     });
                 };
@@ -411,7 +435,9 @@ namespace AegisPC.App.ViewModels
                     ScanThreatCount = _scanCoordinator.FindingsCount;
                     QuickScanButtonText = "Durdur";
                     ProtectionStatusText = "Sistem taranıyor...";
-                    ProtectionBadgeText = "Hızlı tarama çalışıyor";
+                    string scanTypeName = _scanCoordinator.CurrentScanType == AegisPC.Core.Enums.ScanType.Full ? "Tam tarama" :
+                                          _scanCoordinator.CurrentScanType == AegisPC.Core.Enums.ScanType.Custom ? "Özel tarama" : "Hızlı tarama";
+                    ProtectionBadgeText = $"{scanTypeName} çalışıyor";
                     ProtectionStatusColor = "#2196F3";
                 }
             }

@@ -16,10 +16,12 @@ namespace AegisPC.Infrastructure.Configuration
         private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
         private AppSettings _currentSettings;
 
-        public SettingsService()
+        public SettingsService(string? settingsFilePath = null)
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            _settingsFilePath = Path.Combine(appData, "AegisPC", "settings.json");
+            _settingsFilePath = !string.IsNullOrWhiteSpace(settingsFilePath)
+                ? Path.GetFullPath(settingsFilePath)
+                : Path.Combine(appData, "AegisPC", "settings.json");
             _currentSettings = new AppSettings();
         }
 
@@ -48,14 +50,10 @@ namespace AegisPC.Infrastructure.Configuration
             await _semaphore.WaitAsync(cancellationToken);
             try
             {
-                if (!File.Exists(_settingsFilePath))
-                {
-                    _currentSettings = new AppSettings();
-                    return;
-                }
-
-                var json = await File.ReadAllTextAsync(_settingsFilePath, cancellationToken);
-                _currentSettings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                _currentSettings = await TryLoadAsync(_settingsFilePath, cancellationToken)
+                    ?? await TryLoadAsync(_settingsFilePath + ".bak", cancellationToken)
+                    ?? new AppSettings();
+                ValidateSettings(_currentSettings);
             }
             finally
             {
@@ -66,6 +64,7 @@ namespace AegisPC.Infrastructure.Configuration
         public async Task SaveAsync(CancellationToken cancellationToken = default)
         {
             await _semaphore.WaitAsync(cancellationToken);
+            string? temporaryPath = null;
             try
             {
                 ValidateSettings(_currentSettings);
@@ -76,12 +75,44 @@ namespace AegisPC.Infrastructure.Configuration
                     Directory.CreateDirectory(directory);
                 }
 
-                var json = JsonSerializer.Serialize(_currentSettings, new JsonSerializerOptions { WriteIndented = true });
-                await File.WriteAllTextAsync(_settingsFilePath, json, cancellationToken);
+                temporaryPath = _settingsFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write,
+                    FileShare.None, 4096, FileOptions.Asynchronous | FileOptions.WriteThrough))
+                {
+                    await JsonSerializer.SerializeAsync(stream, _currentSettings,
+                        new JsonSerializerOptions { WriteIndented = true }, cancellationToken);
+                    await stream.FlushAsync(cancellationToken);
+                    stream.Flush(flushToDisk: true);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                if (File.Exists(_settingsFilePath))
+                    File.Replace(temporaryPath, _settingsFilePath, _settingsFilePath + ".bak");
+                else
+                    File.Move(temporaryPath, _settingsFilePath);
             }
             finally
             {
-                _semaphore.Release();
+                try
+                {
+                    if (temporaryPath != null && File.Exists(temporaryPath)) File.Delete(temporaryPath);
+                }
+                finally { _semaphore.Release(); }
+            }
+        }
+
+        private static async Task<AppSettings?> TryLoadAsync(string path, CancellationToken cancellationToken)
+        {
+            if (!File.Exists(path)) return null;
+            try
+            {
+                var json = await File.ReadAllTextAsync(path, cancellationToken);
+                return JsonSerializer.Deserialize<AppSettings>(json);
+            }
+            catch (JsonException ex)
+            {
+                System.Diagnostics.Trace.TraceWarning("Invalid settings JSON at {0}: {1}", path, ex.Message);
+                return null;
             }
         }
 
@@ -99,6 +130,21 @@ namespace AegisPC.Infrastructure.Configuration
             {
                 settings.DataRetentionDays = 1;
             }
+            if (settings.AutoQuarantineThreshold < 0)
+            {
+                settings.AutoQuarantineThreshold = 0;
+            }
+            else if (settings.AutoQuarantineThreshold > 100)
+            {
+                settings.AutoQuarantineThreshold = 100;
+            }
+            settings.ScheduledScanHour = Math.Clamp(settings.ScheduledScanHour, 0, 23);
+            settings.ScheduledScanIntervalHours = Math.Clamp(settings.ScheduledScanIntervalHours, 0, 24);
+            settings.IdleScanThresholdMinutes = Math.Clamp(settings.IdleScanThresholdMinutes, 1, 240);
+            settings.IdleScanIntervalHours = Math.Clamp(settings.IdleScanIntervalHours, 1, 168);
+            if (!Enum.IsDefined(settings.ScanResourceMode))
+                settings.ScanResourceMode = AegisPC.Core.Enums.ScanResourceMode.Auto;
+            settings.DismissedIncidentIds ??= new();
         }
     }
 }

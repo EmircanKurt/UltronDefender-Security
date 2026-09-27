@@ -18,7 +18,6 @@ namespace AegisPC.App.Services
     public class WindowsToastNotificationService : IWindowsToastNotificationService, IDisposable
     {
         private readonly ILogger<WindowsToastNotificationService>? _logger;
-        private readonly ISystemTrayService? _trayService;
         private readonly ISettingsService? _settingsService;
 
         private readonly ConcurrentQueue<ThreatToastItem> _threatQueue = new();
@@ -29,11 +28,9 @@ namespace AegisPC.App.Services
         public TimeSpan AggregationWindow { get; set; } = TimeSpan.FromMilliseconds(2500);
 
         public WindowsToastNotificationService(
-            ISystemTrayService? trayService = null,
             ISettingsService? settingsService = null,
             ILogger<WindowsToastNotificationService>? logger = null)
         {
-            _trayService = trayService;
             _settingsService = settingsService;
             _logger = logger;
             _aggregationTimer = new System.Threading.Timer(OnTimerTick, null, Timeout.Infinite, Timeout.Infinite);

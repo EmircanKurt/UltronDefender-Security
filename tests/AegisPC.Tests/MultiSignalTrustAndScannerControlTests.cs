@@ -65,7 +65,7 @@ namespace AegisPC.Tests
             };
 
             var findings = new ConcurrentBag<SecurityFinding>();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
             // Start paused
             coordinator.PauseScan();

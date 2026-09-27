@@ -35,7 +35,10 @@ namespace AegisPC.App
                         return System.Reflection.Assembly.LoadFrom(assemblyPath);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine($"AssemblyResolve error for {args}: {ex.Message}");
+                }
                 return null;
             };
 
@@ -68,12 +71,26 @@ namespace AegisPC.App
 
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             string logDir = Path.Combine(localAppData, "AegisPC", "Logs");
-            try { Directory.CreateDirectory(logDir); } catch { }
+            try 
+            { 
+                Directory.CreateDirectory(logDir); 
+            } 
+            catch (Exception ex)
+            { 
+                System.Diagnostics.Trace.WriteLine($"Could not create log dir: {ex.Message}");
+            }
             string logPath = Path.Combine(logDir, "aegis_startup.log");
 
             try
             {
-                try { File.WriteAllText(logPath, $"[INFO {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Ultron Defender Main started. Args: {string.Join(" ", args)}\n"); } catch { }
+                try 
+                { 
+                    File.WriteAllText(logPath, $"[INFO {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Ultron Defender Main started. Args: {string.Join(" ", args)}\n"); 
+                } 
+                catch (Exception ex)
+                { 
+                    System.Diagnostics.Trace.WriteLine($"Failed to write startup log: {ex.Message}");
+                }
 
                 var app = new App();
                 app.InitializeComponent();
@@ -86,7 +103,14 @@ namespace AegisPC.App
                 {
                     errorMsg += $"\nInnerException: {ex.InnerException.GetType().FullName}\nInnerMessage: {ex.InnerException.Message}\n";
                 }
-                try { File.AppendAllText(logPath, errorMsg); } catch { }
+                try 
+                { 
+                    File.AppendAllText(logPath, errorMsg); 
+                } 
+                catch (Exception writeEx)
+                { 
+                    System.Diagnostics.Trace.WriteLine($"Failed to write error to startup log: {writeEx.Message}");
+                }
                 MessageBox.Show(errorMsg, "Ultron Defender - Başlatma Hatası", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
@@ -94,12 +118,26 @@ namespace AegisPC.App
                 _running = false;
                 if (_mutex != null)
                 {
-                    try { _mutex.ReleaseMutex(); } catch { }
+                    try 
+                    { 
+                        _mutex.ReleaseMutex(); 
+                    } 
+                    catch (Exception ex)
+                    { 
+                        System.Diagnostics.Trace.WriteLine($"Mutex release error: {ex.Message}");
+                    }
                     _mutex.Dispose();
                 }
                 if (_activateEvent != null)
                 {
-                    try { _activateEvent.Set(); } catch { }
+                    try 
+                    { 
+                        _activateEvent.Set(); 
+                    } 
+                    catch (Exception ex)
+                    { 
+                        System.Diagnostics.Trace.WriteLine($"ActivateEvent set error: {ex.Message}");
+                    }
                     _activateEvent.Dispose();
                 }
             }
@@ -141,7 +179,10 @@ namespace AegisPC.App
                 writer.WriteLine(payload);
                 return;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"NamedPipe signaling fallback: {ex.Message}");
+            }
 
             // 2. Named Pipe yanıt vermezse EventWaitHandle ile sinyal yolla
             try
@@ -152,7 +193,10 @@ namespace AegisPC.App
                     existingEvent.Dispose();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"EventWaitHandle signaling failed: {ex.Message}");
+            }
         }
 
         private static void StartActivationListeners()
@@ -181,9 +225,10 @@ namespace AegisPC.App
                             }
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         if (!_running) break;
+                        System.Diagnostics.Trace.WriteLine($"NamedPipe listener loop error: {ex.Message}");
                         Thread.Sleep(200);
                     }
                 }
@@ -210,7 +255,10 @@ namespace AegisPC.App
                                 TriggerWindowActivation();
                             }
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Trace.WriteLine($"Listener wait error: {ex.Message}");
+                        }
                     }
                 })
                 {
@@ -219,7 +267,10 @@ namespace AegisPC.App
                 };
                 _listenerThread.Start();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Could not create EventWaitHandle listener: {ex.Message}");
+            }
         }
 
         private static void TriggerWindowActivation()
@@ -237,7 +288,10 @@ namespace AegisPC.App
                         mw.ShowAndActivate();
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine($"TriggerWindowActivation error: {ex.Message}");
+                }
             }));
         }
 
@@ -256,7 +310,10 @@ namespace AegisPC.App
                         mw.NavigateToScanAndScanPath(targetPath);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine($"TriggerWindowActivationAndScan error: {ex.Message}");
+                }
             }));
         }
     }

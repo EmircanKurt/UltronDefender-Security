@@ -1,4 +1,4 @@
-﻿# 🚀 GITHUB OPEN-SOURCE PRODUCTIZATION & READINESS REPORT
+# 🚀 GITHUB OPEN-SOURCE PRODUCTIZATION & READINESS REPORT
 
 **Project:** Ultron Defender Total Security  
 **Version:** 3.0.0 (Research Release)  
@@ -112,6 +112,6 @@ git push -u origin main
 2. Tag version: `v3.0.0` (Create new tag on publish).
 3. Target: `main`.
 4. Release title: `Ultron Defender Total Security v3.0.0 — Open-Source Research Release`.
-5. Description: Copy the v3.0.0 section from [CHANGELOG.md](CHANGELOG.md).
+5. Description: Copy the v3.0.0 section from [CHANGELOG.md](../../CHANGELOG.md).
 6. Attach binary: Upload `UltronDefender_Setup_v3.0.exe`.
 7. Click **Publish release**.

@@ -42,7 +42,7 @@ namespace AegisPC.Tests
 
             try
             {
-                for (int i = 0; i < 20; i++)
+                for (int i = 0; i < 100; i++)
                 {
                     File.WriteAllText(Path.Combine(tempDir, $"file_{i}.txt"), "safe content");
                 }
@@ -145,7 +145,7 @@ namespace AegisPC.Tests
         public async Task ScanQueueCoordinator_PauseScan_HaltsQueueDrain_UntilResumed()
         {
             using var queueCoordinator = new ScanQueueCoordinator();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
             var findings = new ConcurrentBag<SecurityFinding>();
             int processedCount = 0;

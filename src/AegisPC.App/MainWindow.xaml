@@ -7,7 +7,7 @@
         Title="Ultron Defender Total Security (Antivirüs Programı)" Height="880" Width="1300"
         WindowStartupLocation="CenterScreen"
         ExtendsContentIntoTitleBar="True"
-        Icon="pack://application:,,,/Resources/Images/app.ico"
+        Icon="pack://application:,,,/UltronDefender;component/Resources/Images/app.ico"
         Background="{DynamicResource BrushAppBg}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
@@ -129,7 +129,7 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <!-- 62px Large High-Res Shield Icon -->
-                            <Image Grid.Column="0" Source="pack://application:,,,/Resources/Images/ultron_logo.png" 
+                            <Image Grid.Column="0" Source="pack://application:,,,/UltronDefender;component/Resources/Images/ultron_logo.png" 
                                    Width="62" Height="62" Margin="0,0,12,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="ULTRON" FontFamily="{StaticResource FontBrand}" FontSize="26" FontWeight="Black" Foreground="{DynamicResource BrushBrandPrimary}" LineHeight="28" TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType"/>
@@ -166,7 +166,7 @@
 
                     <ui:NavigationViewItem Content="Süreç Yöneticisi" TargetPageType="{x:Type views:ProcessListView}">
                         <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="TasklistSquareRtl24" FontSize="16"/>
+                            <ui:SymbolIcon Symbol="TasksApp24" FontSize="16"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 

@@ -130,8 +130,11 @@ namespace AegisPC.Tests
         {
             string appBaseDir = AppDomain.CurrentDomain.BaseDirectory;
             string selfPdb = Path.Combine(appBaseDir, "AegisPC.Security.pdb");
-            string selfConfig = Path.Combine(appBaseDir, "UltronDefender.runtimeconfig.json");
-            string selfExe = Path.Combine(appBaseDir, "UltronDefender.exe");
+            string selfConfig = Path.Combine(appBaseDir, typeof(GoldenTestSuite).Assembly.GetName().Name + ".runtimeconfig.json");
+            string selfExe = typeof(FileScannerService).Assembly.Location;
+            Assert.True(File.Exists(selfPdb));
+            Assert.True(File.Exists(selfConfig));
+            Assert.True(File.Exists(selfExe));
 
             // Self-owned path predicate check
             Assert.True(FileScannerService.IsSelfOwnedPath(selfPdb));

@@ -8,6 +8,9 @@ public class ScanProgress
     public ScanType ScanType { get; set; }
     public string Phase { get; set; } = string.Empty;
     public int ScannedFiles { get; set; }
+    public int ScannedFromCache { get; set; }
+    public int SkippedSignedClean { get; set; }
+    public int NewlyScanned { get; set; }
     public int TotalFiles { get; set; }
     public int SkippedFiles { get; set; }
     public int FailedFiles { get; set; }
@@ -19,6 +22,8 @@ public class ScanProgress
     public ConfidenceLevel EtaConfidence { get; set; } = ConfidenceLevel.Low;
     public string FormattedEta { get; set; } = "Hesaplanıyor...";
     public double CpuUsagePercent { get; set; }
+    /// <summary>Indicates that process CPU utilization has a valid elapsed-time sample, rather than a default zero.</summary>
+    public bool IsCpuTelemetryAvailable { get; set; }
     public double RamUsageMb { get; set; }
     public double DiskThroughputMbSec { get; set; }
     public string ResourceProfileName { get; set; } = "Auto";

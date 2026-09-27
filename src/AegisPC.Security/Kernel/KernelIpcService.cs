@@ -132,7 +132,7 @@ namespace AegisPC.Security.Kernel
             }
         }
 
-        public Task DisconnectAsync()
+        public void Disconnect()
         {
             _isConnected = false;
             _driverStatus = KernelDriverStatus.NotInstalled;
@@ -143,11 +143,23 @@ namespace AegisPC.Security.Kernel
 
             if (_portHandle != IntPtr.Zero && _portHandle != (IntPtr)(-1))
             {
-                try { CloseHandle(_portHandle); } catch { }
+                try 
+                { 
+                    CloseHandle(_portHandle); 
+                } 
+                catch (Exception ex) 
+                { 
+                    _logger?.LogTrace(ex, "Failed to close kernel port handle."); 
+                }
                 _portHandle = IntPtr.Zero;
             }
 
             _logger?.LogInformation("Disconnected from Kernel Minifilter Communication Port.");
+        }
+
+        public Task DisconnectAsync()
+        {
+            Disconnect();
             return Task.CompletedTask;
         }
 
@@ -207,7 +219,7 @@ namespace AegisPC.Security.Kernel
 
         public void Dispose()
         {
-            DisconnectAsync().GetAwaiter().GetResult();
+            Disconnect();
         }
     }
 }

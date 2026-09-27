@@ -13,9 +13,11 @@ namespace AegisPC.Core.Models
         public SecurityFinding? Finding { get; set; }
         public string? ErrorMessage { get; set; }
         public TimeSpan Duration { get; set; } = TimeSpan.Zero;
+        public bool IsFromCache { get; set; }
+        public bool IsSignedClean { get; set; }
 
-        public static FileScanDetailedResult CreateSuccess(string path, SecurityFinding? finding, TimeSpan duration) =>
-            new() { FilePath = path, Outcome = FileScanOutcome.Success, Finding = finding, Duration = duration };
+        public static FileScanDetailedResult CreateSuccess(string path, SecurityFinding? finding, TimeSpan duration, bool isFromCache = false, bool isSignedClean = false) =>
+            new() { FilePath = path, Outcome = FileScanOutcome.Success, Finding = finding, Duration = duration, IsFromCache = isFromCache, IsSignedClean = isSignedClean };
 
         public static FileScanDetailedResult CreateSkipped(string path, string reason) =>
             new() { FilePath = path, Outcome = FileScanOutcome.Skipped, ErrorMessage = reason };

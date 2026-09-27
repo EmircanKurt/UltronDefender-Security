@@ -48,6 +48,8 @@ namespace AegisPC.Contracts.Detection
         public FileIdentity? FileIdentity { get; set; }
         public ProcessIdentity? ProcessContext { get; set; }
         public Dictionary<string, object> Properties { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public ScanContext? SharedScan { get; set; }
+        public List<string> CoverageLimitations { get; set; } = new();
     }
 
     /// <summary>
@@ -59,6 +61,9 @@ namespace AegisPC.Contracts.Detection
         public string FilePath { get; set; } = string.Empty;
         public string? SHA256 { get; set; }
         public DetectionVerdict Verdict { get; set; } = DetectionVerdict.Clean;
+        public bool IsComplete { get; set; } = true;
+        public int FailedDetectorCount { get; set; }
+        public List<string> CoverageLimitations { get; set; } = new();
         public DetectionPolicy RecommendedPolicy { get; set; } = DetectionPolicy.Allow;
         public DetectionPolicy Policy { get => RecommendedPolicy; set => RecommendedPolicy = value; }
         public string RecommendedAction => RecommendedPolicy.ToString();

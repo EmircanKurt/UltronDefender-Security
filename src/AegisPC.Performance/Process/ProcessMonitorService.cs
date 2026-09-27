@@ -297,7 +297,7 @@ namespace AegisPC.Performance.Process
                     int pid = proc.Id;
                     string name = proc.ProcessName;
                     long workingSet = 0;
-                    DateTime startTime = now;
+                    DateTime startTime = DateTime.MinValue;
                     int sessionId = 0;
                     string execPath = string.Empty;
                     double cpuPercent = 0.0;
@@ -305,7 +305,8 @@ namespace AegisPC.Performance.Process
 
                     try { workingSet = proc.WorkingSet64; } catch { }
                     try { sessionId = proc.SessionId; } catch { }
-                    try { startTime = proc.StartTime; } catch { }
+                    try { startTime = proc.StartTime; }
+                    catch (Exception ex) { _logger?.LogDebug(ex, "Could not read process creation time for PID {Pid}; identity remains unknown", pid); }
                     try { execPath = proc.MainModule?.FileName ?? string.Empty; } catch { }
 
                     // CPU usage delta

@@ -62,6 +62,7 @@ namespace AegisPC.Tests
             public event Action<int>? OnFileDeleted;
 #pragma warning restore CS0067
 
+            public string? LastError { get; set; }
             public List<string> QuarantinedPaths { get; } = new();
 
             public Task<bool> QuarantineFileAsync(string path, string reason, CancellationToken cancellationToken = default)

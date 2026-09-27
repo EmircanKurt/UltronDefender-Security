@@ -145,5 +145,24 @@ namespace AegisPC.Tests
             Assert.Equal("Brave (Default) — 1 Eklenti", p1.DisplayText);
             Assert.Equal("Edge (Default) — Eklenti Yok", p2.DisplayText);
         }
+
+        [Theory]
+        [InlineData(null, System.Windows.Visibility.Collapsed)]
+        [InlineData("", System.Windows.Visibility.Collapsed)]
+        [InlineData("   ", System.Windows.Visibility.Collapsed)]
+        [InlineData("___MSG_description___", System.Windows.Visibility.Collapsed)]
+        [InlineData("__MSG_appName__", System.Windows.Visibility.Collapsed)]
+        [InlineData("MSG_ext_details", System.Windows.Visibility.Collapsed)]
+        [InlineData("Açıklama yok", System.Windows.Visibility.Collapsed)]
+        [InlineData("No description", System.Windows.Visibility.Collapsed)]
+        [InlineData("Yok", System.Windows.Visibility.Collapsed)]
+        [InlineData("@@extension_id", System.Windows.Visibility.Collapsed)]
+        [InlineData("Güçlü reklam ve izleyici engelleme aracı.", System.Windows.Visibility.Visible)]
+        public void DescriptionVisibilityConverter_FiltersPlaceholdersAndEmptyCorrectly(string? input, System.Windows.Visibility expected)
+        {
+            var converter = new AegisPC.App.Converters.DescriptionVisibilityConverter();
+            var result = converter.Convert(input, typeof(System.Windows.Visibility), null, System.Globalization.CultureInfo.InvariantCulture);
+            Assert.Equal(expected, result);
+        }
     }
 }

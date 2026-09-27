@@ -252,7 +252,7 @@
     <!-- Thin Progress Bar Style -->
     <Style x:Key="ThinProgressBarStyle" TargetType="ProgressBar">
         <Setter Property="Height" Value="4"/>
-        <Setter Property="Background" Value="#E2E8F0"/>
+        <Setter Property="Background" Value="{DynamicResource BrushCardBorder}"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="UseLayoutRounding" Value="True"/>
@@ -266,15 +266,15 @@
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type Thumb}">
                     <Border x:Name="ThumbBorder"
-                            Background="#4A4A4A"
+                            Background="{DynamicResource BrushScrollThumb}"
                             CornerRadius="4"
                             Margin="1"/>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="ThumbBorder" Property="Background" Value="#6B6B6B"/>
+                            <Setter TargetName="ThumbBorder" Property="Background" Value="{DynamicResource BrushScrollThumbHover}"/>
                         </Trigger>
                         <Trigger Property="IsDragging" Value="True">
-                            <Setter TargetName="ThumbBorder" Property="Background" Value="#8A8A8A"/>
+                            <Setter TargetName="ThumbBorder" Property="Background" Value="{DynamicResource BrushScrollThumbActive}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

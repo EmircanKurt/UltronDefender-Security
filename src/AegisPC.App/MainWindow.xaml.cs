@@ -31,10 +31,7 @@ namespace AegisPC.App
             RootNavigation.SetServiceProvider(serviceProvider);
 
             UpdateThemeButtonState();
-            AegisPC.App.Services.AppThemeManager.ThemeChanged += (theme) =>
-            {
-                Dispatcher.InvokeAsync(UpdateThemeButtonState);
-            };
+            AegisPC.App.Services.AppThemeManager.ThemeChanged += OnAppThemeChanged;
 
             RootNavigation.Navigated += (sender, args) =>
             {
@@ -49,6 +46,11 @@ namespace AegisPC.App
             {
                 try
                 {
+                    if (Views.ActiveScanWindow.ActiveInstance != null && Views.ActiveScanWindow.ActiveInstance.IsVisible && Views.ActiveScanWindow.ActiveInstance.Owner == null)
+                    {
+                        Views.ActiveScanWindow.ActiveInstance.Owner = this;
+                    }
+
                     if (!string.IsNullOrWhiteSpace(Program.PendingStartupScanPath))
                     {
                         var target = Program.PendingStartupScanPath;
@@ -71,13 +73,20 @@ namespace AegisPC.App
         {
             Dispatcher.InvokeAsync(async () =>
             {
-                ShowAndActivate();
-                NavigateTo(typeof(ScanView));
-                await System.Threading.Tasks.Task.Delay(300);
-                var scanVm = App.ServiceProvider?.GetService(typeof(ScanViewModel)) as ScanViewModel;
-                if (scanVm != null && !string.IsNullOrWhiteSpace(targetPath))
+                try
                 {
-                    await scanVm.StartCustomPathScanAsync(targetPath);
+                    ShowAndActivate();
+                    NavigateTo(typeof(ScanView));
+                    await System.Threading.Tasks.Task.Delay(300);
+                    var scanVm = App.ServiceProvider?.GetService(typeof(ScanViewModel)) as ScanViewModel;
+                    if (scanVm != null && !string.IsNullOrWhiteSpace(targetPath))
+                    {
+                        await scanVm.StartCustomPathScanAsync(targetPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine($"MainWindow NavigateToScanAndScanPath failed: {ex}");
                 }
             });
         }
@@ -111,6 +120,7 @@ namespace AegisPC.App
             {
                 try
                 {
+                    App.IsStartMinimized = false;
                     if (!IsVisible)
                     {
                         Show();
@@ -131,8 +141,20 @@ namespace AegisPC.App
                         ShowWindow(hwnd, SW_RESTORE);
                         SetForegroundWindow(hwnd);
                     }
+
+                    if (Views.ActiveScanWindow.ActiveInstance != null && Views.ActiveScanWindow.ActiveInstance.IsVisible)
+                    {
+                        if (Views.ActiveScanWindow.ActiveInstance.Owner == null)
+                        {
+                            Views.ActiveScanWindow.ActiveInstance.Owner = this;
+                        }
+                        Views.ActiveScanWindow.ActiveInstance.Activate();
+                    }
                 }
-                catch { }
+                catch (Exception ex) 
+                { 
+                    Serilog.Log.Warning(ex, "ShowAndActivate window activation failed."); 
+                }
             });
         }
 
@@ -144,7 +166,10 @@ namespace AegisPC.App
                 {
                     RootNavigation.Navigate(pageType);
                 }
-                catch { }
+                catch (Exception ex) 
+                { 
+                    Serilog.Log.Warning(ex, "Navigation to page {Type} failed.", pageType); 
+                }
             });
         }
 
@@ -162,8 +187,22 @@ namespace AegisPC.App
                         vm.NavigateToTab(showIncidentsTab);
                     }
                 }
-                catch { }
+                catch (Exception ex) 
+                { 
+                    Serilog.Log.Warning(ex, "NavigateToQuarantine failed."); 
+                }
             });
+        }
+
+        private void OnAppThemeChanged(AegisPC.Core.Enums.ThemeMode theme)
+        {
+            Dispatcher.InvokeAsync(UpdateThemeButtonState);
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            AegisPC.App.Services.AppThemeManager.ThemeChanged -= OnAppThemeChanged;
+            base.OnClosed(e);
         }
 
         private void OnThemeToggleClicked(object sender, RoutedEventArgs e)

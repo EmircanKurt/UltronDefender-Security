@@ -29,7 +29,7 @@ namespace AegisPC.Tests
             Assert.NotEmpty(xamlFiles);
 
             // 1. Collect all defined x:Key="..." attributes
-            var definedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var definedKeys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var file in xamlFiles)
             {
                 var content = File.ReadAllText(file);
@@ -138,7 +138,8 @@ namespace AegisPC.Tests
                         typeof(AegisPC.App.Views.SecurityView),
                         typeof(AegisPC.App.Views.SettingsView),
                         typeof(AegisPC.App.Views.StartupManagerView),
-                        typeof(AegisPC.App.Views.WindowsEventsView)
+                        typeof(AegisPC.App.Views.WindowsEventsView),
+                        typeof(AegisPC.App.MainWindow)
                     };
 
                     foreach (var vt in viewTypes)
@@ -156,6 +157,13 @@ namespace AegisPC.Tests
                             throw new InvalidOperationException($"View {vt.Name} failed XAML parse: {xpe.Message} (Inner: {xpe.InnerException?.Message})", xpe);
                         }
                     }
+
+                    // Verify ActiveScanWindow as well
+                    var scanVm = sp.GetRequiredService<AegisPC.App.ViewModels.ScanViewModel>();
+                    var activeScanWin = new AegisPC.App.Views.ActiveScanWindow(scanVm);
+                    activeScanWin.Measure(new System.Windows.Size(1920, 1080));
+                    activeScanWin.Arrange(new System.Windows.Rect(0, 0, 1920, 1080));
+                    activeScanWin.UpdateLayout();
                 }
                 catch (Exception ex)
                 {
@@ -165,7 +173,7 @@ namespace AegisPC.Tests
 
             thread.SetApartmentState(ApartmentState.STA);
             thread.Start();
-            thread.Join(10000);
+            Assert.True(thread.Join(10000), "WPF verification did not complete within 10 seconds.");
 
             if (threadException != null)
             {

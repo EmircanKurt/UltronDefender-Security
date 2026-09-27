@@ -87,29 +87,58 @@ namespace AegisPC.App.Startup
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.YaraDetector>();
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectionHub, AegisPC.Security.Detection.DetectionHub>();
             services.AddSingleton<AegisPC.Core.Localization.ILocalizationService>(AegisPC.Core.Localization.LocalizationService.Instance);
+            services.AddSingleton<IExclusionService, AegisPC.Security.Safety.ExclusionService>();
             services.AddSingleton<IAllowlistService, AllowlistService>();
+            services.AddSingleton<AegisPC.Contracts.Services.ISignatureVerifier, AegisPC.Security.Scanning.SignatureVerifier>();
+            services.AddSingleton<AegisPC.Contracts.Safety.IProtectedPathGuard, AegisPC.Security.Safety.ProtectedPathGuard>();
+            services.AddSingleton<AegisPC.Contracts.Safety.IReparsePointGuard, AegisPC.Security.Safety.ReparsePointGuard>();
+            services.AddSingleton<AegisPC.Contracts.Policy.IPolicyEngine, AegisPC.Security.Policy.PolicyEngine>();
             services.AddSingleton<AegisPC.Security.Scanning.IFileHashMatcher, AegisPC.Security.Scanning.FileHashMatcher>();
             services.AddSingleton<IQuarantineService, QuarantineService>();
             services.AddSingleton<ISecurityFindingService, SecurityFindingService>();
             services.AddSingleton<IScanResourceManager, AdaptiveScanResourceManager>();
             services.AddSingleton<IScanSessionManager, ScanSessionManager>();
-            services.AddSingleton<IFileScanner, FileScannerService>();
-            services.AddSingleton<IScanCoordinatorService, ScanCoordinatorService>();
+            services.AddSingleton<IFileScanner>(sp => new FileScannerService(
+                new DirectoryWalker(), new ScanQueueCoordinator(sp.GetRequiredService<IScanResourceManager>()),
+                sp.GetRequiredService<AegisPC.Security.Scanning.IFileHashMatcher>(),
+                new PupAnalysisCoordinator(sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>(), sp.GetRequiredService<ISecurityFindingService>()),
+                sp.GetRequiredService<ArchiveSafetyScanner>(), sp.GetRequiredService<ISecurityFindingService>(),
+                sp.GetService<Microsoft.Extensions.Logging.ILogger<FileScannerService>>()));
+            services.AddSingleton<ScanCoordinatorService>();
+            services.AddSingleton<IScanCoordinatorService>(sp => sp.GetRequiredService<ScanCoordinatorService>());
+            services.AddSingleton<IBackgroundScanCoordinator>(sp => sp.GetRequiredService<ScanCoordinatorService>());
             services.AddSingleton<AegisPC.Contracts.Services.IStartupSecuritySweepService, AegisPC.Security.Scanning.StartupSecuritySweepService>();
             services.AddSingleton<IReputationService, ReputationService>();
             services.AddSingleton<ArchiveSafetyScanner>();
             services.AddSingleton<IBehaviorEngine, AegisPC.Security.RealTime.BehaviorEngine>();
-            services.AddSingleton<AegisPC.Security.RealTime.IRealTimeProtectionEngine, AegisPC.Security.RealTime.RealTimeProtectionEngine>();
+            services.AddSingleton<AegisPC.Security.RealTime.IRealTimeProtectionEngine>(sp => new AegisPC.Security.RealTime.RealTimeProtectionEngine(
+                sp.GetRequiredService<IFileScanner>(), sp.GetRequiredService<IHashService>(), sp.GetRequiredService<ISignatureVerifier>(), sp.GetRequiredService<IRiskScoringEngine>(),
+                sp.GetRequiredService<IQuarantineService>(), sp.GetRequiredService<ISecurityFindingService>(),
+                sp.GetService<IAuditLogService>(), sp.GetService<IReputationService>(),
+                sp.GetService<Microsoft.Extensions.Logging.ILogger<AegisPC.Security.RealTime.RealTimeProtectionEngine>>(), sp.GetRequiredService<IExclusionService>(),
+                () => sp.GetRequiredService<ISettingsService>().GetSetting("EnableAutoQuarantine", true),
+                () => sp.GetRequiredService<ISettingsService>().GetSetting("AutoQuarantineThreshold", 85),
+                detectionHub: sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>()));
             services.AddSingleton<AegisPC.Security.RealTime.IBackgroundProtectionService, AegisPC.Security.RealTime.BackgroundProtectionService>();
             services.AddSingleton<AegisPC.Security.RealTime.IRansomwareProtectionEngine, AegisPC.Security.RealTime.RansomwareProtectionEngine>();
             services.AddSingleton<IAmsiScanService, AegisPC.Security.Scanning.AmsiScanService>();
             services.AddSingleton<AegisPC.Contracts.Services.IEtwProcessMonitorService, AegisPC.Security.RealTime.EtwProcessMonitorService>();
-            services.AddSingleton<AegisPC.Contracts.Services.IEtwPreExecProtectionService, AegisPC.Security.RealTime.EtwPreExecProtectionService>();
+            services.AddSingleton<IEtwPreExecProtectionService>(sp => new AegisPC.Security.RealTime.EtwPreExecProtectionService(
+                sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>(), sp.GetRequiredService<IRiskScoringEngine>(), sp.GetRequiredService<ISignatureVerifier>(),
+                quarantineService: sp.GetRequiredService<IQuarantineService>(), auditLogService: sp.GetService<IAuditLogService>(),
+                logger: sp.GetService<Microsoft.Extensions.Logging.ILogger<AegisPC.Security.RealTime.EtwPreExecProtectionService>>(), exclusionService: sp.GetRequiredService<IExclusionService>(),
+                enableAutoQuarantine: () => sp.GetRequiredService<ISettingsService>().GetSetting("EnableAutoQuarantine", true),
+                autoQuarantineThreshold: () => sp.GetRequiredService<ISettingsService>().GetSetting("AutoQuarantineThreshold", 85)));
             services.AddSingleton<AegisPC.Contracts.AntiEvasion.IMemoryPatternScanner, AegisPC.Security.AntiEvasion.MemoryPatternScanner>();
             services.AddSingleton<IWebShieldService, WebShieldService>();
             services.AddSingleton<IDnsProtectionService, AegisPC.Security.RealTime.DnsProtectionService>();
             services.AddSingleton<AegisPC.Contracts.Services.IWindowsToastNotificationService, AegisPC.App.Services.WindowsToastNotificationService>();
             services.AddSingleton<AegisPC.Contracts.Services.INotificationAggregator, AegisPC.Security.Notifications.NotificationAggregator>();
+            services.AddSingleton<AegisPC.Contracts.Services.IScanSchedulerEnvironmentProvider, AegisPC.Infrastructure.Platform.WindowsScanSchedulerEnvironmentProvider>();
+            services.AddSingleton<AegisPC.Contracts.Services.IQuarantineUndoLogService, AegisPC.Security.Safety.QuarantineUndoLogService>();
+            services.AddSingleton<AegisPC.Contracts.Services.ILocalReputationService, AegisPC.Security.Reputation.LocalReputationService>();
+            services.AddSingleton<AegisPC.Contracts.Services.IIncidentTimelineExporter, AegisPC.Security.Diagnostics.IncidentTimelineExporter>();
+            services.AddSingleton<AegisPC.Contracts.Services.IDuplicateExecutableDetector, AegisPC.Infrastructure.Platform.DuplicateExecutableDetector>();
 
             // Performance & Process Services
             services.AddSingleton<AegisPC.Performance.Hardware.IHardwareInfoService, AegisPC.Performance.Hardware.HardwareInfoService>();

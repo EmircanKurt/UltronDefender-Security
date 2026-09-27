@@ -18,6 +18,8 @@ namespace AegisPC.Security.RealTime
     {
         void StartProtection();
         void StopProtection();
+        void SetScheduledScansEnabled(bool enabled);
+        void NotifyScheduledScanCompleted(ScanResult result);
         bool IsProtectionActive { get; }
         event Action<SecurityFinding>? OnThreatDetected;
         event Action<string, string>? OnNotificationRaised;
@@ -30,20 +32,62 @@ namespace AegisPC.Security.RealTime
     }
 
     /// <summary>
-    /// Gerçek zamanlı arka plan indirme kalkanı, 20 dakikada bir otomatik hızlı tarama
-    /// ve günde 1 kez çalışan (kaçırılan günleri telafi eden) tam tarama motoru.
+    /// Tekil gerçek zamanlı izleyiciyi tamamlayan 20 dakikalık hızlı tarama ve günlük
+    /// tam tarama zamanlayıcısı. Dosya olaylarını RealTimeProtectionEngine sahiplenir.
     /// </summary>
     public class BackgroundProtectionService : IBackgroundProtectionService
     {
         private static readonly ConcurrentDictionary<string, bool> _ignoredWatchlist = new(StringComparer.OrdinalIgnoreCase);
+        private static int _isAutomaticScanInProgress;
 
         /// <summary>
         /// Otomatik (zamanlanmış) tarama sürüyor mu? App.xaml.cs ScanCompleted bildirimi bu bayrakla susturulur.
         /// </summary>
-        public static bool IsAutomaticScanInProgress { get; private set; }
+        public static bool IsAutomaticScanInProgress
+        {
+            get => Volatile.Read(ref _isAutomaticScanInProgress) == 1;
+            private set => Volatile.Write(ref _isAutomaticScanInProgress, value ? 1 : 0);
+        }
 
         // Zaten bildirilmiş bulgu yolları: aynı statik bulgu her 20 dakikalık taramada tekrar bildirilmez
         private static readonly ConcurrentDictionary<string, byte> _notifiedFindingPaths = new(StringComparer.OrdinalIgnoreCase);
+
+        private static string BuildFindingNotificationKey(SecurityFinding finding)
+        {
+            if (finding == null) return string.Empty;
+
+            var basePath = !string.IsNullOrWhiteSpace(finding.ObjectPath)
+                ? finding.ObjectPath.Trim()
+                : finding.ObjectName.Trim();
+
+            if (string.IsNullOrWhiteSpace(basePath))
+            {
+                return string.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(finding.SHA256))
+            {
+                return $"{basePath}|{finding.SHA256.Trim()}";
+            }
+
+            return $"{basePath}|{finding.Title}|{(int)finding.RiskLevel}|{finding.Category}";
+        }
+
+        private int CountNewNotificationKeys(IEnumerable<SecurityFinding> findings)
+        {
+            int newCount = 0;
+            foreach (var finding in findings)
+            {
+                var key = BuildFindingNotificationKey(finding);
+                if (!string.IsNullOrWhiteSpace(key) && _notifiedFindingPaths.TryAdd(key, 0))
+                {
+                    newCount++;
+                    OnThreatDetected?.Invoke(finding);
+                }
+            }
+
+            return newCount;
+        }
 
         public static void AddToIgnoredWatchlist(string path)
         {
@@ -59,13 +103,11 @@ namespace AegisPC.Security.RealTime
             return _ignoredWatchlist.ContainsKey(path);
         }
 
-        private readonly IFileScanner _fileScanner;
-        private readonly ISecurityFindingService _findingService;
         private readonly IScanCoordinatorService _scanCoordinator;
+        private readonly ISettingsService? _settingsService;
         private readonly ILogger<BackgroundProtectionService>? _logger;
+        private readonly bool _internalSchedulingEnabled;
 
-        private readonly List<FileSystemWatcher> _watchers = new();
-        private readonly ConcurrentDictionary<string, DateTime> _recentlyScanned = new(StringComparer.OrdinalIgnoreCase);
         private System.Threading.Timer? _quickScanTimer;
         private System.Threading.Timer? _dailyFullScanCheckerTimer;
         private bool _isActive;
@@ -78,28 +120,29 @@ namespace AegisPC.Security.RealTime
         public event Action<SecurityFinding>? OnThreatDetected;
         public event Action<string, string>? OnNotificationRaised;
 
-        private static readonly string[] DangerousExtensions = new[]
-        {
-            ".exe", ".msi", ".dll", ".sys", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".hta", ".jar", ".iso", ".zip", ".rar", ".7z"
-        };
-
         public BackgroundProtectionService(
             IFileScanner fileScanner,
             ISecurityFindingService findingService,
             IScanCoordinatorService scanCoordinator,
-            ILogger<BackgroundProtectionService>? logger = null)
+            ILogger<BackgroundProtectionService>? logger = null,
+            ISettingsService? settingsService = null,
+            bool internalSchedulingEnabled = false)
         {
-            _fileScanner = fileScanner;
-            _findingService = findingService;
             _scanCoordinator = scanCoordinator;
             _logger = logger;
+            _settingsService = settingsService;
+            // The Windows service's ScanScheduler owns configured schedules. Retain
+            // the legacy timers only for hosts which explicitly opt into them.
+            _internalSchedulingEnabled = internalSchedulingEnabled;
 
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             var aegisDir = Path.Combine(appData, "AegisPC");
-            Directory.CreateDirectory(aegisDir);
             _scheduleFilePath = Path.Combine(aegisDir, "scan_schedule.json");
-
-            LoadScheduleState();
+            if (_internalSchedulingEnabled)
+            {
+                Directory.CreateDirectory(aegisDir);
+                LoadScheduleState();
+            }
         }
 
         public void StartProtection()
@@ -109,81 +152,50 @@ namespace AegisPC.Security.RealTime
                 if (_isActive) return;
                 _isActive = true;
 
-                // 1. Setup Watchers for Desktop and Downloads Drop Zones (Temp excluded to prevent I/O storm & spam)
-                var watchPaths = new[]
-                {
-                    KnownPaths.Downloads,
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
-                    Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-                    Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                    Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
-                    Path.Combine(KnownPaths.UserProfile, "Desktop"),
-                    Path.Combine(KnownPaths.UserProfile, "OneDrive", "Desktop")
-                }.Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var dir in watchPaths)
-                {
-                    try
-                    {
-                        var watcher = new FileSystemWatcher(dir)
-                        {
-                            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                            IncludeSubdirectories = false,
-                            InternalBufferSize = 65536,
-                            EnableRaisingEvents = true
-                        };
-
-                        watcher.Created += OnFileCreatedOrChanged;
-                        watcher.Changed += OnFileCreatedOrChanged;
-                        watcher.Renamed += (s, e) => OnFileCreatedOrChanged(s, new FileSystemEventArgs(WatcherChangeTypes.Created, Path.GetDirectoryName(e.FullPath) ?? "", e.Name ?? ""));
-                        watcher.Error += (s, e) =>
-                        {
-                            _logger?.LogWarning(e.GetException(), "Watcher buffer overflow or I/O error on {Dir}. Re-enabling...", dir);
-                            try
-                            {
-                                if (s is FileSystemWatcher fsw)
-                                {
-                                    fsw.EnableRaisingEvents = false;
-                                    fsw.EnableRaisingEvents = true;
-                                }
-                            }
-                            catch { }
-                        };
-
-                        _watchers.Add(watcher);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogTrace(ex, "Failed to initialize watcher for {Dir}", dir);
-                    }
-                }
-
-                // 2. Setup 20-Minute Periodic Background Quick Scan
-                _quickScanTimer = new System.Threading.Timer(
-                    async _ => await Run20MinuteQuickScanAsync(),
-                    null,
-                    TimeSpan.FromMinutes(20),
-                    TimeSpan.FromMinutes(20));
-
-                // 3. Daily Full Scan Checker (Checks every 15 minutes if today's full scan is done)
-                _dailyFullScanCheckerTimer = new System.Threading.Timer(
-                    async _ => await CheckAndRunDailyFullScanAsync(),
-                    null,
-                    TimeSpan.FromMinutes(1),
-                    TimeSpan.FromMinutes(15));
-
-                _logger?.LogInformation("Background protection started: Real-time download shield, 20-minute quick scan, and daily full scan active.");
-
-                // 4. Boot-up Missed Full Scan Check (Run 15s after startup if missed today)
-                Task.Run(async () =>
-                {
-                    await Task.Delay(15000);
-                    if (_isActive)
-                    {
-                        await CheckAndRunDailyFullScanAsync(isStartupCatchup: true);
-                    }
-                });
+                // RealTimeProtectionEngine owns file events; scheduled scans honor the user's
+                // explicit schedule toggle instead of starting a surprise full scan after boot.
+                if (_internalSchedulingEnabled && _settingsService?.GetSetting("ScanScheduleEnabled", false) == true)
+                    StartScheduledScansInternal();
             }
+        }
+
+        public void SetScheduledScansEnabled(bool enabled)
+        {
+            lock (_lock)
+            {
+                if (!_isActive || !_internalSchedulingEnabled) return;
+                if (enabled) StartScheduledScansInternal();
+                else StopScheduledScansInternal();
+            }
+        }
+
+        private void StartScheduledScansInternal()
+        {
+            if (_quickScanTimer != null || _dailyFullScanCheckerTimer != null) return;
+
+            _quickScanTimer = new System.Threading.Timer(
+                async _ => await Run20MinuteQuickScanAsync(), null,
+                TimeSpan.FromMinutes(20), TimeSpan.FromMinutes(20));
+            _dailyFullScanCheckerTimer = new System.Threading.Timer(
+                async _ => await CheckAndRunDailyFullScanAsync(), null,
+                TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(15));
+
+            _logger?.LogInformation("Scheduled quick and daily scans enabled.");
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(15));
+                if (_isActive && _settingsService?.GetSetting("ScanScheduleEnabled", false) == true)
+                    await CheckAndRunDailyFullScanAsync(isStartupCatchup: true);
+            });
+        }
+
+        private void StopScheduledScansInternal()
+        {
+            _quickScanTimer?.Dispose();
+            _quickScanTimer = null;
+            _dailyFullScanCheckerTimer?.Dispose();
+            _dailyFullScanCheckerTimer = null;
+            _logger?.LogInformation("Scheduled scans disabled.");
         }
 
         public void StopProtection()
@@ -191,96 +203,25 @@ namespace AegisPC.Security.RealTime
             lock (_lock)
             {
                 _isActive = false;
-                foreach (var w in _watchers)
-                {
-                    try { w.EnableRaisingEvents = false; w.Dispose(); } catch { }
-                }
-                _watchers.Clear();
-
-                _quickScanTimer?.Dispose();
-                _quickScanTimer = null;
-
-                _dailyFullScanCheckerTimer?.Dispose();
-                _dailyFullScanCheckerTimer = null;
+                StopScheduledScansInternal();
             }
         }
 
-        private void PruneRecentlyScanned()
+        public void NotifyScheduledScanCompleted(ScanResult result)
         {
-            if (_recentlyScanned.Count > 1000)
-            {
-                var threshold = DateTime.UtcNow.AddMinutes(-10);
-                foreach (var kvp in _recentlyScanned)
-                {
-                    if (kvp.Value < threshold)
-                    {
-                        _recentlyScanned.TryRemove(kvp.Key, out _);
-                    }
-                }
-            }
+            if (result.Status != ScanStatus.Completed) return;
+            PruneNotifiedFindingPaths();
+            int newCount = CountNewNotificationKeys(result.Findings);
+            if (newCount > 0)
+                OnNotificationRaised?.Invoke("Ultron Defender: Planlı Tarama Tamamlandı",
+                    $"Planlı taramada {newCount} yeni riskli bulgu tespit edildi. Detayları Güvenlik Merkezinden inceleyebilirsiniz.");
         }
 
         private static void PruneNotifiedFindingPaths()
         {
-            if (_notifiedFindingPaths.Count > 5000)
+            if (_notifiedFindingPaths.Count >= 10000)
             {
                 _notifiedFindingPaths.Clear();
-            }
-        }
-
-        private async void OnFileCreatedOrChanged(object sender, FileSystemEventArgs e)
-        {
-            try
-            {
-                if (!FileScannerService.IsInspectableCandidate(e.FullPath)) return;
-
-                // Debounce rapid writes
-                if (_recentlyScanned.TryGetValue(e.FullPath, out var lastScanned) &&
-                    (DateTime.UtcNow - lastScanned).TotalSeconds < 4)
-                {
-                    return;
-                }
-                _recentlyScanned[e.FullPath] = DateTime.UtcNow;
-                PruneRecentlyScanned();
-
-                // Wait a brief moment for file write completion / browser lock release
-                await Task.Delay(500);
-
-                if (!File.Exists(e.FullPath)) return;
-
-                // Watchdog on ignored items: If an ignored file or folder creates/modifies files, trigger instant quarantine
-                if (IsInIgnoredWatchlist(e.FullPath) || IsInIgnoredWatchlist(Path.GetDirectoryName(e.FullPath) ?? ""))
-                {
-                    var ignoredFinding = new SecurityFinding
-                    {
-                        ObjectPath = e.FullPath,
-                        ObjectName = Path.GetFileName(e.FullPath),
-                        Title = $"Göz Ardı Edilen Tehdit Eylemi: {Path.GetFileName(e.FullPath)}",
-                        Description = "Bu dosya daha önce göz ardı edilmişti ancak sistemde yeni dosya/kayıt oluşturarak şüpheli faaliyette bulundu ve derhal karantinaya alındı.",
-                        RiskLevel = RiskLevel.HighRisk,
-                        RiskScore = 90,
-                        Category = FindingCategory.MalwareSuspicion
-                    };
-                    OnThreatDetected?.Invoke(ignoredFinding);
-                    OnNotificationRaised?.Invoke(
-                        "🚨 Ultron Defender (Antivirüs Programı): Göz Ardı Edilen Tehdit Engellendi!",
-                        $"Göz ardı edilen '{Path.GetFileName(e.FullPath)}' yeni bir dosya oluşturmaya çalıştı ve otomatik karantinaya kilitlendi.");
-                    return;
-                }
-
-                var finding = await _fileScanner.ScanFileAsync(e.FullPath);
-                if (finding != null && finding.RiskLevel >= RiskLevel.Suspicious)
-                {
-                    OnThreatDetected?.Invoke(finding);
-                    OnNotificationRaised?.Invoke(
-                        "🚨 Ultron Defender (Antivirüs Programı): Zararlı/Şüpheli Dosya Tespit Edildi!",
-                        $"'{Path.GetFileName(e.FullPath)}' dosyasında güvenlik tehdidi tespit edildi (Risk: {finding.RiskScore}/100). İncelemek için tıklayın.");
-                }
-                // Clean files: No spam notification per master UX specification
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogTrace(ex, "Error during real-time scan of {Path}", e.FullPath);
             }
         }
 
@@ -301,10 +242,8 @@ namespace AegisPC.Security.RealTime
                         SaveScheduleState();
 
                         PruneNotifiedFindingPaths();
-                        // Yalnızca DAHA ÖNCE BİLDİRİLMEMİŞ bulgular için bildirim: statik bulgular sessiz kalır
-                        int newCount = result.Findings
-                            .Where(f => !string.IsNullOrEmpty(f.ObjectPath) && _notifiedFindingPaths.TryAdd(f.ObjectPath, 0))
-                            .Count();
+                        // Yalnızca DAHA ÖNCE BİLDİRİLMEMİŞ bulgular için bildirim: aynı dosya/hash tekrar bildirilmez.
+                        int newCount = CountNewNotificationKeys(result.Findings);
 
                         if (newCount > 0)
                         {
@@ -347,9 +286,7 @@ namespace AegisPC.Security.RealTime
                         SaveScheduleState();
 
                         PruneNotifiedFindingPaths();
-                        int newCount = result.Findings
-                            .Where(f => !string.IsNullOrEmpty(f.ObjectPath) && _notifiedFindingPaths.TryAdd(f.ObjectPath, 0))
-                            .Count();
+                        int newCount = CountNewNotificationKeys(result.Findings);
 
                         if (newCount > 0)
                         {
@@ -384,7 +321,10 @@ namespace AegisPC.Security.RealTime
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogTrace(ex, "Failed to load schedule state from {Path}", _scheduleFilePath);
+            }
         }
 
         private void SaveScheduleState()
@@ -394,7 +334,10 @@ namespace AegisPC.Security.RealTime
                 var json = JsonSerializer.Serialize(_scheduleState, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(_scheduleFilePath, json);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogTrace(ex, "Failed to save schedule state to {Path}", _scheduleFilePath);
+            }
         }
     }
 }

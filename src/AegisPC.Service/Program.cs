@@ -56,7 +56,11 @@ namespace AegisPC.Service
                         // Infrastructure
                         services.AddSingleton<DatabaseService>();
                         services.AddSingleton<IDatabaseService>(sp => sp.GetRequiredService<DatabaseService>());
-                        services.AddSingleton<SettingsService>();
+                        // Windows Service, kullanıcı profilinden bağımsız tek bir makine ayarı kullanır.
+                        // SYSTEM hesabının Roaming AppData'sı UI kullanıcısının ayarlarıyla karışmamalıdır.
+                        services.AddSingleton(_ => new SettingsService(System.IO.Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                            "AegisPC", "settings.json")));
                         services.AddSingleton<ISettingsService>(sp => sp.GetRequiredService<SettingsService>());
                         services.AddSingleton<ISecureStorageService, DpapiSecureStorageService>();
                         services.AddSingleton<IAuditLogService, AuditLogService>();
@@ -76,29 +80,54 @@ namespace AegisPC.Service
                         services.AddSingleton<IHashService, HashService>();
                         services.AddSingleton<ISignatureVerifier, SignatureVerifier>();
                         services.AddSingleton<IRiskScoringEngine, RiskScoringEngine>();
+                        services.AddSingleton<IExclusionService, AegisPC.Security.Safety.ExclusionService>();
                         services.AddSingleton<IAllowlistService, AllowlistService>();
+                        services.AddSingleton<IFileHashMatcher, FileHashMatcher>();
+                        services.AddSingleton<AegisPC.Contracts.Safety.IProtectedPathGuard, AegisPC.Security.Safety.ProtectedPathGuard>();
+                        services.AddSingleton<AegisPC.Contracts.Safety.IReparsePointGuard, AegisPC.Security.Safety.ReparsePointGuard>();
                         services.AddSingleton<IQuarantineService, QuarantineService>();
                         services.AddSingleton<ISecurityFindingService, SecurityFindingService>();
                         services.AddSingleton<IScanResourceManager, AdaptiveScanResourceManager>();
                         services.AddSingleton<IScanSessionManager, ScanSessionManager>();
-                        services.AddSingleton<IFileScanner, FileScannerService>();
-                        services.AddSingleton<IScanCoordinatorService, ScanCoordinatorService>();
+                        services.AddSingleton<IFileScanner>(sp => new FileScannerService(
+                            new DirectoryWalker(), new ScanQueueCoordinator(sp.GetRequiredService<IScanResourceManager>()),
+                            sp.GetRequiredService<IFileHashMatcher>(),
+                            new PupAnalysisCoordinator(sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>(), sp.GetRequiredService<ISecurityFindingService>()),
+                            sp.GetRequiredService<ArchiveSafetyScanner>(), sp.GetRequiredService<ISecurityFindingService>(),
+                            sp.GetService<ILogger<FileScannerService>>()));
+                        services.AddSingleton<ScanCoordinatorService>();
+                        services.AddSingleton<IScanCoordinatorService>(sp => sp.GetRequiredService<ScanCoordinatorService>());
+                        services.AddSingleton<IBackgroundScanCoordinator>(sp => sp.GetRequiredService<ScanCoordinatorService>());
+                        services.AddSingleton<AegisPC.Contracts.Policy.IPolicyEngine, AegisPC.Security.Policy.PolicyEngine>();
                         services.AddSingleton<IReputationService, ReputationService>();
                         services.AddSingleton<ArchiveSafetyScanner>();
 
                         // Real-Time Security Engines
                         services.AddSingleton<IBehaviorEngine, BehaviorEngine>();
-                        services.AddSingleton<IRealTimeProtectionEngine, RealTimeProtectionEngine>();
+                        services.AddSingleton<IRealTimeProtectionEngine>(sp => new RealTimeProtectionEngine(
+                            sp.GetRequiredService<IFileScanner>(), sp.GetRequiredService<IHashService>(), sp.GetRequiredService<ISignatureVerifier>(), sp.GetRequiredService<IRiskScoringEngine>(),
+                            sp.GetRequiredService<IQuarantineService>(), sp.GetRequiredService<ISecurityFindingService>(),
+                            sp.GetService<IAuditLogService>(), sp.GetService<IReputationService>(), sp.GetService<ILogger<RealTimeProtectionEngine>>(), sp.GetRequiredService<IExclusionService>(),
+                            () => sp.GetRequiredService<ISettingsService>().GetSetting("EnableAutoQuarantine", true),
+                            () => sp.GetRequiredService<ISettingsService>().GetSetting("AutoQuarantineThreshold", 85),
+                            detectionHub: sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>()));
                         services.AddSingleton<IBackgroundProtectionService, BackgroundProtectionService>();
                         services.AddSingleton<IRansomwareProtectionEngine, RansomwareProtectionEngine>();
                         services.AddSingleton<IWebShieldService, WebShieldService>();
+                        services.AddSingleton<IAmsiScanService, AegisPC.Service.Amsi.AmsiScanService>();
                         services.AddSingleton<AegisPC.Security.Detection.YaraEngine.IYaraEngine, AegisPC.Security.Detection.YaraEngine.YaraEngine>();
                         services.AddSingleton<AegisPC.Contracts.Detection.IDetectionHub>(sp => AegisPC.Security.Detection.DetectionHubFactory.CreateDefault(
                             sp.GetRequiredService<IHashService>(),
                             sp.GetRequiredService<ISignatureVerifier>(),
                             yaraEngine: sp.GetRequiredService<AegisPC.Security.Detection.YaraEngine.IYaraEngine>(),
-                            reputationService: sp.GetService<IReputationService>()));
-                        services.AddSingleton<IEtwPreExecProtectionService, EtwPreExecProtectionService>();
+                            reputationService: sp.GetService<IReputationService>(),
+                            exclusionService: sp.GetRequiredService<IExclusionService>()));
+                        services.AddSingleton<IEtwPreExecProtectionService>(sp => new EtwPreExecProtectionService(
+                            sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>(), sp.GetRequiredService<IRiskScoringEngine>(), sp.GetRequiredService<ISignatureVerifier>(),
+                            quarantineService: sp.GetRequiredService<IQuarantineService>(), auditLogService: sp.GetService<IAuditLogService>(),
+                            logger: sp.GetService<ILogger<EtwPreExecProtectionService>>(), exclusionService: sp.GetRequiredService<IExclusionService>(),
+                            enableAutoQuarantine: () => sp.GetRequiredService<ISettingsService>().GetSetting("EnableAutoQuarantine", true),
+                            autoQuarantineThreshold: () => sp.GetRequiredService<ISettingsService>().GetSetting("AutoQuarantineThreshold", 85)));
                         services.AddSingleton<AegisPC.Service.DriverBridge.IKernelBridge, AegisPC.Service.DriverBridge.KernelBridge>();
                         services.AddSingleton<AegisPC.Service.RealTime.EtwProcessMonitor>();
                         services.AddSingleton<AegisPC.Service.RealTime.EtwImageLoadMonitor>();
@@ -121,6 +150,9 @@ namespace AegisPC.Service
                         services.AddSingleton<AegisPC.Service.SmartScreen.DownloadGuard>();
 
                         // Hosted Background Workers
+                        services.AddSingleton<IScanSchedulerEnvironmentProvider, AegisPC.Infrastructure.Platform.WindowsScanSchedulerEnvironmentProvider>();
+                        services.AddSingleton<IIdleTimeProvider, IdleDetector>();
+                        services.AddSingleton<IScanScheduleStateStore, FileScanScheduleStateStore>();
                         services.AddHostedService<ProtectionWorker>();
                         services.AddHostedService<NamedPipeServer>();
                         services.AddHostedService<ScanScheduler>();

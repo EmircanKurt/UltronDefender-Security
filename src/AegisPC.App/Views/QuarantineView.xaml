@@ -3,6 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
       Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True"
       SnapsToDevicePixels="True"
@@ -210,7 +211,10 @@
 
             <!-- Actions Side Panel -->
             <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+                <ScrollViewer helpers:WheelScrollHelper.EnableRootRedirect="True"
+                              VerticalScrollBarVisibility="Auto" 
+                              HorizontalScrollBarVisibility="Disabled" 
+                              CanContentScroll="False">
                     <StackPanel Margin="4">
                         <TextBlock Text="Karantina Yönetimi" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,14"/>
 
@@ -339,7 +343,8 @@
             <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0" Padding="20">
                 <Grid>
                     <!-- Detail Content -->
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                    <ScrollViewer helpers:WheelScrollHelper.EnableRootRedirect="True"
+                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                   CanContentScroll="False"
                                   Visibility="{Binding SelectedIncident, Converter={StaticResource BoolToVis}}">
                         <StackPanel DataContext="{Binding SelectedIncident}">
@@ -350,7 +355,7 @@
                                     <TextBlock Text="{Binding IncidentId, StringFormat='Olay Kimliği: {0}'}" Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <Border HorizontalAlignment="Right" Background="{DynamicResource BrushStatusDanger}" CornerRadius="4" Padding="12,4" VerticalAlignment="Top">
-                                    <TextBlock Text="{Binding RiskScore, StringFormat='Risk Skoru: {0}/100'}" Style="{StaticResource ButtonTextStyle}" Foreground="#FFFFFF"/>
+                                    <TextBlock Text="{Binding RiskScore, StringFormat='Risk Skoru: {0}/100'}" Style="{StaticResource ButtonTextStyle}" Foreground="{DynamicResource BrushTextOnAccent}"/>
                                 </Border>
                             </Grid>
 

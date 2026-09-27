@@ -59,7 +59,10 @@ namespace AegisPC.BrowserSecurity.Browser
                     });
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Chromium profilleri taranırken hata: {userDataPath} - {ex.Message}");
+            }
 
             return profiles;
         }
@@ -93,7 +96,10 @@ namespace AegisPC.BrowserSecurity.Browser
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Chromium eklentileri taranırken hata: {extDir} - {ex.Message}");
+            }
 
             return extensions;
         }

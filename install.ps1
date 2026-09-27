@@ -1,7 +1,7 @@
 # ==============================================================================
 # AegisPC (Ultron Defender Total Security) - Production Installation Script
 # ==============================================================================
-# Sürüm: 3.5.0 Production-Ready
+# Sürüm: 3.5.0 - supplemental user-mode installation candidate
 # Yazar: Ultron Security Technologies DevOps Team
 # Platform: Windows 10 / 11 / Windows Server 2016+ (x64)
 # ==============================================================================
@@ -71,7 +71,8 @@ if (-not $isAdmin) {
     if ($NoDesktopShortcut) { $argsList += " -NoDesktopShortcut" }
     if ($Force) { $argsList += " -Force" }
 
-    Start-Process powershell.exe -ArgumentList $argsList -Verb RunAs
+    $argsList += " -InstallPath `"$InstallPath`" -DataPath `"$DataPath`""
+    Start-Process powershell.exe -ArgumentList $argsList -Verb RunAs -WindowStyle Hidden
     exit 0
 }
 Write-Success "Yonetici yetkisi onaylandi."
@@ -97,7 +98,7 @@ Write-Success "Sistem mimarisi (x64) ve disk alani gereksinimleri karsilandi."
 # ADIM 3: Kaynak Dosyalarinin Tespiti
 # ------------------------------------------------------------------------------
 Write-Step "ADIM 3: Kurulum kaynak dosyalari araniyor..."
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptRoot = $PSScriptRoot
 
 # Kaynak dosya arama onceligi
 $SourceAppDir = Join-Path $ScriptRoot "AegisPC_App"
@@ -224,48 +225,18 @@ Write-Success "Dosyalar basariyla kopyalandi."
 # ------------------------------------------------------------------------------
 # ADIM 7: Kernel Minifilter Driver (AegisFilter) Kurulumu
 # ------------------------------------------------------------------------------
-Write-Step "ADIM 7: Kernel Minifilter Surucusu (AegisFilter) yukleniyor..."
-$infSource = Join-Path $ScriptRoot "drivers\AegisFilter\AegisFilter.inf"
-$driverBinarySource = Join-Path $ScriptRoot "drivers\bin\x64\Release\AegisFilter.sys"
-if (-not (Test-Path $driverBinarySource)) {
-    $driverBinarySource = Join-Path $ScriptRoot "drivers\AegisFilter\AegisFilter.sys"
-}
-
-if (-not $SkipDriver -and (Test-Path $infSource)) {
-    Copy-Item -Path $infSource -Destination $DriverTargetDir -Force
-    
-    if (Test-Path $driverBinarySource) {
-        Copy-Item -Path $driverBinarySource -Destination $DriverTargetDir -Force
-        Copy-Item -Path $driverBinarySource -Destination "$env:windir\System32\drivers\AegisFilter.sys" -Force
-
-        # pnputil ile surucu paketini yukle
-        $pnpOut = & pnputil.exe /add-driver (Join-Path $DriverTargetDir "AegisFilter.inf") /install 2>&1
-        Write-Host "  PnPUtil: $pnpOut" -ForegroundColor Gray
-
-        # fltmc ile minifilter yukle
-        & fltmc.exe load AegisFilter 2>&1 | Out-Null
-        Start-Sleep -Milliseconds 500
-
-        $filterCheck = & fltmc.exe filters 2>&1
-        if ($filterCheck -match "AegisFilter") {
-            Write-Success "AegisFilter Minifilter cekirdek surucusu basariyla yuklendi ve baglandi (Altitude: 320500)."
-        } else {
-            Write-Warn "AegisFilter servisi kaydedildi ancak imza dogrulamasi nedeniyle simule mod devrede."
-        }
-    } else {
-        Write-Warn "AegisFilter.sys derlenmis ikili dosyasi bulunamadi. Minifilter INF yerlestirildi; KernelBridge simule modda calisacak."
-    }
-} else {
-    Write-Warn "Surucu kurulumu atlandi (-SkipDriver veya INF mevcut degil)."
-}
+Write-Step "ADIM 7: Kullanici modu ek koruma secildi."
+# Supplemental deployment must not install an unvalidated kernel driver or weaken Windows code integrity.
+# Keep -SkipDriver accepted for backwards-compatible invocation; all ordinary installs now skip the driver.
+Write-Warn "Kernel surucusu kurulmaz. Defender/kurumsal AV etkin kalmalidir; kernel modu henuz dogrulanmis urun kapsaminda degildir."
 
 # ------------------------------------------------------------------------------
 # ADIM 8: Windows Servisi Kurulumu ve Yapilandirmasi
 # ------------------------------------------------------------------------------
 Write-Step "ADIM 8: AegisPCProtectionService Windows Servisi kuruluyor..."
-$ServiceName        = "AegisPCProtectionService"
+$ServiceName        = "AegisPC Protection Service"
 $ServiceDisplayName = "Ultron Defender Core Security Service"
-$ServiceDescription = "Ultron Defender (AegisPC) gercek zamanli dosya kalkani, davranis analizi, cekirdek minifilter filtreleme ve fidye yazilimi engelleme servisi."
+$ServiceDescription = "Ultron Defender supplemental user-mode file monitoring, scanning and ransomware alerts."
 $ServiceBinaryPath  = Join-Path $ServiceTargetDir "AegisPC.Service.exe"
 
 # Mevcut servis varsa sil
@@ -275,14 +246,9 @@ if ($currentService) {
     Start-Sleep -Seconds 1
 }
 
-# sc create ile servisi kaydet
+# Preserve the quotes in the SCM image path; native PowerShell argv marshalling may strip embedded quotes.
 $binPathArg = "`"$ServiceBinaryPath`""
-& sc.exe create $ServiceName binPath= $binPathArg start= auto DisplayName= $ServiceDisplayName | Out-Null
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Err "Servis olusturulamadi! sc.exe cikis kodu: $LASTEXITCODE"
-    exit 1
-}
+New-Service -Name $ServiceName -BinaryPathName $binPathArg -StartupType Automatic -DisplayName $ServiceDisplayName -ErrorAction Stop | Out-Null
 
 # Aciklama ve Hata Kurtarma Politikasi
 & sc.exe description $ServiceName $ServiceDescription | Out-Null
@@ -292,61 +258,19 @@ if ($LASTEXITCODE -ne 0) {
 Write-Success "AegisPCProtectionService basariyla kaydedildi (start= auto, failure recovery aktif)."
 
 # ------------------------------------------------------------------------------
-# ADIM 9: USB Otomatik Guncelleme Mekanizmasi (Auto-Update Setup)
+# ADIM 9: USB Otomatik Guncelleme Mekanizmasi (Güvenlik Nedeniyle Devre Dışı)
 # ------------------------------------------------------------------------------
-Write-Step "ADIM 9: USB Cevrimdisi Imza Guncelleme Mekanizmasi (Auto-Update) kuruluyor..."
-$usbUpdateScriptContent = @'
-# ==============================================================================
-# Ultron Defender - USB Offline Signature Auto-Updater
-# ==============================================================================
-param([string]$DataDir = "C:\ProgramData\UltronDefender")
+Write-Step "ADIM 9: USB üzerinden imza güncelleme mekanizması güvenlik nedeniyle devre dışı bırakılıyor..."
+Write-Warn "USB/harici medya üzerinden paket veya imza kabul edilmez. Yalnızca HTTPS ve Authenticode ile doğrulanmış güncellemeler kullanılır."
 
-$SignaturesTarget = Join-Path $DataDir "signatures\signatures_packed.bin"
-$UpdatesStaging   = Join-Path $DataDir "updates"
-
-$removableDrives = Get-CimInstance -ClassName Win32_LogicalDisk | Where-Object { $_.DriveType -eq 2 }
-foreach ($drive in $removableDrives) {
-    $letter = $drive.DeviceID
-    $candidatePaths = @(
-        "$letter\UltronUpdate\signatures_packed.bin",
-        "$letter\AegisUpdate\signatures_packed.bin",
-        "$letter\signatures_packed.bin"
-    )
-
-    foreach ($candidate in $candidatePaths) {
-        if (Test-Path $candidate) {
-            $srcItem = Get-Item $candidate
-            if ($srcItem.Length -gt 10KB) {
-                Write-Host "USB Guncelleme tespit edildi: $candidate ($($srcItem.Length) bayt)" -ForegroundColor Green
-                $staged = Join-Path $UpdatesStaging ("sig_update_" + [System.Guid]::NewGuid().ToString("N") + ".bin")
-                Copy-Item -Path $candidate -Destination $staged -Force
-                Copy-Item -Path $staged -Destination $SignaturesTarget -Force
-                
-                # Servisi bilgilendir veya logla
-                $logFile = Join-Path $DataDir "logs\signature_updates.log"
-                $logMsg = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] USB guncelleme uygulandi: $candidate"
-                Add-Content -Path $logFile -Value $logMsg -ErrorAction SilentlyContinue
-                Write-Host "Imza veritabani guncellendi!" -ForegroundColor Green
-                return
-            }
-        }
+try {
+    $usbWatcherTask = Get-ScheduledTask -TaskName "UltronDefender_UsbUpdateWatcher" -ErrorAction SilentlyContinue
+    if ($usbWatcherTask) {
+        Unregister-ScheduledTask -TaskName "UltronDefender_UsbUpdateWatcher" -Confirm:$false
     }
 }
-'@
-
-$usbScriptPath = Join-Path $ToolsTargetDir "Sync-UsbSignatures.ps1"
-Set-Content -Path $usbScriptPath -Value $usbUpdateScriptContent -Encoding UTF8 -Force
-
-# Zamanlanmis gorev kaydet (her 10 dakikada veya oturum acilisinda USB kontrolu)
-try {
-    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$usbScriptPath`""
-    $trigger = New-ScheduledTaskTrigger -AtLogOn
-    $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-    Register-ScheduledTask -TaskName "UltronDefender_UsbUpdateWatcher" -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-    Write-Success "USB Otomatik Guncelleme Servisi (UltronDefender_UsbUpdateWatcher) kaydedildi."
-} catch {
-    Write-Warn "Zamanlanmis gorev kaydedilemedi: $($_.Exception.Message)"
+catch {
+    Write-Warn "Eski USB izleme görevi temizlenemedi: $($_.Exception.Message)"
 }
 
 # ------------------------------------------------------------------------------

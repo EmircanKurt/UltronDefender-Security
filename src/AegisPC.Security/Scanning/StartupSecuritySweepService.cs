@@ -39,6 +39,9 @@ namespace AegisPC.Security.Scanning
             ".js", ".jse", ".wsf", ".wsh", ".hta", ".cpl", ".sys"
         };
 
+        private readonly ManualResetEventSlim _pauseEvent = new(true);
+        private CancellationTokenSource? _activeSweepCts;
+
         public StartupSweepStatus Status
         {
             get { lock (_lock) return _status; }
@@ -49,6 +52,28 @@ namespace AegisPC.Security.Scanning
         {
             get { lock (_lock) return _isRunning; }
             private set { lock (_lock) _isRunning = value; }
+        }
+
+        public bool IsPaused => !_pauseEvent.IsSet;
+
+        public void Pause()
+        {
+            _pauseEvent.Reset();
+        }
+
+        public void Resume()
+        {
+            _pauseEvent.Set();
+        }
+
+        public void Cancel()
+        {
+            try
+            {
+                _activeSweepCts?.Cancel();
+            }
+            catch { }
+            _pauseEvent.Set();
         }
 
         public StartupSweepResult? LastResult
@@ -87,7 +112,17 @@ namespace AegisPC.Security.Scanning
             CancellationToken cancellationToken = default)
         {
             await Task.Yield();
-            await _sweepSemaphore.WaitAsync(cancellationToken);
+
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _activeSweepCts = linkedCts;
+            _pauseEvent.Set();
+
+            using var coordSub = _scanCoordinator?.RegisterExternalScanner(
+                pauseAction: () => Pause(),
+                resumeAction: () => Resume(),
+                cancelAction: () => Cancel());
+
+            await _sweepSemaphore.WaitAsync(linkedCts.Token);
             try
             {
                 lock (_lock)
@@ -124,8 +159,14 @@ namespace AegisPC.Security.Scanning
                 var candidateFiles = new List<FileInfo>();
                 foreach (var dir in targetDirs)
                 {
-                    if (cancellationToken.IsCancellationRequested) break;
-                    DiscoverCandidateFiles(dir, candidateFiles);
+                    if (linkedCts.Token.IsCancellationRequested) break;
+                    _pauseEvent.Wait(linkedCts.Token);
+                    DiscoverCandidateFiles(dir, candidateFiles, linkedCts.Token);
+                }
+
+                if (linkedCts.Token.IsCancellationRequested)
+                {
+                    return HandleCancelledSweep(result, progress, stopwatch);
                 }
 
                 // Sort: Prioritize by Risk Location (Startup -> Downloads -> Desktop -> Temp -> AppData -> Documents)
@@ -146,7 +187,8 @@ namespace AegisPC.Security.Scanning
                 // 4. Perform Progressive Scan on Candidates
                 foreach (var file in candidateFiles)
                 {
-                    if (cancellationToken.IsCancellationRequested) break;
+                    if (linkedCts.Token.IsCancellationRequested) break;
+                    _pauseEvent.Wait(linkedCts.Token);
 
                     if (!File.Exists(file.FullName) || 
                         FileScannerService.IsSelfOwnedPath(file.FullName) ||
@@ -173,7 +215,7 @@ namespace AegisPC.Security.Scanning
                     }
 
                     // Inspect file with RealTime engine pipeline
-                    var verdictResult = await _realTimeEngine.InspectFileAsync(file.FullName, cancellationToken);
+                    var verdictResult = await _realTimeEngine.InspectFileAsync(file.FullName, linkedCts.Token);
                     var correlationId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
 
                     // Check if file matches any running process
@@ -223,7 +265,7 @@ namespace AegisPC.Security.Scanning
                         bool quarantined = await _quarantineService.QuarantineFileAsync(
                             file.FullName, 
                             $"Startup Security Sweep: {verdictResult.ThreatTitle}", 
-                            cancellationToken);
+                            linkedCts.Token);
 
                         finding.IsQuarantined = quarantined;
                         finding.ActionTime = DateTime.UtcNow;
@@ -240,7 +282,7 @@ namespace AegisPC.Security.Scanning
                                 file.FullName,
                                 $"Startup Security Sweep tehdit tespit etti: {verdictResult.ThreatTitle} (Skor: {verdictResult.RiskScore})",
                                 AuditResult.Success,
-                                cancellationToken: cancellationToken);
+                                cancellationToken: linkedCts.Token);
                         }
                     }
                     else if (verdictResult.RecommendedPolicy == RealTimePolicyAction.Warn ||
@@ -305,6 +347,11 @@ namespace AegisPC.Security.Scanning
                     NotifyProgress(progress);
                 }
 
+                if (linkedCts.Token.IsCancellationRequested)
+                {
+                    return HandleCancelledSweep(result, progress, stopwatch);
+                }
+
                 stopwatch.Stop();
                 result.Duration = stopwatch.Elapsed;
                 result.TotalScanned = progress.ScannedFiles;
@@ -320,6 +367,11 @@ namespace AegisPC.Security.Scanning
                 NotifyCompleted(result, stopwatch.Elapsed);
 
                 return result;
+            }
+            catch (OperationCanceledException)
+            {
+                _logger?.LogInformation("Startup Security Sweep was cancelled.");
+                return HandleCancelledSweep(result, progress, stopwatch);
             }
             catch (Exception ex)
             {
@@ -342,6 +394,26 @@ namespace AegisPC.Security.Scanning
             _sweepSemaphore.Release();
         }
     }
+
+        private StartupSweepResult HandleCancelledSweep(
+            StartupSweepResult result,
+            StartupSweepProgress progress,
+            Stopwatch stopwatch)
+        {
+            stopwatch.Stop();
+            result.Duration = stopwatch.Elapsed;
+            result.TotalScanned = progress.ScannedFiles;
+            result.FinalStatus = StartupSweepStatus.Cancelled;
+
+            progress.Status = StartupSweepStatus.Cancelled;
+            Status = StartupSweepStatus.Cancelled;
+            LastResult = result;
+
+            NotifyProgress(progress);
+            NotifyCompleted(result, stopwatch.Elapsed);
+
+            return result;
+        }
 
         private void CacheFileVerdict(FileInfo file, string sha256, string verdict, int score)
         {
@@ -381,7 +453,7 @@ namespace AegisPC.Security.Scanning
                     ScannedFiles = result.TotalScanned,
                     TotalFiles = result.TotalScanned,
                     ElapsedMs = (long)duration.TotalMilliseconds,
-                    Status = ScanStatus.Completed,
+                    Status = result.FinalStatus == StartupSweepStatus.Cancelled ? ScanStatus.Cancelled : ScanStatus.Completed,
                     CompletedAt = DateTime.UtcNow,
                     Findings = result.Findings
                         .Where(f => f.IsQuarantined || f.Action == "QUARANTINED" || f.RiskScore >= 50)
@@ -440,9 +512,9 @@ namespace AegisPC.Security.Scanning
             if (Directory.Exists(documents)) targetDirs.Add(documents);
         }
 
-        private void DiscoverCandidateFiles(string dirPath, List<FileInfo> candidates)
+        private void DiscoverCandidateFiles(string dirPath, List<FileInfo> candidates, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(dirPath)) return;
+            if (string.IsNullOrWhiteSpace(dirPath) || cancellationToken.IsCancellationRequested) return;
             string fullPath = Path.GetFullPath(dirPath);
 
             if (FileScannerService.IsSelfOwnedPath(fullPath)) return;
@@ -464,6 +536,7 @@ namespace AegisPC.Security.Scanning
 
             while (stack.Count > 0)
             {
+                if (cancellationToken.IsCancellationRequested) break;
                 var currentDir = stack.Pop();
                 if (!Directory.Exists(currentDir)) continue;
 
@@ -476,6 +549,7 @@ namespace AegisPC.Security.Scanning
                     var files = Directory.GetFiles(currentDir, "*");
                     foreach (var filePath in files)
                     {
+                        if (cancellationToken.IsCancellationRequested) break;
                         try
                         {
                             if (FileScannerService.IsSelfOwnedPath(filePath)) continue;
@@ -501,6 +575,7 @@ namespace AegisPC.Security.Scanning
                     var subDirs = Directory.GetDirectories(currentDir);
                     foreach (var sub in subDirs)
                     {
+                        if (cancellationToken.IsCancellationRequested) break;
                         stack.Push(sub);
                     }
                 }

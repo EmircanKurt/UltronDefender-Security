@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <UseWPF>true</UseWPF>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Only inert fixtures and file-integrity tests belong here. No live process/credential tests. -->
+    <Compile Include="../AegisPC.Tests/PhaseTwoTrustRegressionTests.cs" Link="PhaseTwoTrustRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/AutoUpdateServiceTests.cs" Link="AutoUpdateServiceTests.cs" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <ProjectReference Include="../../src/AegisPC.Security/AegisPC.Security.csproj" />
+    <ProjectReference Include="../../src/AegisPC.Service/AegisPC.Service.csproj" />
+  </ItemGroup>
+</Project>

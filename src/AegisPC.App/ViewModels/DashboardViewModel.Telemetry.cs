@@ -313,6 +313,17 @@ namespace AegisPC.App.ViewModels
             {
                 return; // 15 dakikalık soğuma süresi: aynı tehdit için peş peşe bildirim atma
             }
+
+            // B11: 10.000 sınırında LRU temizliği (en eski 5.000 girdiyi sil)
+            if (_threatToastCooldown.Count >= 10000)
+            {
+                var oldest = _threatToastCooldown.OrderBy(kv => kv.Value).Take(5000).ToList();
+                foreach (var item in oldest)
+                {
+                    _threatToastCooldown.TryRemove(item.Key, out _);
+                }
+            }
+
             _threatToastCooldown[threatName] = now;
 
             _threatNotificationQueue.Enqueue((threatName, isQuarantined));

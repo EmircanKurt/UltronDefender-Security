@@ -1,125 +1,47 @@
-# 🛡️ Ultron Defender Total Security (v3.2.0)
+# 🛡️ Ultron Defender Total Security
 
-> [!NOTE]
-> **Açık Kaynak Uç Nokta Güvenlik ve Antivirüs Savunma Platformu**  
-> Güvenlik araştırmacıları, geliştiriciler ve bireysel kullanıcılar için Windows Internals, heuristik tarama ve proaktif siber savunma kalkanı.
-
-[![Status](https://img.shields.io/badge/status-v3.2.0%20Release%20Ready-brightgreen.svg)](#)
-[![Build & Test Status](https://img.shields.io/badge/tests-616%20passed%20(100%25)-brightgreen.svg)](#testing)
-[![Target Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-blue.svg)](#supported-windows-versions)
-[![Framework](https://img.shields.io/badge/.NET-8.0%20WPF-purple.svg)](#build-from-source)
+[![Status](https://img.shields.io/badge/status-experimental%20preview-orange.svg)](docs/architecture/FEATURE_STATUS.md)
+[![Review](https://img.shields.io/badge/review-2026--09--27-blue.svg)](docs/research/FINAL_REVIEW_2026-09-27.md)
+[![Target Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-blue.svg)](#)
+[![Framework](https://img.shields.io/badge/.NET-8.0%20WPF-purple.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Setup](https://img.shields.io/badge/Setup-UltronDefenderSetup.exe-success.svg)](UltronDefenderSetup.exe)
+[![Docs](https://img.shields.io/badge/docs-Master%20Index-blue.svg)](docs/README.md)
 
-**Ultron Defender Total Security** is a high-performance, open-source Windows endpoint protection and advanced malware defense platform written in **C# (.NET 8), WPF XAML, Native Win32 APIs, SQLite, and 14 modular detection plugins**.
-
-Designed from real-world adversarial incident forensics, Ultron Defender brings commercial-grade heuristic scanning, deep PE disassembly, AMSI in-memory script inspection, ransomware decoy honeypots, and atomic DPAPI AES-256 quarantine vault isolation to everyone for free.
+**Ultron Defender Total Security** is an experimental, open-source Windows security project written in **C# (.NET 8), WPF XAML, Native Win32 APIs and SQLite**. It includes file scanning, user-mode event monitoring, heuristic analysis and an encrypted quarantine vault. These components do not establish commercial antivirus efficacy or production readiness.
 
 ---
 
-## 📸 Arayüz & Görseller (Visual Showcase)
+### 🇹🇷 Proje Hakkında (About in Turkish)
 
-### 0. Resmi Siber Kalkan Logosu (Official Cyber Spartan Shield Logo)
-![Official Logo](docs/screenshots/logo.png)
+3.2.1 incelemesi: Release **335 seçili karma regresyon testi** geçti. Zamanlayıcı sekmesi, yerel rapor geçmişi, SHA-256 bağlı istisnalar, gerçek süreç CPU/RAM göstergesi ve nominal 16 GB donanım için Auto politikası düzeltildi. ZIP/JAR üyeleri normal ve gerçek zamanlı ortak dedektör hattına bağlandı. [Kanıtlar ve kalan sınırlar](docs/research/WORKFLOW_REVIEW_2026-09-27.md).
 
-### 1. Modern & Sade Kontrol Paneli (Executive Dashboard)
-![Dashboard](docs/screenshots/dashboard.png)
-
-### 2. ESET Tarzı Canlı Animasyonlu Tarayıcı Penceresi (Active Scanner)
-![Active Scanner](docs/screenshots/scanner_animated.png)
-
-### 3. Çoklu Seçimli Tehdit Analiz Tablosu (Threat Scan Results)
-![Threat Results](docs/screenshots/threat_results.png)
-
-### 4. Sessiz & Kayan ESET Bildirim Kartı (Silent Threat Notification)
-![ESET Toast Card](docs/screenshots/eset_toast.png)
+Bu .NET 8 sürümü **Windows 7 desteklemez**; hedef Windows 10 1809+ / Windows 11 x64'tür, farklı cihazlarda pilot gerektirir. İmzalı kernel koruması veya Defender'dan üstünlük iddiası yoktur. Kurulum paketini yalnız oluşturmak için `./build_and_deploy.ps1` kullanılır; varsayılan masaüstü/servis/Defender ayarlarını değiştirmez. Kurulum EXE'sini çalıştırmak ayrı, yönetici yetkisi gerektiren işlemdir.
+Ultron Defender, açıklanabilir dosya analizi ve donanıma göre uyarlanan tarama üzerinde geliştirilen bir önizleme projesidir. Kullanıcı-modu gerçek zamanlı gözlem, yürütme öncesi engelleme garantisi değildir; imzalı kernel sürücüsü bu incelemede etkinleştirilmemiştir. Yanlış pozitiflerin sıfır olduğu iddia edilmez. Okul/iş bilgisayarlarında dağıtımdan önce yönetici onayı ve izole pilot gerekir; mevcut Defender/kurumsal korumayı kapatmayın. [Güncel kapsam ve sınırlamalar](docs/research/FINAL_REVIEW_2026-09-27.md).
 
 ---
 
-## 🇹🇷 Neden Bu Projeyi Geliştirdim? (Türkçe Açıklama)
-
-Bu proje, bilgisayarıma internet tarayıcısı üzerinden bırakılan izinsiz bir zararlı dosya sonucunda kişisel hesaplarımın ve verilerimin tehlikeye girdiği gerçek bir güvenlik ihlalinden sonra doğdu.
-
-Olayın ardından bir güvenlik araştırmacısı gözüyle sistemi incelerken geleneksel antivirüslerin şu kritik açıklarını fark ettim:
-* **Uzantı Aldatmacası:** Saldırganlar `.exe` uzantısını gizleyip `.bin`, `.dat` veya `.tmp` yaptığında birçok tarayıcı dosyayı atlıyor.
-* **Görünmezlik:** Masaüstüne veya İndirilenler klasörüne yeni bir zararlı düştüğünde güvenlik yazılımı onu bazen saatlerce fark etmiyor.
-* **Sahte Alarmlar:** Meşru oyun modları (`.lua`, `.so`, crackli oyun kayıtları) gereksiz yere silinirken, gerçek zararlı komut dosyaları (LOLBin, DDE CSV enjeksiyonu) kaçırılabiliyor.
-
-Bu tecrübeyi fırsata dönüştürerek Windows Internals, Minifilter mimarisi, PE başlık analizi ve süreç soyağacı takibini temel alan **Ultron Defender Total Security**'yi geliştirdim. Amacım kapalı kutu antivirüslerin aksine **%100 şeffaf, açıklanabilir ve test edilebilir** bir açık kaynak savunma kalkanı sunmaktır.
-
----
-
-## 🚀 Öne Çıkan Özellikler (Key Highlights)
-
-* 🛑 **Kesintisiz Tarama Durum Yönetimi (State Machine):** Tek bir gerçek durum makinesi (`ScanCoordinatorService`), çalışan iş parçacıklarının işlemi derhal bırakmasını sağlayan hard-stop ve dosya bazlı `CancellationToken` kontrolleri.
-* 🎯 **Sıfır Yanlış Pozitif Politikası:** `TrustedSoftwarePolicy` ile Microsoft ve ticari imzalı uygulamalar için tam güven bypass'ı; UPX ve entropi yalnızca bağımsız tehdit göstergeleriyle birleştiğinde ağırlık kazanır.
-* 🚀 **SSD/NVMe Uyumlu Çok Çekirdekli Tarama Motoru:** `AdaptiveScanResourceManager` ile donanıma göre (cores*2/3/4) paralel işçi havuzu, SSD sürücülerde sıfır gecikme, 65k kuyruk kapasitesi.
-* 🛡️ **Gelişmiş Fidye Kalkanı & CFA (Controlled Folder Access):** Korumalı klasör kapıları (Protected Folders), Windows Restart Manager (`rstrtmgr.dll`) ile kilitli süreç tespiti, çift yönlü bal küpü (canary trap) dosya yemleri ve yetkisiz süreçlerin anında engellenmesi.
-* 🔌 **Ring-0 Minifilter & fltLib IPC:** `KernelIpcService` üzerinden `FilterConnectCommunicationPort` ve `FilterReplyMessage` çift yönlü haberleşmesi. Sürücü yüklü olmadığında dürüstçe `Degraded (User-Mode Only)` raporlama.
-* 📦 **Birleşik Karantina & Olay Merkezi:** DPAPI AES-256 ile şifrelenmiş tehditleri güvenle inceler, siler veya tek tıkla geri yükler.
-* 🔕 **Sessiz Kayan Bildirimler:** Rahatsız edici sistem sesleri olmadan, ekranın sağ altında açılan modern kırmızı uyarı kartı (`NotificationAggregator`).
-
----
-
-## 🧪 Canlı Test ve Doğrulama (Live Test Suite)
-
-Tüm modüller 616 otomatik birim ve entegrasyon testi ile test edilmiştir:
-
-```bash
-dotnet test tests/AegisPC.Tests/AegisPC.Tests.csproj -c Release
-```
-
-```text
-Toplam 1 test dosyası belirtilen desenle eşleşti.
-Başarılı!  - Başarısız: 0, Başarılı: 616, Atlanan: 0, Toplam: 616, Süre: ~3 dk
-```
-
-| Senaryo | Dosya Türü | Tespit Türü | Sonuç |
-|---|---|---|:---:|
-| **EICAR Testi** | `.txt / .com` | Bilinen Zararlı İmza | **✅ 100/100 (Engellendi)** |
-| **Fidye Yazılımı** | `.bat / .locked` | Gölge Kopyaları Silme / Şifreleme Uzantısı | **✅ 100/100 (Engellendi)** |
-| **CSV Enjeksiyonu**| `.csv` | DDE Formül Enjeksiyonu (`=cmd\|...`) | **✅ 50/100 (Yakaladı)** |
-| **Arşiv Dropper** | `.zip` | ZIP İçi Powershell Dropper | **✅ 90/100 (Engellendi)** |
-| **Meşru Kurulum / Oyun Yaması** | `.exe / .dll` | Dijital İmza / Meşru Dizin Güveni | **✅ 0/100 (Temiz Kabul Edildi)** |
-
----
-
-## 🛠️ Kernel Sürücüsü ve Dağıtım (Driver & AMSI Distribution)
-
-### 1. Kernel Minifilter Sürücüsü Derleme & İmzalama (Test-Signing):
+### 💻 Nasıl Derlenir? (Build from Source)
+Gereksinimler: Windows 10/11 (x64), .NET 8.0 SDK, Inno Setup 6.
 ```powershell
-# Sürücü önkoşullarını kontrol edin (WDK / MSBuild):
-powershell -ExecutionPolicy Bypass -File drivers\Test-DriverPrerequisites.ps1
-
-# Sürücüyü derleyin ve test sertifikasıyla imzalayın:
-powershell -ExecutionPolicy Bypass -File drivers\Build-And-Sign-Driver.ps1 -Configuration Release -Sign
-```
-
-### 2. AMSI Sağlayıcı Kaydı (In-Process Script Scanning):
-```powershell
-# AMSI sağlayıcı COM DLL'ini kaydedin:
-powershell -ExecutionPolicy Bypass -File tools\AmsiProvider\Register-AmsiProvider.ps1 -DllPath tools\AmsiProvider\AmsiProvider.dll -Register
-```
-
----
-
-## 💻 Projeyi Kaynaktan Derleme (Build from Source)
-
-### Gereksinimler:
-* Windows 10 / 11 (x64)
-* .NET 8.0 SDK
-* Inno Setup 6 (Kurulum paketi derlemek için)
-
-```powershell
-# 1. Depoyu klonlayın
 git clone https://github.com/EmircanKurt/UltronDefender-Security.git
 cd UltronDefender-Security
-
-# 2. Tek komutla derleyin, test edin ve kurulum paketini üretin:
-powershell -ExecutionPolicy Bypass -File .\build_and_deploy.ps1
+dotnet build AegisPC.sln -c Release
+dotnet publish src/AegisPC.App/AegisPC.App.csproj -c Release -o artifacts/preview/app
+dotnet publish src/AegisPC.Service/AegisPC.Service.csproj -c Release -o artifacts/preview/service
 ```
+
+### 🧪 Nasıl Test Edilir? (Run Tests)
+```powershell
+dotnet test tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj --filter "FullyQualifiedName!~Golden01_&FullyQualifiedName!~SettingsViewModelRegressionTests&FullyQualifiedName!~ScanViewModel_CancelCommand"
+dotnet test tests/AegisPC.Trust.Tests/AegisPC.Trust.Tests.csproj
+```
+
+Bu seçili koşu zararsız geçici dosyalar ve karar/altyapı testlerini kullanır; gerçek zararlı yazılım etkinlik testi değildir. Ana test projesi canlı süreç/kimlik bilgisi testleri ve fiziksel EICAR fikstürü de içerir: tüm paketi sıradan okul/iş bilgisayarında çalıştırmayın. Dağıtım/kurulum scriptleri sistemi değiştirir; yukarıdaki yayınlama komutları uygulamayı kurmaz.
 
 ---
 
-## 📄 Lisans (License)
-Bu proje [MIT Lisansı](LICENSE) altında açık kaynaklı olarak paylaşılmaktadır.
+### 📚 Dokümantasyon ve Mimari Haritası (Documentation & Architecture)
+* 🗺️ **Mimari Haritası:** [`docs/architecture/CURRENT_ARCHITECTURE.md`](docs/architecture/CURRENT_ARCHITECTURE.md) & [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md)
+* 📋 **Özellik Durum Matrisi:** [`docs/architecture/FEATURE_STATUS.md`](docs/architecture/FEATURE_STATUS.md)
+* 📖 **Tüm Dokümanlar İndeksi:** [`docs/README.md`](docs/README.md) (Mimari, Araştırma, Raporlar ve AI Yönergeleri)
+* 📜 **Sürüm Değişiklikleri:** [`CHANGELOG.md`](CHANGELOG.md) | **Lisans:** [MIT License](LICENSE)

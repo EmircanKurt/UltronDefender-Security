@@ -86,12 +86,13 @@ namespace AegisPC.Tests
         {
             Assert.True(TrustedSoftwarePolicy.IsLegitimateInstallLocation(@"C:\Program Files\Google\Chrome\Application\chrome.exe"));
             Assert.True(TrustedSoftwarePolicy.IsLegitimateInstallLocation(@"C:\Program Files (x86)\Steam\steam.exe"));
-            Assert.True(TrustedSoftwarePolicy.IsLegitimateInstallLocation(@"C:\Users\User\AppData\Local\Programs\Microsoft VS Code\Code.exe"));
+            Assert.True(TrustedSoftwarePolicy.IsLegitimateInstallLocation(@"C:\Program Files\Microsoft VS Code\Code.exe"));
             Assert.True(TrustedSoftwarePolicy.IsLegitimateInstallLocation(@"C:\Windows\System32\cmd.exe"));
 
-            // Downloads ve Temp meşru kurulum lokasyonu değildir (Drop zone)
+            // Downloads, Temp ve kullanıcı yazabilir Programs klasörleri meşru kurulum lokasyonu değildir (Drop zone / User writable)
             Assert.False(TrustedSoftwarePolicy.IsLegitimateInstallLocation(@"C:\Users\User\Downloads\test.exe"));
             Assert.False(TrustedSoftwarePolicy.IsLegitimateInstallLocation(@"C:\Users\User\AppData\Local\Temp\evil.exe"));
+            Assert.False(TrustedSoftwarePolicy.IsLegitimateInstallLocation(@"C:\Users\User\AppData\Local\Programs\Microsoft VS Code\Code.exe"));
         }
 
         [Fact]

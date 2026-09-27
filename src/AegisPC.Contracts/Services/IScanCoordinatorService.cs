@@ -28,6 +28,7 @@ namespace AegisPC.Contracts.Services
         event Action<ScanResult>? ScanCompleted;
 
         Task<ScanResult?> StartScanAsync(ScanType scanType, string customPath = "");
+        IDisposable RegisterExternalScanner(Action pauseAction, Action resumeAction, Action cancelAction);
         void RegisterExternalScanProgress(ScanProgress progress);
         void CompleteExternalScan(ScanResult result);
         void PauseScan();

@@ -39,14 +39,16 @@ namespace AegisPC.Security.Detection.Detectors
 
             try
             {
-                var sigInfo = await _signatureVerifier.VerifySignatureAsync(context.FilePath, cancellationToken);
+                var sigInfo = context.SharedScan != null
+                    ? await context.SharedScan.GetOrVerifySignatureAsync(_signatureVerifier, cancellationToken)
+                    : await _signatureVerifier.VerifySignatureAsync(context.FilePath, cancellationToken);
                 bool isSystemPath = AegisPC.Core.Helpers.PathHelper.IsSystemPath(context.FilePath);
                 bool isKnownSafe = AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(context.FilePath);
 
                 if (sigInfo.IsSigned && sigInfo.IsValid)
                 {
-                    bool isMs = isSystemPath || (sigInfo.Publisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true);
-                    string pub = sigInfo.Publisher ?? (isSystemPath ? "Microsoft Windows" : "Geçerli Yayımcı");
+                    bool isMs = AegisPC.Security.Safety.TrustedSoftwarePolicy.IsTrustedOsPublisher(sigInfo.Publisher);
+                    string pub = sigInfo.Publisher ?? "Geçerli Yayımcı";
 
                     if (isMs)
                     {
@@ -137,6 +139,7 @@ namespace AegisPC.Security.Detection.Detectors
             }
             catch
             {
+                throw; // Let the hub report incomplete coverage; failure is not a clean signature.
             }
 
             return list;

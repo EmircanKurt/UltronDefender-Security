@@ -3,14 +3,14 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
       Title="{Binding PageTitle}"
       Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True"
       SnapsToDevicePixels="True"
       TextOptions.TextFormattingMode="Display"
       TextOptions.TextRenderingMode="ClearType"
-      RenderOptions.ClearTypeHint="Enabled"
-      PreviewMouseWheel="OnPagePreviewMouseWheel">
+      RenderOptions.ClearTypeHint="Enabled">
 
     <Page.Resources>
         <conv:BytesToHumanReadableConverter x:Key="BytesConverter"/>
@@ -19,11 +19,11 @@
     </Page.Resources>
 
     <ScrollViewer x:Name="RootScrollViewer" Margin="28,20,28,24" 
+                  helpers:WheelScrollHelper.EnableRootRedirect="True"
                   VerticalScrollBarVisibility="Auto" 
                   HorizontalScrollBarVisibility="Disabled" 
                   CanContentScroll="False"
-                  Focusable="True"
-                  PreviewMouseWheel="OnPagePreviewMouseWheel">
+                  Focusable="True">
         <StackPanel MaxWidth="1500" HorizontalAlignment="Left">
             <!-- ═══════════════════════════════════════════════════════════
                  BAŞLIK & YENİLEME ÇUBUĞU

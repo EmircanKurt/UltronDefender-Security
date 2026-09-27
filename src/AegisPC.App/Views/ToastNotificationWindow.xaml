@@ -11,10 +11,13 @@
         Height="154"
         WindowStartupLocation="Manual">
 
-    <!-- Outer Notification Container with Theme-Adaptive Background -->
-    <Border x:Name="CardBorder" Background="{DynamicResource BrushCardBg}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BrushCardBorder}" Padding="0" Cursor="Hand" MouseLeftButtonDown="OnCardClicked" MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave">
+    <!-- Outer Notification Container with dynamic theme brushes -->
+    <Border x:Name="CardBorder" Background="{DynamicResource BrushCardBg}" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource BrushCardBorder}" Padding="0" Cursor="Hand" MouseLeftButtonDown="OnCardClicked" MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave">
+        <Border.RenderTransform>
+            <TranslateTransform x:Name="CardTranslate" X="0" Y="0"/>
+        </Border.RenderTransform>
         <Border.Effect>
-            <DropShadowEffect BlurRadius="20" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.25"/>
+            <DropShadowEffect BlurRadius="24" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.5"/>
         </Border.Effect>
 
         <Grid>
@@ -23,8 +26,8 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 1. Left Color Accent Stripe -->
-            <Border x:Name="AccentStripe" Grid.Column="0" Background="{DynamicResource BrushBrandPrimary}" CornerRadius="6,0,0,6"/>
+            <!-- 1. Left Color Accent Stripe (Type colored, 8px outer corner) -->
+            <Border x:Name="AccentStripe" Grid.Column="0" Background="#EF4444" CornerRadius="8,0,0,8"/>
 
             <!-- 2. Main Notification Card Content -->
             <Grid Grid.Column="1" Margin="14,10,14,10">
@@ -34,7 +37,7 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- Top App Header Bar -->
+                <!-- Top App Header Bar: ULTRON Badge + Brand Title + Control Buttons -->
                 <Grid Grid.Row="0" Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -43,20 +46,20 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border Background="{DynamicResource BrushBrandPrimary}" CornerRadius="3" Padding="5,2" Margin="0,0,8,0">
-                            <TextBlock Text="ULTRON" FontSize="9.5" FontWeight="ExtraBold" Foreground="#FFFFFF"/>
+                        <Border x:Name="HeaderBadge" Background="#EF4444" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                            <TextBlock Text="ULTRON" FontSize="9.5" FontWeight="Black" Foreground="{DynamicResource BrushTextOnAccent}"/>
                         </Border>
                         <TextBlock x:Name="AppHeaderTitle" Text="DEFENDER TOTAL SECURITY" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
                     </StackPanel>
 
                     <!-- Control Buttons -->
-                    <StackPanel Grid.Column="2" Orientation="Horizontal">
-                        <Button Content="⌄" Width="20" Height="20" Padding="0" Margin="0,0,4,0" Background="Transparent" Foreground="{DynamicResource BrushTextMuted}" BorderThickness="0" Cursor="Hand" Click="OnMinimizeClicked"/>
-                        <Button Content="✕" Width="20" Height="20" Padding="0" Background="Transparent" Foreground="{DynamicResource BrushTextMuted}" BorderThickness="0" Cursor="Hand" Click="OnCloseClicked"/>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="⌄" Width="20" Height="20" Padding="0" Margin="0,0,4,0" Background="Transparent" Foreground="{DynamicResource BrushTextSecondary}" BorderThickness="0" Cursor="Hand" Click="OnMinimizeClicked"/>
+                        <Button Content="✕" Width="20" Height="20" Padding="0" Background="Transparent" Foreground="{DynamicResource BrushTextSecondary}" BorderThickness="0" Cursor="Hand" Click="OnCloseClicked"/>
                     </StackPanel>
                 </Grid>
 
-                <!-- Body Section: Icon + Threat Title + Explanation -->
+                <!-- Body Section: Icon Badge + Threat Title + Explanation + Status -->
                 <Grid Grid.Row="1">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -64,21 +67,21 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- Shield Checkmark / Alert Icon Badge -->
-                    <Border x:Name="IconBadge" Grid.Column="0" Width="36" Height="36" CornerRadius="4" Background="{DynamicResource BrushBrandMinimal}" Margin="0,2,12,0" VerticalAlignment="Top">
-                        <ui:SymbolIcon x:Name="BadgeIcon" Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushBrandPrimary}" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Border x:Name="IconBadge" Grid.Column="0" Width="36" Height="36" CornerRadius="6" Background="#261214" Margin="0,2,12,0" VerticalAlignment="Top">
+                        <ui:SymbolIcon x:Name="BadgeIcon" Symbol="Warning24" Foreground="#EF4444" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
 
                     <!-- Message Details -->
                     <StackPanel Grid.Column="1" VerticalAlignment="Top">
                         <TextBlock x:Name="ToastTitle" Text="Tehdit engellendi ve karantinaya alındı" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" TextWrapping="Wrap" MaxHeight="38" TextTrimming="CharacterEllipsis" LineHeight="17"/>
                         <TextBlock x:Name="ToastMessage" Text="Zararlı kod içeren dosya yakalandı ve sistemden temizlendi." FontSize="11.5" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" Margin="0,2,0,2" MaxHeight="36" TextTrimming="CharacterEllipsis" LineHeight="15"/>
-                        <TextBlock x:Name="ToastActionStatus" Text="Dosya AES-256 Karantina Kasasına kilitlendi." FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource BrushStatusSafeDark}"/>
+                        <TextBlock x:Name="ToastActionStatus" Text="Dosya AES-256 Karantina Kasasına kilitlendi." FontSize="11" FontWeight="SemiBold" Foreground="#10B981"/>
                     </StackPanel>
                 </Grid>
 
-                <!-- Footer Section: More info action link -->
+                <!-- Footer Section: More info action link (Clickable to navigate to Olay Merkezi) -->
                 <Grid Grid.Row="2" Margin="0,4,0,0">
-                    <TextBlock x:Name="ToastFooterAction" Text="Detayları ve karantina kaydını incelemek için tıklayın →" FontSize="10.5" Foreground="{DynamicResource BrushBrandPrimary}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ToastFooterAction" Text="Detaylar için tıklayın →" FontSize="10.5" Foreground="{DynamicResource BrushBrandPrimary}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center" Cursor="Hand" MouseLeftButtonDown="OnFooterActionClicked"/>
                 </Grid>
             </Grid>
         </Grid>

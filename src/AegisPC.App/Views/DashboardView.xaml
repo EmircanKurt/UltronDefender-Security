@@ -3,13 +3,13 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
       Title="{Binding PageTitle}"
       Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True"
       SnapsToDevicePixels="True"
       TextOptions.TextFormattingMode="Display"
-      TextOptions.TextRenderingMode="ClearType"
-      PreviewMouseWheel="OnPagePreviewMouseWheel">
+      TextOptions.TextRenderingMode="ClearType">
 
     <Page.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
@@ -17,7 +17,12 @@
     </Page.Resources>
 
     <Grid>
-        <ScrollViewer x:Name="RootScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Focusable="False">
+        <ScrollViewer x:Name="RootScrollViewer" 
+                      helpers:WheelScrollHelper.EnableRootRedirect="True"
+                      VerticalScrollBarVisibility="Auto" 
+                      HorizontalScrollBarVisibility="Disabled" 
+                      CanContentScroll="False" 
+                      Focusable="False">
             <StackPanel MaxWidth="880" HorizontalAlignment="Center" Margin="0,48,0,32">
 
                 <!-- ═══════════════════════════════════════════════════════════
@@ -28,6 +33,9 @@
                     <!-- Hover lift/float animation + Idle blinking cursor ("gözü o satır çizgisi gidip gelsin") -->
                     <Grid Width="64" Height="58" HorizontalAlignment="Center" Margin="0,0,0,16"
                           Cursor="Hand" RenderTransformOrigin="0.5,0.5" ToolTip="Ultron Terminal Koruma Çekirdeği">
+                        <Grid.InputBindings>
+                            <MouseBinding Gesture="LeftClick" Command="{Binding OpenActiveScanWindowCommand}"/>
+                        </Grid.InputBindings>
                         <Grid.RenderTransform>
                             <TransformGroup>
                                 <TranslateTransform x:Name="CloudLogoTranslate" Y="0"/>
@@ -154,6 +162,26 @@
                                     Command="{Binding ReviewThreatsCommand}" Padding="10,2" Margin="10,0,0,0" FontSize="11"/>
                         </StackPanel>
                     </Border>
+
+                    <!-- Active Scan Live Banner (Visible whenever a scan is actively running) -->
+                    <Border Margin="0,14,0,0" HorizontalAlignment="Center"
+                            Background="{DynamicResource BrushStatusInfoBg}"
+                            BorderBrush="{DynamicResource BrushStatusInfoBorder}"
+                            BorderThickness="1" CornerRadius="16" Padding="14,6"
+                            Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}"
+                            Cursor="Hand">
+                        <Border.InputBindings>
+                            <MouseBinding Gesture="LeftClick" Command="{Binding OpenActiveScanWindowCommand}"/>
+                        </Border.InputBindings>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <ui:SymbolIcon Symbol="Search24" FontSize="14" Foreground="{DynamicResource BrushStatusInfo}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ProtectionBadgeText, FallbackValue='Tarama çalışıyor'}" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushStatusInfo}" VerticalAlignment="Center"/>
+                            <TextBlock Text=" • " Foreground="{DynamicResource BrushStatusInfo}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ScanProgress, StringFormat='{}%{0:0}'}" FontSize="12.5" FontWeight="Bold" Foreground="{DynamicResource BrushStatusInfo}" VerticalAlignment="Center"/>
+                            <Button Style="{StaticResource SecondaryButtonStyle}" Content="Tarama Penceresini Aç"
+                                    Command="{Binding OpenActiveScanWindowCommand}" Padding="12,3" Margin="14,0,0,0" FontSize="11" Cursor="Hand"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- ═══════════════════════════════════════════════════════════
@@ -179,9 +207,9 @@
                                                Foreground="{DynamicResource BrushPastelBlueIcon}"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                            <TextBlock Grid.Row="1" Text="Hızlı Tarama Başlat"
+                            <TextBlock Grid.Row="1" Text="{Binding QuickScanCardTitle, FallbackValue='Hızlı Tarama Başlat'}"
                                        Style="{StaticResource ActionCardTitleStyle}" Margin="0,0,0,6"/>
-                            <TextBlock Grid.Row="2" Text="Kritik sistem dizinlerini, belleği ve başlangıç dosyalarını tara"
+                            <TextBlock Grid.Row="2" Text="{Binding QuickScanCardSubtitle, FallbackValue='Kritik sistem dizinlerini, belleği ve başlangıç dosyalarını tara'}"
                                        Style="{StaticResource ActionCardDescStyle}"/>
                         </Grid>
                     </Button>
@@ -370,7 +398,6 @@
                               HorizontalGridLinesBrush="{DynamicResource BrushCardBorder}"
                               HeadersVisibility="Column"
                               ScrollViewer.CanContentScroll="False"
-                              PreviewMouseWheel="OnDataGridPreviewMouseWheel"
                               MaxHeight="220">
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Header="Zaman" Width="75">
@@ -381,7 +408,7 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
-                            <DataGridTemplateColumn Header="Dosya / Hedef" Width="180">
+                            <DataGridTemplateColumn Header="Dosya / Hedef" Width="*" MinWidth="200">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding FileName}" Style="{StaticResource DataTableStyle}" FontSize="12.5" FontWeight="Medium" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}" VerticalAlignment="Center" Padding="4,0"/>
@@ -389,7 +416,7 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
-                            <DataGridTemplateColumn Header="Aşama" Width="*" MinWidth="160">
+                            <DataGridTemplateColumn Header="Aşama" Width="160">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding StageDetails}" Style="{StaticResource CaptionTextStyle}" FontSize="11.5" TextTrimming="CharacterEllipsis" ToolTip="{Binding StageDetails}" VerticalAlignment="Center" Padding="4,0"/>

@@ -19,7 +19,8 @@ namespace AegisPC.Security.Detection.Detectors
 
         private static readonly HashSet<string> ScriptExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
-            ".ps1", ".bat", ".cmd", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".csv", ".tsv"
+            ".ps1", ".bat", ".cmd", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".csv", ".tsv",
+            ".tmp", ".dat", ".bin", ".txt"
         };
 
         private static string Dec(string b64) => Encoding.UTF8.GetString(Convert.FromBase64String(b64));
@@ -65,20 +66,34 @@ namespace AegisPC.Security.Detection.Detectors
             }
 
             var ext = Path.GetExtension(context.FilePath).ToLowerInvariant();
-            if (!ScriptExtensions.Contains(ext) && ext != ".txt" && !string.IsNullOrEmpty(ext))
+            if (!ScriptExtensions.Contains(ext) && !string.IsNullOrEmpty(ext))
             {
-                return list;
+                if (!AegisPC.Security.Scanning.ScanFilterPolicy.IsInspectableCandidate(context.FilePath))
+                {
+                    return list;
+                }
             }
 
             try
             {
                 string content;
                 using (var fs = new FileStream(context.FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-                using (var reader = new StreamReader(fs))
+                using (var reader = new StreamReader(fs, Encoding.UTF8, true, 4096, true))
                 {
                     char[] buffer = new char[Math.Min(1024 * 1024, (int)Math.Min(int.MaxValue, fs.Length))];
                     int read = await reader.ReadBlockAsync(buffer, 0, buffer.Length);
                     content = new string(buffer, 0, read);
+
+                    // Padding bypass koruması: Dosya 1MB'dan büyükse son 256KB'yı da tara
+                    if (fs.Length > 1024 * 1024)
+                    {
+                        var tailSize = Math.Min(256 * 1024, fs.Length - 1024 * 1024);
+                        fs.Seek(-tailSize, SeekOrigin.End);
+                        var tailBuffer = new byte[tailSize];
+                        int tailRead = await fs.ReadAsync(tailBuffer, 0, (int)tailSize);
+                        var tailContent = System.Text.Encoding.UTF8.GetString(tailBuffer, 0, tailRead);
+                        content = content + "\n" + tailContent; // Append tail content for scanning
+                    }
                 }
 
                 foreach (var (patB64, rule, desc, score, conf) in ScriptPatterns)

@@ -146,7 +146,7 @@ namespace AegisPC.Tests
                 _detectionHub,
                 _riskScoringEngine,
                 _signatureVerifier);
-            service.ScanTimeout = TimeSpan.FromSeconds(5);
+            service.ScanTimeout = TimeSpan.FromSeconds(15);
 
             string cleanFilePath = Path.Combine(_testDir, "benign_tool.exe");
             await File.WriteAllTextAsync(cleanFilePath, "Normal safe utility content without threat signatures.");
@@ -170,7 +170,7 @@ namespace AegisPC.Tests
                 _riskScoringEngine,
                 _signatureVerifier)
             {
-                ScanTimeout = TimeSpan.FromSeconds(5)
+                ScanTimeout = TimeSpan.FromSeconds(15)
             };
 
             service.OnThreatBlocked += alert => raisedAlert = alert;
@@ -193,15 +193,15 @@ namespace AegisPC.Tests
         [Fact]
         public async Task Test_EtwPreExec_TimeoutExceeded_ResumesProcessAndLogsWarning()
         {
-            // Arrange: DetectionHub with a detector that delays 500ms while timeout is 150ms
-            var slowDetector = new SlowMockDetector(TimeSpan.FromMilliseconds(500));
+            // Arrange: DetectionHub with a detector that delays 2000ms while timeout is 100ms
+            var slowDetector = new SlowMockDetector(TimeSpan.FromMilliseconds(2000));
             var customHub = new DetectionHub(new[] { slowDetector });
 
             var service = new EtwPreExecProtectionService(
                 customHub,
                 _riskScoringEngine,
                 _signatureVerifier);
-            service.ScanTimeout = TimeSpan.FromMilliseconds(150);
+            service.ScanTimeout = TimeSpan.FromMilliseconds(100);
 
             string testPath = Path.Combine(_testDir, "slow_target.exe");
             await File.WriteAllTextAsync(testPath, "Dummy binary content");

@@ -36,6 +36,13 @@ namespace AegisPC.Infrastructure.Database
                 await ApplyMigration1Async(connection, cancellationToken);
                 await SetVersionAsync(connection, 1, cancellationToken);
             }
+
+            if (currentVersion < 2)
+            {
+                _logger.LogInformation("Applying migration version 2 (Exclusions table).");
+                await ApplyMigration2Async(connection, cancellationToken);
+                await SetVersionAsync(connection, 2, cancellationToken);
+            }
             
             _logger.LogInformation("Database migrations up to date.");
         }
@@ -71,6 +78,23 @@ namespace AegisPC.Infrastructure.Database
             // Migration 1 is implicitly applied by DatabaseService.InitializeAsync, 
             // but we can add further structural changes here in the future.
             await Task.CompletedTask;
+        }
+
+        private async Task ApplyMigration2Async(SqliteConnection connection, CancellationToken cancellationToken)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS Exclusions (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Type INTEGER NOT NULL,
+                    Value TEXT NOT NULL,
+                    AddedUtc TEXT NOT NULL,
+                    Reason TEXT,
+                    IncludeSubdirectories INTEGER DEFAULT 1
+                );
+                CREATE INDEX IF NOT EXISTS IX_Exclusions_Value ON Exclusions(Value);
+            ";
+            await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }
 }

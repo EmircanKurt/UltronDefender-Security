@@ -167,7 +167,10 @@ namespace AegisPC.Security.Archive
                             if (nestedVerdict.HasZipBomb) verdict.HasZipBomb = true;
                             if (nestedVerdict.IsDepthExceeded) verdict.IsDepthExceeded = true;
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogWarning(ex, "Failed to decompress nested archive entry {EntryName}", entry.FullName);
+                        }
                     }
                 }
 

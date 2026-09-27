@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Core.Enums;
+using AegisPC.Core.Models;
 using AegisPC.Security.Scanning;
 using Xunit;
 
@@ -9,66 +10,78 @@ namespace AegisPC.Tests
 {
     public class AdaptiveResourceManagerTests
     {
+        private const long MiB = 1024L * 1024;
+        private const long GiB = 1024L * MiB;
+
+        /// <summary>Checks mode preferences on a controlled SSD without conflating host pressure with policy defaults.</summary>
         [Fact]
         public void AdaptiveScanResourceManager_DefaultProfiles_HaveCorrectBounds()
         {
-            var manager = new AdaptiveScanResourceManager();
-
-            manager.SetMode(ScanResourceMode.VeryLow);
-            var veryLow = manager.ActiveProfile;
+            var veryLow = ScanResourceProfile.Create(ScanResourceMode.VeryLow, false, 8, 16 * GiB);
             Assert.True(veryLow.MaxMemoryBudgetBytes <= 128L * 1024 * 1024, "VeryLow RAM budget must be at most 128 MB");
             Assert.True(veryLow.MaxMemoryBudgetBytes >= 64L * 1024 * 1024, "VeryLow RAM budget must be at least 64 MB");
             Assert.True(veryLow.DelayBetweenFilesMs >= 5, "VeryLow must have pacing delay");
             Assert.True(veryLow.YieldFrequency <= 20, "VeryLow must yield frequently");
 
-            manager.SetMode(ScanResourceMode.Low);
-            var low = manager.ActiveProfile;
+            var low = ScanResourceProfile.Create(ScanResourceMode.Low, false, 8, 16 * GiB);
             Assert.True(low.Concurrency >= 2, "Low must have at least 2 workers");
             Assert.True(low.MaxMemoryBudgetBytes >= 256L * 1024 * 1024, "Low RAM budget must be at least 256 MB");
 
-            manager.SetMode(ScanResourceMode.Balanced);
-            var balanced = manager.ActiveProfile;
+            var balanced = ScanResourceProfile.Create(ScanResourceMode.Balanced, false, 8, 16 * GiB);
             Assert.True(balanced.Concurrency >= 2, "Balanced must have at least 2 workers");
-            // RAM bütçesi: RAM/3 oranında olmalı (16 GB'de ~5.3 GB, 8 GB'de ~2.6 GB)
             Assert.True(balanced.MaxMemoryBudgetBytes >= 256L * 1024 * 1024, "Balanced RAM budget must be at least 256 MB");
 
-            manager.SetMode(ScanResourceMode.High);
-            var high = manager.ActiveProfile;
+            var high = ScanResourceProfile.Create(ScanResourceMode.High, false, 8, 16 * GiB);
             Assert.True(high.Concurrency >= 4, "High must have at least 4 workers");
-            // RAM bütçesi: RAM/2 oranında olmalı (16 GB'de ~8 GB)
             Assert.True(high.MaxMemoryBudgetBytes > balanced.MaxMemoryBudgetBytes, "High RAM must be greater than Balanced");
 
-            manager.SetMode(ScanResourceMode.Maximum);
-            var max = manager.ActiveProfile;
-            Assert.True(max.Concurrency >= Environment.ProcessorCount, "Maximum concurrency must use at least all cores");
+            var max = ScanResourceProfile.Create(ScanResourceMode.Maximum, false, 8, 16 * GiB);
+            Assert.True(max.Concurrency >= 8, "An unpressured SSD fixture must permit at least its eight logical cores");
             Assert.Equal(0, max.DelayBetweenFilesMs);
             Assert.True(max.MaxMemoryBudgetBytes >= high.MaxMemoryBudgetBytes, "Maximum RAM must be >= High");
         }
 
+        /// <summary>Checks RAM scaling and headroom caps using known capacities and pressure, including low-memory machines.</summary>
         [Fact]
         public void AdaptiveScanResourceManager_RamBudget_ScalesWithSystemRam()
         {
-            var manager = new AdaptiveScanResourceManager();
+            foreach (var mode in new[] { ScanResourceMode.High, ScanResourceMode.Maximum })
+            {
+                long previousUnpressuredBudget = 0;
+                foreach (long ramGiB in new long[] { 2, 4, 8, 16, 32 })
+                {
+                    long totalRam = ramGiB * GiB;
+                    var unpressured = ScanResourceProfile.Create(mode, false, 8, totalRam);
+                    Assert.True(unpressured.MaxMemoryBudgetBytes >= previousUnpressuredBudget,
+                        $"{mode} must not reduce its budget when otherwise identical physical RAM increases.");
+                    previousUnpressuredBudget = unpressured.MaxMemoryBudgetBytes;
 
-            // Test that High/Maximum modes allocate proportional RAM budgets
-            manager.SetMode(ScanResourceMode.High);
-            var high = manager.ActiveProfile;
+                    foreach (double pressure in new double[] { 0, 60, 90 })
+                    {
+                        var profile = ScanResourceProfile.Create(mode, false, 8, totalRam, memoryPressurePercent: pressure);
+                        long physicalCapMiB = Math.Min(totalRam / MiB * 3 / 5, 16384);
+                        long availableCapMiB = (long)(totalRam / MiB * (100 - pressure) / 100 * 0.75);
+                        Assert.InRange(profile.MaxMemoryBudgetBytes, MiB, Math.Min(physicalCapMiB, availableCapMiB) * MiB);
+                        Assert.InRange(profile.Concurrency, 1, Math.Min(32, Math.Max(1, (int)(profile.MaxMemoryBudgetBytes / (64 * MiB)))));
+                        Assert.Equal(mode, profile.Mode);
+                        if (pressure >= 88)
+                        {
+                            Assert.Equal(1, profile.Concurrency);
+                            Assert.True(profile.MaxMemoryBudgetBytes <= 128 * MiB);
+                        }
+                    }
+                }
+            }
 
-            // RAM/2 oranı kontrolü: 8 GB RAM'de bile en az 3 GB bütçe olmalı
-            long expectedMinHighBudget = 3L * 1024 * 1024 * 1024;
-            Assert.True(high.MaxMemoryBudgetBytes >= expectedMinHighBudget,
-                $"High mode RAM budget ({high.MaxMemoryBudgetBytes / (1024 * 1024)} MB) must be at least {expectedMinHighBudget / (1024 * 1024)} MB on this system");
-
-            manager.SetMode(ScanResourceMode.Maximum);
-            var maximum = manager.ActiveProfile;
-            Assert.True(maximum.MaxMemoryBudgetBytes >= high.MaxMemoryBudgetBytes,
-                "Maximum mode must have >= High mode RAM budget");
+            Assert.Equal(4 * GiB, ScanResourceProfile.Create(ScanResourceMode.High, false, 8, 8 * GiB).MaxMemoryBudgetBytes);
+            Assert.Equal(8 * GiB, ScanResourceProfile.Create(ScanResourceMode.High, false, 8, 16 * GiB).MaxMemoryBudgetBytes);
         }
 
+        /// <summary>Checks requested mode changes while a fixed pressure sampler prevents timer-driven host-dependent transitions.</summary>
         [Fact]
         public void AdaptiveScanResourceManager_DynamicModeTransition_UpdatesActiveProfile()
         {
-            var manager = new AdaptiveScanResourceManager();
+            using var manager = new AdaptiveScanResourceManager(pressureSampler: () => (0, 0, false), enableTelemetryTimer: false);
             Assert.Equal(ScanResourceMode.Auto, manager.CurrentMode);
 
             manager.SetMode(ScanResourceMode.High);
@@ -80,10 +93,11 @@ namespace AegisPC.Tests
             Assert.True(manager.ActiveProfile.Concurrency >= 1);
         }
 
+        /// <summary>Checks real semaphore admission and release with background telemetry disabled for a stable permit count.</summary>
         [Fact]
         public async Task AdaptiveScanResourceManager_SlotAcquisition_EnforcesConcurrencyLimits()
         {
-            var manager = new AdaptiveScanResourceManager();
+            using var manager = new AdaptiveScanResourceManager(pressureSampler: () => (0, 0, false), enableTelemetryTimer: false);
             manager.SetMode(ScanResourceMode.VeryLow);
 
             int veryLowConcurrency = manager.ActiveProfile.Concurrency;
@@ -120,21 +134,19 @@ namespace AegisPC.Tests
             }
         }
 
+        /// <summary>Checks SSD expansion and rotational-disk pacing on otherwise identical deterministic hardware.</summary>
         [Fact]
         public void AdaptiveScanResourceManager_HighMode_AggressiveConcurrency()
         {
-            var manager = new AdaptiveScanResourceManager();
-            manager.SetMode(ScanResourceMode.High);
-            var profile = manager.ActiveProfile;
-
-            int cores = Environment.ProcessorCount;
-
-            // High modda en az cores-1 worker olmalı (4'ten az olamaz)
-            Assert.True(profile.Concurrency >= Math.Max(4, cores - 1),
-                $"High mode should use at least {Math.Max(4, cores - 1)} workers on {cores}-core system, got {profile.Concurrency}");
-
-            // Gecikme olmamalı
+            var profile = ScanResourceProfile.Create(ScanResourceMode.High, false, 8, 16 * GiB);
+            Assert.Equal(24, profile.Concurrency);
+            Assert.False(profile.IsHddRestricted);
             Assert.Equal(0, profile.DelayBetweenFilesMs);
+
+            var rotational = ScanResourceProfile.Create(ScanResourceMode.High, true, 8, 16 * GiB);
+            Assert.Equal(2, rotational.Concurrency);
+            Assert.True(rotational.IsHddRestricted);
+            Assert.True(rotational.DelayBetweenFilesMs >= 2);
         }
     }
 }

@@ -258,7 +258,10 @@ namespace AegisPC.Security.Scanning
                     }
                     _isInitialized = false;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "AMSI uninitialization failed.");
+                }
             }
         }
     }

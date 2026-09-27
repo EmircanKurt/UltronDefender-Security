@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using AegisPC.Contracts.Policy;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Models;
@@ -11,12 +12,14 @@ using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.Scanning
 {
-    public class ScanCoordinatorService : IScanCoordinatorService
+    public class ScanCoordinatorService : IScanCoordinatorService, IBackgroundScanCoordinator
     {
         private readonly IFileScanner _fileScanner;
         private readonly ISecurityFindingService _findingService;
         private readonly IQuarantineService? _quarantineService;
         private readonly IAuditLogService? _auditLogService;
+        private readonly ISettingsService? _settingsService;
+        private readonly IPolicyEngine? _policyEngine;
         private readonly ILogger<ScanCoordinatorService>? _logger;
 
         private CancellationTokenSource? _scanCts;
@@ -24,6 +27,29 @@ namespace AegisPC.Security.Scanning
         private readonly List<SecurityFinding> _currentFindings = new();
         private ScanSession? _currentSession;
         private Task<ScanResult?>? _activeScanTask;
+
+        private Action? _externalPauseAction;
+        private Action? _externalResumeAction;
+        private Action? _externalCancelAction;
+
+        private sealed class ExternalScannerSubscription : IDisposable
+        {
+            private readonly Action _onDispose;
+            private int _disposed;
+
+            public ExternalScannerSubscription(Action onDispose)
+            {
+                _onDispose = onDispose;
+            }
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                {
+                    _onDispose();
+                }
+            }
+        }
 
         private bool _isExternalScanRunning = false;
         public bool IsExternalScanRunning => _isExternalScanRunning;
@@ -68,13 +94,39 @@ namespace AegisPC.Security.Scanning
             ISecurityFindingService findingService,
             IQuarantineService? quarantineService = null,
             IAuditLogService? auditLogService = null,
+            ISettingsService? settingsService = null,
+            IPolicyEngine? policyEngine = null,
             ILogger<ScanCoordinatorService>? logger = null)
         {
             _fileScanner = fileScanner;
             _findingService = findingService;
             _quarantineService = quarantineService;
             _auditLogService = auditLogService;
+            _settingsService = settingsService;
+            _policyEngine = policyEngine;
             _logger = logger;
+        }
+
+        public IDisposable RegisterExternalScanner(Action pauseAction, Action resumeAction, Action cancelAction)
+        {
+            lock (_lock)
+            {
+                _isExternalScanRunning = true;
+                _externalPauseAction = pauseAction;
+                _externalResumeAction = resumeAction;
+                _externalCancelAction = cancelAction;
+            }
+
+            return new ExternalScannerSubscription(() =>
+            {
+                lock (_lock)
+                {
+                    _isExternalScanRunning = false;
+                    _externalPauseAction = null;
+                    _externalResumeAction = null;
+                    _externalCancelAction = null;
+                }
+            });
         }
 
         public void RegisterExternalScanProgress(ScanProgress progress)
@@ -82,21 +134,30 @@ namespace AegisPC.Security.Scanning
             lock (_lock)
             {
                 _isExternalScanRunning = true;
-                _state = ScanState.Scanning;
-                _stopReason = ScanStopReason.None;
+                if (_state != ScanState.Paused && _state != ScanState.Cancelling && _state != ScanState.Cancelled)
+                {
+                    _state = ScanState.Scanning;
+                    _stopReason = ScanStopReason.None;
+                }
                 CurrentScanType = progress.ScanType;
                 ProgressPercent = progress.ProgressPercent;
                 CurrentFile = progress.CurrentFile;
                 ScannedFiles = progress.ScannedFiles;
                 TotalFiles = progress.TotalFiles;
                 ElapsedTime = progress.ElapsedTime;
-                StatusText = $"Arka plan başlangıç taraması: {progress.ScannedFiles:N0} dosya incelendi (%{(int)progress.ProgressPercent})";
+                if (_state != ScanState.Paused && _state != ScanState.Cancelling && _state != ScanState.Cancelled)
+                {
+                    StatusText = $"Arka plan başlangıç taraması: {progress.ScannedFiles:N0} dosya incelendi (%{(int)progress.ProgressPercent})";
+                }
             }
             try
             {
                 ProgressChanged?.Invoke(progress);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Subscriber threw exception on ProgressChanged event.");
+            }
         }
 
         public void CompleteExternalScan(ScanResult result)
@@ -104,13 +165,24 @@ namespace AegisPC.Security.Scanning
             lock (_lock)
             {
                 _isExternalScanRunning = false;
-                _state = ScanState.Completed;
-                _stopReason = ScanStopReason.CompletedNormally;
-                ProgressPercent = 100;
+                if (result.Status == ScanStatus.Cancelled)
+                {
+                    _state = ScanState.Cancelled;
+                    _stopReason = ScanStopReason.UserCancelled;
+                    StatusText = "Tarama kullanıcı tarafından durduruldu.";
+                    CurrentFile = "İptal edildi.";
+                }
+                else
+                {
+                    _state = ScanState.Completed;
+                    _stopReason = ScanStopReason.CompletedNormally;
+                    ProgressPercent = 100;
+                    StatusText = $"Başlangıç taraması tamamlandı. {result.ScannedFiles:N0} dosya incelendi.";
+                }
+
                 ScannedFiles = result.ScannedFiles;
                 TotalFiles = result.TotalFiles;
                 ElapsedTime = result.ElapsedMs > 0 ? TimeSpan.FromMilliseconds(result.ElapsedMs) : TimeSpan.Zero;
-                StatusText = $"Başlangıç taraması tamamlandı. {result.ScannedFiles:N0} dosya incelendi.";
                 _currentFindings.Clear();
                 if (result.Findings != null)
                 {
@@ -121,38 +193,36 @@ namespace AegisPC.Security.Scanning
             {
                 ScanCompleted?.Invoke(result);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Subscriber threw exception on ScanCompleted event.");
+            }
         }
 
         public Task<ScanResult?> StartScanAsync(ScanType scanType, string customPath = "")
+            => StartOwnedScan(scanType, customPath, CancellationToken.None, background: false);
+
+        /// <summary>Atomically claims an idle coordinator and binds cancellation to that scan only.</summary>
+        public Task<ScanResult?> TryStartBackgroundScanAsync(ScanType scanType, CancellationToken cancellationToken)
+            => StartOwnedScan(scanType, string.Empty, cancellationToken, background: true);
+
+        /// <summary>Applies an owned profile only when no manual or external scan is active.</summary>
+        public Task<ScanResult?> TryStartBackgroundScanAsync(ScanType scanType, CancellationToken cancellationToken, Action beforeOwnedScanStarts)
+            => StartOwnedScan(scanType, string.Empty, cancellationToken, background: true, beforeOwnedScanStarts);
+
+        private Task<ScanResult?> StartOwnedScan(ScanType scanType, string customPath,
+            CancellationToken cancellationToken, bool background, Action? beforeOwnedScanStarts = null)
         {
-            IScanSession? sessionToNotify = null;
-            Task<ScanResult?>? runningTask = null;
-
-            lock (_lock)
-            {
-                // Zaten çalışan bir tarama varsa mükerrer başlatma; mevcut aktif oturumu ve görevi dön
-                if (IsScanning && _activeScanTask != null && !_activeScanTask.IsCompleted)
-                {
-                    _logger?.LogInformation("Scan is already in progress ({Type}). Returning existing active session.", CurrentScanType);
-                    sessionToNotify = _currentSession;
-                    runningTask = _activeScanTask;
-                }
-            }
-
-            if (runningTask != null && sessionToNotify != null)
-            {
-                try
-                {
-                    ScanSessionStarted?.Invoke(sessionToNotify);
-                }
-                catch { }
-                return runningTask;
-            }
-
+            cancellationToken.ThrowIfCancellationRequested();
             ScanSession session;
+            TaskCompletionSource<ScanResult?> completion;
             lock (_lock)
             {
+                if (_activeScanTask != null && !_activeScanTask.IsCompleted)
+                {
+                    return background ? Task.FromResult<ScanResult?>(null) : _activeScanTask;
+                }
+                if (_isExternalScanRunning) return Task.FromResult<ScanResult?>(null);
                 _isExternalScanRunning = false;
                 _state = ScanState.Scanning;
                 _stopReason = ScanStopReason.None;
@@ -164,16 +234,38 @@ namespace AegisPC.Security.Scanning
                 _currentFindings.Clear();
                 StatusText = $"{scanType} taraması çalışıyor...";
                 ElapsedTime = TimeSpan.Zero;
-                _scanCts = new CancellationTokenSource();
+                _scanCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
                 session = new ScanSession(
                     scanType,
                     customPath,
                     _scanCts,
-                    PauseScan,
-                    ResumeScan,
-                    CancelScan);
+                    () => { }, () => { }, () => { });
                 _currentSession = session;
+                // Replace the temporary callbacks with identity-bound actions (never a mutable CTS).
+                session.SetOwnerActions(() => ApplyToOwnedSession(session.SessionId, PauseScan),
+                    () => ApplyToOwnedSession(session.SessionId, ResumeScan),
+                    () => ApplyToOwnedSession(session.SessionId, CancelScan));
+                completion = new TaskCompletionSource<ScanResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _activeScanTask = completion.Task;
+            }
+
+            try { beforeOwnedScanStarts?.Invoke(); }
+            catch (Exception ex)
+            {
+                lock (_lock)
+                {
+                    session.MarkEnded();
+                    _currentSession = null;
+                    _scanCts?.Dispose();
+                    _scanCts = null;
+                    _activeScanTask = null;
+                    _state = ScanState.Failed;
+                    _stopReason = ScanStopReason.Error;
+                    StatusText = "Tarama kaynak profili uygulanamadı.";
+                }
+                completion.TrySetException(ex);
+                return completion.Task;
             }
 
             try
@@ -185,13 +277,23 @@ namespace AegisPC.Security.Scanning
                 _logger?.LogTrace(ex, "Error notifying ScanSessionStarted listeners");
             }
 
-            var scanTask = RunScanInternalAsync(session, scanType, customPath, _scanCts.Token);
+            _ = CompleteOwnedScanAsync(session, scanType, customPath, completion);
+            return completion.Task;
+        }
+
+        private void ApplyToOwnedSession(Guid? sessionId, Action action)
+        {
             lock (_lock)
             {
-                _activeScanTask = scanTask;
+                if (sessionId != null && _currentSession?.SessionId == sessionId) action();
             }
+        }
 
-            return scanTask;
+        private async Task CompleteOwnedScanAsync(ScanSession session, ScanType scanType, string path,
+            TaskCompletionSource<ScanResult?> completion)
+        {
+            try { completion.TrySetResult(await RunScanInternalAsync(session, scanType, path, session.CancellationToken)); }
+            catch (Exception ex) { completion.TrySetException(ex); }
         }
 
         private async Task<ScanResult?> RunScanInternalAsync(
@@ -202,13 +304,18 @@ namespace AegisPC.Security.Scanning
         {
             var progressHandler = new Progress<ScanProgress>(p =>
             {
+                lock (_lock)
+                {
+                if (_currentSession != session || !session.IsActive) return;
                 ProgressPercent = p.ProgressPercent;
                 CurrentFile = p.CurrentFile;
                 ScannedFiles = p.ScannedFiles;
                 TotalFiles = p.TotalFiles;
                 ElapsedTime = p.ElapsedTime;
-                StatusText = $"{CurrentScanType} taraması: {p.ScannedFiles:N0} dosya incelendi";
+                if (_state == ScanState.Scanning)
+                    StatusText = $"{CurrentScanType} taraması: {p.ScannedFiles:N0} dosya incelendi";
                 session.LatestProgress = p;
+                }
 
                 try
                 {
@@ -232,79 +339,113 @@ namespace AegisPC.Security.Scanning
                     throw new OperationCanceledException(cancellationToken);
                 }
 
-                // GÖREV 7: Risk skoru 85 ve üzeri olan zararlılar otomatik karantinaya alınır.
-                // 60-84 arası şüpheli bulgular için kullanıcı uyarısı/olay kaydı oluşturulur.
                 if (result?.Findings != null && result.Findings.Count > 0)
                 {
                     result.Findings.RemoveAll(f => f.Status == FindingStatus.Resolved || f.IsAllowlisted);
 
-                    foreach (var finding in result.Findings)
+                    if (_policyEngine != null)
                     {
-                        if (cancellationToken.IsCancellationRequested) break;
-
-                        if (finding.RiskScore >= 85)
+                        foreach (var finding in result.Findings)
                         {
-                            if (_quarantineService != null && !string.IsNullOrWhiteSpace(finding.ObjectPath))
+                            if (cancellationToken.IsCancellationRequested) break;
+                            try
                             {
-                                try
-                                {
-                                    var qSuccess = await _quarantineService.QuarantineFileAsync(
-                                        finding.ObjectPath,
-                                        $"Otomatik Karantina (Risk Puanı: {finding.RiskScore}): {finding.Title}",
-                                        cancellationToken);
-
-                                    if (qSuccess)
-                                    {
-                                        finding.Status = FindingStatus.Resolved;
-                                        await _findingService.UpdateFindingAsync(finding, cancellationToken);
-                                        _logger?.LogInformation("Zararlı dosya otomatik karantinaya alındı: {Path}", finding.ObjectPath);
-
-                                        if (_auditLogService != null)
-                                        {
-                                            try
-                                            {
-                                                await _auditLogService.LogActionAsync(
-                                                    AuditAction.FileQuarantined,
-                                                    "File",
-                                                    finding.Title,
-                                                    finding.ObjectPath,
-                                                    $"Otomatik karantinaya alındı. Risk Skoru: {finding.RiskScore}",
-                                                    AuditResult.Success,
-                                                    null,
-                                                    cancellationToken);
-                                            }
-                                            catch { }
-                                        }
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger?.LogError(ex, "Otomatik karantinaya alma hatası: {Path}", finding.ObjectPath);
-                                }
+                                await _policyEngine.EnforcePolicyAsync(finding, cancellationToken);
+                            }
+                            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                            catch (Exception ex)
+                            {
+                                _logger?.LogError(ex, "Politika infaz hatası: {Path}", finding.ObjectPath);
                             }
                         }
-                        else if (finding.RiskScore >= 60 && finding.RiskScore < 85)
+                    }
+                    else
+                    {
+                        var enableAutoQuarantine = _settingsService?.GetSetting("EnableAutoQuarantine", true) ?? true;
+                        var autoQuarantineThreshold = _settingsService?.GetSetting("AutoQuarantineThreshold", 85) ?? 85;
+                        autoQuarantineThreshold = Math.Clamp(autoQuarantineThreshold, 0, 100);
+
+                        foreach (var finding in result.Findings)
                         {
-                            if (_auditLogService != null)
+                            if (cancellationToken.IsCancellationRequested) break;
+                            if (finding.IsAllowlisted || finding.Status != FindingStatus.Active) continue;
+
+                            bool isConfirmedThreat = finding.Category is FindingCategory.KnownMalwareHash or FindingCategory.ConfirmedMalicious;
+                            if (enableAutoQuarantine && isConfirmedThreat && finding.RiskScore >= autoQuarantineThreshold)
                             {
-                                try
+                                if (_quarantineService != null && !string.IsNullOrWhiteSpace(finding.ObjectPath))
                                 {
-                                    await _auditLogService.LogActionAsync(
-                                        AuditAction.ScanCompleted,
-                                        "File",
-                                        finding.Title,
-                                        finding.ObjectPath,
-                                        $"Şüpheli dosya tespit edildi (Risk: {finding.RiskScore}). Kullanıcı uyarıldı, dosya korundu.",
-                                        AuditResult.Success,
-                                        null,
-                                        cancellationToken);
+                                    try
+                                    {
+                                        var qSuccess = _quarantineService is IContentBoundQuarantineService bound && await bound.TryQuarantineFileAsync(
+                                            finding.ObjectPath,
+                                            $"Otomatik Karantina (Risk Puanı: {finding.RiskScore}): {finding.Title}",
+                                            finding.SHA256 ?? string.Empty,
+                                            cancellationToken);
+
+                                        if (qSuccess)
+                                        {
+                                            finding.Status = FindingStatus.Resolved;
+                                            await _findingService.UpdateFindingAsync(finding, cancellationToken);
+                                            _logger?.LogInformation("Zararlı dosya otomatik karantinaya alındı: {Path}", finding.ObjectPath);
+
+                                            if (_auditLogService != null)
+                                            {
+                                                try
+                                                {
+                                                    await _auditLogService.LogActionAsync(
+                                                        AuditAction.FileQuarantined,
+                                                        "File",
+                                                        finding.Title,
+                                                        finding.ObjectPath,
+                                                        $"Otomatik karantinaya alındı. Risk Skoru: {finding.RiskScore}",
+                                                        AuditResult.Success,
+                                                        null,
+                                                        cancellationToken);
+                                                }
+                                                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                                                catch (Exception auditEx)
+                                                {
+                                                    _logger?.LogWarning(auditEx, "AuditLog recording failed for auto-quarantine of {Path}", finding.ObjectPath);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                                    catch (Exception ex)
+                                    {
+                                        _logger?.LogError(ex, "Otomatik karantinaya alma hatası: {Path}", finding.ObjectPath);
+                                    }
                                 }
-                                catch { }
+                            }
+                            else if (finding.RiskScore >= 60)
+                            {
+                                if (_auditLogService != null)
+                                {
+                                    try
+                                    {
+                                        await _auditLogService.LogActionAsync(
+                                            AuditAction.ScanCompleted,
+                                            "File",
+                                            finding.Title,
+                                            finding.ObjectPath,
+                                            $"Şüpheli dosya tespit edildi (Risk: {finding.RiskScore}). Kullanıcı uyarıldı, dosya korundu.",
+                                            AuditResult.Success,
+                                            null,
+                                            cancellationToken);
+                                    }
+                                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                                    catch (Exception auditEx)
+                                    {
+                                        _logger?.LogWarning(auditEx, "AuditLog recording failed for suspicious finding warning of {Path}", finding.ObjectPath);
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
                 lock (_lock)
                 {
                     _currentFindings.Clear();
@@ -331,6 +472,12 @@ namespace AegisPC.Security.Scanning
                     _stopReason = ScanStopReason.UserCancelled;
                     StatusText = "Tarama kullanıcı tarafından durduruldu.";
                     CurrentFile = "İptal edildi.";
+
+                    if (result?.Findings != null)
+                    {
+                        _currentFindings.Clear();
+                        _currentFindings.AddRange(result.Findings);
+                    }
 
                     result = new ScanResult
                     {
@@ -363,6 +510,11 @@ namespace AegisPC.Security.Scanning
 
                 lock (_lock)
                 {
+                    if (_fileScanner.IsPaused)
+                    {
+                        try { _fileScanner.ResumeScan(); }
+                        catch (Exception ex) { _logger?.LogWarning(ex, "Failed to resume scanner during cleanup."); }
+                    }
                     if (_state == ScanState.Scanning)
                     {
                         _state = ScanState.Completed;
@@ -390,47 +542,110 @@ namespace AegisPC.Security.Scanning
             return result;
         }
 
-        public bool IsPaused => _state == ScanState.Paused || _fileScanner.IsPaused;
+        public bool IsPaused
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _state == ScanState.Paused || (_state == ScanState.Scanning && _fileScanner.IsPaused);
+                }
+            }
+        }
 
         public void PauseScan()
         {
+            Action? extPause = null;
             lock (_lock)
             {
-                if (!IsScanning && _state != ScanState.Scanning) return;
+                if (_state != ScanState.Scanning)
+                {
+                    return;
+                }
+
                 _fileScanner.PauseScan();
+                extPause = _externalPauseAction;
                 _state = ScanState.Paused;
                 StatusText = "Tarama duraklatıldı.";
+            }
+
+            try
+            {
+                extPause?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Error invoking external pause action.");
             }
         }
 
         public void ResumeScan()
         {
+            Action? extResume = null;
             lock (_lock)
             {
-                if (!IsScanning && _state != ScanState.Paused) return;
-                _fileScanner.ResumeScan();
-                _state = ScanState.Scanning;
-                StatusText = $"{CurrentScanType} taraması çalışıyor...";
+                if (_fileScanner.IsPaused)
+                {
+                    _fileScanner.ResumeScan();
+                }
+
+                extResume = _externalResumeAction;
+
+                if (_state == ScanState.Paused)
+                {
+                    _state = ScanState.Scanning;
+                    StatusText = $"{CurrentScanType} taraması çalışıyor...";
+                }
+            }
+
+            try
+            {
+                extResume?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Error invoking external resume action.");
             }
         }
 
         public void CancelScan()
         {
+            Action? extCancel = null;
             lock (_lock)
             {
-                if (_state != ScanState.Scanning && _state != ScanState.Paused) return;
+                if (_state != ScanState.Scanning && _state != ScanState.Paused)
+                {
+                    return;
+                }
+
                 _state = ScanState.Cancelling;
                 _stopReason = ScanStopReason.UserCancelled;
+                StatusText = "Tarama iptal ediliyor...";
+
                 try
                 {
-                    if (IsPaused)
+                    if (_fileScanner.IsPaused)
                     {
-                        _fileScanner.ResumeScan(); // Ensure workers unblock to process cancellation
+                        _fileScanner.ResumeScan();
                     }
+
                     _scanCts?.Cancel();
-                    StatusText = "Tarama iptal ediliyor...";
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger?.LogDebug(ex, "Exception during scan cancellation cleanup.");
+                }
+
+                extCancel = _externalCancelAction;
+            }
+
+            try
+            {
+                extCancel?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Error invoking external cancel action.");
             }
         }
     }

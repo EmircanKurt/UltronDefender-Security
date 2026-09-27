@@ -7,6 +7,8 @@ namespace AegisPC.Contracts.Services;
 
 public interface IAllowlistService
 {
+    bool IsAllowlisted(string sha256);
+    bool IsPathAllowlisted(string filePath);
     Task<bool> IsAllowlistedAsync(string sha256, CancellationToken cancellationToken = default);
     Task<bool> IsPathAllowlistedAsync(string filePath, CancellationToken cancellationToken = default);
     Task AddToAllowlistAsync(AllowlistEntry entry, CancellationToken cancellationToken = default);

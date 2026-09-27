@@ -31,6 +31,8 @@ namespace AegisPC.Contracts.Services
         /// Updates the current resource mode. If a scan is executing, dynamically adapts worker concurrency.
         /// </summary>
         void SetMode(ScanResourceMode mode);
+        /// <summary>Updates the storage policy for the actual scan target.</summary>
+        void ConfigureTarget(string targetPath) { }
 
         /// <summary>
         /// Awaits permission for a worker to process a file, enforcing dynamic concurrency limits.

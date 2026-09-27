@@ -15,6 +15,7 @@ namespace AegisPC.Security.Scanning
     public class AllowlistService : IAllowlistService
     {
         private readonly IHashService _hashService;
+        private readonly IExclusionService? _exclusionService;
         private readonly ILogger<AllowlistService>? _logger;
         private readonly List<AllowlistEntry> _allowlist = new();
         private readonly ConcurrentDictionary<string, AllowlistEntry> _activeHashIndex = new(StringComparer.OrdinalIgnoreCase);
@@ -22,10 +23,14 @@ namespace AegisPC.Security.Scanning
         private readonly string _storageFilePath;
         private readonly object _lock = new();
 
-        public AllowlistService(IHashService hashService, ILogger<AllowlistService>? logger = null)
+        public AllowlistService(
+            IHashService hashService,
+            ILogger<AllowlistService>? logger = null,
+            IExclusionService? exclusionService = null)
         {
             _hashService = hashService;
             _logger = logger;
+            _exclusionService = exclusionService;
 
             var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AegisPC");
             Directory.CreateDirectory(dataDir);
@@ -64,7 +69,10 @@ namespace AegisPC.Security.Scanning
                                         var norm = Path.GetFullPath(item.FilePath);
                                         _activePathIndex[norm] = item;
                                     }
-                                    catch { }
+                                    catch (Exception ex)
+                                    {
+                                        _logger?.LogDebug(ex, "Failed to normalize path for allowlist item {Path}", item.FilePath);
+                                    }
                                 }
                             }
                         }
@@ -90,25 +98,45 @@ namespace AegisPC.Security.Scanning
             }
         }
 
-        public Task<bool> IsAllowlistedAsync(string sha256, CancellationToken cancellationToken = default)
+        public bool IsAllowlisted(string sha256)
         {
-            if (string.IsNullOrEmpty(sha256)) return Task.FromResult(false);
-            return Task.FromResult(_activeHashIndex.ContainsKey(sha256));
+            if (string.IsNullOrEmpty(sha256)) return false;
+            return _activeHashIndex.ContainsKey(sha256);
         }
 
-        public Task<bool> IsPathAllowlistedAsync(string filePath, CancellationToken cancellationToken = default)
+        public bool IsPathAllowlisted(string filePath)
         {
-            if (string.IsNullOrWhiteSpace(filePath)) return Task.FromResult(false);
-            if (_activePathIndex.ContainsKey(filePath)) return Task.FromResult(true);
+            if (string.IsNullOrWhiteSpace(filePath)) return false;
+
+            // ExclusionService'e delege et (tek doğruluk kaynağı)
+            if (_exclusionService != null && _exclusionService.IsExcluded(filePath, null))
+            {
+                return true;
+            }
+
+            if (_activePathIndex.ContainsKey(filePath)) return true;
 
             try
             {
                 var norm = Path.GetFullPath(filePath);
-                if (_activePathIndex.ContainsKey(norm)) return Task.FromResult(true);
+                if (_activePathIndex.ContainsKey(norm)) return true;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogTrace(ex, "Could not normalize path for allowlist check: {Path}", filePath);
+            }
 
-            return Task.FromResult(false);
+            return false;
+        }
+
+        public Task<bool> IsAllowlistedAsync(string sha256, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(IsAllowlisted(sha256));
+        }
+
+        public Task<bool> IsPathAllowlistedAsync(string filePath, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(IsPathAllowlisted(filePath));
         }
 
         public Task AddToAllowlistAsync(AllowlistEntry entry, CancellationToken cancellationToken = default)
@@ -131,7 +159,10 @@ namespace AegisPC.Security.Scanning
                         var norm = Path.GetFullPath(entry.FilePath);
                         _activePathIndex[norm] = entry;
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogDebug(ex, "Failed to normalize path for allowlist entry {Path}", entry.FilePath);
+                    }
                 }
                 SaveToDisk();
             }
@@ -159,7 +190,10 @@ namespace AegisPC.Security.Scanning
                             var norm = Path.GetFullPath(entry.FilePath);
                             _activePathIndex.TryRemove(norm, out _);
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogDebug(ex, "Failed to normalize path for allowlist removal {Path}", entry.FilePath);
+                        }
                     }
                     SaveToDisk();
                 }

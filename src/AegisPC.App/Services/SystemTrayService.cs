@@ -130,6 +130,7 @@ namespace AegisPC.App.Services
             {
                 Application.Current.Dispatcher.Invoke(() =>
                 {
+                    App.IsStartMinimized = false;
                     var mainWindow = Application.Current.MainWindow;
                     if (mainWindow != null)
                     {

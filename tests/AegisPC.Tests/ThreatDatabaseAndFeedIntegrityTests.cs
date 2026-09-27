@@ -214,6 +214,59 @@ namespace AegisPC.Tests
         }
 
         [Fact]
+        public void Test_ThreatSignatureDatabase_ImportThreatHashes_RejectsNonMalwareBazaarSources_AndSkipsExistingRows()
+        {
+            string testDir = Path.Combine(Path.GetTempPath(), "AegisTest_ThreatImportDelta_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+            string testDbPath = Path.Combine(testDir, "threat_signatures.db");
+
+            try
+            {
+                ThreatSignatureDatabase.ResetForTesting(testDbPath);
+
+                var initial = ThreatSignatureDatabase.ImportThreatHashes(new[]
+                {
+                    ("ceded191bf677edc18e8b75af350e17bfdb368a65efcc3c8d042b8a012646606", "Mirai", "Backdoor/RAT", 100, "MalwareBazaar")
+                });
+
+                Assert.Equal(1, initial);
+
+                var rejected = ThreatSignatureDatabase.ImportThreatHashes(new[]
+                {
+                    ("ceded191bf677edc18e8b75af350e17bfdb368a65efcc3c8d042b8a012646606", "OverwriteAttempt", "Malware", 100, "Manual")
+                });
+
+                Assert.Equal(0, rejected);
+
+                var duplicateAttempt = ThreatSignatureDatabase.ImportThreatHashes(new[]
+                {
+                    ("a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0", "ManualFeedEntry", "Malware", 100, "Manual")
+                });
+
+                Assert.Equal(0, duplicateAttempt);
+
+                var match = ThreatSignatureDatabase.CheckHash("ceded191bf677edc18e8b75af350e17bfdb368a65efcc3c8d042b8a012646606");
+                Assert.True(match.IsMatched);
+                Assert.Equal("Mirai", match.Name);
+
+                var manualEntry = ThreatSignatureDatabase.CheckHash("a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0");
+                Assert.False(manualEntry.IsMatched);
+            }
+            finally
+            {
+                ThreatSignatureDatabase.ResetForTesting();
+                try
+                {
+                    if (Directory.Exists(testDir))
+                    {
+                        Directory.Delete(testDir, true);
+                    }
+                }
+                catch { }
+            }
+        }
+
+        [Fact]
         public void Test_DetectCategory_TagsLinuxAndMacSamples_AsLinuxMac()
         {
             // Görev: elf, sh ve macos örneklerini "Category=Linux/Mac" olarak etiketle
