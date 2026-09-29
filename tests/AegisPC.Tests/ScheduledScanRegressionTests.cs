@@ -125,7 +125,7 @@ public sealed class ScheduledScanRegressionTests
         var result = new ScanResult
         {
             Status = ScanStatus.Failed,
-            Findings = new() { new SecurityFinding { ObjectPath = "regression-" + Guid.NewGuid().ToString("N") + ".bin" } }
+            Findings = new() { new SecurityFinding { ObjectPath = "regression-" + Guid.NewGuid().ToString("N") + ".bin", RiskLevel = RiskLevel.Suspicious } }
         };
         int notifications = 0;
         background.OnNotificationRaised += (_, _) => notifications++;

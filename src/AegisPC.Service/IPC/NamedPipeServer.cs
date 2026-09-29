@@ -97,8 +97,8 @@ namespace AegisPC.Service.IPC
         {
             ResetThreatCounterIfExpired();
             _lastThreatTime = DateTime.UtcNow;
-            if (finding.Status == FindingStatus.Resolved)
-                Interlocked.Increment(ref _totalThreatsBlocked24h);
+            // A resolved finding can have been dismissed or excluded. Its status
+            // alone does not prove quarantine or a successful containment action.
 
             var threatNotification = new ThreatNotification
             {
@@ -107,9 +107,11 @@ namespace AegisPC.Service.IPC
                 ProcessId = 0,
                 ThreatName = finding.Title,
                 RiskLevel = finding.RiskLevel,
-                ActionTaken = finding.Status == FindingStatus.Resolved
-                    ? "Karantinaya Alındı"
-                    : "Tespit Edildi (müdahale bekliyor)",
+                ActionTaken = finding.IsAllowlisted
+                    ? "Kullanıcı istisnası; karantina sonucu bu olayda doğrulanmadı"
+                    : finding.Status == FindingStatus.Resolved
+                        ? "Bulgu kapatıldı; karantina sonucu bu olayda doğrulanmadı"
+                        : "Güvenlik bulgusu kaydedildi (inceleme veya müdahale bekliyor)",
                 Details = finding.Description,
                 DetectedAt = finding.CreatedAt
             };
@@ -121,7 +123,7 @@ namespace AegisPC.Service.IPC
         {
             ResetThreatCounterIfExpired();
             _lastThreatTime = DateTime.UtcNow;
-            Interlocked.Increment(ref _totalThreatsBlocked24h);
+            if (e.ProcessTerminated) Interlocked.Increment(ref _totalThreatsBlocked24h);
 
             var threatNotification = new ThreatNotification
             {
@@ -129,8 +131,10 @@ namespace AegisPC.Service.IPC
                 ProcessName = "RansomwareShield",
                 ProcessId = 0,
                 ThreatName = "RansomwareActivity",
-                RiskLevel = RiskLevel.ConfirmedMalicious,
-                ActionTaken = "Süreç Durduruldu / Dosya İzolasyonu",
+                RiskLevel = e.RiskScore >= 70 ? RiskLevel.HighRisk : RiskLevel.Suspicious,
+                ActionTaken = e.ProcessTerminated
+                    ? "Süreç sonlandırıldı; dosya karantinası bu olayda doğrulanmadı"
+                    : "Şüpheli etkinlik kaydedildi; müdahale sonucu doğrulanmadı",
                 Details = e.DetectionReason,
                 DetectedAt = e.Timestamp
             };

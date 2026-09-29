@@ -143,12 +143,6 @@ namespace AegisPC.Security.Scanning
                 return FileScanDetailedResult.CreateSkipped(path, "Dosya mevcut değil");
             }
 
-            // SELF-PROTECTION: Uygulamanın kendi imza/veritabanı/log/config dosyalarını asla tarama
-            if (IsSelfOwnedPath(path))
-            {
-                return FileScanDetailedResult.CreateSkipped(path, "AegisPC kendi dosyası");
-            }
-
             // Per-file timeout koruması: Kilitli dosya veya askıda kalan işlem tüm taramayı donduramaz
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             linkedCts.CancelAfter(perFileTimeout);

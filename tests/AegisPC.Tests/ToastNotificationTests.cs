@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using AegisPC.App.Views;
 using Xunit;
 
@@ -10,8 +11,8 @@ namespace AegisPC.Tests
         [InlineData("🚨 Tehdit Engellendi", "Tehdit Engellendi")]
         [InlineData("🛡️ Sistem Korundu", "Sistem Korundu")]
         [InlineData("⚠️ Dikkat", "Dikkat")]
-        [InlineData("", "Tehdit engellendi")]
-        [InlineData("   ", "Tehdit engellendi")]
+        [InlineData("", "Ultron Defender bildirimi")]
+        [InlineData("   ", "Ultron Defender bildirimi")]
         public void CleanTitle_StripsEmojisProperly(string rawTitle, string expectedTitle)
         {
             string cleaned = ToastNotificationWindow.CleanTitle(rawTitle);
@@ -28,7 +29,9 @@ namespace AegisPC.Tests
         [InlineData("Sistem Çökme Analizi", "Mavi ekran minidump incelendi", "Info", typeof(CrashAnalysisView))]
         public void ResolveTargetPage_RoutesToCorrectPage(string title, string message, string type, Type expectedPage)
         {
-            Type resolved = ToastNotificationWindow.ResolveTargetPage(title, message, type);
+            var resolver = typeof(ToastNotificationWindow).GetMethod("ResolveTargetPage", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(resolver);
+            var resolved = (Type)resolver!.Invoke(null, new object[] { title, message, type })!;
             Assert.Equal(expectedPage, resolved);
         }
     }

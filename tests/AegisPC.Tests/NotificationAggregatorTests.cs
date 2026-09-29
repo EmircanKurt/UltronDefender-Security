@@ -39,7 +39,6 @@ namespace AegisPC.Tests
             for (int w = 0; w < 30 && mockToast.Toasts.Count == 0; w++) await Task.Delay(50);
 
             Assert.Single(mockToast.Toasts);
-            Assert.Contains("Ultron Defender (Antivirüs Programı)", mockToast.Toasts[0].Title);
             Assert.Contains("KRİTİK", mockToast.Toasts[0].Title);
             Assert.Equal("danger", mockToast.Toasts[0].Type);
         }
@@ -63,9 +62,9 @@ namespace AegisPC.Tests
             for (int w = 0; w < 30 && mockToast.Toasts.Count == 0; w++) await Task.Delay(50);
 
             Assert.Single(mockToast.Toasts);
-            Assert.Contains("Ultron Defender (Antivirüs Programı)", mockToast.Toasts[0].Title);
-            Assert.Contains("5 Güvenlik Tehdidi", mockToast.Toasts[0].Title);
-            Assert.Contains("5 adet tehdit engellendi", mockToast.Toasts[0].Message);
+            Assert.Contains("5 güvenlik olayı", mockToast.Toasts[0].Title);
+            Assert.Contains("Kaynak işlem kaydı: Karantina", mockToast.Toasts[0].Message);
+            Assert.DoesNotContain("adet tehdit engellendi", mockToast.Toasts[0].Message);
         }
 
         [Fact]
@@ -87,9 +86,9 @@ namespace AegisPC.Tests
 
             // Must produce EXACTLY 1 combined notification for all 10 viruses per user directive!
             Assert.Single(mockToast.Toasts);
-            Assert.Contains("Ultron Defender (Antivirüs Programı)", mockToast.Toasts[0].Title);
-            Assert.Contains("10 Güvenlik Tehdidi", mockToast.Toasts[0].Title);
-            Assert.Contains("10 adet tehdit engellendi", mockToast.Toasts[0].Message);
+            Assert.Contains("10 güvenlik olayı", mockToast.Toasts[0].Title);
+            Assert.Contains("Kaynak işlem kaydı: Karantina Kasasına Kilitlendi", mockToast.Toasts[0].Message);
+            Assert.DoesNotContain("adet tehdit engellendi", mockToast.Toasts[0].Message);
         }
 
         [Fact]
@@ -105,8 +104,7 @@ namespace AegisPC.Tests
             aggregator.Flush();
 
             Assert.Single(mockToast.Toasts);
-            Assert.Contains("Ultron Defender (Antivirüs Programı)", mockToast.Toasts[0].Title);
-            Assert.Contains("Tehdit Etkisiz Hale Getirildi", mockToast.Toasts[0].Title);
+            Assert.Contains("Güvenlik olayı", mockToast.Toasts[0].Title);
             Assert.Contains("Suspicious.Dropper", mockToast.Toasts[0].Message);
         }
 

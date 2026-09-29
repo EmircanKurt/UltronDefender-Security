@@ -94,18 +94,8 @@ namespace AegisPC.Security.Kernel
                     return decision;
                 }
 
-                // 2. Öz-koruma ve Canary Tuzak Dosyaları Bypass
-                if (ScanFilterPolicy.IsCanaryFile(request.FilePath) || ScanFilterPolicy.IsSelfOwnedPath(request.FilePath))
-                {
-                    decision.IsBlocked = false;
-                    decision.NtStatus = STATUS_SUCCESS;
-                    decision.Status = KernelGatingStatus.Allowed;
-                    decision.BlockReason = "Öz-koruma: Antivirüs veya Canary dosyası bypass";
-                    decision.ElapsedMs = sw.Elapsed.TotalMilliseconds;
-                    return decision;
-                }
-
-                // 3. Kritik Windows Sistem Dosyası Koruması
+                // Product directory and canary-like names do not prove file ownership.
+                // Only the requesting process identity can protect our own I/O here.
                 string fileName = Path.GetFileName(request.FilePath);
                 if (PathHelper.IsSystemPath(request.FilePath) && CriticalProcesses.IsCriticalProcess(fileName))
                 {
@@ -182,15 +172,8 @@ namespace AegisPC.Security.Kernel
                     }
                 }
 
-                // Tehlikeli LOLBin / Ransomware Dropper Betikleri
-                if (fileName.Equals("vssadmin_drop.bat", StringComparison.OrdinalIgnoreCase) ||
-                    request.FilePath.Contains("malware_blocked", StringComparison.OrdinalIgnoreCase))
-                {
-                    riskScore = Math.Max(riskScore, 95);
-                    threatTitle = "Bilinen Tehdit Deseni / Zararlı Kod";
-                }
-
                 // 7. Zenginleştirilmiş DetectionHub Değerlendirmesi
+                bool verifiedConfirmation = false;
                 if (_detectionHub != null && File.Exists(request.FilePath))
                 {
                     try
@@ -206,6 +189,8 @@ namespace AegisPC.Security.Kernel
                         var hubResult = await _detectionHub.EvaluateAsync(ctx, linkedCts.Token);
                         if (hubResult != null)
                         {
+                            verifiedConfirmation = await KernelEvidenceGate.HasCurrentAbsoluteSignatureAsync(
+                                hubResult, request.FilePath, linkedCts.Token);
                             if (hubResult.RiskScore > riskScore)
                             {
                                 riskScore = hubResult.RiskScore;
@@ -226,59 +211,32 @@ namespace AegisPC.Security.Kernel
                     }
                 }
 
-                // 8. 4 Kademeli Karar Matrisi
+                // Only content-bound absolute evidence can block. Score-only signals are telemetry.
                 decision.RiskScore = riskScore;
 
-                if (riskScore >= 85)
+                if (verifiedConfirmation)
                 {
-                    // Kademe 4: Kritik (>=85) -> Block + Quarantine
-                    decision.IsBlocked = true;
-                    decision.NtStatus = STATUS_ACCESS_DENIED;
-                    decision.Status = KernelGatingStatus.BlockedAccessDenied;
-                    decision.ShouldQuarantine = true;
-                    decision.BlockReason = $"🚨 Çekirdek Engeli (Kernel Gating - Kritik Tehdit {riskScore}): {threatTitle}";
-
-                    if (_quarantineService != null && File.Exists(request.FilePath))
-                    {
-                        _ = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                await _quarantineService.QuarantineFileAsync(request.FilePath, decision.BlockReason);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger?.LogTrace(ex, "Background quarantine failed for {Path}", request.FilePath);
-                            }
-                        });
-                    }
-                }
-                else if (riskScore >= 70)
-                {
-                    // Kademe 3: Yüksek Risk (70-84) -> Block (Quarantine yok)
                     decision.IsBlocked = true;
                     decision.NtStatus = STATUS_ACCESS_DENIED;
                     decision.Status = KernelGatingStatus.BlockedAccessDenied;
                     decision.ShouldQuarantine = false;
-                    decision.BlockReason = $"🚨 Çekirdek Engeli (Kernel Gating - Yüksek Risk {riskScore}): {threatTitle}";
+                    decision.BlockReason = $"Verified content signature blocked: {threatTitle}";
                 }
                 else if (riskScore >= 40)
                 {
-                    // Kademe 2: Şüpheli (40-69) -> Allowed (İzleme / Log)
                     decision.IsBlocked = false;
                     decision.NtStatus = STATUS_SUCCESS;
                     decision.Status = KernelGatingStatus.Allowed;
                     decision.ShouldQuarantine = false;
-                    decision.BlockReason = $"İzleme: Şüpheli dosya aktivitesi ({riskScore}) - {threatTitle}";
+                    decision.BlockReason = $"İzleme: doğrulanmamış dosya sinyali ({riskScore}) - {threatTitle}";
                 }
                 else
                 {
-                    // Kademe 1: Temiz (<40) -> Allowed
                     decision.IsBlocked = false;
                     decision.NtStatus = STATUS_SUCCESS;
                     decision.Status = KernelGatingStatus.Allowed;
                     decision.ShouldQuarantine = false;
-                    decision.BlockReason = "Güvenli / Temiz dosya";
+                    decision.BlockReason = "No verified block evidence; access allowed.";
                 }
             }
             catch (OperationCanceledException)

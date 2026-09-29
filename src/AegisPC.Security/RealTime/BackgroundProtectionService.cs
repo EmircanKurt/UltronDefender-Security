@@ -41,7 +41,7 @@ namespace AegisPC.Security.RealTime
         private static int _isAutomaticScanInProgress;
 
         /// <summary>
-        /// Otomatik (zamanlanmış) tarama sürüyor mu? App.xaml.cs ScanCompleted bildirimi bu bayrakla susturulur.
+        /// Indicates an automatic scan so UI result reporting can avoid duplicate automatic summaries.
         /// </summary>
         public static bool IsAutomaticScanInProgress
         {
@@ -78,6 +78,8 @@ namespace AegisPC.Security.RealTime
             int newCount = 0;
             foreach (var finding in findings)
             {
+                if (finding.Status != FindingStatus.Active || finding.IsAllowlisted || finding.RiskLevel == RiskLevel.Clean)
+                    continue;
                 var key = BuildFindingNotificationKey(finding);
                 if (!string.IsNullOrWhiteSpace(key) && _notifiedFindingPaths.TryAdd(key, 0))
                 {
@@ -207,6 +209,7 @@ namespace AegisPC.Security.RealTime
             }
         }
 
+        /// <summary>Reports new active findings only after a completed scan; ignores resolved, allowed and clean observations.</summary>
         public void NotifyScheduledScanCompleted(ScanResult result)
         {
             if (result.Status != ScanStatus.Completed) return;
@@ -236,7 +239,7 @@ namespace AegisPC.Security.RealTime
                 try
                 {
                     var result = await _scanCoordinator.StartScanAsync(ScanType.Quick);
-                    if (result != null)
+                    if (result?.Status == ScanStatus.Completed)
                     {
                         _scheduleState.LastQuickScanTime = DateTime.UtcNow;
                         SaveScheduleState();
@@ -248,8 +251,8 @@ namespace AegisPC.Security.RealTime
                         if (newCount > 0)
                         {
                             OnNotificationRaised?.Invoke(
-                                "🚨 Ultron Defender (Antivirüs Programı): Otomatik Taramada Yeni Tehdit Bulundu!",
-                                $"Arka plan taramasında {newCount} adet yeni riskli tehdit tespit edildi. Detaylar Güvenlik Merkezinde.");
+                                "Ultron Defender: Arka Plan Tarama Bulguları",
+                                $"Arka plan taramasında {newCount} yeni güvenlik bulgusu kaydedildi. Bu sayı kesin virüs sayısı değildir; ayrıntıları inceleyin.");
                         }
                     }
                 }
@@ -280,7 +283,7 @@ namespace AegisPC.Security.RealTime
                 try
                 {
                     var result = await _scanCoordinator.StartScanAsync(ScanType.Full);
-                    if (result != null)
+                    if (result?.Status == ScanStatus.Completed)
                     {
                         _scheduleState.LastFullScanDate = DateTime.Today;
                         SaveScheduleState();
@@ -291,8 +294,8 @@ namespace AegisPC.Security.RealTime
                         if (newCount > 0)
                         {
                             OnNotificationRaised?.Invoke(
-                                "🚨 Ultron Defender (Antivirüs Programı): Günlük Tam Tarama - Yeni Tehdit Bulundu!",
-                                $"Tam taramada {newCount} adet yeni şüpheli tehdit tespit edildi. Lütfen inceleyin.");
+                                "Ultron Defender: Günlük Tarama Bulguları",
+                                $"Tam taramada {newCount} yeni güvenlik bulgusu kaydedildi. Bu sayı kesin virüs sayısı değildir; ayrıntıları inceleyin.");
                         }
                     }
                 }

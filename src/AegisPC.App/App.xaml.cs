@@ -157,7 +157,6 @@ namespace AegisPC.App
                     var toastService = ServiceProvider.GetService<AegisPC.Contracts.Services.IWindowsToastNotificationService>();
                     var behaviorEngine = ServiceProvider.GetService<AegisPC.Contracts.Services.IBehaviorEngine>();
                     var ipcClient = ServiceProvider.GetService<AegisPC.ServiceContracts.IServiceIpcClient>();
-                    var scanCoordinator = ServiceProvider.GetService<AegisPC.Contracts.Services.IScanCoordinatorService>();
 
                     // Eagerly resolve ScanViewModel so it attaches to IScanCoordinatorService events immediately from boot
                     var scanVm = ServiceProvider.GetService<AegisPC.App.ViewModels.ScanViewModel>();
@@ -177,28 +176,12 @@ namespace AegisPC.App
                         {
                             behaviorEngine.OnThreatContained += (proc, threat) =>
                             {
-                                toastService.ShowToast($"🚨 Tehdit Engellendi: {threat}", $"Zararlı davranış sergileyen '{proc}' süreci sonlandırıldı ve dosya karantinaya alındı.", "Error");
+                                toastService.ShowToast($"⚠️ Davranış Uyarısı: {threat}", $"'{proc}' için güvenlik olayı kaydedildi. Müdahalenin ayrıntılarını Olay Merkezinden inceleyin.", "Warning");
                             };
                         }
 
-                        if (scanCoordinator != null)
-                        {
-                            scanCoordinator.ScanCompleted += (result) =>
-                            {
-                                // Otomatik (zamanlanmış) taramalar BackgroundProtectionService tarafından
-                                // yalnızca YENİ bulgu varsa bildirilir; burada çift bildirim yapma.
-                                if (AegisPC.Security.RealTime.BackgroundProtectionService.IsAutomaticScanInProgress) return;
-
-                                int activeCount = result.Findings.Count(f => f.Status == AegisPC.Core.Enums.FindingStatus.Active && !f.IsAllowlisted);
-                                if (activeCount > 0)
-                                {
-                                    toastService.ShowToast(
-                                        "🚨 Ultron Defender: Tehdit Tespit Edildi!",
-                                        $"{result.ScanType} taraması tamamlandı: {activeCount} adet riskli tehdit bulundu. Detayları görmek için tıklayın.",
-                                        "Warning");
-                                }
-                            };
-                        }
+                        // ScanViewModel owns the final scan notification. A second startup
+                        // subscription would count heuristic findings as threats and duplicate it.
 
                         // Start Core Real-Time Progressive Protection Engine
                         var realTimeEngine = ServiceProvider.GetService<AegisPC.Security.RealTime.IRealTimeProtectionEngine>();
@@ -216,9 +199,11 @@ namespace AegisPC.App
                             ransomwareEngine.OnRansomwareAttemptDetected += (s, ev) =>
                             {
                                 toastService?.ShowToast(
-                                    "🚨 Fidye Saldırısı Engellendi!",
-                                    $"Şüpheli şifreleme girişimi durduruldu: '{System.IO.Path.GetFileName(ev.OffendingFilePath)}'",
-                                    "Error");
+                                    "⚠️ Şüpheli Şifreleme Uyarısı",
+                                    ev.ProcessTerminated
+                                        ? $"Süreç sonlandırıldı. İncelenen dosya: '{System.IO.Path.GetFileName(ev.OffendingFilePath)}'. Dosya karantinası bu olayda doğrulanmadı."
+                                        : $"Şüpheli etkinlik kaydedildi: '{System.IO.Path.GetFileName(ev.OffendingFilePath)}'. Müdahale sonucu doğrulanmadı; olayı inceleyin.",
+                                    "Warning");
                             };
                         }
 
@@ -230,9 +215,9 @@ namespace AegisPC.App
                             etwMonitor.ThreatDetected += (alert) =>
                             {
                                 toastService?.ShowToast(
-                                    $"🚨 ETW Tehdit Engellendi: {alert.ThreatName}",
-                                    $"Zararlı komut çalıştıran süreç durduruldu (PID: {alert.ProcessId})\nKomut: {alert.CommandLine}",
-                                    "Danger");
+                                    $"⚠️ Süreç Komutu Uyarısı: {alert.ThreatName}",
+                                    $"Şüpheli komut algılandı (PID: {alert.ProcessId}). Bu bildirim süreç sonlandırmasını doğrulamaz.\nKomut: {alert.CommandLine}",
+                                    "Warning");
                             };
 
                             // P0 Telemetry Pipeline: Wire Process Creation -> DAG Lineage Tree -> Behavior Engine
@@ -289,7 +274,7 @@ namespace AegisPC.App
                         {
                             ipcClient.ThreatDetected += (threat) =>
                             {
-                                toastService.ShowToast($"🚨 Arka Plan Tehdit Uyarısı: {threat.ThreatName}", $"Dosya: {threat.FilePath}\nİşlem: {threat.ActionTaken}", "Warning");
+                                toastService.ShowToast($"⚠️ Arka Plan Güvenlik Bulgusu: {threat.ThreatName}", $"Dosya: {threat.FilePath}\nİşlem: {threat.ActionTaken}", "Warning");
                             };
                             _ = ipcClient.ConnectAsync();
                             Log("Protection engines are service-owned; UI connected through IPC without starting duplicate local watchers.");

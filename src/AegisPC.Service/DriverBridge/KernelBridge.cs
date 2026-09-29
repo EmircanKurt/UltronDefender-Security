@@ -11,6 +11,7 @@ using AegisPC.Core.Enums;
 using AegisPC.Core.Helpers;
 using AegisPC.Core.Models;
 using AegisPC.Infrastructure.Kernel;
+using KernelEvidenceGate = AegisPC.Security.Kernel.KernelEvidenceGate;
 using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Service.DriverBridge
@@ -120,9 +121,7 @@ namespace AegisPC.Service.DriverBridge
                 }
 
                 string fileName = Path.GetFileName(filePath);
-                if (CriticalProcesses.IsCriticalProcess(fileName) ||
-                    PathHelper.IsSystemPath(filePath) ||
-                    AegisPC.Security.Scanning.ScanFilterPolicy.IsSelfOwnedPath(filePath))
+                if (PathHelper.IsSystemPath(filePath))
                 {
                     return false;
                 }
@@ -166,10 +165,12 @@ namespace AegisPC.Service.DriverBridge
                             ? detectionResult.Evidences.Select(e => e.Description).ToList()
                             : new List<string> { detectionResult.ThreatTitle };
 
-                        // 3a. CRITICAL THREAT: Risk >= 85 veya ConfirmedMalicious -> QUARANTINE + BLOCK
-                        if (score >= 85 || detectionResult.Verdict == DetectionVerdict.ConfirmedMalicious)
+                        // The pre-operation callback can only block current, content-bound absolute signatures.
+                        // Heuristic scores remain telemetry and cannot authorize file mutation.
+                        if (KernelEvidenceGate.HasCurrentAbsoluteSignatureAsync(
+                                detectionResult, filePath, cts.Token).GetAwaiter().GetResult())
                         {
-                            _logger?.LogCritical("🚨 KERNEL PRE-OP INTERCEPTION [QUARANTINE]: Intercepted critical malicious payload '{Path}' from PID {Pid} (Threat: {Threat}, Score: {Score})",
+                            _logger?.LogWarning("Verified file content blocked in kernel callback: {Path}, PID {Pid}, threat {Threat}, score {Score}",
                                 filePath, pid, detectionResult.ThreatTitle, score);
 
                             var finding = new SecurityFinding
@@ -181,60 +182,7 @@ namespace AegisPC.Service.DriverBridge
                                 RiskLevel = RiskLevel.ConfirmedMalicious,
                                 Category = FindingCategory.MalwareSuspicion,
                                 Title = string.IsNullOrWhiteSpace(detectionResult.ThreatTitle) ? "Ring-0 Intercepted Malware" : detectionResult.ThreatTitle,
-                                Description = $"Ring-0 Minifilter intercepted confirmed malicious file I/O from PID {pid}. Access blocked (STATUS_ACCESS_DENIED) and staged for quarantine.",
-                                ConfidenceLevel = ConfidenceLevel.High,
-                                Status = FindingStatus.Active,
-                                RiskReasons = evidenceReasons
-                            };
-
-                            _ = Task.Run(async () =>
-                            {
-                                try
-                                {
-                                    if (_quarantineService != null && File.Exists(filePath))
-                                    {
-                                        bool quarantined = await _quarantineService.QuarantineFileAsync(filePath, detectionResult.ThreatTitle ?? "Kernel Intercepted Malware");
-                                        if (quarantined) finding.Status = FindingStatus.Resolved;
-                                    }
-                                    if (_findingService != null)
-                                    {
-                                        await _findingService.AddFindingAsync(finding);
-                                    }
-                                    if (_auditLogService != null)
-                                    {
-                                        await _auditLogService.LogActionAsync(
-                                            AuditAction.FileQuarantined,
-                                            "KernelMinifilter",
-                                            fileName,
-                                            filePath,
-                                            $"Critical malware blocked and quarantined from PID {pid}. Threat: {detectionResult.ThreatTitle}, Score: {score}",
-                                            AuditResult.Success);
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger?.LogTrace(ex, "Background quarantine execution failed for '{Path}'", filePath);
-                                }
-                            });
-
-                            return true; // BLOCK ACCESS (STATUS_ACCESS_DENIED)
-                        }
-                        // 3b. HIGH RISK: Risk 70-84 -> BLOCK
-                        else if (score >= 70)
-                        {
-                            _logger?.LogWarning("🛡️ KERNEL PRE-OP INTERCEPTION [BLOCK]: Blocked high-risk file access '{Path}' from PID {Pid} (Threat: {Threat}, Score: {Score})",
-                                filePath, pid, detectionResult.ThreatTitle, score);
-
-                            var finding = new SecurityFinding
-                            {
-                                ObjectPath = filePath,
-                                ObjectName = fileName,
-                                SHA256 = detectionResult.SHA256,
-                                RiskScore = score,
-                                RiskLevel = RiskLevel.HighRisk,
-                                Category = FindingCategory.MalwareSuspicion,
-                                Title = string.IsNullOrWhiteSpace(detectionResult.ThreatTitle) ? "Kernel Blocked I/O" : detectionResult.ThreatTitle,
-                                Description = $"Kernel minifilter blocked file access from PID {pid}. Gating enforced (STATUS_ACCESS_DENIED).",
+                                Description = $"Verified file-content signature blocked file I/O from PID {pid}. Automatic quarantine is not performed by this callback.",
                                 ConfidenceLevel = ConfidenceLevel.High,
                                 Status = FindingStatus.Active,
                                 RiskReasons = evidenceReasons
@@ -255,19 +203,19 @@ namespace AegisPC.Service.DriverBridge
                                             "KernelMinifilter",
                                             fileName,
                                             filePath,
-                                            $"High-risk file access blocked from PID {pid}. Threat: {detectionResult.ThreatTitle}, Score: {score}",
+                                            $"Verified file-content signature blocked from PID {pid}. Threat: {detectionResult.ThreatTitle}, Score: {score}",
                                             AuditResult.Success);
                                     }
                                 }
                                 catch (Exception ex)
                                 {
-                                    _logger?.LogTrace(ex, "Background audit/finding logging failed for '{Path}'", filePath);
+                                    _logger?.LogTrace(ex, "Background finding or audit recording failed for '{Path}'", filePath);
                                 }
                             });
 
                             return true; // BLOCK ACCESS (STATUS_ACCESS_DENIED)
                         }
-                        // 3c. MEDIUM RISK / SUSPICIOUS: Risk 40-69 -> ALLOW (MONITOR + TELEMETRY)
+                        // Unverified high scores are observed, never blocked or quarantined.
                         else if (score >= 40)
                         {
                             _logger?.LogInformation("⚠️ KERNEL TELEMETRY [SUSPICIOUS]: Monitored suspicious I/O '{Path}' from PID {Pid} (Threat: {Threat}, Score: {Score})",

@@ -294,11 +294,11 @@ namespace AegisPC.App.ViewModels
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _threatToastCooldown = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// Bir tehdit veya şüpheli olay algılandığında bildirim kuyruğuna ekler ve toplu uyarı zamanlayıcısını tetikler.
+        /// Queues an observed security event without inferring a quarantine action from its severity.
         /// </summary>
-        /// <param name="threatName">Tespit edilen tehdidin dosya veya imza adı.</param>
-        /// <param name="isQuarantined">Dosyanın karantinaya alınıp alınmadığı.</param>
-        public void TriggerThreatToast(string threatName, bool isQuarantined = true)
+        /// <param name="threatName">The displayed object or finding name.</param>
+        /// <param name="isQuarantined">Whether the producer explicitly confirmed successful quarantine.</param>
+        public void TriggerThreatToast(string threatName, bool isQuarantined = false)
         {
             if (string.IsNullOrWhiteSpace(threatName)) return;
 
@@ -346,35 +346,29 @@ namespace AegisPC.App.ViewModels
                 }
                 if (list.Count == 0) return;
 
-                bool anyQuarantined = list.Any(x => x.IsQuarantined);
-                if (list.Count == 1)
-                {
-                    var item = list[0];
-                    if (item.IsQuarantined)
-                    {
-                        TriggerToast($"Ultron Defender: '{item.Name}' engellendi ve karantinaya alındı.", "Danger");
-                    }
-                    else
-                    {
-                        TriggerToast($"Ultron Defender: '{item.Name}' şüpheli etkinlik sergiledi (Olay Geçmişine kaydedildi).", "Warning");
-                    }
-                }
-                else
-                {
-                    if (anyQuarantined)
-                    {
-                        TriggerToast($"Ultron Defender: {list.Count} adet zararlı tehdit engellendi ve karantinaya alındı.", "Danger");
-                    }
-                    else
-                    {
-                        TriggerToast($"Ultron Defender: {list.Count} adet şüpheli dosya/olay incelendi ve Olay Geçmişine kaydedildi.", "Warning");
-                    }
-                }
+                var summary = BuildThreatToastSummary(list);
+                TriggerToast(summary.Message, summary.Type);
             }
             finally
             {
                 Interlocked.Exchange(ref _isFlushingThreats, 0);
             }
+        }
+
+        /// <summary>Summarizes explicit action outcomes, never interpreting the number of observations as a virus count.</summary>
+        private static (string Message, string Type) BuildThreatToastSummary(List<(string Name, bool IsQuarantined)> observations)
+        {
+            int quarantined = observations.Count(item => item.IsQuarantined);
+            int suspicious = observations.Count - quarantined;
+            if (observations.Count == 1)
+            {
+                var item = observations[0];
+                return item.IsQuarantined
+                    ? ($"Ultron Defender: '{item.Name}' dosyası karantinaya alındı.", "Danger")
+                    : ($"Ultron Defender: '{item.Name}' için şüpheli bulgu kaydedildi; karantina uygulanmış sayılmaz.", "Warning");
+            }
+            return ($"Ultron Defender: {quarantined} karantinaya alındı, {suspicious} şüpheli bulgu inceleme bekliyor. Bu sayı virüs sayısı değildir.",
+                suspicious > 0 || quarantined == 0 ? "Warning" : "Danger");
         }
 
         /// <summary>

@@ -1,203 +1,162 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
-using System.Windows.Forms;
 using AegisPC.Contracts.Services;
 using Microsoft.Extensions.Logging;
 
 namespace AegisPC.App.Services
 {
     /// <summary>
-    /// Akıllı Bildirim Birleştirme (Notification Aggregator & Debouncer) özellikli
-    /// Windows Toast ve Sistem Tepsisi Bildirim Servisi.
-    /// Arka arkaya gelen çoklu tehdit bildirimlerini tek bir özet bildirimde birleştirir.
+    /// Deduplicates and groups notifications without turning severity or text into detection
+    /// or quarantine evidence. Group counts describe notifications, not malicious files.
     /// </summary>
     public class WindowsToastNotificationService : IWindowsToastNotificationService, IDisposable
     {
         private readonly ILogger<WindowsToastNotificationService>? _logger;
         private readonly ISettingsService? _settingsService;
-
-        private readonly ConcurrentQueue<ThreatToastItem> _threatQueue = new();
-        private readonly ConcurrentDictionary<string, DateTime> _recentNotificationCache = new();
-        private readonly System.Threading.Timer _aggregationTimer;
+        private readonly Action<string, string, string>? _notificationSink;
+        private readonly bool _enableAggregationTimer;
+        private readonly object _queueLock = new();
+        private readonly Queue<ThreatToastItem> _threatQueue = new();
+        private readonly Dictionary<NotificationKey, DateTime> _recentNotificationCache = new();
+        private readonly Timer _aggregationTimer;
+        private TimeSpan _aggregationWindow = TimeSpan.FromMilliseconds(2500);
         private int _isFlushing;
+        private bool _disposed;
 
-        public TimeSpan AggregationWindow { get; set; } = TimeSpan.FromMilliseconds(2500);
+        /// <summary>
+        /// Gets or sets the positive debounce interval for warning and error notifications.
+        /// Intervals exceeding the supported timer millisecond range are rejected.
+        /// </summary>
+        public TimeSpan AggregationWindow
+        {
+            get => _aggregationWindow;
+            set
+            {
+                if (value <= TimeSpan.Zero || value.TotalMilliseconds > int.MaxValue)
+                    throw new ArgumentOutOfRangeException(nameof(value));
+                _aggregationWindow = value;
+            }
+        }
 
+        /// <summary>
+        /// Creates a notification service. The optional sink replaces native presentation;
+        /// disabling the timer permits deterministic flushing without UI windows.
+        /// </summary>
         public WindowsToastNotificationService(
             ISettingsService? settingsService = null,
-            ILogger<WindowsToastNotificationService>? logger = null)
+            ILogger<WindowsToastNotificationService>? logger = null,
+            Action<string, string, string>? notificationSink = null,
+            bool enableAggregationTimer = true)
         {
             _settingsService = settingsService;
             _logger = logger;
-            _aggregationTimer = new System.Threading.Timer(OnTimerTick, null, Timeout.Infinite, Timeout.Infinite);
+            _notificationSink = notificationSink;
+            _enableAggregationTimer = enableAggregationTimer;
+            _aggregationTimer = new Timer(OnTimerTick, null, Timeout.Infinite, Timeout.Infinite);
         }
 
+        /// <summary>
+        /// Presents source content or queues it for a neutral summary. Exact duplicates are
+        /// cooled down atomically; digits in paths and source outcomes remain intact.
+        /// Disabled notifications and calls after disposal are ignored.
+        /// </summary>
         public void ShowToast(string title, string message, string type = "Info")
         {
             try
             {
-                // 1. Settings check: Suppress notifications if user disabled them in Settings
-                var settings = _settingsService ?? (App.ServiceProvider?.GetService(typeof(ISettingsService)) as ISettingsService);
-                if (settings != null)
+                if (Volatile.Read(ref _disposed) || !AreNotificationsEnabled()) return;
+                title ??= string.Empty;
+                message ??= string.Empty;
+                type = string.IsNullOrWhiteSpace(type) ? "Info" : type;
+                bool deferred = IsWarningOrError(type);
+                if (!deferred && IsRoutineMaintenance(title, message)) return;
+                lock (_queueLock)
                 {
-                    bool notificationsEnabled = settings.GetSetting("NotificationsEnabled", true);
-                    if (!notificationsEnabled)
+                    if (_disposed || !ReserveNotification(title, message, type, deferred)) return;
+                    if (deferred)
                     {
-                        return;
+                        _threatQueue.Enqueue(new ThreatToastItem(title, message, type));
+                        if (_enableAggregationTimer)
+                            _aggregationTimer.Change(AggregationWindow, Timeout.InfiniteTimeSpan);
                     }
                 }
 
-                // 2. Suppress routine background maintenance toasts (e.g. 20-min routine scan clean, daily scan startup announcements)
-                if (title.Contains("Rutin Tarama", StringComparison.OrdinalIgnoreCase) ||
-                    title.Contains("Günlük Tam Tarama Başlatılıyor", StringComparison.OrdinalIgnoreCase) ||
-                    message.Contains("20 dakikalık", StringComparison.OrdinalIgnoreCase) ||
-                    message.Contains("planlanmış tam tarama henüz yapılmadığından", StringComparison.OrdinalIgnoreCase))
-                {
-                    return;
-                }
-
-                // 3. Smart Deduplication & Cooldown: tehdit bildirimleri 30 dakika, diğerleri 3 dakika
-                bool isThreatLike = type.Equals("Warning", StringComparison.OrdinalIgnoreCase) ||
-                                    type.Equals("Error", StringComparison.OrdinalIgnoreCase) ||
-                                    type.Equals("Danger", StringComparison.OrdinalIgnoreCase) ||
-                                    title.Contains("Tehdit", StringComparison.OrdinalIgnoreCase) ||
-                                    title.Contains("Zararlı", StringComparison.OrdinalIgnoreCase) ||
-                                    title.Contains("Fidye", StringComparison.OrdinalIgnoreCase);
-
-                string cleanTitle = Regex.Replace(title, @"[\u2600-\u27BF]|[\uD83C-\uDBFF\uDC00-\uDFFF]|[\d]+(\s*(adet|riskli|şüpheli|yeni|tane))?", "", RegexOptions.IgnoreCase).Trim();
-                string cleanMsg = Regex.Replace(message, @"[\d]+(\s*(adet|riskli|şüpheli|yeni|tane))?", "", RegexOptions.IgnoreCase).Trim();
-                string cacheKey = $"{cleanTitle.ToLowerInvariant()}_{cleanMsg.ToLowerInvariant()}";
-
-                var now = DateTime.UtcNow;
-                int cooldownSeconds = isThreatLike ? 1800 : 180;
-                if (_recentNotificationCache.TryGetValue(cacheKey, out var lastTime) && (now - lastTime).TotalSeconds < cooldownSeconds)
-                {
-                    return;
-                }
-                _recentNotificationCache[cacheKey] = now;
-
-                // Periodically prune stale cache entries (older than 60 minutes)
-                if (_recentNotificationCache.Count > 50)
-                {
-                    foreach (var kvp in _recentNotificationCache.ToArray())
-                    {
-                        if ((now - kvp.Value).TotalMinutes > 60)
-                        {
-                            _recentNotificationCache.TryRemove(kvp.Key, out _);
-                        }
-                    }
-                }
-
-                if (isThreatLike)
-                {
-                    _threatQueue.Enqueue(new ThreatToastItem
-                    {
-                        Title = title,
-                        Message = message,
-                        Type = type,
-                        Timestamp = DateTime.UtcNow
-                    });
-
-                    // Start or reset aggregation timer (2.5s debounce window)
-                    _aggregationTimer.Change((int)AggregationWindow.TotalMilliseconds, Timeout.Infinite);
-                }
-                else
-                {
-                    // Non-threat info/success notification: emit directly
-                    EmitNativeToast(title, message, type);
-                }
+                if (!deferred) EmitNativeToast(title, message, type);
             }
             catch (Exception ex)
             {
-                _logger?.LogTrace(ex, "Error enqueueing notification");
+                _logger?.LogWarning(ex, "Failed to enqueue a notification");
             }
         }
 
-        private void OnTimerTick(object? state)
+        private bool ReserveNotification(string title, string message, string type, bool deferred)
         {
-            FlushThreats();
+            var key = new NotificationKey(type.ToUpperInvariant(), title, message);
+            var now = DateTime.UtcNow;
+            var cooldown = TimeSpan.FromMinutes(deferred ? 30 : 3);
+            if (_recentNotificationCache.TryGetValue(key, out var lastTime) && now - lastTime < cooldown)
+                return false;
+
+            foreach (var stale in _recentNotificationCache.Where(p => now - p.Value >= TimeSpan.FromHours(1)).Select(p => p.Key).ToArray())
+                _recentNotificationCache.Remove(stale);
+            if (_recentNotificationCache.Count >= 1024)
+                _recentNotificationCache.Remove(_recentNotificationCache.MinBy(p => p.Value).Key);
+            _recentNotificationCache[key] = now;
+            return true;
         }
+
+        private bool AreNotificationsEnabled()
+        {
+            var settings = _settingsService ?? (App.ServiceProvider?.GetService(typeof(ISettingsService)) as ISettingsService);
+            return settings == null || settings.GetSetting("NotificationsEnabled", true);
+        }
+
+        private static bool IsWarningOrError(string type) =>
+            type.Equals("Warning", StringComparison.OrdinalIgnoreCase) ||
+            type.Equals("Error", StringComparison.OrdinalIgnoreCase) ||
+            type.Equals("Danger", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsRoutineMaintenance(string title, string message) =>
+            title.Contains("Rutin Tarama", StringComparison.OrdinalIgnoreCase) ||
+            title.Contains("Günlük Tam Tarama Başlatılıyor", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("20 dakikalık", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("planlanmış tam tarama henüz yapılmadığından", StringComparison.OrdinalIgnoreCase);
+
+        private void OnTimerTick(object? state) => FlushThreats();
 
         private void FlushThreats()
         {
-            if (Interlocked.Exchange(ref _isFlushing, 1) == 1) return;
-
+            if (Volatile.Read(ref _disposed) || Interlocked.Exchange(ref _isFlushing, 1) == 1) return;
             try
             {
-                var settings = _settingsService ?? (App.ServiceProvider?.GetService(typeof(ISettingsService)) as ISettingsService);
-                if (settings != null && !settings.GetSetting("NotificationsEnabled", true))
+                ThreatToastItem[] items;
+                lock (_queueLock)
                 {
-                    while (_threatQueue.TryDequeue(out _)) { }
+                    if (_disposed) return;
+                    items = _threatQueue.ToArray();
+                    _threatQueue.Clear();
+                }
+
+                if (items.Length == 0 || !AreNotificationsEnabled()) return;
+                if (items.Length == 1)
+                {
+                    var single = items[0];
+                    EmitNativeToast(single.Title, single.Message, single.Type);
                     return;
                 }
 
-                var items = new List<ThreatToastItem>();
-                while (_threatQueue.TryDequeue(out var item))
-                {
-                    items.Add(item);
-                }
-
-                if (items.Count == 0) return;
-
-                if (items.Count == 1)
-                {
-                    var single = items[0];
-                    string formattedTitle = FormatAppHeader(single.Title);
-                    EmitNativeToast(formattedTitle, single.Message, single.Type);
-                }
-                else
-                {
-                    // Multiple threats detected in batch: aggregate into a single clean summary notification per user directive
-                    int count = items.Count;
-                    bool hasQuarantined = items.Any(i => i.Type.Equals("Danger", StringComparison.OrdinalIgnoreCase) ||
-                                                         i.Type.Equals("Error", StringComparison.OrdinalIgnoreCase) ||
-                                                         i.Title.Contains("Karantina", StringComparison.OrdinalIgnoreCase) ||
-                                                         i.Message.Contains("karantina", StringComparison.OrdinalIgnoreCase) ||
-                                                         i.Message.Contains("kilitlendi", StringComparison.OrdinalIgnoreCase));
-
-                    var now = DateTime.UtcNow;
-                    string batchKey = hasQuarantined ? "batch_threat_quarantined" : "batch_threat_warning";
-                    if (_recentNotificationCache.TryGetValue(batchKey, out var lastBatch) && (now - lastBatch).TotalMinutes < 15)
-                    {
-                        return;
-                    }
-                    _recentNotificationCache[batchKey] = now;
-
-                    var sampleNames = items
-                        .Select(i => 
-                        {
-                            var t = i.Title.Replace("🚨", "").Replace("🛡️", "").Replace("⚠️", "").Trim();
-                            if (t.StartsWith("Ultron Defender", StringComparison.OrdinalIgnoreCase))
-                            {
-                                int idx = t.IndexOf(':');
-                                if (idx > 0 && idx < t.Length - 1) t = t[(idx + 1)..].Trim();
-                            }
-                            return t;
-                        })
-                        .Where(s => !string.IsNullOrWhiteSpace(s))
-                        .Distinct()
-                        .Take(3)
-                        .ToList();
-
-                    string sampleList = sampleNames.Count > 0 ? string.Join(", ", sampleNames) : "Tespit edilen dosyalar";
-
-                    if (hasQuarantined)
-                    {
-                        string summaryTitle = $"Ultron Defender (Antivirüs Programı) - 🛡️ {count} Tehdit Engellendi ve Karantinaya Alındı";
-                        string summaryMessage = $"{count} adet zararlı tehdit tespit edildi ve sisteminizden temizlenerek AES-256 Karantina Kasasına kilitlendi.\n({sampleList}{(items.Count > 3 ? "..." : "")})\nDetaylar için Güvenlik Merkezini açın.";
-                        EmitNativeToast(summaryTitle, summaryMessage, "Danger");
-                    }
-                    else
-                    {
-                        string summaryTitle = $"Ultron Defender (Antivirüs Programı) - ⚠️ {count} Şüpheli Olay / Dosya Algılandı";
-                        string summaryMessage = $"{count} adet şüpheli dosya veya davranış tespit edildi. Dosyalar silinmedi, incelemeniz için Olay Geçmişine kaydedildi.\n({sampleList}{(items.Count > 3 ? "..." : "")})\nDetaylar için Olay Geçmişini açın.";
-                        EmitNativeToast(summaryTitle, summaryMessage, "Warning");
-                    }
-                }
+                // Severity changes appearance only; the string API proves no action outcome.
+                string type = items.Any(i => i.Type.Equals("Danger", StringComparison.OrdinalIgnoreCase)) ? "Danger"
+                    : items.Any(i => i.Type.Equals("Error", StringComparison.OrdinalIgnoreCase)) ? "Error" : "Warning";
+                string details = string.Join("\n\n", items.Take(3).Select(i => $"{i.Title}\n{i.Message}"));
+                if (items.Length > 3) details += $"\n\n{items.Length - 3} ek bildirim bu özette gösterilmedi.";
+                EmitNativeToast($"{items.Length} bildirim", details, type);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to flush queued notifications");
             }
             finally
             {
@@ -207,52 +166,44 @@ namespace AegisPC.App.Services
 
         private static string FormatAppHeader(string title)
         {
-            if (string.IsNullOrWhiteSpace(title)) return "Ultron Defender Total Security (Antivirüs Programı)";
-            if (title.Contains("Ultron Defender", StringComparison.OrdinalIgnoreCase) && title.Contains("Antivirüs", StringComparison.OrdinalIgnoreCase))
-                return title;
-
-            if (title.Contains("Ultron Defender", StringComparison.OrdinalIgnoreCase))
-                return title.Replace("Ultron Defender", "Ultron Defender (Antivirüs Programı)");
-
-            return $"Ultron Defender (Antivirüs Programı) - {title}";
+            // The notification card already displays the application brand separately.
+            return string.IsNullOrWhiteSpace(title) ? "Ultron bildirimi" : title;
         }
 
         private void EmitNativeToast(string title, string message, string type)
         {
+            if (Volatile.Read(ref _disposed)) return;
             try
             {
-                _logger?.LogInformation("Windows Toast [{Type}]: {Title} - {Message}", type, title, message);
-
-                var icon = type.ToLowerInvariant() switch
-                {
-                    "error" or "danger" => ToolTipIcon.Error,
-                    "warning" => ToolTipIcon.Warning,
-                    _ => ToolTipIcon.Info
-                };
-
+                _logger?.LogInformation("Windows notification [{Type}]: {Title} - {Message}", type, title, message);
                 string fullTitle = FormatAppHeader(title);
-
-                // Modern Slide-in Floating Toast (Bottom-Right Screen Corner) - Clean, ESET-Style, Silent
-                Views.ToastNotificationWindow.ShowToast(fullTitle, message, type);
+                // Native dispatch must not hold the queue lock, avoiding a UI shutdown deadlock.
+                if (_notificationSink != null) _notificationSink(fullTitle, message, type);
+                else Views.ToastNotificationWindow.ShowToast(fullTitle, message, type);
             }
             catch (Exception ex)
             {
-                _logger?.LogTrace(ex, "Error firing native notification");
+                _logger?.LogWarning(ex, "Failed to present a notification");
             }
         }
 
+        /// <summary>
+        /// Stops aggregation and drops pending messages without displaying shutdown toasts.
+        /// An emission already handed to the UI cannot be recalled by this service.
+        /// </summary>
         public void Dispose()
         {
-            _aggregationTimer.Dispose();
-            FlushThreats();
+            lock (_queueLock)
+            {
+                if (_disposed) return;
+                Volatile.Write(ref _disposed, true);
+                _threatQueue.Clear();
+                _recentNotificationCache.Clear();
+                _aggregationTimer.Dispose();
+            }
         }
 
-        private record ThreatToastItem
-        {
-            public string Title { get; init; } = string.Empty;
-            public string Message { get; init; } = string.Empty;
-            public string Type { get; init; } = "Info";
-            public DateTime Timestamp { get; init; }
-        }
+        private readonly record struct NotificationKey(string Type, string Title, string Message);
+        private sealed record ThreatToastItem(string Title, string Message, string Type);
     }
 }

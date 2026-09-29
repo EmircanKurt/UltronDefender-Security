@@ -155,7 +155,7 @@ namespace AegisPC.Security.RealTime
                     }
 
                     // İzinli / Güvenilir Uygulama Filtresi (Controlled Folder Access Allowlist)
-                    if (isAppAllowed != null && (isAppAllowed(procName) || (!string.IsNullOrEmpty(procPath) && isAppAllowed(procPath))))
+                    if (IsExplicitlyAllowedProcess(procName, procPath, isAppAllowed))
                     {
                         _logger?.LogInformation("Skipping PID {Pid}: Application '{Proc}' is allowed to access protected folders.", candPid, procName);
                         continue;
@@ -302,6 +302,18 @@ namespace AegisPC.Security.RealTime
             }
 
             return assessment;
+        }
+
+        private static bool IsExplicitlyAllowedProcess(
+            string processName,
+            string processPath,
+            Func<string, bool>? isAppAllowed)
+        {
+            // A process name can be copied by any executable. Only its resolved path
+            // may be compared against the caller's explicit allowlist.
+            _ = processName;
+            return !string.IsNullOrWhiteSpace(processPath) &&
+                   isAppAllowed?.Invoke(processPath) == true;
         }
     }
 }

@@ -77,13 +77,16 @@ namespace AegisPC.Security.RealTime
             _cleanupTimer?.Dispose();
         }
 
+        /// <summary>
+        /// Evaluates a process event unless it belongs to this exact running process.
+        /// A writable product directory is not evidence that another process is trusted.
+        /// </summary>
         public async Task ProcessEventAsync(BehaviorEvent e, CancellationToken cancellationToken = default)
         {
             if (e == null) return;
 
-            // Self-Protection Guard: Never monitor or contain Ultron Defender's own processes and binaries
-            if (e.ProcessId == Environment.ProcessId || 
-                (!string.IsNullOrEmpty(e.ExecutablePath) && Scanning.FileScannerService.IsSelfOwnedPath(e.ExecutablePath)))
+            // Only the exact current PID is exempt from behavioral monitoring.
+            if (e.ProcessId == Environment.ProcessId)
             {
                 return;
             }
@@ -332,8 +335,7 @@ namespace AegisPC.Security.RealTime
             List<BehaviorEvidence> evidences,
             CancellationToken cancellationToken)
         {
-            if (session.RootPid == Environment.ProcessId || 
-                (!string.IsNullOrEmpty(session.RootExecutablePath) && Scanning.FileScannerService.IsSelfOwnedPath(session.RootExecutablePath)))
+            if (session.RootPid == Environment.ProcessId)
             {
                 return;
             }

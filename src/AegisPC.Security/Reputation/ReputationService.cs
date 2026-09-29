@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
@@ -15,15 +16,14 @@ using Microsoft.Extensions.Logging;
 namespace AegisPC.Security.Reputation
 {
     /// <summary>
-    /// Abuse.ch MalwareBazaar API destekli, gerçek zamanlı bulut tehdit istihbaratı ve SHA-256 doğrulama servisi.
-    /// - 1500ms sıkı zaman aşımı (tarama motorunun gecikmesini önler)
-    /// - Bellek içi ConcurrentDictionary önbelleği (tekrarlayan sorguları önler)
-    /// - SQLite ThreatSignatureDatabase ile otomatik öğrenme (öğrenilen zararlılar çevrimdışı taranabilir)
-    /// - Kesintisiz ağ hata toleransı ve graceful degradation
+    /// Checks local threat signatures and, with explicit opt-in and an API key,
+    /// queries MalwareBazaar for a SHA-256 hash. Missing evidence and cloud
+    /// failures remain unknown; a confirmed cloud match may be learned locally.
     /// </summary>
     public class ReputationService : IReputationService, IDisposable
     {
         private const string MalwareBazaarApiEndpoint = "https://mb-api.abuse.ch/api/v1/";
+        private const int MaxResponseBytes = 1024 * 1024;
         private const int MaxCacheEntries = 5000;
         private static readonly TimeSpan DefaultLookupTimeout = TimeSpan.FromMilliseconds(1500);
         private static readonly TimeSpan CleanCacheTtl = TimeSpan.FromHours(1);
@@ -38,6 +38,10 @@ namespace AegisPC.Security.Reputation
         private readonly ConcurrentDictionary<string, (ReputationResult Result, DateTime CachedAt, bool IsMalicious)> _cache =
             new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Gets or sets the opt-in cloud lookup preference. Changing the value
+        /// persists it through the provided settings service when one exists.
+        /// </summary>
         public bool IsCloudLookupEnabled
         {
             get => _isCloudLookupEnabled;
@@ -53,10 +57,16 @@ namespace AegisPC.Security.Reputation
             }
         }
 
+        /// <summary>Gets the number of locally cached reputation responses.</summary>
         public int CacheCount => _cache.Count;
 
+        /// <summary>Removes cached reputation responses without changing local signatures.</summary>
         public void ClearCache() => _cache.Clear();
 
+        /// <summary>
+        /// Creates a reputation service. An injected client remains owned by the
+        /// caller; an internally created client is released on disposal.
+        /// </summary>
         public ReputationService(
             ISettingsService? settingsService = null,
             ILogger<ReputationService>? logger = null,
@@ -81,14 +91,21 @@ namespace AegisPC.Security.Reputation
                 ?? FeatureFlags.IsCloudLookupActive;
         }
 
+        /// <summary>
+        /// Checks a complete hexadecimal SHA-256 against local signatures and
+        /// optionally MalwareBazaar. Invalid input, missing credentials, lookup
+        /// failures, and absent catalogue entries return unknown; caller
+        /// cancellation propagates.
+        /// </summary>
         public async Task<ReputationResult> CheckReputationAsync(string sha256, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(sha256) || sha256.Length < 32)
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsValidSha256(sha256))
             {
                 return CreateOfflineResult("Geçersiz veya boş dosya hash'i.");
             }
 
-            string normalizedHash = sha256.Trim().ToLowerInvariant();
+            string normalizedHash = sha256.ToLowerInvariant();
 
             // Boş dosya (0-byte) SHA-256 özeti asla zararlı değildir
             if (normalizedHash.Equals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", StringComparison.OrdinalIgnoreCase))
@@ -96,18 +113,8 @@ namespace AegisPC.Security.Reputation
                 return CreateOfflineResult("Boş dosya (0 byte).");
             }
 
-            // 1. Bellek İçi Önbellek Kontrolü (O(1))
-            if (_cache.TryGetValue(normalizedHash, out var cachedEntry))
-            {
-                var ttl = cachedEntry.IsMalicious ? MaliciousCacheTtl : CleanCacheTtl;
-                if (DateTime.UtcNow - cachedEntry.CachedAt < ttl)
-                {
-                    return cachedEntry.Result;
-                }
-                _cache.TryRemove(normalizedHash, out _);
-            }
-
-            // 2. Yerel Genişletilmiş İmza Veritabanı Kontrolü
+            // Newly learned local malicious evidence must override a cached
+            // cloud catalogue miss immediately, without waiting for its TTL.
             var localMatch = ThreatSignatureDatabase.CheckHash(normalizedHash);
             if (localMatch.IsMatched)
             {
@@ -131,169 +138,253 @@ namespace AegisPC.Security.Reputation
                 return localResult;
             }
 
-            // 3. Bulut Sorgusu Devre Dışı İse Çevrimdışı Güvenli Sonuç Dön
+            if (_cache.TryGetValue(normalizedHash, out var cachedEntry))
+            {
+                var ttl = cachedEntry.IsMalicious ? MaliciousCacheTtl : CleanCacheTtl;
+                if (DateTime.UtcNow - cachedEntry.CachedAt < ttl)
+                    return cachedEntry.Result;
+
+                _cache.TryRemove(normalizedHash, out _);
+            }
+
+            // Cloud lookup is opt-in; the local signature check above always runs.
             if (!IsCloudLookupEnabled)
             {
                 return CreateOfflineResult("Bulut tehdit sorgulaması devre dışı; yerel motor kullanıldı.");
             }
 
-            // 4. Abuse.ch MalwareBazaar API Üzerinden Canlı Sorgulama (1500ms Timeout)
+            string? apiKey = _settingsService?.GetSetting("MalwareBazaarApiKey", string.Empty);
+            if (apiKey is null || !IsValidApiKey(apiKey))
+            {
+                return CreateOfflineResult("MalwareBazaar API anahtarı eksik veya geçersiz; bulut sorgusu yapılmadı.");
+            }
+
+            return await QueryCloudAsync(normalizedHash, apiKey, cancellationToken);
+        }
+
+        private async Task<ReputationResult> QueryCloudAsync(
+            string normalizedHash, string apiKey, CancellationToken cancellationToken)
+        {
             try
             {
                 using var timeoutCts = new CancellationTokenSource(DefaultLookupTimeout);
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-                var formValues = new Dictionary<string, string>
+                using var request = new HttpRequestMessage(HttpMethod.Post, MalwareBazaarApiEndpoint);
+                request.Headers.Add("Auth-Key", apiKey);
+                request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
                 {
                     { "query", "get_info" },
                     { "hash", normalizedHash }
-                };
+                });
 
-                using var formContent = new FormUrlEncodedContent(formValues);
-                using var response = await _httpClient.PostAsync(MalwareBazaarApiEndpoint, formContent, linkedCts.Token);
-
-                if (response.IsSuccessStatusCode)
+                using var response = await _httpClient.SendAsync(
+                    request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
+                if (!response.IsSuccessStatusCode)
                 {
-                    var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
-                    var cloudResult = ParseMalwareBazaarResponse(normalizedHash, responseJson);
+                    _logger?.LogWarning("MalwareBazaar returned HTTP {StatusCode}.", response.StatusCode);
+                    return CreateOfflineResult("MalwareBazaar servisi kullanılamıyor; itibar bilinmiyor.");
+                }
 
+                var responseBytes = await ReadBoundedResponseAsync(response.Content, linkedCts.Token);
+                if (responseBytes is null)
+                {
+                    _logger?.LogWarning("MalwareBazaar response exceeded the size limit.");
+                    return CreateOfflineResult("MalwareBazaar yanıtı boyut sınırını aştı; itibar bilinmiyor.");
+                }
+
+                var cloudResult = ParseMalwareBazaarResponse(normalizedHash, responseBytes);
+
+                // Unknown service errors are retried; only a confirmed match or
+                // a valid catalogue miss is useful enough to cache.
+                if (cloudResult.Source == "Abuse.ch MalwareBazaar Cloud")
+                {
                     EnforceCacheCapacity();
                     _cache[normalizedHash] = (cloudResult, DateTime.UtcNow, cloudResult.IsMalicious);
-
-                    // Eğer bulut zararlı olduğunu onayladıysa, SQLite yerel veritabanına otomatik öğren
                     if (cloudResult.IsMalicious && !string.IsNullOrEmpty(cloudResult.ThreatName))
-                    {
-                        try
-                        {
-                            ThreatSignatureDatabase.ImportThreatHashes(new[]
-                            {
-                                (normalizedHash, cloudResult.ThreatName, cloudResult.MalwareFamily ?? "Cloud.MalwareBazaar", 100, "MalwareBazaar")
-                            });
-                            _logger?.LogInformation("Buluttan yeni tehdit imzası öğrenildi ve SQLite'a kaydedildi: {ThreatName} [{Hash}]", 
-                                cloudResult.ThreatName, normalizedHash);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger?.LogWarning(ex, "Buluttan öğrenilen imza SQLite'a kaydedilemedi: {Hash}", normalizedHash);
-                        }
-                    }
+                        LearnCloudThreat(normalizedHash, cloudResult);
+                }
 
-                    return cloudResult;
-                }
-                else
-                {
-                    _logger?.LogWarning("MalwareBazaar HTTP hatası döndürdü: {StatusCode}", response.StatusCode);
-                }
+                return cloudResult;
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // 1500ms zaman aşımı koruması tetiklendi
-                _logger?.LogWarning("Bulut tehdit sorgulaması zaman aşımına uğradı (1500ms). Hash: {Hash}", normalizedHash);
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                _logger?.LogWarning("MalwareBazaar lookup timed out.");
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "Bulut tehdit sorgulaması sırasında ağ veya ayrıştırma hatası oluştu: {Hash}", normalizedHash);
+                // Do not log exception details: an HTTP implementation may
+                // include request headers and thus credentials in an exception.
+                _logger?.LogWarning("MalwareBazaar lookup failed ({FailureType}).", ex.GetType().Name);
             }
 
-            // Ağ hatası veya zaman aşımı durumunda taramayı durdurmadan çevrimdışı temiz sonuç dön
-            var fallbackResult = CreateOfflineResult("Bulut servisine ulaşılamadı; yerel doğrulama ile devam edildi.");
-            _cache[normalizedHash] = (fallbackResult, DateTime.UtcNow, false);
-            return fallbackResult;
+            return CreateOfflineResult("Bulut servisine ulaşılamadı; itibar bilinmiyor.");
         }
 
-        private ReputationResult ParseMalwareBazaarResponse(string sha256, string json)
+        private static async Task<byte[]?> ReadBoundedResponseAsync(
+            HttpContent content, CancellationToken cancellationToken)
+        {
+            if (content.Headers.ContentLength is > MaxResponseBytes)
+                return null;
+
+            await using var responseStream = await content.ReadAsStreamAsync(cancellationToken);
+            using var buffer = new MemoryStream();
+            var readBuffer = new byte[8192];
+
+            while (true)
+            {
+                // Read one byte beyond the limit to distinguish an exact-limit
+                // response from a larger unknown-length response.
+                int requested = Math.Min(readBuffer.Length, MaxResponseBytes + 1 - (int)buffer.Length);
+                int read = await responseStream.ReadAsync(readBuffer.AsMemory(0, requested), cancellationToken);
+                if (read == 0) return buffer.ToArray();
+                if (buffer.Length + read > MaxResponseBytes) return null;
+                buffer.Write(readBuffer, 0, read);
+            }
+        }
+
+        private void LearnCloudThreat(string normalizedHash, ReputationResult cloudResult)
+        {
+            var threatName = cloudResult.ThreatName;
+            if (string.IsNullOrEmpty(threatName)) return;
+
+            try
+            {
+                var importedCount = ThreatSignatureDatabase.ImportThreatHashes(new[]
+                {
+                    (normalizedHash, threatName, cloudResult.MalwareFamily ?? "Cloud.MalwareBazaar", 100, "MalwareBazaar")
+                });
+                if (importedCount > 0)
+                    _logger?.LogInformation("Learned MalwareBazaar threat signature for {Hash}.", normalizedHash);
+                else
+                    _logger?.LogWarning("MalwareBazaar signature was not stored for {Hash}.", normalizedHash);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning("MalwareBazaar signature could not be stored for {Hash} ({FailureType}).",
+                    normalizedHash, ex.GetType().Name);
+            }
+        }
+
+        private static bool IsValidSha256(string? sha256)
+        {
+            if (sha256 is null || sha256.Length != 64) return false;
+            foreach (char ch in sha256)
+            {
+                if (!((ch >= '0' && ch <= '9') ||
+                      (ch >= 'a' && ch <= 'f') ||
+                      (ch >= 'A' && ch <= 'F')))
+                    return false;
+            }
+            return true;
+        }
+
+        private static bool IsValidApiKey(string? apiKey)
+        {
+            if (string.IsNullOrEmpty(apiKey)) return false;
+            foreach (char ch in apiKey)
+            {
+                if (ch <= ' ' || ch >= '\u007f') return false;
+            }
+            return true;
+        }
+
+        private ReputationResult ParseMalwareBazaarResponse(string sha256, ReadOnlyMemory<byte> json)
         {
             try
             {
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
-
-                if (root.TryGetProperty("query_status", out var statusElem))
+                if (root.ValueKind != JsonValueKind.Object ||
+                    !root.TryGetProperty("query_status", out var statusElem) ||
+                    statusElem.ValueKind != JsonValueKind.String)
                 {
-                    var status = statusElem.GetString();
+                    return CreateOfflineResult("MalwareBazaar yanıtı geçersiz; itibar bilinmiyor.");
+                }
 
-                    if (string.Equals(status, "ok", StringComparison.OrdinalIgnoreCase))
+                var status = statusElem.GetString();
+                if (string.Equals(status, "hash_not_found", StringComparison.OrdinalIgnoreCase))
+                    return new ReputationResult
                     {
-                        string threatName = "Generic.Malware";
-                        string malwareFamily = "Malware";
-                        var tags = new List<string>();
+                        IsKnown = false,
+                        IsMalicious = false,
+                        DetectionCount = 0,
+                        TotalEngines = 0,
+                        Source = "Abuse.ch MalwareBazaar Cloud",
+                        CheckedAt = DateTime.UtcNow,
+                        Details = "MalwareBazaar veritabanında kayıt bulunamadı; itibar bilinmiyor."
+                    };
 
-                        if (root.TryGetProperty("data", out var dataElem) &&
-                            dataElem.ValueKind == JsonValueKind.Array &&
-                            dataElem.GetArrayLength() > 0)
-                        {
-                            var first = dataElem[0];
-
-                            if (first.TryGetProperty("signature", out var sigElem) &&
-                                sigElem.ValueKind == JsonValueKind.String)
-                            {
-                                var sigStr = sigElem.GetString();
-                                if (!string.IsNullOrWhiteSpace(sigStr))
-                                {
-                                    threatName = sigStr;
-                                    malwareFamily = sigStr;
-                                }
-                            }
-
-                            if (first.TryGetProperty("tags", out var tagsElem) &&
-                                tagsElem.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (var tag in tagsElem.EnumerateArray())
-                                {
-                                    if (tag.ValueKind == JsonValueKind.String)
-                                    {
-                                        var t = tag.GetString();
-                                        if (!string.IsNullOrWhiteSpace(t))
-                                        {
-                                            tags.Add(t);
-                                        }
-                                    }
-                                }
-
-                                if (threatName == "Generic.Malware" && tags.Count > 0)
-                                {
-                                    threatName = tags[0];
-                                    malwareFamily = tags[0];
-                                }
-                            }
-                        }
-
-                        return new ReputationResult
-                        {
-                            IsKnown = true,
-                            IsMalicious = true,
-                            ThreatName = threatName,
-                            Severity = 100,
-                            MalwareFamily = malwareFamily,
-                            Tags = tags.ToArray(),
-                            DetectionCount = 1,
-                            TotalEngines = 1,
-                            Source = "Abuse.ch MalwareBazaar Cloud",
-                            CheckedAt = DateTime.UtcNow,
-                            Details = $"Bulut Tehdit İstihbaratı Eşleşmesi: {threatName}"
-                        };
-                    }
-                    else if (string.Equals(status, "hash_not_found", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return new ReputationResult
-                        {
-                            IsKnown = true,
-                            IsMalicious = false,
-                            DetectionCount = 0,
-                            TotalEngines = 1,
-                            Source = "Abuse.ch MalwareBazaar Cloud",
-                            CheckedAt = DateTime.UtcNow,
-                            Details = "MalwareBazaar veritabanında kayıt bulunamadı (Temiz / Bilinmeyen)."
-                        };
-                    }
+                if (string.Equals(status, "ok", StringComparison.OrdinalIgnoreCase) &&
+                    root.TryGetProperty("data", out var dataElem) &&
+                    dataElem.ValueKind == JsonValueKind.Array &&
+                    dataElem.GetArrayLength() > 0 &&
+                    dataElem[0].ValueKind == JsonValueKind.Object &&
+                    dataElem[0].TryGetProperty("sha256_hash", out var hashElem) &&
+                    hashElem.ValueKind == JsonValueKind.String &&
+                    string.Equals(hashElem.GetString(), sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    return ParseMatchedThreat(dataElem[0]);
                 }
             }
-            catch (Exception ex)
+            catch (JsonException ex)
             {
-                _logger?.LogWarning(ex, "MalwareBazaar JSON yanıtı ayrıştırılamadı.");
+                _logger?.LogWarning("MalwareBazaar returned invalid JSON ({FailureType}).", ex.GetType().Name);
             }
 
-            return CreateOfflineResult("MalwareBazaar yanıtı ayrıştırılamadı.");
+            return CreateOfflineResult("MalwareBazaar yanıtı geçersiz veya sorgu başarısız; itibar bilinmiyor.");
+        }
+
+        private static ReputationResult ParseMatchedThreat(JsonElement first)
+        {
+            string threatName = "Generic.Malware";
+            string malwareFamily = "Malware";
+            var tags = new List<string>();
+
+            if (first.TryGetProperty("signature", out var sigElem) &&
+                sigElem.ValueKind == JsonValueKind.String &&
+                sigElem.GetString() is { Length: > 0 } signature &&
+                !string.IsNullOrWhiteSpace(signature))
+            {
+                threatName = signature;
+                malwareFamily = threatName;
+            }
+
+            if (first.TryGetProperty("tags", out var tagsElem) &&
+                tagsElem.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var tag in tagsElem.EnumerateArray())
+                {
+                    if (tag.ValueKind == JsonValueKind.String &&
+                        tag.GetString() is { Length: > 0 } text &&
+                        !string.IsNullOrWhiteSpace(text))
+                        tags.Add(text);
+                }
+
+                if (threatName == "Generic.Malware" && tags.Count > 0)
+                {
+                    threatName = tags[0];
+                    malwareFamily = threatName;
+                }
+            }
+
+            return new ReputationResult
+            {
+                IsKnown = true,
+                IsMalicious = true,
+                ThreatName = threatName,
+                Severity = 100,
+                MalwareFamily = malwareFamily,
+                Tags = tags.ToArray(),
+                DetectionCount = 1,
+                TotalEngines = 1,
+                Source = "Abuse.ch MalwareBazaar Cloud",
+                CheckedAt = DateTime.UtcNow,
+                Details = $"Bulut Tehdit İstihbaratı Eşleşmesi: {threatName}"
+            };
         }
 
         private static ReputationResult CreateOfflineResult(string details)
@@ -322,6 +413,7 @@ namespace AegisPC.Security.Reputation
             }
         }
 
+        /// <summary>Disposes the internally created HTTP client, if any.</summary>
         public void Dispose()
         {
             if (_disposeClient)

@@ -8,8 +8,8 @@ Ultron Defender Total Security is committed to security and transparency. We wel
 
 | Version | Supported | Security Updates |
 | :--- | :---: | :--- |
-| **v3.0.x (Current)** | ✅ YES | Active security patches & bug fixes |
-| **v2.x / v1.x** | ❌ NO | Deprecated |
+| **v3.2.1 development branch** | Best effort | Experimental preview; no production security-support guarantee |
+| **v3.0.x / v2.x / v1.x** | No | Older code; upgrade and revalidate before use |
 
 ---
 
@@ -27,11 +27,9 @@ If you discover a security vulnerability, privilege escalation, bypass, or denia
 
 ---
 
-## 3. Vulnerability Handling & Response Timeline
+## 3. Vulnerability Handling
 
-* **Initial Acknowledgment:** Within **48 hours**.
-* **Triage & Reproduction:** Within **5 business days**.
-* **Patch Release & Advisory:** Coordinated public release after fix verification.
+Reports are handled on a best-effort basis. This experimental project does not promise a fixed acknowledgment, triage, patch, or advisory timeline. Do not rely on it as the sole protection for a production device.
 
 ---
 

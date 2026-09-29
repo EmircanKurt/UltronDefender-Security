@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using AegisPC.Core.Models;
-using AegisPC.Security.Scanning;
 using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.RealTime
@@ -67,14 +66,6 @@ namespace AegisPC.Security.RealTime
         private readonly string _allowedAppsFilePath;
         private readonly ILogger? _logger;
         private readonly object _lock = new();
-
-        private static readonly string[] DefaultAllowedExecutableNames = new[]
-        {
-            "explorer.exe", "winword.exe", "excel.exe", "powerpnt.exe", "onenote.exe",
-            "code.exe", "devenv.exe", "notepad.exe", "notepad++.exe", "photoshop.exe",
-            "acrobat.exe", "acrord32.exe", "onedrive.exe", "googledrivefs.exe", "dropbox.exe",
-            "git.exe", "cmd.exe", "powershell.exe", "msedge.exe", "chrome.exe", "firefox.exe"
-        };
 
         public IReadOnlyList<string> ProtectedDirectories
         {
@@ -177,31 +168,24 @@ namespace AegisPC.Security.RealTime
                     {
                         var json = File.ReadAllText(_allowedAppsFilePath);
                         var loaded = JsonSerializer.Deserialize<List<AllowedRansomwareApplication>>(json);
-                        if (loaded != null && loaded.Count > 0)
+                        if (loaded != null)
                         {
                             _allowedApps.Clear();
-                            _allowedApps.AddRange(loaded);
+                            // Legacy filename-only entries were never identity-bound and are not allowances.
+                            _allowedApps.AddRange(loaded.Where(a =>
+                                !string.IsNullOrWhiteSpace(a.ExecutablePath) &&
+                                Path.IsPathFullyQualified(a.ExecutablePath)));
                             return;
                         }
                     }
                 }
-                catch { }
-
-                // Seed Default Whitelist Applications
-                _allowedApps.Clear();
-                foreach (var exe in DefaultAllowedExecutableNames)
+                catch (Exception ex)
                 {
-                    _allowedApps.Add(new AllowedRansomwareApplication
-                    {
-                        ExecutablePath = exe,
-                        ApplicationName = Path.GetFileNameWithoutExtension(exe).ToUpperInvariant(),
-                        Publisher = "System / Verified",
-                        IsSigned = true,
-                        IsSystemWhitelisted = true,
-                        AddedAt = DateTime.UtcNow
-                    });
+                    _logger?.LogWarning(ex, "Failed to load allowed applications from disk.");
                 }
-                SaveAllowedAppsToDisk();
+
+                // No implicit filename-based trust is seeded into the allowlist.
+                _allowedApps.Clear();
             }
         }
 
@@ -214,7 +198,10 @@ namespace AegisPC.Security.RealTime
                 File.WriteAllText(tmp, json);
                 File.Move(tmp, _allowedAppsFilePath, overwrite: true);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to save allowed applications to disk.");
+            }
         }
 
         public void AddProtectedDirectory(string path)
@@ -238,63 +225,137 @@ namespace AegisPC.Security.RealTime
             }
         }
 
+        /// <summary>
+        /// Adds an explicit, fully qualified executable path to the protected-folder allowlist.
+        /// Relative names are rejected because any program can copy a trusted display name.
+        /// </summary>
         public void AddAllowedApplication(string executablePath, string? appName = null)
         {
-            lock (_lock)
+            if (string.IsNullOrWhiteSpace(executablePath) ||
+                !Path.IsPathFullyQualified(executablePath))
             {
-                if (!_allowedApps.Any(a => a.ExecutablePath.Equals(executablePath, StringComparison.OrdinalIgnoreCase)))
+                _logger?.LogWarning("Rejected non-absolute allowed-application path {Path}.", executablePath);
+                return;
+            }
+
+            try
+            {
+                string canonicalPath = Path.GetFullPath(executablePath);
+                lock (_lock)
                 {
-                    _allowedApps.Add(new AllowedRansomwareApplication
+                    if (!_allowedApps.Any(a =>
+                        Path.IsPathFullyQualified(a.ExecutablePath) &&
+                        Path.GetFullPath(a.ExecutablePath).Equals(canonicalPath,
+                            StringComparison.OrdinalIgnoreCase)))
                     {
-                        ExecutablePath = executablePath,
-                        ApplicationName = appName ?? Path.GetFileNameWithoutExtension(executablePath),
-                        IsSigned = false,
-                        IsSystemWhitelisted = false,
-                        AddedAt = DateTime.UtcNow
-                    });
-                    SaveAllowedAppsToDisk();
+                        _allowedApps.Add(new AllowedRansomwareApplication
+                        {
+                            ExecutablePath = canonicalPath,
+                            ApplicationName = appName ?? Path.GetFileNameWithoutExtension(canonicalPath),
+                            IsSigned = false,
+                            IsSystemWhitelisted = false,
+                            AddedAt = DateTime.UtcNow
+                        });
+                        SaveAllowedAppsToDisk();
+                    }
                 }
             }
-        }
-
-        public void RemoveAllowedApplication(string executablePath)
-        {
-            lock (_lock)
+            catch (Exception ex)
             {
-                _allowedApps.RemoveAll(a => a.ExecutablePath.Equals(executablePath, StringComparison.OrdinalIgnoreCase));
-                SaveAllowedAppsToDisk();
+                _logger?.LogWarning(ex, "Failed to add allowed-application path {Path}.", executablePath);
             }
         }
 
+        /// <summary>
+        /// Removes a previously allowed absolute path, including equivalent normalized spellings.
+        /// Invalid or relative paths cannot remove an unrelated application entry.
+        /// </summary>
+        public void RemoveAllowedApplication(string executablePath)
+        {
+            if (string.IsNullOrWhiteSpace(executablePath) ||
+                !Path.IsPathFullyQualified(executablePath)) return;
+
+            try
+            {
+                string canonicalPath = Path.GetFullPath(executablePath);
+                lock (_lock)
+                {
+                    int removed = _allowedApps.RemoveAll(a =>
+                        Path.IsPathFullyQualified(a.ExecutablePath) &&
+                        Path.GetFullPath(a.ExecutablePath).Equals(canonicalPath,
+                            StringComparison.OrdinalIgnoreCase));
+                    if (removed > 0) SaveAllowedAppsToDisk();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to remove allowed-application path {Path}.", executablePath);
+            }
+        }
+
+        /// <summary>
+        /// Checks canonical directory membership at a path-segment boundary, rejecting sibling prefixes.
+        /// Invalid paths are treated as outside the protected set and logged.
+        /// </summary>
         public bool IsPathInsideProtectedDirectory(string path)
         {
             if (string.IsNullOrWhiteSpace(path)) return false;
-            lock (_lock)
+            try
             {
-                return _protectedDirs.Any(d => path.StartsWith(d, StringComparison.OrdinalIgnoreCase));
+                string candidate = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+                lock (_lock)
+                {
+                    return _protectedDirs.Any(directory =>
+                    {
+                        string root = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar);
+                        return candidate.Equals(root, StringComparison.OrdinalIgnoreCase) ||
+                               candidate.StartsWith(root + Path.DirectorySeparatorChar,
+                                   StringComparison.OrdinalIgnoreCase);
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Invalid protected-folder path {Path}.", path);
+                return false;
             }
         }
 
+        /// <summary>
+        /// Allows only this process's exact executable or a user-listed canonical absolute path.
+        /// Product-directory membership, display names, and relative entries confer no trust.
+        /// </summary>
         public bool IsApplicationAllowed(string executablePath)
         {
-            if (string.IsNullOrWhiteSpace(executablePath)) return false;
-            var fileName = Path.GetFileName(executablePath);
-
-            // Self-Protection Guard: Ultron Defender binaries are always allowed
-            if (string.Equals(fileName, "UltronDefender.exe", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "AegisPC.exe", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "UltronDefender", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(executablePath, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase) ||
-                FileScannerService.IsSelfOwnedPath(executablePath))
+            if (string.IsNullOrWhiteSpace(executablePath) ||
+                !Path.IsPathFullyQualified(executablePath))
             {
-                return true;
+                return false;
             }
 
-            lock (_lock)
+            try
             {
-                return _allowedApps.Any(a => 
-                    a.ExecutablePath.Equals(executablePath, StringComparison.OrdinalIgnoreCase) ||
-                    a.ExecutablePath.Equals(fileName, StringComparison.OrdinalIgnoreCase));
+                string candidate = Path.GetFullPath(executablePath);
+                string? currentExecutable = Environment.ProcessPath;
+                if (!string.IsNullOrWhiteSpace(currentExecutable) &&
+                    candidate.Equals(Path.GetFullPath(currentExecutable), StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                lock (_lock)
+                {
+                    return _allowedApps.Any(application =>
+                        !string.IsNullOrWhiteSpace(application.ExecutablePath) &&
+                        Path.IsPathFullyQualified(application.ExecutablePath) &&
+                        candidate.Equals(Path.GetFullPath(application.ExecutablePath),
+                            StringComparison.OrdinalIgnoreCase));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Invalid allowed-application path {Path}.", executablePath);
+                return false;
             }
         }
     }

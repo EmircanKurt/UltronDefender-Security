@@ -213,14 +213,19 @@ namespace AegisPC.App.ViewModels
                 {
                     Application.Current?.Dispatcher?.InvokeAsync(() =>
                     {
+                        if (p.Status == StartupSweepStatus.Preparing)
+                            StartupSweepFindings.Clear();
                         IsStartupSweepRunning = p.Status == StartupSweepStatus.Scanning || p.Status == StartupSweepStatus.Preparing;
                         StartupSweepStatusText = p.Status switch
                         {
                             StartupSweepStatus.Preparing => "Hazırlanıyor",
                             StartupSweepStatus.Scanning => "Taranıyor...",
-                            StartupSweepStatus.ThreatsFound => "Tehdit bulundu",
-                            StartupSweepStatus.Clean => "Temiz",
-                            StartupSweepStatus.Completed => "Tamamlandı",
+                            StartupSweepStatus.ThreatsFound => "Doğrulanmış bulgu var",
+                            StartupSweepStatus.Clean => "İncelenen içerikte bulgu yok",
+                            StartupSweepStatus.Completed when p.SuspiciousFound > 0 => "İnceleme bekleyen bulgu var",
+                            StartupSweepStatus.Completed => "Tarama tamamlandı",
+                            StartupSweepStatus.Failed => "Tarama tamamlanamadı",
+                            StartupSweepStatus.Cancelled => "Tarama iptal edildi",
                             _ => "Hazır"
                         };
                         StartupSweepBadgeColor = p.Status switch
@@ -228,6 +233,8 @@ namespace AegisPC.App.ViewModels
                             StartupSweepStatus.ThreatsFound => "#C41E1E",
                             StartupSweepStatus.Scanning => "#2196F3",
                             StartupSweepStatus.Preparing => "#F5A623",
+                            StartupSweepStatus.Failed or StartupSweepStatus.Cancelled => "#F5A623",
+                            StartupSweepStatus.Completed when p.SuspiciousFound > 0 => "#F5A623",
                             _ => "#4CAF50"
                         };
                         StartupSweepFilesRatio = $"{p.ScannedFiles:N0} / {p.TotalFiles:N0}";
@@ -249,10 +256,13 @@ namespace AegisPC.App.ViewModels
                     Application.Current?.Dispatcher?.InvokeAsync(() =>
                     {
                         StartupSweepFindings.Insert(0, f);
-                        ThreatsBocked24h++;
-                        ThreatsBlockedThisMonth++;
+                        if (f.IsQuarantined)
+                        {
+                            ThreatsBocked24h++;
+                            ThreatsBlockedThisMonth++;
+                        }
                         HasThreatsDetected = true;
-                        ProtectionStatusText = "Tehdit tespit edildi";
+                        ProtectionStatusText = f.IsQuarantined ? "Dosya karantinaya alındı" : "Güvenlik bulgusu incelenmeli";
                         ProtectionBadgeText = $"{f.FileName} ({f.Verdict})";
                         ProtectionStatusColor = "#C41E1E";
                         ProtectionStatusSymbol = "ShieldAlert24";
@@ -266,12 +276,12 @@ namespace AegisPC.App.ViewModels
                             Message = f.FilePath,
                             RiskScore = f.RiskScore,
                             Verdict = f.Verdict,
-                            Action = f.Action ?? "QUARANTINED",
-                            Severity = "Danger"
+                            Action = f.IsQuarantined ? "QUARANTINED" : f.Action ?? "WARN",
+                            Severity = f.IsQuarantined ? "Danger" : "Warning"
                         });
                         while (LiveActivities.Count > 15) LiveActivities.RemoveAt(LiveActivities.Count - 1);
 
-                        TriggerThreatToast(f.FileName, isQuarantined: true);
+                        TriggerThreatToast(f.FileName, isQuarantined: f.IsQuarantined);
                     });
                 };
 
@@ -280,8 +290,12 @@ namespace AegisPC.App.ViewModels
                     Application.Current?.Dispatcher?.InvokeAsync(async () =>
                     {
                         IsStartupSweepRunning = false;
-                        StartupSweepStatusText = res.ThreatsCount > 0 ? $"{res.ThreatsCount} tehdit" : "Temiz";
-                        StartupSweepBadgeColor = res.ThreatsCount > 0 ? "#C41E1E" : "#4CAF50";
+                        StartupSweepFindings.Clear();
+                        foreach (var finding in res.Findings
+                            .Where(f => f.Action != "ALLOW")
+                            .OrderByDescending(f => f.DetectionTime))
+                            StartupSweepFindings.Add(finding);
+                        (StartupSweepStatusText, StartupSweepBadgeColor) = GetStartupSweepSummary(res);
                         _ = RefreshMonthlyQuarantineCountAsync();
                         await RefreshThreatStatusAsync();
                     });
@@ -326,7 +340,7 @@ namespace AegisPC.App.ViewModels
 
                         IncrementDailyScanned(1);
                         LastEventTimeAgo = $"{DateTime.Now:HH:mm:ss}";
-                        if (act.Action == "QUARANTINED" || act.Severity == "Danger")
+                        if (act.Action == "QUARANTINED")
                         {
                             ThreatsBocked24h++;
                             ThreatsBlockedThisMonth++;
@@ -337,7 +351,7 @@ namespace AegisPC.App.ViewModels
                             ProtectionStatusSymbol = "ShieldAlert24";
                             TriggerThreatToast(act.FileName, isQuarantined: true);
                         }
-                        else if (act.Action == "WARN" || act.Severity == "Warning")
+                        else if (act.Action == "WARN" || act.Severity == "Warning" || act.Severity == "Danger")
                         {
                             ProtectionStatusText = "Şüpheli aktivite algılandı";
                             ProtectionBadgeText = $"{act.FileName} incelendi";
@@ -393,31 +407,41 @@ namespace AegisPC.App.ViewModels
                     Application.Current?.Dispatcher?.InvokeAsync(async () =>
                     {
                         IsScanning = false;
-                        ScanProgress = 100;
-                        LastScanTime = "Az önce";
+                        ScanProgress = result.Status == AegisPC.Core.Enums.ScanStatus.Completed ? 100 : Math.Min(99, ScanProgress);
+                        LastScanTime = result.Status == AegisPC.Core.Enums.ScanStatus.Completed ? "Az önce" : "Son tarama tamamlanmadı";
                         IncrementDailyScanned(result.ScannedFiles);
                         QuickScanButtonText = "Tekrar Tara";
 
                         int activeFindingsCount = result.Findings?.Count(f => f.Status == AegisPC.Core.Enums.FindingStatus.Active && !f.IsAllowlisted) ?? 0;
                         PendingFindingsCount = activeFindingsCount;
 
-                        if (activeFindingsCount > 0)
+                        if (result.Status != AegisPC.Core.Enums.ScanStatus.Completed)
+                        {
+                            HasThreatsDetected = activeFindingsCount > 0;
+                            ProtectionStatusText = result.Status == AegisPC.Core.Enums.ScanStatus.Cancelled ? "Tarama iptal edildi" : "Tarama tamamlanamadı";
+                            ProtectionBadgeText = $"{activeFindingsCount} inceleme bekleyen bulgu; kapsam tamamlanmadı";
+                            ProtectionStatusColor = "#F5A623";
+                            ProtectionStatusSymbol = "Warning24";
+                            TriggerToast("Tarama tamamlanmadı. İncelenemeyen dosyalar temiz ilan edilmedi; ayrıntıları Tarayıcı bölümünden kontrol edin.", "Warning");
+                        }
+                        else if (activeFindingsCount > 0)
                         {
                             HasThreatsDetected = true;
-                            ProtectionStatusText = "Tehdit bulundu";
-                            ProtectionBadgeText = $"{activeFindingsCount} şüpheli bulgu";
+                            ProtectionStatusText = "İnceleme bekleyen bulgular var";
+                            ProtectionBadgeText = $"{activeFindingsCount} güvenlik bulgusu";
                             ProtectionStatusColor = "#C41E1E";
                             ProtectionStatusSymbol = "ShieldAlert24";
-                            TriggerToast($"Hızlı tarama tamamlandı: {activeFindingsCount} riskli öğe tespit edildi!", "Warning");
+                            TriggerToast($"Tarama tamamlandı: {activeFindingsCount} inceleme bekleyen güvenlik bulgusu. Bu sayı doğrulanmış virüs sayısı değildir.", "Warning");
                         }
                         else
                         {
                             HasThreatsDetected = false;
-                            ProtectionStatusText = "Sisteminiz güvende";
-                            ProtectionBadgeText = "Gerçek zamanlı koruma aktif";
-                            ProtectionStatusColor = "#4CAF50";
-                            ProtectionStatusSymbol = "ShieldCheckmark24";
-                            TriggerToast($"Hızlı tarama tamamlandı! {result.ScannedFiles:N0} dosya incelendi, tehdit bulunamadı.", "Success");
+                            bool incompleteCoverage = result.FailedFiles > 0 || result.TimedOutFiles > 0;
+                            ProtectionStatusText = incompleteCoverage ? "Tarama kapsamı eksik" : "İncelenen içerikte aktif bulgu yok";
+                            ProtectionBadgeText = incompleteCoverage ? "İncelenemeyen dosyalar temiz sayılmadı" : "Tarama sonucu; koruma durumu ayrı doğrulanır";
+                            ProtectionStatusColor = incompleteCoverage ? "#F5A623" : "#4CAF50";
+                            ProtectionStatusSymbol = incompleteCoverage ? "Warning24" : "ShieldCheckmark24";
+                            TriggerToast($"Tarama tamamlandı: {result.ScannedFiles:N0} dosya incelendi, aktif bulgu yok. {result.FailedFiles} hata, {result.TimedOutFiles} zaman aşımı.", incompleteCoverage ? "Warning" : "Success");
                         }
 
                         _ = RefreshMonthlyQuarantineCountAsync();
@@ -546,27 +570,40 @@ namespace AegisPC.App.ViewModels
                 int activeSweepFindings = 0;
                 if (StartupSweepFindings != null)
                 {
-                    activeSweepFindings = StartupSweepFindings.Count(f => !f.IsQuarantined && f.RiskScore >= 60 && f.Action != "Allow");
+                    activeSweepFindings = StartupSweepFindings.Count(f => !f.IsQuarantined &&
+                        (f.Action == "WARN" || f.Action == "REVIEW_REQUIRED" || f.Action == "QUARANTINE_FAILED"));
                 }
 
                 int totalActiveThreats = Math.Max(activeScanFindings, Math.Max(activeServiceFindings, activeSweepFindings));
+                bool startupIncomplete = _startupSweepService?.LastResult?.FinalStatus is StartupSweepStatus.Failed or StartupSweepStatus.Cancelled;
 
                 void ApplyStatus()
                 {
                     if (totalActiveThreats > 0)
                     {
                         HasThreatsDetected = true;
-                        ProtectionStatusText = "Tehdit bulundu";
-                        ProtectionBadgeText = $"{totalActiveThreats} şüpheli bulgu";
+                        ProtectionStatusText = "Güvenlik bulgusu bulundu";
+                        ProtectionBadgeText = startupIncomplete
+                            ? $"{totalActiveThreats} inceleme bekleyen bulgu; tarama eksik"
+                            : $"{totalActiveThreats} inceleme bekleyen bulgu";
                         ProtectionStatusColor = "#C41E1E";
                         ProtectionStatusSymbol = "ShieldAlert24";
                         PendingFindingsCount = totalActiveThreats;
                     }
+                    else if (startupIncomplete)
+                    {
+                        HasThreatsDetected = false;
+                        ProtectionStatusText = "Başlangıç taraması tamamlanamadı";
+                        ProtectionBadgeText = "İncelenemeyen dosyalar temiz sayılmadı";
+                        ProtectionStatusColor = "#F5A623";
+                        ProtectionStatusSymbol = "Warning24";
+                        PendingFindingsCount = 0;
+                    }
                     else
                     {
                         HasThreatsDetected = false;
-                        ProtectionStatusText = "Sisteminiz güvende";
-                        ProtectionBadgeText = "Gerçek zamanlı koruma aktif";
+                        ProtectionStatusText = "İncelenen içerikte aktif bulgu yok";
+                        ProtectionBadgeText = "Koruma durumu ayrıca doğrulanır";
                         ProtectionStatusColor = "#4CAF50";
                         ProtectionStatusSymbol = "ShieldCheckmark24";
                         PendingFindingsCount = 0;
@@ -587,5 +624,17 @@ namespace AegisPC.App.ViewModels
                 System.Diagnostics.Trace.WriteLine(ex);
             }
         }
+
+        private static (string Text, string Color) GetStartupSweepSummary(StartupSweepResult result) =>
+            result.FinalStatus switch
+            {
+                StartupSweepStatus.Failed => ($"Tarama tamamlanamadı ({result.IncompleteCount} incelenemedi)", "#F5A623"),
+                StartupSweepStatus.Cancelled => ("Tarama iptal edildi", "#F5A623"),
+                StartupSweepStatus.ThreatsFound => ($"{result.ThreatsCount} doğrulanmış bulgu", "#C41E1E"),
+                StartupSweepStatus.Completed when result.SuspiciousCount > 0 =>
+                    ($"{result.SuspiciousCount} inceleme bekleyen bulgu", "#F5A623"),
+                StartupSweepStatus.Clean => ("İncelenen içerikte bulgu yok", "#4CAF50"),
+                _ => ("Tarama durumu bilinmiyor", "#F5A623")
+            };
     }
 }

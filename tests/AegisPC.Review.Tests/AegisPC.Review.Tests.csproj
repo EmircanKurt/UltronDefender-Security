@@ -10,6 +10,17 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ReviewTestDependencies.cs" />
+    <Compile Include="../AegisPC.Tests/NotificationTruthRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/NotificationProducerRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/AntivirusTestReferenceRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/BackgroundNotificationRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/CloudAuthenticationSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/YaraCertaintySafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/StartupSweepSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/SelfPathTrustBoundaryTests.cs" />
+    <Compile Include="../AegisPC.Tests/HashDetectorCancellationTests.cs" />
+    <Compile Include="../AegisPC.Tests/BehaviorRansomwareTrustBoundaryTests.cs" />
+    <Compile Include="../AegisPC.Tests/ToastNotificationTests.cs" />
     <Compile Include="../AegisPC.Tests/WorkflowUiRegressionTests.cs" />
     <Compile Include="../AegisPC.Tests/ProcessArchiveWorkflowTests.cs" />
     <Compile Include="../AegisPC.Tests/ExclusionScheduleWorkflowTests.cs" />

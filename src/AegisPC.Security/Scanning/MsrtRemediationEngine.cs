@@ -442,31 +442,10 @@ namespace AegisPC.Security.Scanning
                     {
                         if (proc.Id <= 4 || proc.Id == Environment.ProcessId) continue;
                         string mainModule = proc.MainModule?.FileName ?? string.Empty;
-                        if (string.IsNullOrEmpty(mainModule) || FileScannerService.IsSelfOwnedPath(mainModule)) continue;
+                        if (string.IsNullOrEmpty(mainModule)) continue;
 
-                        string lower = mainModule.ToLowerInvariant();
-                        if (lower.Contains(@"\appdata\local\temp\") || lower.Contains(@"\windows\temp\"))
-                        {
-                            findings.Add(new SecurityFinding
-                            {
-                                ObjectPath = mainModule,
-                                ObjectName = proc.ProcessName,
-                                RiskLevel = RiskLevel.ConfirmedMalicious,
-                                RiskScore = 88,
-                                Category = FindingCategory.MalwareSuspicion,
-                                Title = $"MRT: Geçici Dizinden Çalışan Aktif Süreç (PID {proc.Id})",
-                                Description = $"'{proc.ProcessName}' süreci doğrudan Temp dizininden çalışıyor.",
-                                RiskReasons = new List<string>
-                                {
-                                    $"Süreç yolu: {mainModule}",
-                                    "Temp dizininden doğrudan çalışan bellek süreçleri yüksek risk taşır."
-                                },
-                                ConfidenceLevel = ConfidenceLevel.High,
-                                FirstObserved = DateTime.UtcNow,
-                                LastObserved = DateTime.UtcNow,
-                                Status = FindingStatus.Active
-                            });
-                        }
+                        var finding = CreateTemporaryProcessFinding(mainModule, proc.ProcessName, proc.Id);
+                        if (finding != null) findings.Add(finding);
                     }
                     catch { }
                     finally
@@ -476,6 +455,38 @@ namespace AegisPC.Security.Scanning
                 }
             }
             catch { }
+        }
+
+        private static SecurityFinding? CreateTemporaryProcessFinding(
+            string mainModule, string processName, int processId)
+        {
+            string lower = mainModule.ToLowerInvariant();
+            if (!lower.Contains(@"\appdata\local\temp\") &&
+                !lower.Contains(@"\windows\temp\"))
+            {
+                return null;
+            }
+
+            // Location is a review signal, not proof that the executable is malicious.
+            return new SecurityFinding
+            {
+                ObjectPath = mainModule,
+                ObjectName = processName,
+                RiskLevel = RiskLevel.Suspicious,
+                RiskScore = 60,
+                Category = FindingCategory.MalwareSuspicion,
+                Title = $"MRT: Geçici Dizinden Çalışan Aktif Süreç (PID {processId})",
+                Description = $"'{processName}' süreci doğrudan Temp dizininden çalışıyor; ek doğrulama gerekli.",
+                RiskReasons = new List<string>
+                {
+                    $"Süreç yolu: {mainModule}",
+                    "Geçici dizin yalnızca inceleme sinyalidir, zararlı yazılım kanıtı değildir."
+                },
+                ConfidenceLevel = ConfidenceLevel.Medium,
+                FirstObserved = DateTime.UtcNow,
+                LastObserved = DateTime.UtcNow,
+                Status = FindingStatus.Active
+            };
         }
 
         private static void CheckRunAndRunOnceKeys(List<SecurityFinding> findings, CancellationToken ct)

@@ -101,6 +101,10 @@ namespace AegisPC.Security.Detection.Detectors
                             });
                         }
                     }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
                     catch (Exception)
                     {
                         // Kesintisiz çalışma: Bulut sorgusu başarısız olsa bile yerel analiz devam eder

@@ -17,7 +17,7 @@ namespace AegisPC.Tests
     /// Golden Regression Test Suite for Ultron Defender Total Security (AegisPC).
     /// Enforces the core, invariant behaviors of the antivirus engine that must NEVER regress:
     /// 1. EICAR Detection (standard path &amp; whitelisted developer directory).
-    /// 2. Zero Self-Detection (.pdb, .db, and own installation paths).
+    /// 2. Product-path inspection without unverified destructive action.
     /// 3. Zero False Positives on benign user files (.txt, .pdf, .jpg).
     /// 4. Quarantine and Restore roundtrip cryptographic integrity.
     /// 5. Risk Scoring Engine threshold band calibrations.
@@ -122,11 +122,11 @@ namespace AegisPC.Tests
 
         #region 2. Zero Self-Detection Invariants
         /// <summary>
-        /// Invariant 2: Verifies that the application's own files (.pdb, .db, .runtimeconfig.json, .exe)
-        /// and its base directory are NEVER flagged as threats or quarantined.
+        /// Invariant 2: Product-root membership protects files from destructive actions but does not
+        /// make arbitrary writable content clean or exempt it from inspection.
         /// </summary>
         [Fact]
-        public async Task Golden02_ZeroSelfDetection_AppFilesAndBaseDirectory_AlwaysCleanAndAllowed()
+        public async Task Golden02_ProductFilesAreInspectedWithoutUnverifiedAutomaticAction()
         {
             string appBaseDir = AppDomain.CurrentDomain.BaseDirectory;
             string selfPdb = Path.Combine(appBaseDir, "AegisPC.Security.pdb");
@@ -136,25 +136,24 @@ namespace AegisPC.Tests
             Assert.True(File.Exists(selfConfig));
             Assert.True(File.Exists(selfExe));
 
-            // Self-owned path predicate check
+            // The product-state guard is only for destructive operations.
             Assert.True(FileScannerService.IsSelfOwnedPath(selfPdb));
             Assert.True(FileScannerService.IsSelfOwnedPath(selfConfig));
             Assert.True(FileScannerService.IsSelfOwnedPath(selfExe));
 
-            // Real-Time Engine inspection must always evaluate as Clean and Allow
+            // Actual binaries and diagnostics can have heuristic observations; their path alone
+            // may neither manufacture a clean verdict nor authorize destructive action.
             var verdictPdb = await _realTimeEngine.InspectFileAsync(selfPdb);
-            Assert.Equal(RealTimeVerdict.Clean, verdictPdb.Verdict);
-            Assert.Equal(0, verdictPdb.RiskScore);
-            Assert.Equal(RealTimePolicyAction.Allow, verdictPdb.RecommendedPolicy);
+            Assert.NotEqual(RealTimeVerdict.ConfirmedMalicious, verdictPdb.Verdict);
+            Assert.NotEqual(RealTimePolicyAction.BlockAndQuarantine, verdictPdb.RecommendedPolicy);
 
             var verdictConfig = await _realTimeEngine.InspectFileAsync(selfConfig);
-            Assert.Equal(RealTimeVerdict.Clean, verdictConfig.Verdict);
-            Assert.Equal(0, verdictConfig.RiskScore);
-            Assert.Equal(RealTimePolicyAction.Allow, verdictConfig.RecommendedPolicy);
+            Assert.NotEqual(RealTimeVerdict.ConfirmedMalicious, verdictConfig.Verdict);
+            Assert.NotEqual(RealTimePolicyAction.BlockAndQuarantine, verdictConfig.RecommendedPolicy);
 
-            // File scanner inspection should skip or return clean
+            // File scanning must not implicitly resolve/quarantine an unverified own-file finding.
             var scanFinding = await _fileScanner.ScanFileAsync(selfPdb);
-            Assert.Null(scanFinding);
+            Assert.True(scanFinding == null || scanFinding.RiskLevel != RiskLevel.ConfirmedMalicious);
         }
         #endregion
 

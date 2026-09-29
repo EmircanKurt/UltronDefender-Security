@@ -96,7 +96,6 @@ namespace AegisPC.Security.Scanning
                         foreach (var file in Directory.EnumerateFiles(currentDir))
                         {
                             if (cancellationToken.IsCancellationRequested) break;
-                            if (ScanFilterPolicy.IsSelfOwnedPath(file)) continue;
                             pauseEvent?.Wait(cancellationToken);
                             await tryQueueFileAsync(file).ConfigureAwait(false);
                         }
@@ -115,8 +114,6 @@ namespace AegisPC.Security.Scanning
 
                                     // TAM KAPSAM: Windows kökünde de tüm alt dizinler taranır (WinSxS, Installer,
                                     // assembly, ProgramData dahil). Yalnızca ExcludedDirectoryNames listesi dışlanır.
-                                    if (ScanFilterPolicy.IsSelfOwnedPath(subDir)) continue;
-
                                     if (visitedDirs.TryAdd(subDir, 0))
                                     {
                                         dirQueue.Enqueue(subDir);

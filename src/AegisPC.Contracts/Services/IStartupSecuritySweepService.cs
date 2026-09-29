@@ -25,6 +25,8 @@ namespace AegisPC.Contracts.Services
         public int TotalFiles { get; set; }
         public int ThreatsFound { get; set; }
         public int SuspiciousFound { get; set; }
+        /// <summary>Files whose inspection could not establish a clean or malicious verdict.</summary>
+        public int IncompleteCount { get; set; }
         public int CleanFiles { get; set; }
         public int SkippedUnchanged { get; set; }
         public string CurrentFile { get; set; } = string.Empty;
@@ -63,6 +65,8 @@ namespace AegisPC.Contracts.Services
         public int CleanCount { get; set; }
         public int ThreatsCount { get; set; }
         public int SuspiciousCount { get; set; }
+        /// <summary>Files whose inspection could not establish a verdict.</summary>
+        public int IncompleteCount { get; set; }
         public int SkippedCount { get; set; }
         public TimeSpan Duration { get; set; }
         public List<StartupSweepFinding> Findings { get; set; } = new();

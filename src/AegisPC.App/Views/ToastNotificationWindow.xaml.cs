@@ -7,30 +7,29 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using AegisPC.Contracts.Services;
 using Microsoft.Extensions.DependencyInjection;
-using Wpf.Ui.Controls;
 
 namespace AegisPC.App.Views
 {
-    /// <summary>
-    /// Sağ alttan kayarak açılan, koyu temalı (#151515, #262626) ve ESET tarzı
-    /// modern animasyonlu Windows bildirim penceresi.
-    /// </summary>
+    /// <summary>Presents a compact, nonactivating notification; severity never proves containment.</summary>
     public partial class ToastNotificationWindow : Window
     {
         private System.Windows.Threading.DispatcherTimer? _closeTimer;
-        private System.Windows.Threading.DispatcherTimer? _pulseTimer;
         private static ToastNotificationWindow? _activeToast;
         private static readonly object _toastLock = new();
         private string _currentType = "Info";
 
+        /// <summary>Overrides the details destination when supplied by the producer.</summary>
         public Type? CustomTargetPage { get; set; }
+        /// <summary>Runs the producer's optional details action after navigation.</summary>
         public Action? CustomClickAction { get; set; }
 
+        /// <summary>Initializes presentation without starting protection engines.</summary>
         public ToastNotificationWindow()
         {
             InitializeComponent();
         }
 
+        /// <summary>Shows or updates one notification on the UI dispatcher, respecting notification settings.</summary>
         public static void ShowToast(string title, string message, string type = "Info", Type? targetPageType = null, Action? clickAction = null)
         {
             try
@@ -85,6 +84,7 @@ namespace AegisPC.App.Views
             });
         }
 
+        /// <summary>Replaces source details without movement or pulsing and restarts the reading timeout.</summary>
         public void UpdateContent(string title, string message, string type)
         {
             _currentType = type;
@@ -92,16 +92,9 @@ namespace AegisPC.App.Views
             ToastMessage.Text = message;
             ApplyStyling(type);
 
-            // Nabız animasyonunu ve sayaçları sıfırla, pencere konumu sabit kalır
-            _pulseTimer?.Stop();
-            AccentStripe.BeginAnimation(UIElement.OpacityProperty, null);
-            AccentStripe.Opacity = 1.0;
-
             _closeTimer?.Stop();
-            if (_closeTimer != null) _closeTimer.Interval = TimeSpan.FromSeconds(8);
-            if (_pulseTimer != null) _pulseTimer.Interval = TimeSpan.FromSeconds(6);
+            if (_closeTimer != null) _closeTimer.Interval = TimeSpan.FromSeconds(10);
             _closeTimer?.Start();
-            _pulseTimer?.Start();
         }
 
         private void Setup(string title, string message, string type)
@@ -117,133 +110,35 @@ namespace AegisPC.App.Views
 
             ApplyStyling(type);
 
-            // 250ms slide-in + fade-in animasyonu (CubicEase EaseOut)
-            Opacity = 0;
-            CardTranslate.Y = 40;
-
-            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-            var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(250)) { EasingFunction = ease };
-            var slideIn = new DoubleAnimation(40, 0, TimeSpan.FromMilliseconds(250)) { EasingFunction = ease };
-
-            BeginAnimation(OpacityProperty, fadeIn);
-            CardTranslate.BeginAnimation(TranslateTransform.YProperty, slideIn);
-
-            // Kapanmadan önceki son 2 saniyede nabız animasyonu için zamanlayıcı (8s - 2s = 6s)
-            _pulseTimer = new System.Windows.Threading.DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(6)
-            };
-            _pulseTimer.Tick += (s, e) =>
-            {
-                _pulseTimer.Stop();
-                StartStripePulseAnimation();
-            };
-            _pulseTimer.Start();
-
-            // 8 saniye sonra otomatik kapanma zamanlayıcısı
-            _closeTimer = new System.Windows.Threading.DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(8)
-            };
+            // Quiet appearance; hovering pauses the reading timeout.
+            _closeTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
             _closeTimer.Tick += (s, e) => CloseToast();
             _closeTimer.Start();
         }
 
-        private void StartStripePulseAnimation()
-        {
-            try
-            {
-                var pulseAnim = new DoubleAnimation
-                {
-                    From = 1.0,
-                    To = 0.35,
-                    Duration = TimeSpan.FromMilliseconds(500),
-                    AutoReverse = true,
-                    RepeatBehavior = new RepeatBehavior(2) // 2 döngü = 2000ms = 2 saniye
-                };
-                AccentStripe.BeginAnimation(UIElement.OpacityProperty, pulseAnim);
-            }
-            catch (Exception ex)
-            {
-                Serilog.Log.Warning(ex, "Nabız animasyonu başlatılamadı.");
-            }
-        }
-
+        /// <summary>Removes decorative symbols without inferring a detection or a successful security action.</summary>
         public static string CleanTitle(string title)
         {
-            if (string.IsNullOrWhiteSpace(title)) return "Tehdit engellendi";
-            return title.Replace("🚨", "").Replace("🛡️", "").Replace("⚠️", "").Trim();
+            if (string.IsNullOrWhiteSpace(title)) return "Ultron Defender bildirimi";
+            var cleaned = title.Replace("🚨", "").Replace("🛡️", "").Replace("⚠️", "").Trim();
+            return string.IsNullOrWhiteSpace(cleaned) ? "Ultron Defender bildirimi" : cleaned;
         }
 
         private void ApplyStyling(string type)
         {
-            // Dinamik tema fırçaları (Açık ve Koyu mod ile uyumlu)
-            CardBorder.SetResourceReference(Border.BackgroundProperty, "BrushCardBg");
-            CardBorder.SetResourceReference(Border.BorderBrushProperty, "BrushCardBorder");
-            ToastMessage.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextSecondary");
-            if (AppHeaderTitle != null) AppHeaderTitle.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextPrimary");
-
-            if (type.Equals("Warning", StringComparison.OrdinalIgnoreCase))
-            {
-                var orange = Color.FromRgb(245, 158, 11); // #F59E0B Turuncu
-                var orangeBrush = new SolidColorBrush(orange);
-                AccentStripe.Background = orangeBrush;
-                HeaderBadge.Background = orangeBrush;
-                ToastTitle.Foreground = orangeBrush;
-                BadgeIcon.Foreground = orangeBrush;
-                BadgeIcon.Symbol = SymbolRegular.Warning24;
-                IconBadge.Background = new SolidColorBrush(Color.FromRgb(42, 30, 16));
-                ToastActionStatus.Text = "Güvenlik incelemesi için Olay Merkezine kaydedildi.";
-                ToastActionStatus.Foreground = orangeBrush;
-            }
-            else if (type.Equals("Error", StringComparison.OrdinalIgnoreCase) || 
-                     type.Equals("Danger", StringComparison.OrdinalIgnoreCase))
-            {
-                var red = Color.FromRgb(239, 68, 68); // #EF4444 Kırmızı
-                var redBrush = new SolidColorBrush(red);
-                AccentStripe.Background = redBrush;
-                HeaderBadge.Background = redBrush;
-                ToastTitle.Foreground = redBrush;
-                BadgeIcon.Foreground = redBrush;
-                BadgeIcon.Symbol = SymbolRegular.Warning24;
-                IconBadge.Background = new SolidColorBrush(Color.FromRgb(42, 18, 21));
-                ToastActionStatus.Text = "Dosya AES-256 Karantina Kasasına kilitlendi.";
-                ToastActionStatus.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // Yeşil onay
-            }
-            else if (type.Equals("Success", StringComparison.OrdinalIgnoreCase))
-            {
-                var green = Color.FromRgb(16, 185, 129); // #10B981 Yeşil
-                var greenBrush = new SolidColorBrush(green);
-                AccentStripe.Background = greenBrush;
-                HeaderBadge.Background = greenBrush;
-                ToastTitle.Foreground = greenBrush;
-                BadgeIcon.Foreground = greenBrush;
-                BadgeIcon.Symbol = SymbolRegular.ShieldCheckmark24;
-                IconBadge.Background = new SolidColorBrush(Color.FromRgb(16, 42, 30));
-                ToastActionStatus.Text = "Sistem tamamen temiz ve güvende.";
-                ToastActionStatus.Foreground = greenBrush;
-            }
-            else
-            {
-                var blue = Color.FromRgb(2, 132, 199); // #0284C7 Mavi
-                var blueBrush = new SolidColorBrush(blue);
-                AccentStripe.Background = blueBrush;
-                HeaderBadge.Background = blueBrush;
-                ToastTitle.Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248));
-                BadgeIcon.Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248));
-                BadgeIcon.Symbol = SymbolRegular.Info24;
-                IconBadge.Background = new SolidColorBrush(Color.FromRgb(16, 32, 48));
-                ToastActionStatus.Text = "Ultron Defender gerçek zamanlı koruma aktif.";
-                ToastActionStatus.Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248));
-            }
+            var color = type.Equals("Error", StringComparison.OrdinalIgnoreCase) || type.Equals("Danger", StringComparison.OrdinalIgnoreCase)
+                ? Color.FromRgb(190, 105, 105)
+                : type.Equals("Warning", StringComparison.OrdinalIgnoreCase)
+                    ? Color.FromRgb(188, 153, 98)
+                    : type.Equals("Success", StringComparison.OrdinalIgnoreCase)
+                        ? Color.FromRgb(108, 151, 129)
+                        : Color.FromRgb(114, 151, 173);
+            AccentStripe.Background = new SolidColorBrush(color);
         }
 
         private void CloseToast()
         {
-            _pulseTimer?.Stop();
             _closeTimer?.Stop();
-            AccentStripe.BeginAnimation(UIElement.OpacityProperty, null);
-            AccentStripe.Opacity = 1.0;
 
             // 150ms fade-out animasyonu ile kapanış
             var fadeOut = new DoubleAnimation(Opacity, 0, TimeSpan.FromMilliseconds(150));
@@ -264,22 +159,11 @@ namespace AegisPC.App.Views
         private void OnCardMouseEnter(object sender, MouseEventArgs e)
         {
             // Kullanıcı bildirimin üzerine geldiğinde zamanlayıcıları ve nabzı durdur
-            _pulseTimer?.Stop();
             _closeTimer?.Stop();
-            AccentStripe.BeginAnimation(UIElement.OpacityProperty, null);
-            AccentStripe.Opacity = 1.0;
         }
 
         private void OnCardMouseLeave(object sender, MouseEventArgs e)
         {
-            // Kullanıcı fareyi bildirimden çektiğinde 3 saniye süre ver
-            // Son 2 saniyede nabız animasyonu başlaması için pulseTimer 1 saniye sonra devreye girer
-            if (_pulseTimer != null)
-            {
-                _pulseTimer.Interval = TimeSpan.FromSeconds(1);
-                _pulseTimer.Start();
-            }
-
             if (_closeTimer != null)
             {
                 _closeTimer.Interval = TimeSpan.FromSeconds(3);
@@ -287,14 +171,9 @@ namespace AegisPC.App.Views
             }
         }
 
-        private void OnFooterActionClicked(object sender, MouseButtonEventArgs e)
+        private void OnFooterActionClicked(object sender, RoutedEventArgs e)
         {
             e.Handled = true;
-            NavigateAndClose();
-        }
-
-        private void OnCardClicked(object sender, MouseButtonEventArgs e)
-        {
             NavigateAndClose();
         }
 
@@ -397,12 +276,6 @@ namespace AegisPC.App.Views
             }
 
             return typeof(QuarantineView);
-        }
-
-        private void OnMinimizeClicked(object sender, RoutedEventArgs e)
-        {
-            e.Handled = true;
-            CloseToast();
         }
 
         private void OnCloseClicked(object sender, RoutedEventArgs e)

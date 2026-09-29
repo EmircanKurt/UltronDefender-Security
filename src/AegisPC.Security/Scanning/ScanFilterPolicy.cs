@@ -80,7 +80,8 @@ namespace AegisPC.Security.Scanning
         };
 
         /// <summary>
-        /// Uygulamanın kendi dizinlerini (ProgramData, ProgramFiles, AppData, BaseDirectory, Repo) içeren lazy yol koleksiyonu.
+        /// Product-state roots used solely to prevent destructive actions against application data.
+        /// Membership does not establish ownership, a clean verdict, or a scan exclusion.
         /// </summary>
         public static readonly Lazy<string[]> SelfExcludedPaths = new(() =>
         {
@@ -135,20 +136,19 @@ namespace AegisPC.Security.Scanning
         }
 
         /// <summary>
-        /// Verilen dosya yolunun uygulamanın kendi veri/imza/log/config dizinlerinden
-        /// veya bileşenlerinden birine ait olup olmadığını kontrol eder. True dönerse dosya asla taranmaz.
+        /// Reports whether a path lies under a product-state root for destructive-action safety.
+        /// User-writable files beneath these roots are not trusted and must still be inspected.
         /// </summary>
-        /// <param name="filePath">Kontrol edilecek dosya yolu.</param>
-        /// <returns>Uygulamanın kendi dosyası ise true; aksi halde false.</returns>
+        /// <param name="filePath">Path to evaluate without opening or trusting its content.</param>
+        /// <returns>True for a protected root member; never a clean-file verdict.</returns>
         public static bool IsSelfOwnedPath(string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath)) return false;
 
             try
             {
-                // Öz-koruma yalnızca doğrulanmış ürün köklerinde uygulanır. Dosya adı veya yolun
-                // herhangi bir yerindeki "AegisPC" metni güven sınırı değildir; aksi halde bir
-                // saldırgan zararlı dosyayı yeniden adlandırarak taramayı atlayabilir.
+                // Root membership is only a destructive-action guard. It cannot prove that an
+                // arbitrary file beneath a writable root belongs to the product.
                 string canonicalPath = Path.GetFullPath(filePath);
                 foreach (var excludedPath in SelfExcludedPaths.Value)
                 {
@@ -165,16 +165,16 @@ namespace AegisPC.Security.Scanning
         }
 
         /// <summary>
-        /// Queues every non-product path. Extension, magic bytes and readability never establish a clean verdict.
-        /// File opening and content verification happen in the bounded scan worker, not the producer.
+        /// Queues every nonempty path, including files beneath product-state roots.
+        /// A filename, extension, or directory cannot establish a clean verdict.
         /// </summary>
-        /// <param name="filePath">İncelenecek dosyanın tam yolu.</param>
-        /// <returns>Dosya taranmaya uygun bir aday ise true; aksi halde false.</returns>
+        /// <param name="filePath">Candidate path; content is inspected by a later worker.</param>
+        /// <returns>True for any nonempty candidate path.</returns>
         public static bool IsInspectableCandidate(string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath)) return false;
 
-            return !IsSelfOwnedPath(filePath);
+            return true;
         }
     }
 }

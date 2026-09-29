@@ -32,6 +32,7 @@ internal static class ArchiveEntryInspector
             var best = new MalwareSignatureMatch();
             byte[] header = new byte[6];
             int headerLength = 0;
+            byte[]? testContent = entry.Length <= 128 ? new byte[(int)entry.Length] : null;
             int read;
             while ((read = await stream.ReadAsync(buffer.AsMemory(retained, chunkSize), cancellationToken)) > 0)
             {
@@ -40,6 +41,7 @@ internal static class ArchiveEntryInspector
                 if (actual > entry.Length || actual > 10 * 1024 * 1024)
                     throw new InvalidDataException("Archive member exceeds its declared length or inspection budget.");
                 hash.AppendData(buffer, retained, read);
+                if (testContent != null) Buffer.BlockCopy(buffer, retained, testContent, (int)actual - read, read);
                 if (ruleInput != null) Buffer.BlockCopy(buffer, retained, ruleInput, checked((int)actual - read), read);
                 int headerBytes = Math.Min(header.Length - headerLength, read);
                 buffer.AsSpan(retained, headerBytes).CopyTo(header.AsSpan(headerLength));
@@ -51,6 +53,11 @@ internal static class ArchiveEntryInspector
                 Buffer.BlockCopy(buffer, total - retained, buffer, 0, retained);
             }
             if (actual != entry.Length) throw new InvalidDataException("Archive member is truncated.");
+            if (testContent != null)
+            {
+                var testMatch = MalwareSignatureDatabase.CheckCanonicalTestContent(testContent);
+                if (testMatch.IsMatched) best = testMatch;
+            }
             bool nested = HasContainerHeader(header.AsSpan(0, headerLength));
             var rules = ruleInput != null
                 ? await yaraEngine!.ScanBufferAsync(ruleInput, entry.FullName, cancellationToken)

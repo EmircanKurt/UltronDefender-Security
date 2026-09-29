@@ -127,27 +127,6 @@ namespace AegisPC.Security.RealTime
                 return result;
             }
 
-            // Öz-koruma bypass: Yalnızca AV'nin kendi bilinen dosyaları atlanır
-            if (FileScannerService.IsSelfOwnedPath(filePath))
-            {
-                // Ek doğrulama: Dosya boyutu makul aralıkta mı? (AV bileşenleri tipik olarak <50MB)
-                try
-                {
-                    var selfFileInfo = new FileInfo(filePath);
-                    if (selfFileInfo.Length <= 50 * 1024 * 1024) // 50 MB altı → güvenli bypass
-                    {
-                        result.ScanEndTime = DateTime.UtcNow;
-                        result.VerdictTime = DateTime.UtcNow;
-                        return result;
-                    }
-                    // 50MB üzeri "kendi dosyamız" şüpheli — taramaya devam et
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogDebug(ex, "Could not inspect self-owned file metadata for {Path}", filePath);
-                }
-            }
-
             try
             {
                 using var scanLock = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);

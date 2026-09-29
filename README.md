@@ -1,7 +1,7 @@
 # 🛡️ Ultron Defender Total Security
 
 [![Status](https://img.shields.io/badge/status-experimental%20preview-orange.svg)](docs/architecture/FEATURE_STATUS.md)
-[![Review](https://img.shields.io/badge/review-2026--09--27-blue.svg)](docs/research/FINAL_REVIEW_2026-09-27.md)
+[![Review](https://img.shields.io/badge/review-2026--09--28-blue.svg)](docs/research/ANTIVIRUS_SAFETY_2026-09-28.md)
 [![Target Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-blue.svg)](#)
 [![Framework](https://img.shields.io/badge/.NET-8.0%20WPF-purple.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -13,10 +13,10 @@
 
 ### 🇹🇷 Proje Hakkında (About in Turkish)
 
-3.2.1 incelemesi: Release **335 seçili karma regresyon testi** geçti. Zamanlayıcı sekmesi, yerel rapor geçmişi, SHA-256 bağlı istisnalar, gerçek süreç CPU/RAM göstergesi ve nominal 16 GB donanım için Auto politikası düzeltildi. ZIP/JAR üyeleri normal ve gerçek zamanlı ortak dedektör hattına bağlandı. [Kanıtlar ve kalan sınırlar](docs/research/WORKFLOW_REVIEW_2026-09-27.md).
+3.2.1 geliştirme dalında Release **474 seçili karma regresyon testi** geçti (29 Eylül 2026); bu sayı zararlı yakalama oranı değildir. Zamanlayıcı, rapor geçmişi, SHA-256 bağlı istisnalar, kaynak göstergesi ve ZIP/JAR akışları için önceki düzeltmelerin yanı sıra yanlış bildirim, başlangıç eylem kesinliği, YARA güven düzeyi ve bulut yanıt sınırı düzeltmeleri bulunur. [Güncel güvenlik sınırları ve test kanıtı](docs/research/ANTIVIRUS_SAFETY_2026-09-28.md) · [önceki iş akışı incelemesi](docs/research/WORKFLOW_REVIEW_2026-09-27.md).
 
-Bu .NET 8 sürümü **Windows 7 desteklemez**; hedef Windows 10 1809+ / Windows 11 x64'tür, farklı cihazlarda pilot gerektirir. İmzalı kernel koruması veya Defender'dan üstünlük iddiası yoktur. Kurulum paketini yalnız oluşturmak için `./build_and_deploy.ps1` kullanılır; varsayılan masaüstü/servis/Defender ayarlarını değiştirmez. Kurulum EXE'sini çalıştırmak ayrı, yönetici yetkisi gerektiren işlemdir.
-Ultron Defender, açıklanabilir dosya analizi ve donanıma göre uyarlanan tarama üzerinde geliştirilen bir önizleme projesidir. Kullanıcı-modu gerçek zamanlı gözlem, yürütme öncesi engelleme garantisi değildir; imzalı kernel sürücüsü bu incelemede etkinleştirilmemiştir. Yanlış pozitiflerin sıfır olduğu iddia edilmez. Okul/iş bilgisayarlarında dağıtımdan önce yönetici onayı ve izole pilot gerekir; mevcut Defender/kurumsal korumayı kapatmayın. [Güncel kapsam ve sınırlamalar](docs/research/FINAL_REVIEW_2026-09-27.md).
+Bu .NET 8 sürümü **Windows 7 desteklemez**; Windows 10/11 x64 hedeflerinde sürüm ve edisyon uyumu ayrıca doğrulanmalıdır ([Microsoft destek matrisi](https://learn.microsoft.com/dotnet/core/install/windows)). İmzalı kernel koruması veya Defender'dan üstünlük iddiası yoktur. Kurulum paketini yalnız oluşturmak için `./build_and_deploy.ps1` kullanılır; varsayılan masaüstü/servis/Defender ayarlarını değiştirmez. Kurulum EXE'sini çalıştırmak ayrı, yönetici yetkisi gerektiren işlemdir.
+Ultron Defender, açıklanabilir dosya analizi ve donanıma göre uyarlanan tarama üzerinde geliştirilen bir önizleme projesidir. Mevcut gerçek zamanlı izleme, seçili klasörlerde kullanıcı-modu dosya olayları ve süreç başladıktan sonraki gözlemlere dayanır; normal kurulum imzalı kernel sürücüsünü etkinleştirmez ve yürütme öncesi engelleme garantisi vermez. Yanlış pozitiflerin sıfır olduğu iddia edilmez. Okul/iş bilgisayarlarında dağıtımdan önce yönetici onayı ve izole pilot gerekir; mevcut Defender/kurumsal korumayı kapatmayın. [Güncel kapsam ve sınırlamalar](docs/research/ANTIVIRUS_SAFETY_2026-09-28.md).
 
 ---
 
