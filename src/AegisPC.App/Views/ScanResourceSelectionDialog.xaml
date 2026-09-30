@@ -57,7 +57,7 @@
                     <StackPanel>
                         <RadioButton x:Name="RbAuto" GroupName="ResourceMode" Content="Otomatik (Uyarlanabilir)" Click="OnRadioClicked"
                                      Foreground="{DynamicResource BrushTextPrimary}"/>
-                        <TextBlock Text="Sistem yüküne göre hızı artırır veya azaltır." FontSize="11.5"
+                        <TextBlock Text="Sistem yüküne göre işçi sınırını artırır veya azaltır." FontSize="11.5"
                                    Foreground="{DynamicResource BrushTextMuted}" Margin="0,6,0,0"/>
                     </StackPanel>
                 </Border>
@@ -72,7 +72,7 @@
                         <RadioButton x:Name="RbLow" Grid.Column="0" GroupName="ResourceMode" IsChecked="False" VerticalAlignment="Center" Margin="0,0,12,0" Click="OnRadioClicked"/>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                             <TextBlock Text="🌱 Sakin" FontSize="13.5" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock x:Name="TxtLowDesc" Text="~1 GB RAM, düşük CPU • Günlük işlerinizi kesintiye uğratmaz" FontSize="11.5" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="TxtLowDesc" Text="Düşük paralellik • Daha az kaynak kullanımı" FontSize="11.5" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -88,7 +88,7 @@
                         <RadioButton x:Name="RbBalanced" Grid.Column="0" GroupName="ResourceMode" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" Click="OnRadioClicked"/>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                             <TextBlock Text="⚖️ Dengeli (Önerilen)" FontSize="13.5" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock x:Name="TxtBalancedDesc" Text="RAM'in yarısı • Hızlı ve sistem yanıtını koruyan dengeli tarama" FontSize="11.5" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="TxtBalancedDesc" Text="Orta düzey paralellik • Sistem yüküne göre sınırlanır" FontSize="11.5" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -104,14 +104,14 @@
                         <RadioButton x:Name="RbMaximum" Grid.Column="0" GroupName="ResourceMode" IsChecked="False" VerticalAlignment="Center" Margin="0,0,12,0" Click="OnRadioClicked"/>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                             <TextBlock Text="🚀 Tam Güç" FontSize="13.5" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
-                            <TextBlock x:Name="TxtMaximumDesc" Text="Tüm çekirdekler ve derin I/O paralelliği • En hızlı tarama performansı" FontSize="11.5" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="TxtMaximumDesc" Text="Yüksek paralellik • Bellek ve disk güvenlik sınırları geçerlidir" FontSize="11.5" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
                         </StackPanel>
                     </Grid>
                 </Border>
             </StackPanel>
 
             <!-- 3. Remember Choice Checkbox -->
-            <CheckBox x:Name="ChkRemember" Content="Tercihimi hatırla, bir daha sorma"
+            <CheckBox x:Name="ChkRemember" Content="Son seçimimi hatırla" IsChecked="True"
                       Foreground="{DynamicResource BrushTextPrimary}" FontSize="12" Margin="4,0,0,20"/>
 
             <!-- 4. Action Buttons -->

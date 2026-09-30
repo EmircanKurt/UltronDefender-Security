@@ -301,25 +301,22 @@ namespace AegisPC.App.ViewModels
                     });
                 };
 
-                // Launch initial automatic scan on startup
+                // Startup maintenance is not a manual quick scan and must not open its resource dialog.
                 Task.Run(async () =>
                 {
                     try
                     {
                         await Task.Delay(2500);
-                        if (!App.IsStartMinimized && _scanCoordinator != null && !_scanCoordinator.IsScanning)
+                        if (_startupSweepService != null && (_scanCoordinator == null || !_scanCoordinator.IsScanning))
                         {
-                            if (Application.Current?.Dispatcher != null)
+                            var result = await _startupSweepService.RunSweepAsync();
+                            if (result.FinalStatus == StartupSweepStatus.Busy)
                             {
-                                await Application.Current.Dispatcher.InvokeAsync(async () =>
+                                Application.Current?.Dispatcher?.InvokeAsync(() =>
                                 {
-                                    await StartQuickScanAsync();
+                                    (StartupSweepStatusText, StartupSweepBadgeColor) = GetStartupSweepSummary(result);
                                 });
                             }
-                        }
-                        else if (_startupSweepService != null && (_scanCoordinator == null || !_scanCoordinator.IsScanning))
-                        {
-                            await _startupSweepService.RunSweepAsync();
                         }
                     }
                     catch (Exception ex)
@@ -628,6 +625,7 @@ namespace AegisPC.App.ViewModels
         private static (string Text, string Color) GetStartupSweepSummary(StartupSweepResult result) =>
             result.FinalStatus switch
             {
+                StartupSweepStatus.Busy => ("Başka tarama sürüyor; başlangıç kontrolü yapılmadı", "#F5A623"),
                 StartupSweepStatus.Failed => ($"Tarama tamamlanamadı ({result.IncompleteCount} incelenemedi)", "#F5A623"),
                 StartupSweepStatus.Cancelled => ("Tarama iptal edildi", "#F5A623"),
                 StartupSweepStatus.ThreatsFound => ($"{result.ThreatsCount} doğrulanmış bulgu", "#C41E1E"),

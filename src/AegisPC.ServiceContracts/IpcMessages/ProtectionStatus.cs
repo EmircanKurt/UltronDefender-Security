@@ -1,9 +1,14 @@
 using System;
+using System.Text.Json.Serialization;
 
 namespace AegisPC.ServiceContracts.IpcMessages
 {
     public class ProtectionStatus
     {
+        /// <summary>Matches a solicited status to its request; empty identifies an uncorrelated legacy or event response.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public Guid RequestId { get; set; }
+
         public bool IsServiceRunning { get; set; }
         public bool IsRealTimeEnabled { get; set; }
         public bool IsNetworkProtectionEnabled { get; set; }

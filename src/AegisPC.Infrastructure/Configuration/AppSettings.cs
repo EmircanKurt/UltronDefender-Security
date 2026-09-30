@@ -19,7 +19,6 @@ namespace AegisPC.Infrastructure.Configuration
         public bool IsAiExplanationsEnabled { get; set; } = false;
         public byte[]? ReputationApiKeyEncrypted { get; set; }
         public int PerformanceSampleIntervalMs { get; set; } = 2000;
-        public int MaxScanConcurrency { get; set; } = Environment.ProcessorCount;
         public bool IsFirstRun { get; set; } = true;
         public bool OnboardingCompleted { get; set; } = false;
         public DateTime? LastHealthCheck { get; set; }
@@ -33,6 +32,11 @@ namespace AegisPC.Infrastructure.Configuration
         public string ScheduledScanDay { get; set; } = "Her Gün";
         public int ScheduledScanIntervalHours { get; set; } = 24;
         public ScanResourceMode ScanResourceMode { get; set; } = ScanResourceMode.Auto;
+        /// <summary>
+        /// Stores the last confirmed manual scan profile independently from the scheduled scan profile;
+        /// null means no manual preference has been saved.
+        /// </summary>
+        public ScanResourceMode? LastManualScanResourceMode { get; set; }
         /// <summary>Enables resource-aware maintenance while interactive users are idle.</summary>
         public bool IdleScanEnabled { get; set; } = true;
         /// <summary>Minimum interactive-session idle time before a background scan may start.</summary>

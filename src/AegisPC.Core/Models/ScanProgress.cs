@@ -25,7 +25,15 @@ public class ScanProgress
     /// <summary>Indicates that process CPU utilization has a valid elapsed-time sample, rather than a default zero.</summary>
     public bool IsCpuTelemetryAvailable { get; set; }
     public double RamUsageMb { get; set; }
+    /// <summary>Highest scanner-process working set observed during this scan (sampled, not an exact peak).</summary>
+    public double PeakObservedRamUsageMb { get; set; }
     public double DiskThroughputMbSec { get; set; }
+    /// <summary>Number of file-analysis workers currently executing rather than merely created.</summary>
+    public int ActiveWorkers { get; set; }
+    /// <summary>Current effective global worker permit count after resource-pressure policy.</summary>
+    public int EffectiveWorkerLimit { get; set; }
+    /// <summary>Files awaiting analysis, including producers waiting for bounded queue space.</summary>
+    public int PendingFiles { get; set; }
     public string ResourceProfileName { get; set; } = "Auto";
     public string CurrentFile { get; set; } = string.Empty;
     public bool IsCompleted { get; set; }

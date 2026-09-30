@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Serialization;
 
 namespace AegisPC.ServiceContracts.IpcMessages
 {
@@ -13,5 +14,9 @@ namespace AegisPC.ServiceContracts.IpcMessages
         public ServiceCommandType CommandType { get; set; }
         public string? Payload { get; set; }
         public DateTime Timestamp { get; set; }
+
+        /// <summary>Optional nonzero request identity echoed by the service for a fresh status reply.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public Guid RequestId { get; set; }
     }
 }

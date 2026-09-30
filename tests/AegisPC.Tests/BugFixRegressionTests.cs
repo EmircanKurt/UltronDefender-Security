@@ -68,7 +68,7 @@ public sealed class SettingsPersistenceRegressionTests : IDisposable
         await service.LoadAsync();
 
         Assert.Equal(500, service.Current.PerformanceSampleIntervalMs);
-        Assert.Equal(1, service.Current.MaxScanConcurrency);
+        Assert.DoesNotContain("MaxScanConcurrency", JsonSerializer.Serialize(service.Current));
         Assert.Equal(100, service.Current.AutoQuarantineThreshold);
         Assert.Equal(23, service.Current.ScheduledScanHour);
         Assert.Equal(ScanResourceMode.Auto, service.Current.ScanResourceMode);

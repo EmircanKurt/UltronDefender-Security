@@ -107,7 +107,10 @@ namespace AegisPC.Security.Scanning
                     ThreatReason = reason,
                     ForceKillHoldingProcesses = false,
                     WipeOriginalPayloadBytes = true,
-                    ExpectedSha256 = expectedSha256
+                    ExpectedSha256 = expectedSha256,
+                    // Legacy API supplies a display reason and optional content identity,
+                    // but no trusted detector verdict. A hash match alone is not maliciousness.
+                    DetectionEvidence = null
                 };
 
                 var txResult = await _engine.ExecuteQuarantineAsync(request, cancellationToken);

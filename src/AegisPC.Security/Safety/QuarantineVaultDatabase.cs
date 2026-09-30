@@ -25,6 +25,7 @@ namespace AegisPC.Security.Safety
         private readonly string _jsonIndexFilePath;
         private readonly ILogger? _logger;
         private readonly object _syncLock = new();
+        private volatile bool _riskMigrationApplied;
 
         // Eşzamanlı işlemlerde yarış durumlarını ve mükerrer karantinayı engelleyen eşzamanlı kilit haritası
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> _pathLocks = new(StringComparer.OrdinalIgnoreCase);
@@ -41,9 +42,55 @@ namespace AegisPC.Security.Safety
             Directory.CreateDirectory(_vaultDir);
             InitializeDatabase();
             MigrateLegacyJsonIndex();
+            InitializeRiskMigrationState();
             InitializeNextId();
-            if (File.Exists(_jsonIndexFilePath) || GetAllEntriesAsync().GetAwaiter().GetResult().Count > 0)
+            if (_riskMigrationApplied &&
+                (File.Exists(_jsonIndexFilePath) || GetAllEntriesAsync().GetAwaiter().GetResult().Count > 0))
             {
+                SyncJsonMirror();
+            }
+        }
+
+        private void InitializeRiskMigrationState()
+        {
+            using var connection = CreateConnection();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "SELECT COUNT(1) FROM VaultMetadata WHERE Key = 'StructuredQuarantineRiskV2';";
+            if (Convert.ToInt64(command.ExecuteScalar()) != 0)
+            {
+                transaction.Commit();
+                _riskMigrationApplied = true;
+                return;
+            }
+
+            command.CommandText = "SELECT COUNT(1) FROM QuarantineEntries;";
+            if (Convert.ToInt64(command.ExecuteScalar()) == 0)
+            {
+                // The write transaction makes the empty check and schema marker atomic.
+                command.CommandText = "INSERT INTO VaultMetadata (Key, Value) VALUES ('StructuredQuarantineRiskV2', 'empty-vault');";
+                command.ExecuteNonQuery();
+                transaction.Commit();
+                _riskMigrationApplied = true;
+            }
+            else
+            {
+                transaction.Commit();
+                _logger?.LogWarning("Legacy quarantine risk labels are displayed as Unknown until an offline, backed-up migration is authorized.");
+            }
+        }
+
+        /// <summary>
+        /// Backs up and normalizes legacy risk labels only during a maintenance window in which
+        /// all vault writers are stopped. It never restores an older snapshot over newer rows.
+        /// </summary>
+        public void MigrateLegacyRiskLabelsUnderMaintenance()
+        {
+            lock (_syncLock)
+            {
+                NormalizeLegacyRiskLabels();
+                _riskMigrationApplied = true;
                 SyncJsonMirror();
             }
         }
@@ -90,6 +137,73 @@ namespace AegisPC.Security.Safety
                 INSERT OR IGNORE INTO VaultSequence (Id, Value) VALUES (1, 0);
             ";
             cmd.ExecuteNonQuery();
+        }
+
+        private void NormalizeLegacyRiskLabels()
+        {
+            // Earlier releases inferred the persisted tier from display text. There is no
+            // reliable way to reconstruct detector evidence from those rows, so preserve an
+            // SQLite snapshot and mark pre-schema entries Unknown before publishing them.
+            const string migrationKey = "StructuredQuarantineRiskV2";
+            using var connection = CreateConnection();
+            using var markerCheck = connection.CreateCommand();
+            markerCheck.CommandText = "SELECT COUNT(1) FROM VaultMetadata WHERE Key = @Key;";
+            markerCheck.Parameters.AddWithValue("@Key", migrationKey);
+            if (Convert.ToInt64(markerCheck.ExecuteScalar()) != 0) return;
+
+            using var count = connection.CreateCommand();
+            count.CommandText = "SELECT COUNT(1) FROM QuarantineEntries;";
+            long legacyCount = Convert.ToInt64(count.ExecuteScalar());
+            string? backupName = null;
+            long backedUpMaxId = 0;
+            if (legacyCount > 0)
+            {
+                backupName = "QuarantineVault.risk-v2." + Guid.NewGuid().ToString("N") + ".backup.db";
+                string backupPath = Path.Combine(_vaultDir, backupName);
+                using (var backup = new SqliteConnection(new SqliteConnectionStringBuilder
+                {
+                    DataSource = backupPath,
+                    Mode = SqliteOpenMode.ReadWriteCreate,
+                    Pooling = false
+                }.ToString()))
+                {
+                    backup.Open();
+                    connection.BackupDatabase(backup);
+                    using var integrity = backup.CreateCommand();
+                    integrity.CommandText = "PRAGMA integrity_check;";
+                    if (!string.Equals(integrity.ExecuteScalar()?.ToString(), "ok", StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException("Legacy quarantine backup failed SQLite integrity verification.");
+                    using var backedUpRows = backup.CreateCommand();
+                    backedUpRows.CommandText = "SELECT COALESCE(MAX(Id), 0) FROM QuarantineEntries;";
+                    backedUpMaxId = Convert.ToInt64(backedUpRows.ExecuteScalar());
+                }
+                _logger?.LogInformation("Legacy quarantine metadata backed up before risk migration: {BackupFile}", backupName);
+            }
+
+            using var transaction = connection.BeginTransaction();
+            using var recheck = connection.CreateCommand();
+            recheck.Transaction = transaction;
+            recheck.CommandText = "SELECT COUNT(1) FROM VaultMetadata WHERE Key = @Key;";
+            recheck.Parameters.AddWithValue("@Key", migrationKey);
+            if (Convert.ToInt64(recheck.ExecuteScalar()) != 0) return;
+
+            using var normalize = connection.CreateCommand();
+            normalize.Transaction = transaction;
+            // Rows inserted after the snapshot have newer sequence IDs and must retain their
+            // independently established risk; the backup could not restore those newer rows.
+            normalize.CommandText = "UPDATE QuarantineEntries SET RiskLevel = @Unknown WHERE Id <= @BackedUpMaxId;";
+            normalize.Parameters.AddWithValue("@Unknown", (int)RiskLevel.Unknown);
+            normalize.Parameters.AddWithValue("@BackedUpMaxId", backedUpMaxId);
+            int changed = normalize.ExecuteNonQuery();
+
+            using var mark = connection.CreateCommand();
+            mark.Transaction = transaction;
+            mark.CommandText = "INSERT INTO VaultMetadata (Key, Value) VALUES (@Key, @Value);";
+            mark.Parameters.AddWithValue("@Key", migrationKey);
+            mark.Parameters.AddWithValue("@Value", backupName ?? "empty-vault");
+            mark.ExecuteNonQuery();
+            transaction.Commit();
+            _logger?.LogInformation("Legacy quarantine risk labels marked Unknown for {Count} entries.", changed);
         }
 
         private void InitializeNextId()
@@ -343,7 +457,7 @@ namespace AegisPC.Security.Safety
             return Task.FromResult(list);
         }
 
-        private static QuarantineEntry MapReaderToEntry(SqliteDataReader reader)
+        private QuarantineEntry MapReaderToEntry(SqliteDataReader reader)
         {
             return new QuarantineEntry
             {
@@ -354,7 +468,7 @@ namespace AegisPC.Security.Safety
                 SHA256 = reader.GetString(4),
                 FileSize = reader.GetInt64(5),
                 Reason = reader.IsDBNull(6) ? string.Empty : reader.GetString(6),
-                RiskLevel = (RiskLevel)reader.GetInt32(7),
+                RiskLevel = _riskMigrationApplied ? (RiskLevel)reader.GetInt32(7) : RiskLevel.Unknown,
                 QuarantinedAt = DateTime.TryParse(reader.GetString(8), out var qAt) ? qAt : DateTime.UtcNow,
                 RestoredAt = reader.IsDBNull(9) ? null : (DateTime.TryParse(reader.GetString(9), out var rAt) ? rAt : null),
                 Status = (QuarantineStatus)reader.GetInt32(10)
@@ -423,7 +537,8 @@ namespace AegisPC.Security.Safety
                         insertCmd.Parameters.AddWithValue("@SHA256", entry.SHA256 ?? string.Empty);
                         insertCmd.Parameters.AddWithValue("@FileSize", entry.FileSize);
                         insertCmd.Parameters.AddWithValue("@Reason", entry.Reason ?? string.Empty);
-                        insertCmd.Parameters.AddWithValue("@RiskLevel", (int)entry.RiskLevel);
+                        // Legacy JSON carried only display-text-derived risk, never trusted evidence.
+                        insertCmd.Parameters.AddWithValue("@RiskLevel", (int)RiskLevel.Unknown);
                         insertCmd.Parameters.AddWithValue("@QuarantinedAt", entry.QuarantinedAt.ToString("o"));
                         insertCmd.Parameters.AddWithValue("@RestoredAt", entry.RestoredAt.HasValue ? (object)entry.RestoredAt.Value.ToString("o") : DBNull.Value);
                         insertCmd.Parameters.AddWithValue("@Status", (int)entry.Status);

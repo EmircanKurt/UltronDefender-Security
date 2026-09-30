@@ -14,6 +14,12 @@ namespace AegisPC.App.ViewModels
     /// </summary>
     public partial class ScanViewModel
     {
+        private static string FormatActiveResourceProfile(ScanProgress progress)
+        {
+            if (progress.EffectiveWorkerLimit <= 0) return progress.ResourceProfileName;
+            return $"{progress.ResourceProfileName} • Etkin {progress.ActiveWorkers}/{progress.EffectiveWorkerLimit} • Bekleyen {progress.PendingFiles}";
+        }
+
         #region 5 Adımlı Kontrol Listesi (Checklist) Göstergeleri
         /// <summary>
         /// 1. Aşama: Bellek ve başlangıç nesneleri taraması tamamlandı mı?
@@ -80,7 +86,7 @@ namespace AegisPC.App.ViewModels
                     IsCpuTelemetryAvailable = lp.IsCpuTelemetryAvailable;
                     CpuUsagePercent = lp.CpuUsagePercent;
                     RamUsageMb = lp.RamUsageMb;
-                    ActiveResourceProfileText = lp.ResourceProfileName;
+                    ActiveResourceProfileText = FormatActiveResourceProfile(lp);
                     ScannedBreakdownFormatted = $"{lp.ScannedFromCache:N0} önbellekten • {lp.SkippedSignedClean:N0} imzalı geçti • {lp.NewlyScanned:N0} yeni tarandı";
                 }
                 TotalCount = _scanCoordinator.TotalFiles;
@@ -149,7 +155,7 @@ namespace AegisPC.App.ViewModels
                 CpuUsagePercent = p.CpuUsagePercent;
                 IsCpuTelemetryAvailable = p.IsCpuTelemetryAvailable;
                 RamUsageMb = p.RamUsageMb;
-                ActiveResourceProfileText = p.ResourceProfileName;
+                ActiveResourceProfileText = FormatActiveResourceProfile(p);
                 OnPropertyChanged(nameof(CpuAndRamFormatted));
                 RemainingEtaFormatted = !string.IsNullOrEmpty(p.FormattedEta) 
                     ? p.FormattedEta 
@@ -157,7 +163,9 @@ namespace AegisPC.App.ViewModels
 
                 if (!IsPaused)
                 {
-                    ScanStatusText = $"{p.ScanType} taraması işleniyor...";
+                    ScanStatusText = string.IsNullOrWhiteSpace(p.Phase)
+                        ? $"{p.ScanType} taraması işleniyor..."
+                        : p.Phase;
                 }
 
                 if (p.ElapsedTime > TimeSpan.Zero)

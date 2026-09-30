@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.IO.Pipes;
 using System.Text;
@@ -21,6 +22,7 @@ namespace AegisPC.App.Services
         private ProtectionStatus? _lastKnownStatus;
         private readonly SemaphoreSlim _writeLock = new(1, 1);
         private readonly SemaphoreSlim _connectLock = new(1, 1);
+        private readonly ConcurrentDictionary<Guid, TaskCompletionSource<ProtectionStatus>> _pendingStatusRequests = new();
 
         public bool IsConnected => _pipeClient?.IsConnected ?? false;
         public ProtectionStatus? LastKnownStatus => _lastKnownStatus;
@@ -106,27 +108,48 @@ namespace AegisPC.App.Services
             }
         }
 
+        /// <summary>
+        /// Returns a disconnected state when no pipe exists; otherwise waits up to five seconds for this
+        /// request's authenticated-service reply and throws on timeout or connection loss rather than returning stale cache.
+        /// </summary>
         public async Task<ProtectionStatus> GetStatusAsync()
         {
-            if (IsConnected)
+            if (!IsConnected)
+            {
+                return new ProtectionStatus
+                {
+                    ProtectionLevel = "Hizmet Bağlantısı Yok",
+                    IsServiceRunning = false,
+                    IsRealTimeEnabled = false,
+                    IsRansomwareShieldEnabled = false,
+                    IsNetworkProtectionEnabled = false,
+                    IsAmsiEnabled = false,
+                    ServiceUptime = TimeSpan.Zero
+                };
+            }
+
+            var requestId = Guid.NewGuid();
+            var completion = new TaskCompletionSource<ProtectionStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!_pendingStatusRequests.TryAdd(requestId, completion))
+                throw new InvalidOperationException("Could not reserve a unique IPC status request identity.");
+            try
             {
                 await SendCommandAsync(new ServiceCommand
                 {
                     CommandType = ServiceCommandType.GetStatus,
-                    Timestamp = DateTime.UtcNow
+                    Timestamp = DateTime.UtcNow,
+                    RequestId = requestId
                 });
+                return await completion.Task.WaitAsync(TimeSpan.FromSeconds(5), _cts.Token);
             }
-
-            return (IsConnected ? _lastKnownStatus : null) ?? new ProtectionStatus
+            catch (TimeoutException exception)
             {
-                ProtectionLevel = IsConnected ? "Bağlı (Durum Alınıyor)" : "Hizmet Bağlantısı Yok",
-                IsServiceRunning = IsConnected,
-                IsRealTimeEnabled = false,
-                IsRansomwareShieldEnabled = false,
-                IsNetworkProtectionEnabled = false,
-                IsAmsiEnabled = false,
-                ServiceUptime = TimeSpan.Zero
-            };
+                throw new TimeoutException("Protection service did not acknowledge the matching status request; the installed service may require an update.", exception);
+            }
+            finally
+            {
+                _pendingStatusRequests.TryRemove(requestId, out _);
+            }
         }
 
         private async Task ListenForMessagesAsync(NamedPipeClientStream pipe)
@@ -155,6 +178,18 @@ namespace AegisPC.App.Services
                             var status = JsonSerializer.Deserialize<ProtectionStatus>(json);
                             if (status != null)
                             {
+                                if (status.RequestId != Guid.Empty)
+                                {
+                                    if (!_pendingStatusRequests.TryRemove(status.RequestId, out var pending))
+                                    {
+                                        Trace.WriteLine("Ignoring an unmatched or expired IPC status response.");
+                                        continue;
+                                    }
+                                    _lastKnownStatus = status;
+                                    pending.TrySetResult(status);
+                                    StatusChanged?.Invoke(status);
+                                    continue;
+                                }
                                 _lastKnownStatus = status;
                                 StatusChanged?.Invoke(status);
                             }
@@ -171,6 +206,7 @@ namespace AegisPC.App.Services
                 {
                     _pipeClient = null;
                     _lastKnownStatus = null;
+                    FailPendingStatusRequests(new IOException("Protection service IPC connection ended before a matching status response."));
                     if (!_cts.Token.IsCancellationRequested) _ = ConnectAsync();
                 }
             }
@@ -181,8 +217,18 @@ namespace AegisPC.App.Services
             if (_isDisposed) return;
             _isDisposed = true;
             _cts.Cancel();
+            FailPendingStatusRequests(new ObjectDisposedException(nameof(ServiceIpcClient)));
             _pipeClient?.Dispose();
             // Semaphores remain managed until outstanding async users release them.
+        }
+
+        private void FailPendingStatusRequests(Exception exception)
+        {
+            foreach (var request in _pendingStatusRequests)
+            {
+                if (_pendingStatusRequests.TryRemove(request.Key, out var completion))
+                    completion.TrySetException(exception);
+            }
         }
     }
 }

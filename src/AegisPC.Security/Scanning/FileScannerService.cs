@@ -221,6 +221,9 @@ namespace AegisPC.Security.Scanning
                             fileInfo.Refresh();
                             if (archiveResult.IsComplete)
                                 _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, topFinding, sha256, false, false, policyRevision);
+                            else
+                                return FileScanDetailedResult.CreateFailed(path,
+                                    archiveResult.CoverageLimitation ?? "Arşiv incelemesi kısmi kaldı.", sw.Elapsed, topFinding);
                             return FileScanDetailedResult.CreateSuccess(path, topFinding, sw.Elapsed, isFromCache: false, isSignedClean: false);
                         }
                     }
@@ -311,6 +314,7 @@ namespace AegisPC.Security.Scanning
                 }
             var findings = new ConcurrentBag<SecurityFinding>();
             var etaEstimator = new ScanEtaEstimator();
+            string currentPhase = "Hazırlık";
 
             int maxReportedPercent = 0;
             var lastReport = Stopwatch.StartNew();
@@ -383,6 +387,7 @@ namespace AegisPC.Security.Scanning
                     progress.Report(new ScanProgress
                     {
                         ScanType = scanType,
+                        Phase = currentPhase,
                         TotalFiles = Math.Max(tot, scn),
                         ScannedFiles = scn,
                         ScannedFromCache = _queueCoordinator.ScannedFromCache,
@@ -402,7 +407,11 @@ namespace AegisPC.Security.Scanning
                         CpuUsagePercent = metrics.CpuPercent,
                         IsCpuTelemetryAvailable = metrics.HasCpuSample,
                         RamUsageMb = metrics.WorkingSetMb,
+                        PeakObservedRamUsageMb = processTelemetry.PeakObservedWorkingSetMb,
                         ResourceProfileName = ScanQueueCoordinator.ActiveResourceSummary,
+                        ActiveWorkers = _queueCoordinator.ActiveWorkers,
+                        EffectiveWorkerLimit = _queueCoordinator.EffectiveWorkerLimit,
+                        PendingFiles = _queueCoordinator.PendingFiles,
                         IsCompleted = false
                     });
                 }
@@ -415,6 +424,8 @@ namespace AegisPC.Security.Scanning
             // STAGE 1: MICROSOFT MRT (MSRT) REMEDIATION SCAN (0% - 12%)
             if (scanType == ScanType.Full || scanType == ScanType.Quick)
             {
+                currentPhase = "Başlangıç kontrolleri";
+                var phaseStartedAt = stopwatch.Elapsed;
                 int mrtStep = 0;
                 var mrtReporter = new Progress<string>(phase =>
                 {
@@ -432,9 +443,13 @@ namespace AegisPC.Security.Scanning
                         await _findingService.AddFindingAsync(f, cancellationToken);
                     }
                 }
+                _logger?.LogInformation("Initial security checks completed in {ElapsedMs} ms for {ScanType} scan.",
+                    (stopwatch.Elapsed - phaseStartedAt).TotalMilliseconds, scanType);
             }
 
             // STAGE 2: ASYNC FILE STREAMING & DETAILED CONCURRENT SCANNING
+            currentPhase = "Dosyalar inceleniyor";
+            var filePhaseStartedAt = stopwatch.Elapsed;
             int finalTotal = 0;
             int finalScanned = 0;
             int finalSkipped = 0;
@@ -469,6 +484,9 @@ namespace AegisPC.Security.Scanning
             finalSkipped = queueSkipped;
             finalFailed = queueFailed;
             finalTimedOut = queueTimedOut;
+            _logger?.LogInformation("File queue completed in {ElapsedMs} ms: {Total} total, {Scanned} analyzed, {Failed} failed, {TimedOut} timed out; sampled peak process working set {PeakMb} MiB.",
+                (stopwatch.Elapsed - filePhaseStartedAt).TotalMilliseconds, finalTotal, finalScanned, finalFailed, finalTimedOut,
+                processTelemetry.PeakObservedWorkingSetMb);
 
             stopwatch.Stop();
             lock (_pauseLock)
@@ -485,6 +503,7 @@ namespace AegisPC.Security.Scanning
                 progress?.Report(new ScanProgress
                 {
                     ScanType = scanType,
+                    Phase = "İptal edildi",
                     TotalFiles = Math.Max(finalTotal, finalScanned),
                     ScannedFiles = finalScanned,
                     ScannedFromCache = _queueCoordinator.ScannedFromCache,
@@ -504,7 +523,11 @@ namespace AegisPC.Security.Scanning
                     CpuUsagePercent = finalMetrics.CpuPercent,
                     IsCpuTelemetryAvailable = finalMetrics.HasCpuSample,
                     RamUsageMb = finalMetrics.WorkingSetMb,
+                    PeakObservedRamUsageMb = processTelemetry.PeakObservedWorkingSetMb,
                     ResourceProfileName = ScanQueueCoordinator.ActiveResourceSummary,
+                    ActiveWorkers = _queueCoordinator.ActiveWorkers,
+                    EffectiveWorkerLimit = _queueCoordinator.EffectiveWorkerLimit,
+                    PendingFiles = _queueCoordinator.PendingFiles,
                     IsCompleted = false
                 });
 
@@ -528,6 +551,7 @@ namespace AegisPC.Security.Scanning
             progress?.Report(new ScanProgress
             {
                 ScanType = scanType,
+                Phase = "Tamamlandı",
                 TotalFiles = Math.Max(finalTotal, finalScanned),
                 ScannedFiles = finalScanned,
                 ScannedFromCache = _queueCoordinator.ScannedFromCache,
@@ -547,7 +571,11 @@ namespace AegisPC.Security.Scanning
                 CpuUsagePercent = finalMetrics.CpuPercent,
                 IsCpuTelemetryAvailable = finalMetrics.HasCpuSample,
                 RamUsageMb = finalMetrics.WorkingSetMb,
+                PeakObservedRamUsageMb = processTelemetry.PeakObservedWorkingSetMb,
                 ResourceProfileName = ScanQueueCoordinator.ActiveResourceSummary,
+                ActiveWorkers = _queueCoordinator.ActiveWorkers,
+                EffectiveWorkerLimit = _queueCoordinator.EffectiveWorkerLimit,
+                PendingFiles = _queueCoordinator.PendingFiles,
                 IsCompleted = true
             });
 

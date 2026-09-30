@@ -15,7 +15,8 @@ namespace AegisPC.Contracts.Services
         Clean,
         Completed,
         Failed,
-        Cancelled
+        Cancelled,
+        Busy
     }
 
     public class StartupSweepProgress

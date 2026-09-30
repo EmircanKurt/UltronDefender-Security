@@ -141,7 +141,7 @@ public sealed class ProcessArchiveWorkflowTests : IDisposable
         string hash = Convert.ToHexString(SHA256.HashData(member));
         var field = typeof(MalwareSignatureDatabase).GetField("KnownThreatHashes", BindingFlags.NonPublic | BindingFlags.Static)!;
         var signatures = (Dictionary<string, (string Name, string Category, int Severity, string FirstSeen)>)field.GetValue(null)!;
-        // This temporary in-memory entry is explicitly test data, never imported into production threat intelligence.
+        // This temporary in-memory entry tests member hashing, not trusted malware intelligence.
         signatures.Add(hash, ("Benign.TestOnly.HashPipeline", "TestFixture", 95, "test-only"));
         try
         {
@@ -149,8 +149,9 @@ public sealed class ProcessArchiveWorkflowTests : IDisposable
             var result = await new ArchiveSafetyScanner().ScanArchiveAsync(path);
             var finding = Assert.Single(result.Findings);
             Assert.Equal(hash, finding.SHA256);
-            Assert.Equal(FindingCategory.KnownMalwareHash, finding.Category);
-            Assert.Equal(RiskLevel.ConfirmedMalicious, finding.RiskLevel);
+            Assert.Equal(FindingCategory.SuspiciousScript, finding.Category);
+            Assert.Equal(RiskLevel.Suspicious, finding.RiskLevel);
+            Assert.InRange(finding.RiskScore, 1, 65);
         }
         finally { signatures.Remove(hash); }
     }

@@ -1,0 +1,29 @@
+# Windows 7 SP1 x64 fizibilite incelemesi — 2026-09-29
+
+## Karar
+
+**Mevcut Ultron Defender için Windows 7: NO-GO.** Bu, ürünün Windows 7'de denenip başarısız olduğu iddiası değil; mevcut hedef çerçevesi, kurulum eşiği ve bazı platform API'leri nedeniyle **desteklenebilir bir Windows 7 sürümü olmadığı** yönünde statik inceleme kararıdır. Bu araştırma bir port, kurulum paketi veya koruma vaadi üretmez. Windows 7'de antivirüsün varlığı, işletim sisteminin kapatılmamış güvenlik açıklarını gidermez. Microsoft, Windows 7 genel desteğinin 2020'de, ESU yıl 3 döneminin 2023'te bittiğini bildiriyor. [Microsoft Windows 7 yaşam döngüsü](https://learn.microsoft.com/en-us/lifecycle/products/windows-7).
+
+## Kaynak kodda doğrulanan engeller
+
+| Alan | Kod tabanındaki kanıt | Sonuç |
+|---|---|---|
+| Yönetilen çalışma zamanı ve arayüz | `src/AegisPC.App/AegisPC.App.csproj` içinde `net8.0-windows`, WPF ve WinForms; `src/AegisPC.Service/AegisPC.Service.csproj` ve bağlı 10 `src` projesi de `net8.0-windows`. `tools/AegisPC.Uninstaller` ile `tools/AegisPC.ElevatedHelper` da aynı hedefte. | Microsoft'un güncel destek tablosunda .NET 8 için Windows 7 SP1 ESU desteklenmiyor; Windows 7'yi destekleyen son modern .NET, desteği 2024'te biten .NET 6 idi. `win-x64 --self-contained true` yayımlama (`build_and_deploy.ps1`) .NET 8'i paketler, OS desteği yaratmaz. [.NET Windows destek tablosu](https://learn.microsoft.com/en-us/dotnet/core/install/windows), [self-contained dağıtım](https://learn.microsoft.com/en-us/dotnet/core/deploying/runtime-patch-selection). |
+| Kurulum | `installer.iss` içinde `ArchitecturesAllowed=x64compatible` ve `MinVersion=10.0.17763`. | Mevcut kurulum Windows 7'ye yönelik değildir. Eşiği düşürmek tek başına çalışma zamanı veya API sorunlarını çözmez. |
+| AMSI | `src/AegisPC.Security/Scanning/AmsiScanService.cs` doğrudan `amsi.dll` / `AmsiInitialize` çağırır; DLL yoksa uyarı kaydedip özelliği başlatmaz. `tools/AmsiProvider` de AMSI sağlayıcısı içerir. | Microsoft, `AmsiInitialize` için minimum desteklenen istemciyi Windows 10 olarak listeler. Windows 7'de bu koruma katmanı vaat edilemez. [AMSI API gereksinimi](https://learn.microsoft.com/en-us/windows/win32/api/amsi/nf-amsi-amsiinitialize). |
+| İsteğe bağlı çekirdek sürücüsü | `drivers/AegisFilter/AegisFilter.vcxproj` Debug ve Release için `TargetVersion=Windows10` kullanır; `drivers/Build-And-Sign-Driver.ps1` katalog hedefini `10_X64,Server2022_X64,Server2019_X64` ile üretir. Normal `scripts/install.ps1` sürücüyü kurmaz. | Bu ağaçta Windows 7 için derlenmiş, imzalanmış ve test edilmiş minifilter kanıtı yoktur. Microsoft, sürücünün en düşük hedef OS'ye göre derlenmesini ve eski sürümlerdeki DDI'ların doğrulanmasını ister; yalnız Windows 10 attestation imzası Windows 7 yayını için yeterli değildir. [Sürücü hedefleme](https://learn.microsoft.com/en-us/windows-hardware/drivers/gettingstarted/platforms-and-driver-versions), [imzalama seçenekleri](https://learn.microsoft.com/windows-hardware/drivers/dashboard/driver-signing-offerings). |
+
+`System.Management`, `PerformanceCounter`, ETW, SQLite, `WPF-UI` ve diğer NuGet bağımlılıklarının *Windows 7 üzerinde sürüm sürüm davranışı* bu araştırmada VM'de doğrulanmadı. Bazı API'lerin eski Windows'ta bulunması, tüm bağımlılık grafiğinin ve güvenlik özelliklerinin çalışacağını göstermez. `src` içindeki `net8.0-windows` hedefi zaten mevcut ürün için durdurucu engeldir. Microsoft'un Windows 7'ye SHA-2 desteği için belirttiği KB4474419/KB4490628 önkoşulları ancak ayrı bir eski-OS prototipi değerlendirilirse kontrol listesine girer; bunlar .NET 8'i destekli yapmaz. [Microsoft SHA-2 servisleme notu](https://support.microsoft.com/en-us/servicing/os/windows/2020/09/2019-sha-2-code-signing-support-requirement-for-windows-and-wsus).
+
+## İleride yeniden değerlendirme koşulları — bu görevde uygulanmayacak
+
+1. Önce ürün sahibi ayrı, bakımı ve güvenlik güncellemesi sürdürülebilir bir Windows 7 teknolojisi önermeli; destek dışı .NET 6'ya yalnızca hedef çerçeveyi düşürmek kabul kriteri değildir. Mevcut Windows 10/11 kod hattı geriye doğru sessizce zayıflatılmamalı.
+2. Bağımsız, lisanslı Windows 7 SP1 x64 VM; geri alınabilir temiz anlık görüntü; host ve kurumsal ağdan yalıtım; gerçek kullanıcı dosyası, gerçek zararlı ve güvenlik ürünü devre dışı bırakma olmadan fizibilite testi tasarlanmalı. VM'deki güncelleme seviyesi, SHA-2 önkoşulları ve x64 imza durumu kaydedilmeli.
+3. Ayrı prototipte sırayla yükleme/çıkış, WPF arayüzü, servis yaşam döngüsü, IPC oturum/yetki sınırı, karantina yedek/geri alma, dosya izleme/ETW kayıp bildirimi, zamanlayıcı, istisna, kurulum/kaldırma ve imzalı güncelleme başarısızlıkları sınanmalı. AMSI, minifilter ve herhangi bir Windows 10+ API için desteklenmeyen yol açıkça **kısmi/kapalı** raporlanmalı; sessizce “korunuyor” gösterilmemeli.
+4. Sürücü ayrıca istenirse ayrı VM ve uygun WDK hedefi, DDI taraması, çökme/rollback, sertifika ve Windows 7'ye uygun imzalama doğrulaması gerektirir. Mevcut test-imzalama betiği üretim imzası değildir. Bu koşullar sağlansa bile OS desteğinin bitmiş olması nedeniyle okul/iş cihazlarına güvenlik çözümü olarak yayma kararı ayrıca verilmelidir.
+
+**Go/no-go kapısı:** Yukarıdaki ayrı prototipte tüm kritik güvenlik işlevleri ve dağıtım/geri alma kanıtlanmadan Windows 7 paketi, uyumluluk ibaresi veya gerçek zamanlı koruma vaadi yayımlanmaz. Öncelik Windows 10/11'de ölçülebilir, doğru ek korumadır.
+
+## Şüphecilik ve Doğrulama Notu
+
+Şu an emin olmadığım / tam doğrulayamadığım nokta şudur: Windows 7 SP1 x64 VM'de bu kodun hangi aşamada fiilen duracağı, üçüncü taraf bağımlılıkların eski OS davranışı ve minifilter'ın yeniden hedeflenme olasılığı denenmedi. Bu belirsizlikler mevcut sürümün **desteklenmediği** kararını değiştirmez; yalnız gelecekteki ayrı bir prototipin maliyetini etkiler.

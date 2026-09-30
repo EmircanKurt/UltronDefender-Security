@@ -82,50 +82,27 @@ namespace AegisPC.App.ViewModels
         }
 
         /// <summary>
-        /// Hızlı sistem taramasını başlatır veya tarama zaten çalışıyorsa iptal eder.
+        /// Routes an explicitly requested quick scan through the scan view model so
+        /// resource selection, state reset, and an already-running scan share one path.
         /// </summary>
         [RelayCommand]
         public async Task StartQuickScanAsync()
         {
-            if (_scanCoordinator == null) return;
-
-            if (_scanCoordinator.IsScanning)
+            var scanVm = App.ServiceProvider?.GetService<ScanViewModel>();
+            if (scanVm == null)
             {
-                var runningVm = App.ServiceProvider?.GetService<ScanViewModel>();
-                if (runningVm != null)
-                {
-                    Views.ActiveScanWindow.ShowScanWindow(runningVm);
-                }
+                TriggerToast("Tarayıcı hizmeti hazır değil; tarama başlatılamadı.", "Warning");
                 return;
             }
 
-            IsScanning = true;
-            ScanProgress = 0;
-            ScanScannedCount = 0;
-            ScanThreatCount = 0;
-            QuickScanButtonText = "Durdur";
-            ProtectionStatusText = "Sistem taranıyor...";
-            ProtectionBadgeText = "Hızlı tarama çalışıyor";
-            ProtectionStatusColor = "#2196F3";
-
-            TriggerToast("Hızlı sistem taraması başlatıldı...", "Info");
-
             try
             {
-                var scanVm = App.ServiceProvider?.GetService<ScanViewModel>();
-                if (scanVm != null)
-                {
-                    scanVm.ResetScanState(AegisPC.Core.Enums.ScanType.Quick);
-                    Views.ActiveScanWindow.ShowScanWindow(scanVm);
-                }
-
-                await _scanCoordinator.StartScanAsync(AegisPC.Core.Enums.ScanType.Quick);
+                await scanVm.StartQuickScanAsync();
             }
             catch (Exception ex)
             {
+                Serilog.Log.Warning(ex, "Dashboard quick scan request failed");
                 TriggerToast($"Tarama sırasında hata: {ex.Message}", "Warning");
-                IsScanning = false;
-                QuickScanButtonText = "Taramayı Başlat";
             }
         }
 
@@ -281,8 +258,22 @@ namespace AegisPC.App.ViewModels
         {
             if (_startupSweepService != null && !IsStartupSweepRunning)
             {
-                TriggerToast("Başlangıç Güvenlik Taraması başlatıldı...", "Info");
-                await _startupSweepService.RunSweepAsync();
+                try
+                {
+                    var result = await _startupSweepService.RunSweepAsync();
+                    if (result.FinalStatus == StartupSweepStatus.Busy)
+                    {
+                        (StartupSweepStatusText, StartupSweepBadgeColor) = GetStartupSweepSummary(result);
+                        TriggerToast("Başka bir tarama sürüyor; başlangıç kontrolü başlatılmadı.", "Info");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Serilog.Log.Warning(ex, "Startup sweep request failed");
+                    StartupSweepStatusText = "Başlangıç kontrolü başlatılamadı";
+                    StartupSweepBadgeColor = "#F5A623";
+                    TriggerToast("Başlangıç kontrolü başlatılamadı.", "Warning");
+                }
             }
         }
 
