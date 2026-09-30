@@ -55,28 +55,30 @@ namespace AegisPC.Tests
             IScanCoordinatorService coordinator = new ScanCoordinatorService(fileScanner, findingService);
 
             Assert.Equal(TimeSpan.Zero, coordinator.ElapsedTime);
+            using var registration = Assert.IsAssignableFrom<IExternalScanRegistration>(
+                coordinator.TryRegisterExternalScanner(() => { }, () => { }, () => { }));
 
             // Simulate progress registration
-            coordinator.RegisterExternalScanProgress(new ScanProgress
+            Assert.True(registration.ReportProgress(new ScanProgress
             {
                 ScanType = ScanType.Quick,
                 ScannedFiles = 50,
                 TotalFiles = 100,
                 ElapsedTime = TimeSpan.FromSeconds(12),
                 ProgressPercent = 50
-            });
+            }));
 
             Assert.Equal(TimeSpan.FromSeconds(12), coordinator.ElapsedTime);
 
             // Simulate completed external scan
-            coordinator.CompleteExternalScan(new ScanResult
+            Assert.True(registration.Complete(new ScanResult
             {
                 ScanType = ScanType.Quick,
                 ScannedFiles = 100,
                 TotalFiles = 100,
                 ElapsedMs = 24500,
                 Status = ScanStatus.Completed
-            });
+            }));
 
             Assert.Equal(TimeSpan.FromMilliseconds(24500), coordinator.ElapsedTime);
         }

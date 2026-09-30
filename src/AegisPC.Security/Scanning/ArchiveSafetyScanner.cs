@@ -39,7 +39,7 @@ namespace AegisPC.Security.Scanning
     /// Inspects ZIP-family/JAR members with streaming hashes, patterns and optional configured in-memory YARA rules.
     /// Extraction never touches disk; nested, oversized or failed members remain partial instead of assumed clean.
     /// </summary>
-    public class ArchiveSafetyScanner
+    public partial class ArchiveSafetyScanner
     {
         private readonly ILogger<ArchiveSafetyScanner>? _logger;
         private readonly IYaraEngine? _yaraEngine;
@@ -54,7 +54,7 @@ namespace AegisPC.Security.Scanning
             _yaraEngine = yaraEngine;
         }
 
-        /// <summary>Inspects at most 25,000 entries and 500 MiB expanded size; each content/rule member is bounded below 10 MiB.</summary>
+        /// <summary>Inspects at most 25,000 outer entries and 500 MiB expanded size; nested ZIP members have separate 8-archive, 256-entry and 32 MiB bounds, and remain partial coverage.</summary>
         public async Task<ArchiveScanResult> ScanArchiveAsync(string filePath, CancellationToken cancellationToken = default)
         {
             var result = new ArchiveScanResult();
@@ -82,6 +82,7 @@ namespace AegisPC.Security.Scanning
 
                 long totalUncompressed = 0;
                 int count = 0;
+                var nestedBudget = new NestedArchiveInspectionBudget();
 
                 foreach (var entry in archive.Entries)
                 {
@@ -152,12 +153,10 @@ namespace AegisPC.Security.Scanning
                     }
 
                     // 4. Inspect embedded executables with quick signature check
-                    var entryExt = Path.GetExtension(entry.Name).ToLowerInvariant();
-                    if (entryExt is ".zip" or ".jar" or ".nupkg" or ".apk" ||
-                        entry.Length >= 10 * 1024 * 1024)
+                    if (entry.Length >= 10 * 1024 * 1024)
                     {
                         result.IsComplete = false;
-                        result.CoverageLimitation = "İç içe arşiv veya inceleme sınırını aşan gömülü dosya mevcut.";
+                        result.CoverageLimitation = "İnceleme sınırını aşan gömülü dosya mevcut.";
                     }
                     if (entry.Length > 0 && entry.Length < 10 * 1024 * 1024)
                     {
@@ -175,17 +174,19 @@ namespace AegisPC.Security.Scanning
                             if (nestedContainer)
                             {
                                 result.IsComplete = false;
-                                result.CoverageLimitation = "İç içe arşiv içeriği özyinelemeli incelenmedi.";
+                                result.CoverageLimitation = "İç içe kapsayıcı içeriğinin kapsamı kısmi.";
+                                await InspectNestedZipAsync(entry, filePath, result, nestedBudget, cancellationToken);
                             }
                             var match = MalwareSignatureDatabase.CheckHash(sha256);
                             if (match.IsMatched || patternMatch.IsMatched)
                             {
-                                bool confirmed = match.IsMatched || patternMatch.ThreatCategory.Equals("TestMalware", StringComparison.OrdinalIgnoreCase);
+                                bool confirmed = MalwareSignatureDatabase.IsTrustedEmbeddedHash(sha256);
                                 var threatName = match.IsMatched 
                                     ? match.ThreatName 
                                     : (patternMatch.IsMatched ? patternMatch.ThreatName : "EICAR-Standard-AV-Test");
 
-                                int score = confirmed ? (match.IsMatched ? match.SeverityScore : patternMatch.SeverityScore) : Math.Min(65, patternMatch.SeverityScore);
+                                int severity = match.IsMatched ? match.SeverityScore : patternMatch.SeverityScore;
+                                int score = confirmed ? severity : Math.Min(65, severity);
 
                                 result.Findings.Add(new SecurityFinding
                                 {
@@ -239,8 +240,8 @@ namespace AegisPC.Security.Scanning
                     result.SuspiciousEntries.Add($"Anormal sıkıştırma oranı: {ratio:F1}:1.");
                 }
 
-                result.TotalEntries = count;
-                result.TotalUncompressedBytes = totalUncompressed;
+                result.TotalEntries += count;
+                result.TotalUncompressedBytes += totalUncompressed;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)

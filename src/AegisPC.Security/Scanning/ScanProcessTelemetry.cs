@@ -14,7 +14,11 @@ public sealed class ScanProcessTelemetry : IDisposable
     private TimeSpan _previousWall;
     private double _cpuPercent;
     private double _workingSetMb;
+    private double _peakObservedWorkingSetMb;
     private bool _hasCpuSample;
+
+    /// <summary>Largest working set observed by this scan's samples; not an OS-guaranteed instantaneous peak.</summary>
+    public double PeakObservedWorkingSetMb => _peakObservedWorkingSetMb;
 
     /// <summary>Establishes a CPU baseline without blocking or artificially loading the machine.</summary>
     public ScanProcessTelemetry(ILogger? logger = null)
@@ -32,6 +36,7 @@ public sealed class ScanProcessTelemetry : IDisposable
         {
             _process.Refresh();
             _workingSetMb = _process.WorkingSet64 / 1048576.0;
+            _peakObservedWorkingSetMb = Math.Max(_peakObservedWorkingSetMb, _workingSetMb);
             var wall = _clock.Elapsed;
             if (wall - _previousWall >= TimeSpan.FromMilliseconds(250))
             {

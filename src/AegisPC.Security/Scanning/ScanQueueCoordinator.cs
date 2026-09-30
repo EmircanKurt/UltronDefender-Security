@@ -23,6 +23,12 @@ namespace AegisPC.Security.Scanning
         int ScannedFromCache { get; }
         int SkippedSignedClean { get; }
         int NewlyScanned { get; }
+        /// <summary>Gets the number of workers currently analyzing a file.</summary>
+        int ActiveWorkers => 0;
+        /// <summary>Gets the current resource-policy worker limit.</summary>
+        int EffectiveWorkerLimit => 0;
+        /// <summary>Gets the number of files waiting for analysis or queue space.</summary>
+        int PendingFiles => 0;
         void ResetCounters();
         void PauseScan();
         void ResumeScan();
@@ -62,16 +68,27 @@ namespace AegisPC.Security.Scanning
         private int _scannedFromCache;
         private int _skippedSignedClean;
         private int _newlyScanned;
+        private int _activeWorkers;
+        private int _pendingFiles;
+        private IScanResourceManager? _activeResourceManager;
 
         public int ScannedFromCache => Volatile.Read(ref _scannedFromCache);
         public int SkippedSignedClean => Volatile.Read(ref _skippedSignedClean);
         public int NewlyScanned => Volatile.Read(ref _newlyScanned);
+        /// <inheritdoc />
+        public int ActiveWorkers => Volatile.Read(ref _activeWorkers);
+        /// <inheritdoc />
+        public int EffectiveWorkerLimit => Volatile.Read(ref _activeResourceManager)?.ActiveProfile.Concurrency ?? 0;
+        /// <inheritdoc />
+        public int PendingFiles => Math.Max(0, Volatile.Read(ref _pendingFiles));
 
         public void ResetCounters()
         {
             Interlocked.Exchange(ref _scannedFromCache, 0);
             Interlocked.Exchange(ref _skippedSignedClean, 0);
             Interlocked.Exchange(ref _newlyScanned, 0);
+            Interlocked.Exchange(ref _activeWorkers, 0);
+            Interlocked.Exchange(ref _pendingFiles, 0);
         }
 
         public bool IsPaused => !_pauseEvent.IsSet;
@@ -174,6 +191,7 @@ namespace AegisPC.Security.Scanning
             int timedOutFiles = 0;
 
             var resourceManager = _injectedResourceManager ?? new AdaptiveScanResourceManager(targetPath);
+            Volatile.Write(ref _activeResourceManager, resourceManager);
             resourceManager.ConfigureTarget(targetPath);
             resourceManager.RefreshProfile();
             var activeProfile = resourceManager.ActiveProfile;
@@ -220,7 +238,13 @@ namespace AegisPC.Security.Scanning
 
                         // Kural 27 gereğince: Oyun / repack klasör adı bazlı dosya atlama bypass'ı TAMAMEN KALDIRILDI.
                         // Her çalıştırılabilir ikili dosya, script ve arşiv adilce kuyruğa yazılır.
-                        await channel.Writer.WriteAsync(filePath, cancellationToken);
+                        Interlocked.Increment(ref _pendingFiles);
+                        try { await channel.Writer.WriteAsync(filePath, cancellationToken); }
+                        catch
+                        {
+                            Interlocked.Decrement(ref _pendingFiles);
+                            throw;
+                        }
                     }
                 }
                 catch (OperationCanceledException)
@@ -287,10 +311,21 @@ namespace AegisPC.Security.Scanning
                                 continue;
                             }
 
-                            if (cancellationToken.IsCancellationRequested) break;
+                            if (cancellationToken.IsCancellationRequested)
+                            {
+                                Interlocked.Decrement(ref _pendingFiles);
+                                break;
+                            }
 
                             // Adaptif Concurrency: Aktif profil kotası kadar işçinin eşzamanlı çalışmasına izin ver
-                            await resourceManager.EnterWorkerSlotAsync(cancellationToken);
+                            try { await resourceManager.EnterWorkerSlotAsync(cancellationToken); }
+                            catch
+                            {
+                                Interlocked.Decrement(ref _pendingFiles);
+                                throw;
+                            }
+                            Interlocked.Decrement(ref _pendingFiles);
+                            Interlocked.Increment(ref _activeWorkers);
 
                             FileScanDetailedResult? detailedResult = null;
                             try
@@ -313,6 +348,10 @@ namespace AegisPC.Security.Scanning
 
                                     case FileScanOutcome.Failed:
                                         Interlocked.Increment(ref failedFiles);
+                                        if (detailedResult.Finding != null)
+                                        {
+                                            findings.Add(detailedResult.Finding);
+                                        }
                                         break;
 
                                     case FileScanOutcome.Skipped:
@@ -336,6 +375,7 @@ namespace AegisPC.Security.Scanning
                             }
                             finally
                             {
+                                Interlocked.Decrement(ref _activeWorkers);
                                 resourceManager.ExitWorkerSlot();
 
                                 if (!cancellationToken.IsCancellationRequested)
@@ -396,6 +436,8 @@ namespace AegisPC.Security.Scanning
             catch (OperationCanceledException) { }
             finally
             {
+                Volatile.Write(ref _activeResourceManager, null);
+                Interlocked.Exchange(ref _pendingFiles, 0);
                 // Yerel oluşturulan kaynak yöneticisi güvenle kapatılır
                 if (_injectedResourceManager == null && resourceManager is IDisposable disp)
                 {

@@ -11,6 +11,14 @@
   <ItemGroup>
     <Compile Include="ReviewTestDependencies.cs" />
     <Compile Include="../AegisPC.Tests/NotificationTruthRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/ManualScanResourceTelemetryTests.cs" />
+    <Compile Include="../AegisPC.Tests/ManualScanOwnershipTests.cs" />
+    <Compile Include="../AegisPC.Tests/ManualScanPreferenceTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineRiskMigrationTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineStructuredRiskTests.cs" />
+    <Compile Include="../AegisPC.Tests/ArchiveNestedCoverageTests.cs" />
+    <Compile Include="../AegisPC.Tests/ExternalScanOwnershipTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanDurationSynchronizationTests.cs" />
     <Compile Include="../AegisPC.Tests/NotificationProducerRegressionTests.cs" />
     <Compile Include="../AegisPC.Tests/AntivirusTestReferenceRegressionTests.cs" />
     <Compile Include="../AegisPC.Tests/BackgroundNotificationRegressionTests.cs" />

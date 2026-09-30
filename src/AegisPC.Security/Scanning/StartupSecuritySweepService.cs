@@ -116,20 +116,24 @@ namespace AegisPC.Security.Scanning
             IEnumerable<string>? customTargetDirs = null,
             CancellationToken cancellationToken = default)
         {
-            await Task.Yield();
-
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            _activeSweepCts = linkedCts;
-            _pauseEvent.Set();
-
-            using var coordSub = _scanCoordinator?.RegisterExternalScanner(
-                pauseAction: () => Pause(),
-                resumeAction: () => Resume(),
-                cancelAction: () => Cancel());
-
-            await _sweepSemaphore.WaitAsync(linkedCts.Token);
+            // Waiting sweeps must not replace the active cancellation token or coordinator claim.
+            await _sweepSemaphore.WaitAsync(cancellationToken);
+            IExternalScanRegistration? coordSub = null;
             try
             {
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                _activeSweepCts = linkedCts;
+                _pauseEvent.Set();
+                coordSub = _scanCoordinator?.TryRegisterExternalScanner(
+                    pauseAction: () => Pause(),
+                    resumeAction: () => Resume(),
+                    cancelAction: () => Cancel());
+                if (_scanCoordinator != null && coordSub == null)
+                {
+                    _logger?.LogInformation("Startup Security Sweep deferred because another scan owns the coordinator.");
+                    return new StartupSweepResult { FinalStatus = StartupSweepStatus.Busy };
+                }
+
                 lock (_lock)
                 {
                     _isRunning = true;
@@ -139,7 +143,7 @@ namespace AegisPC.Security.Scanning
                 var stopwatch = Stopwatch.StartNew();
                 var result = new StartupSweepResult();
                 var progress = new StartupSweepProgress { Status = StartupSweepStatus.Preparing };
-                NotifyProgress(progress);
+                NotifyProgress(progress, coordSub);
 
             try
             {
@@ -171,7 +175,7 @@ namespace AegisPC.Security.Scanning
 
                 if (linkedCts.Token.IsCancellationRequested)
                 {
-                    return HandleCancelledSweep(result, progress, stopwatch);
+                    return HandleCancelledSweep(result, progress, stopwatch, coordSub);
                 }
 
                 // Sort: Prioritize by Risk Location (Startup -> Downloads -> Desktop -> Temp -> AppData -> Documents)
@@ -184,7 +188,7 @@ namespace AegisPC.Security.Scanning
                 progress.TotalFiles = candidateFiles.Count;
                 progress.Status = StartupSweepStatus.Scanning;
                 Status = StartupSweepStatus.Scanning;
-                NotifyProgress(progress);
+                NotifyProgress(progress, coordSub);
 
                 // 3. Snapshot Running Processes for Correlation
                 var processMap = BuildRunningProcessMap();
@@ -214,7 +218,7 @@ namespace AegisPC.Security.Scanning
                         progress.SkippedUnchanged++;
                         result.CleanCount++;
                         result.SkippedCount++;
-                        NotifyProgress(progress);
+                        NotifyProgress(progress, coordSub);
                         continue;
                     }
 
@@ -375,12 +379,12 @@ namespace AegisPC.Security.Scanning
                             CacheFileVerdict(file, verdictResult.SHA256, "Clean", verdictResult.RiskScore);
                     }
 
-                    NotifyProgress(progress);
+                    NotifyProgress(progress, coordSub);
                 }
 
                 if (linkedCts.Token.IsCancellationRequested)
                 {
-                    return HandleCancelledSweep(result, progress, stopwatch);
+                    return HandleCancelledSweep(result, progress, stopwatch, coordSub);
                 }
 
                 stopwatch.Stop();
@@ -396,15 +400,15 @@ namespace AegisPC.Security.Scanning
                 Status = result.FinalStatus;
                 LastResult = result;
 
-                NotifyProgress(progress);
-                NotifyCompleted(result, stopwatch.Elapsed);
+                NotifyProgress(progress, coordSub);
+                NotifyCompleted(result, stopwatch.Elapsed, coordSub);
 
                 return result;
             }
             catch (OperationCanceledException)
             {
                 _logger?.LogInformation("Startup Security Sweep was cancelled.");
-                return HandleCancelledSweep(result, progress, stopwatch);
+                return HandleCancelledSweep(result, progress, stopwatch, coordSub);
             }
             catch (Exception ex)
             {
@@ -412,6 +416,10 @@ namespace AegisPC.Security.Scanning
                 _logger?.LogError(ex, "Startup Security Sweep failed unexpectedly.");
                 Status = StartupSweepStatus.Failed;
                 result.FinalStatus = StartupSweepStatus.Failed;
+                result.Duration = stopwatch.Elapsed;
+                result.TotalScanned = progress.ScannedFiles;
+                LastResult = result;
+                NotifyCompleted(result, stopwatch.Elapsed, coordSub);
                 return result;
             }
             finally
@@ -424,6 +432,8 @@ namespace AegisPC.Security.Scanning
         }
         finally
         {
+            coordSub?.Dispose();
+            _activeSweepCts = null;
             _sweepSemaphore.Release();
         }
     }
@@ -431,7 +441,8 @@ namespace AegisPC.Security.Scanning
         private StartupSweepResult HandleCancelledSweep(
             StartupSweepResult result,
             StartupSweepProgress progress,
-            Stopwatch stopwatch)
+            Stopwatch stopwatch,
+            IExternalScanRegistration? registration)
         {
             stopwatch.Stop();
             result.Duration = stopwatch.Elapsed;
@@ -442,8 +453,8 @@ namespace AegisPC.Security.Scanning
             Status = StartupSweepStatus.Cancelled;
             LastResult = result;
 
-            NotifyProgress(progress);
-            NotifyCompleted(result, stopwatch.Elapsed);
+            NotifyProgress(progress, registration);
+            NotifyCompleted(result, stopwatch.Elapsed, registration);
 
             return result;
         }
@@ -477,12 +488,13 @@ namespace AegisPC.Security.Scanning
             catch (UnauthorizedAccessException) { return false; }
         }
 
-        private void NotifyProgress(StartupSweepProgress progress)
+        private void NotifyProgress(StartupSweepProgress progress, IExternalScanRegistration? registration)
         {
-            OnProgressChanged?.Invoke(progress);
-            if (_scanCoordinator != null)
+            try { OnProgressChanged?.Invoke(progress); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Startup sweep progress subscriber failed."); }
+            if (registration != null)
             {
-                _scanCoordinator.RegisterExternalScanProgress(new ScanProgress
+                registration.ReportProgress(new ScanProgress
                 {
                     ScanType = ScanType.Quick,
                     CurrentFile = progress.CurrentFile,
@@ -494,12 +506,13 @@ namespace AegisPC.Security.Scanning
             }
         }
 
-        private void NotifyCompleted(StartupSweepResult result, TimeSpan duration)
+        private void NotifyCompleted(StartupSweepResult result, TimeSpan duration, IExternalScanRegistration? registration)
         {
-            OnSweepCompleted?.Invoke(result);
-            if (_scanCoordinator != null)
+            try { OnSweepCompleted?.Invoke(result); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Startup sweep completion subscriber failed."); }
+            if (registration != null)
             {
-                _scanCoordinator.CompleteExternalScan(new ScanResult
+                registration.Complete(new ScanResult
                 {
                     ScanType = ScanType.Quick,
                     ScannedFiles = result.TotalScanned,

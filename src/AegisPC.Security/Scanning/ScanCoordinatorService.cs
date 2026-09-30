@@ -32,26 +32,35 @@ namespace AegisPC.Security.Scanning
         private Action? _externalResumeAction;
         private Action? _externalCancelAction;
 
-        private sealed class ExternalScannerSubscription : IDisposable
+        private sealed class ExternalScannerSubscription : IExternalScanRegistration
         {
-            private readonly Action _onDispose;
-            private int _disposed;
+            private readonly ScanCoordinatorService _owner;
+            private int _ended;
 
-            public ExternalScannerSubscription(Action onDispose)
+            public ExternalScannerSubscription(ScanCoordinatorService owner)
             {
-                _onDispose = onDispose;
+                _owner = owner;
+            }
+
+            public bool ReportProgress(ScanProgress progress) =>
+                Volatile.Read(ref _ended) == 0 && _owner.TryReportExternalProgress(this, progress);
+
+            public bool Complete(ScanResult result)
+            {
+                if (Interlocked.Exchange(ref _ended, 1) != 0) return false;
+                return _owner.TryCompleteExternalScan(this, result);
             }
 
             public void Dispose()
             {
-                if (Interlocked.Exchange(ref _disposed, 1) == 0)
-                {
-                    _onDispose();
-                }
+                if (Interlocked.Exchange(ref _ended, 1) == 0)
+                    _owner.ReleaseExternalScanner(this);
             }
         }
 
         private bool _isExternalScanRunning = false;
+        private ExternalScannerSubscription? _externalRegistration;
+        private readonly AsyncLocal<ExternalScannerSubscription?> _legacyExternalRegistration = new();
         public bool IsExternalScanRunning => _isExternalScanRunning;
         private volatile ScanState _state = ScanState.Idle;
         public ScanState State => _state;
@@ -107,33 +116,77 @@ namespace AegisPC.Security.Scanning
             _logger = logger;
         }
 
-        public IDisposable RegisterExternalScanner(Action pauseAction, Action resumeAction, Action cancelAction)
+        /// <summary>Claims a coordinator slot for an external scanner or returns null when any scan owns it.</summary>
+        public IExternalScanRegistration? TryRegisterExternalScanner(Action pauseAction, Action resumeAction, Action cancelAction)
         {
+            ArgumentNullException.ThrowIfNull(pauseAction);
+            ArgumentNullException.ThrowIfNull(resumeAction);
+            ArgumentNullException.ThrowIfNull(cancelAction);
             lock (_lock)
             {
+                if (_externalRegistration != null || _currentSession != null ||
+                    (_activeScanTask != null && !_activeScanTask.IsCompleted))
+                    return null;
+
+                var registration = new ExternalScannerSubscription(this);
+                _externalRegistration = registration;
                 _isExternalScanRunning = true;
                 _externalPauseAction = pauseAction;
                 _externalResumeAction = resumeAction;
                 _externalCancelAction = cancelAction;
+                _state = ScanState.Scanning;
+                _stopReason = ScanStopReason.None;
+                CurrentScanType = ScanType.Quick;
+                ProgressPercent = 0;
+                CurrentFile = "Başlangıç taraması hazırlanıyor...";
+                ScannedFiles = 0;
+                TotalFiles = 0;
+                ElapsedTime = TimeSpan.Zero;
+                _currentFindings.Clear();
+                StatusText = "Başlangıç güvenlik taraması hazırlanıyor...";
+                return registration;
             }
+        }
 
-            return new ExternalScannerSubscription(() =>
+        public IDisposable RegisterExternalScanner(Action pauseAction, Action resumeAction, Action cancelAction)
+        {
+            var registration = TryRegisterExternalScanner(pauseAction, resumeAction, cancelAction)
+                as ExternalScannerSubscription ?? throw new InvalidOperationException("A scan already owns the coordinator.");
+            _legacyExternalRegistration.Value = registration;
+            return registration;
+        }
+
+        private void ReleaseExternalScanner(ExternalScannerSubscription registration)
+        {
+            lock (_lock)
             {
-                lock (_lock)
-                {
-                    _isExternalScanRunning = false;
-                    _externalPauseAction = null;
-                    _externalResumeAction = null;
-                    _externalCancelAction = null;
-                }
-            });
+                if (!ReferenceEquals(_externalRegistration, registration)) return;
+                ClearExternalOwnership();
+                _state = ScanState.Failed;
+                _stopReason = ScanStopReason.Error;
+                StatusText = "Başlangıç taraması sonuç bildirmeden sona erdi.";
+            }
+        }
+
+        private void ClearExternalOwnership()
+        {
+            _externalRegistration = null;
+            _isExternalScanRunning = false;
+            _externalPauseAction = null;
+            _externalResumeAction = null;
+            _externalCancelAction = null;
         }
 
         public void RegisterExternalScanProgress(ScanProgress progress)
         {
+            _legacyExternalRegistration.Value?.ReportProgress(progress);
+        }
+
+        private bool TryReportExternalProgress(ExternalScannerSubscription registration, ScanProgress progress)
+        {
             lock (_lock)
             {
-                _isExternalScanRunning = true;
+                if (!ReferenceEquals(_externalRegistration, registration)) return false;
                 if (_state != ScanState.Paused && _state != ScanState.Cancelling && _state != ScanState.Cancelled)
                 {
                     _state = ScanState.Scanning;
@@ -158,19 +211,32 @@ namespace AegisPC.Security.Scanning
             {
                 _logger?.LogDebug(ex, "Subscriber threw exception on ProgressChanged event.");
             }
+            return true;
         }
 
         public void CompleteExternalScan(ScanResult result)
         {
+            _legacyExternalRegistration.Value?.Complete(result);
+        }
+
+        private bool TryCompleteExternalScan(ExternalScannerSubscription registration, ScanResult result)
+        {
             lock (_lock)
             {
-                _isExternalScanRunning = false;
+                if (!ReferenceEquals(_externalRegistration, registration)) return false;
                 if (result.Status == ScanStatus.Cancelled)
                 {
                     _state = ScanState.Cancelled;
                     _stopReason = ScanStopReason.UserCancelled;
                     StatusText = "Tarama kullanıcı tarafından durduruldu.";
                     CurrentFile = "İptal edildi.";
+                }
+                else if (result.Status == ScanStatus.Failed)
+                {
+                    _state = ScanState.Failed;
+                    _stopReason = ScanStopReason.Error;
+                    StatusText = "Başlangıç taraması tamamlanamadı.";
+                    CurrentFile = "Hata oluştu.";
                 }
                 else
                 {
@@ -197,10 +263,29 @@ namespace AegisPC.Security.Scanning
             {
                 _logger?.LogDebug(ex, "Subscriber threw exception on ScanCompleted event.");
             }
+            finally
+            {
+                lock (_lock)
+                {
+                    if (ReferenceEquals(_externalRegistration, registration))
+                        ClearExternalOwnership();
+                }
+            }
+            return true;
         }
 
         public Task<ScanResult?> StartScanAsync(ScanType scanType, string customPath = "")
             => StartOwnedScan(scanType, customPath, CancellationToken.None, background: false);
+
+        /// <summary>
+        /// Claims a manual scan before changing its resource policy. An existing manual or
+        /// external scan returns null without invoking the callback, so its limits stay intact.
+        /// </summary>
+        public Task<ScanResult?> TryStartManualScanAsync(ScanType scanType, string customPath, Action beforeOwnedScanStarts)
+        {
+            ArgumentNullException.ThrowIfNull(beforeOwnedScanStarts);
+            return StartOwnedScan(scanType, customPath, CancellationToken.None, background: true, beforeOwnedScanStarts);
+        }
 
         /// <summary>Atomically claims an idle coordinator and binds cancellation to that scan only.</summary>
         public Task<ScanResult?> TryStartBackgroundScanAsync(ScanType scanType, CancellationToken cancellationToken)
@@ -563,7 +648,7 @@ namespace AegisPC.Security.Scanning
                     return;
                 }
 
-                _fileScanner.PauseScan();
+                if (_externalRegistration == null) _fileScanner.PauseScan();
                 extPause = _externalPauseAction;
                 _state = ScanState.Paused;
                 StatusText = "Tarama duraklatıldı.";
@@ -584,7 +669,7 @@ namespace AegisPC.Security.Scanning
             Action? extResume = null;
             lock (_lock)
             {
-                if (_fileScanner.IsPaused)
+                if (_externalRegistration == null && _fileScanner.IsPaused)
                 {
                     _fileScanner.ResumeScan();
                 }

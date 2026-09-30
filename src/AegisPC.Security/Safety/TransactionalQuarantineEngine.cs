@@ -65,9 +65,9 @@ namespace AegisPC.Security.Safety
             EnsureVaultSecurity(_vaultDir);
 
             _vaultKeyFilePath = Path.Combine(_vaultDir, "vault.key");
-            _database = new QuarantineVaultDatabase(_vaultDir, _logger);
-
             EnsureMasterKey();
+            // A damaged or inaccessible key must stop construction before metadata migration.
+            _database = new QuarantineVaultDatabase(_vaultDir, _logger);
         }
 
         private void EnsureVaultSecurity(string vaultDir)
@@ -333,14 +333,11 @@ namespace AegisPC.Security.Safety
                         Reason = request.ThreatReason,
                         SHA256 = sha256,
                         FileSize = plainSize,
-                        RiskLevel = request.ThreatReason.Contains("EICAR", StringComparison.OrdinalIgnoreCase) ||
-                                    request.ThreatReason.Contains("Ransom", StringComparison.OrdinalIgnoreCase) ||
-                                    request.ThreatReason.Contains("Mimikatz", StringComparison.OrdinalIgnoreCase)
-                                    ? RiskLevel.ConfirmedMalicious
-                                    : RiskLevel.HighRisk,
+                        RiskLevel = ResolveRiskLevel(request.DetectionEvidence, sha256),
                         QuarantinedAt = DateTime.UtcNow,
                         Status = QuarantineStatus.Quarantined
                     };
+                    result.AuditSteps.Add($"Structured detection risk: {pendingEntry.RiskLevel}.");
 
                     await _database.InsertEntryAsync(pendingEntry, canonicalPath, cancellationToken);
                     indexPersisted = true;
@@ -682,6 +679,36 @@ namespace AegisPC.Security.Safety
         public void Dispose()
         {
             _database?.Dispose();
+        }
+
+        private RiskLevel ResolveRiskLevel(QuarantineDetectionEvidence? evidence, string actualSha256)
+        {
+            try
+            {
+                // The vault's read-back hash is the content identity; a caller cannot invent
+                // a confirmed verdict merely by setting a display reason or evidence enum.
+                if (AegisPC.Security.Scanning.MalwareSignatureDatabase.IsTrustedEmbeddedHash(actualSha256))
+                    return RiskLevel.ConfirmedMalicious;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Known-malware hash verification failed; quarantine risk remains unknown.");
+            }
+
+            if (evidence == null) return RiskLevel.Unknown;
+
+            var evidenceHash = evidence.ContentSha256;
+            if (evidenceHash is not { Length: 64 } ||
+                !System.Linq.Enumerable.All(evidenceHash, Uri.IsHexDigit) ||
+                !string.Equals(evidenceHash, actualSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger?.LogWarning("Quarantine risk evidence was not bound to the contained content; risk remains unknown.");
+                return RiskLevel.Unknown;
+            }
+
+            if (evidence.Kind != QuarantineDetectionEvidenceKind.None)
+                _logger?.LogWarning("Quarantine evidence kind {Kind} could not be independently verified; risk remains unknown.", evidence.Kind);
+            return RiskLevel.Unknown;
         }
     }
 }

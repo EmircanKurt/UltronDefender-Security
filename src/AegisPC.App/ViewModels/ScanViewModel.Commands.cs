@@ -380,62 +380,95 @@ namespace AegisPC.App.ViewModels
                 return;
             }
 
-            // GÖREV 6: Hızlı Tarama veya Tam Tarama başlatıldığında kaynak profili seçimi
-            if (scanType == ScanType.Quick || scanType == ScanType.Full)
+            bool chooseResources = scanType is ScanType.Quick or ScanType.Full;
+            ScanResourceMode targetMode = ScanResourceMode.Auto;
+            bool? rememberChoice = null;
+            bool claimed = false;
+            try
             {
-                bool rememberMode = _settingsService?.GetSetting("RememberScanResourceMode", false) ?? false;
-                var configuredMode = _settingsService?.GetSetting("ScanResourceMode", ScanResourceMode.Auto) ?? ScanResourceMode.Auto;
+                if (chooseResources && !TrySelectManualResourceMode(out targetMode, out rememberChoice))
+                    return;
 
-                ScanResourceMode targetMode = configuredMode;
-
-                if (!rememberMode && System.Windows.Application.Current != null)
+                Task<ScanResult?> scanTask = _scanCoordinator.TryStartManualScanAsync(scanType, customPath, () =>
                 {
-                    var dialog = new Views.ScanResourceSelectionDialog(configuredMode);
-                    var mainWindow = System.Windows.Application.Current.MainWindow;
-                    if (mainWindow != null && mainWindow.IsVisible)
-                    {
-                        dialog.Owner = mainWindow;
-                    }
+                    if (chooseResources) ApplyManualResourceMode(targetMode);
+                    ResetScanState(scanType);
+                    claimed = true;
+                });
 
-                    bool? res = dialog.ShowDialog();
-                    if (res != true)
-                    {
-                        // Kullanıcı taramayı başlatmaktan vazgeçti
-                        return;
-                    }
-
-                    targetMode = dialog.SelectedMode;
-
-                    if (dialog.RememberChoice && _settingsService != null)
-                    {
-                        _settingsService.SetSetting("ScanResourceMode", targetMode);
-                        _settingsService.SetSetting("RememberScanResourceMode", true);
-                        await _settingsService.SaveAsync();
-                    }
+                if (!claimed)
+                {
+                    // A different scan claimed the coordinator while the modal was open.
+                    await scanTask;
+                    if (_scanCoordinator.IsScanning)
+                        Views.ActiveScanWindow.ShowScanWindow(this);
+                    else
+                        ScanStatusText = "Tarama başlatılamadı; başka bir tarama oturumu aktif olabilir.";
+                    return;
                 }
 
-                SelectedResourceMode = targetMode;
-
-                if (_resourceManager != null)
+                Views.ActiveScanWindow.ShowScanWindow(this);
+                if (rememberChoice is { } remember && _settingsService != null)
                 {
-                    _resourceManager.SetMode(targetMode);
-                    HardwareTuningText = _resourceManager.ActiveProfile.SummaryText;
-                    ActiveResourceProfileText = _resourceManager.ActiveProfile.SummaryText;
+                    _settingsService.SetSetting<ScanResourceMode?>("LastManualScanResourceMode",
+                        remember ? targetMode : null);
+                    _settingsService.SetSetting("RememberScanResourceMode", remember);
+                    try { await _settingsService.SaveAsync(); }
+                    catch (Exception ex)
+                    {
+                        // Persistence failure cannot cancel an already-owned manual scan.
+                        Serilog.Log.Warning(ex, "Could not persist manual scan resource preference; applying it to this scan only");
+                    }
                 }
-                else
-                {
-                    var p = ScanResourceProfile.CreateDefault(targetMode);
-                    AegisPC.Security.Scanning.ScanQueueCoordinator.ActiveResourceSummary = p.SummaryText;
-                    HardwareTuningText = p.SummaryText;
-                    ActiveResourceProfileText = p.SummaryText;
-                }
+                await scanTask;
             }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Manual scan request failed for {ScanType}", scanType);
+                ScanStatusText = "Tarama başlatılamadı veya tamamlanamadı: " + ex.Message;
+                if (!_scanCoordinator.IsScanning)
+                {
+                    _timer?.Stop();
+                    IsScanning = false;
+                    IsNotScanning = true;
+                }
+                try { _toastService?.ShowToast("Tarama Hatası", ScanStatusText, "Warning"); }
+                catch (Exception toastEx) { Serilog.Log.Warning(toastEx, "Could not present manual scan failure notification"); }
+            }
+        }
 
-            ResetScanState(scanType);
+        private bool TrySelectManualResourceMode(out ScanResourceMode targetMode, out bool? rememberChoice)
+        {
+            bool rememberMode = _settingsService?.GetSetting("RememberScanResourceMode", false) ?? false;
+            var configuredMode = _settingsService?.GetSetting<ScanResourceMode?>("LastManualScanResourceMode", null);
+            targetMode = rememberMode && configuredMode is { } savedMode && Enum.IsDefined(savedMode)
+                ? savedMode
+                : ScanResourceMode.Auto;
+            rememberChoice = null;
 
-            Views.ActiveScanWindow.ShowScanWindow(this);
+            var app = System.Windows.Application.Current;
+            if (app == null) return true;
 
-            await _scanCoordinator.StartScanAsync(scanType, customPath);
+            var dialog = new Views.ScanResourceSelectionDialog(targetMode);
+            var mainWindow = app.MainWindow;
+            if (mainWindow != null && mainWindow.IsVisible)
+                dialog.Owner = mainWindow;
+            if (dialog.ShowDialog() != true) return false;
+
+            targetMode = dialog.SelectedMode;
+            rememberChoice = dialog.RememberChoice;
+            return true;
+        }
+
+        private void ApplyManualResourceMode(ScanResourceMode targetMode)
+        {
+            if (_resourceManager == null)
+                throw new InvalidOperationException("Kaynak yöneticisi hazır değil; seçilen tarama profili uygulanamadı.");
+
+            _resourceManager.SetMode(targetMode);
+            SelectedResourceMode = targetMode;
+            HardwareTuningText = _resourceManager.ActiveProfile.SummaryText;
+            ActiveResourceProfileText = _resourceManager.ActiveProfile.SummaryText;
         }
     }
 }

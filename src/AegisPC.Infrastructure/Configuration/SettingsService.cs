@@ -122,10 +122,6 @@ namespace AegisPC.Infrastructure.Configuration
             {
                 settings.PerformanceSampleIntervalMs = 500;
             }
-            if (settings.MaxScanConcurrency < 1)
-            {
-                settings.MaxScanConcurrency = 1;
-            }
             if (settings.DataRetentionDays < 1)
             {
                 settings.DataRetentionDays = 1;
@@ -144,6 +140,12 @@ namespace AegisPC.Infrastructure.Configuration
             settings.IdleScanIntervalHours = Math.Clamp(settings.IdleScanIntervalHours, 1, 168);
             if (!Enum.IsDefined(settings.ScanResourceMode))
                 settings.ScanResourceMode = AegisPC.Core.Enums.ScanResourceMode.Auto;
+            if (settings.LastManualScanResourceMode is { } manualMode && !Enum.IsDefined(manualMode))
+                settings.LastManualScanResourceMode = null;
+            // Existing installations stored a remembered manual choice in the scheduled/global mode.
+            // Capture it once in the new field so later scheduled-profile edits cannot overwrite it.
+            if (settings.RememberScanResourceMode && settings.LastManualScanResourceMode == null)
+                settings.LastManualScanResourceMode = settings.ScanResourceMode;
             settings.DismissedIncidentIds ??= new();
         }
     }

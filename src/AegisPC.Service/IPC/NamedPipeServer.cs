@@ -299,7 +299,7 @@ namespace AegisPC.Service.IPC
             switch (command.CommandType)
             {
                 case ServiceCommandType.GetStatus:
-                    var status = BuildCurrentStatus();
+                    var status = BuildCurrentStatus(command.RequestId);
                     var statusJson = JsonSerializer.Serialize(status);
                     await SendResponseAsync(client, $"Status:{statusJson}");
                     break;
@@ -445,11 +445,12 @@ namespace AegisPC.Service.IPC
             }
         }
 
-        private ProtectionStatus BuildCurrentStatus()
+        private ProtectionStatus BuildCurrentStatus(Guid requestId = default)
         {
             ResetThreatCounterIfExpired();
             return new ProtectionStatus
             {
+                RequestId = requestId,
                 IsServiceRunning = true,
                 IsRealTimeEnabled = _protectionService.IsProtectionActive && _realTimeProtectionEngine.IsRunning,
                 IsRansomwareShieldEnabled = _ransomwareEngine.IsShieldActive,

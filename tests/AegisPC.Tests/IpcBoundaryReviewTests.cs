@@ -2,6 +2,7 @@ using System.Reflection;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using AegisPC.Infrastructure.Ipc;
 using AegisPC.ServiceContracts.IpcMessages;
 using System.Security.AccessControl;
@@ -58,6 +59,100 @@ public sealed class IpcBoundaryReviewTests
     {
         Assert.True(ServiceCommandParser.TryParse("{\"CommandType\":4,\"Payload\":null}", out var command));
         Assert.Equal(ServiceCommandType.GetStatus, command!.CommandType);
+    }
+
+    /// <summary>Malformed or repeated correlation IDs cannot select an ambiguous response target.</summary>
+    [Fact]
+    public void CorrelatedCommand_RejectsDuplicateOrInvalidRequestIdentity()
+    {
+        var requestId = Guid.NewGuid();
+        var valid = JsonSerializer.Serialize(new ServiceCommand
+        {
+            CommandType = ServiceCommandType.GetStatus,
+            RequestId = requestId
+        });
+        Assert.True(ServiceCommandParser.TryParse(valid, out var parsed));
+        Assert.Equal(requestId, parsed!.RequestId);
+        Assert.False(ServiceCommandParser.TryParse($"{{\"CommandType\":4,\"RequestId\":\"{requestId}\",\"RequestId\":\"{requestId}\"}}", out _));
+        Assert.False(ServiceCommandParser.TryParse("{\"CommandType\":4,\"RequestId\":\"not-a-guid\"}", out _));
+        Assert.False(ServiceCommandParser.TryParse("{\"CommandType\":4,\"RequestId\":\"00000000-0000-0000-0000-000000000000\"}", out _));
+    }
+
+    /// <summary>A benign local fixture verifies that old and unrelated replies cannot complete a new request.</summary>
+    [Fact]
+    public async Task StatusRequest_WaitsForMatchingReply_InsteadOfReturningStaleCache()
+    {
+        var pipeName = "ReviewStatus_" + Guid.NewGuid().ToString("N");
+        using var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        using var clientPipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var accept = server.WaitForConnectionAsync(deadline.Token);
+        await clientPipe.ConnectAsync(deadline.Token);
+        await accept;
+        using var client = new ServiceIpcClient();
+        typeof(ServiceIpcClient).GetField("_pipeClient", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(client, clientPipe);
+        typeof(ServiceIpcClient).GetField("_lastKnownStatus", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(client, new ProtectionStatus { ProtectionLevel = "stale", IsServiceRunning = true });
+        var listen = (Task)typeof(ServiceIpcClient).GetMethod("ListenForMessagesAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(client, new object[] { clientPipe })!;
+        using var reader = new StreamReader(server, new UTF8Encoding(false), false, 4096, leaveOpen: true);
+        using var writer = new StreamWriter(server, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = true };
+
+        var pending = client.GetStatusAsync();
+        var frame = await BoundedPipeProtocol.ReadCommandAsync(reader, deadline.Token);
+        Assert.True(ServiceCommandParser.TryParse(frame!, out var request));
+        Assert.NotEqual(Guid.Empty, request!.RequestId);
+        Assert.False(pending.IsCompleted);
+
+        await writer.WriteLineAsync("Status:" + JsonSerializer.Serialize(new ProtectionStatus
+            { RequestId = Guid.NewGuid(), ProtectionLevel = "unmatched", IsServiceRunning = true }));
+        await writer.WriteLineAsync("Status:" + JsonSerializer.Serialize(new ProtectionStatus
+            { ProtectionLevel = "legacy", IsServiceRunning = true }));
+        await Task.Delay(100, deadline.Token);
+        Assert.False(pending.IsCompleted);
+
+        await writer.WriteLineAsync("Status:" + JsonSerializer.Serialize(new ProtectionStatus
+            { RequestId = request.RequestId, ProtectionLevel = "fresh", IsServiceRunning = true }));
+        var status = await pending.WaitAsync(deadline.Token);
+        Assert.Equal(request.RequestId, status.RequestId);
+        Assert.Equal("fresh", status.ProtectionLevel);
+        client.Dispose();
+        await listen.WaitAsync(deadline.Token);
+    }
+
+    /// <summary>A dropped fixture pipe must fail a pending request instead of returning the prior status.</summary>
+    [Fact]
+    public async Task StatusRequest_DisconnectBeforeReply_FailsWithoutReturningCachedStatus()
+    {
+        var pipeName = "ReviewDisconnect_" + Guid.NewGuid().ToString("N");
+        using var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        using var clientPipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var accept = server.WaitForConnectionAsync(deadline.Token);
+        await clientPipe.ConnectAsync(deadline.Token);
+        await accept;
+        using var client = new ServiceIpcClient();
+        typeof(ServiceIpcClient).GetField("_pipeClient", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(client, clientPipe);
+        typeof(ServiceIpcClient).GetField("_lastKnownStatus", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(client, new ProtectionStatus { ProtectionLevel = "stale", IsServiceRunning = true });
+        var listen = (Task)typeof(ServiceIpcClient).GetMethod("ListenForMessagesAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(client, new object[] { clientPipe })!;
+        using var reader = new StreamReader(server, new UTF8Encoding(false), false, 4096, leaveOpen: true);
+
+        var pending = client.GetStatusAsync();
+        var frame = await BoundedPipeProtocol.ReadCommandAsync(reader, deadline.Token);
+        Assert.True(ServiceCommandParser.TryParse(frame!, out var request));
+        Assert.NotEqual(Guid.Empty, request!.RequestId);
+        server.Dispose();
+
+        var failure = await Record.ExceptionAsync(() => pending.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.IsType<IOException>(failure);
+        client.Dispose();
+        await listen.WaitAsync(deadline.Token);
     }
 
     [Fact]

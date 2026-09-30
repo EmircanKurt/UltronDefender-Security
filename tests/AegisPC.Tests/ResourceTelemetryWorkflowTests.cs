@@ -81,6 +81,18 @@ public sealed class ResourceTelemetryWorkflowTests
     }
 
     [Fact]
+    public void ProcessWorkingSetPeak_NeverFallsBelowAnObservedSample()
+    {
+        using var telemetry = new ScanProcessTelemetry();
+        var first = telemetry.Sample();
+        Assert.True(telemetry.PeakObservedWorkingSetMb >= first.WorkingSetMb);
+        var previousPeak = telemetry.PeakObservedWorkingSetMb;
+        var second = telemetry.Sample();
+        Assert.True(telemetry.PeakObservedWorkingSetMb >= second.WorkingSetMb);
+        Assert.True(telemetry.PeakObservedWorkingSetMb >= previousPeak);
+    }
+
+    [Fact]
     public void Splash_VisibleDurationIsLonger_AndBackgroundStartSkipsSplash()
     {
         string text = File.ReadAllText(Path.Combine(FindRoot(), "src/AegisPC.App/App.xaml.cs"));

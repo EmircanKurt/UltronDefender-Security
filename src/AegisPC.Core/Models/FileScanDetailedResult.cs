@@ -25,7 +25,8 @@ namespace AegisPC.Core.Models
         public static FileScanDetailedResult CreateTimeout(string path, TimeSpan duration) =>
             new() { FilePath = path, Outcome = FileScanOutcome.Timeout, Duration = duration, ErrorMessage = "Tarama zaman aşımına uğradı (Per-file timeout)" };
 
-        public static FileScanDetailedResult CreateFailed(string path, string error, TimeSpan duration) =>
-            new() { FilePath = path, Outcome = FileScanOutcome.Failed, Duration = duration, ErrorMessage = error };
+        /// <summary>Records an incomplete file inspection, preserving any finding already proven by inspected bytes.</summary>
+        public static FileScanDetailedResult CreateFailed(string path, string error, TimeSpan duration, SecurityFinding? finding = null) =>
+            new() { FilePath = path, Outcome = FileScanOutcome.Failed, Duration = duration, ErrorMessage = error, Finding = finding };
     }
 }

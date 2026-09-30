@@ -23,6 +23,87 @@ public sealed class StartupSweepSafetyTests : IDisposable
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "UltronStartupSafety_" + Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task BusyManualCoordinator_DefersSweepWithoutInspectingOrPublishingCompletion()
+    {
+        string file = CreateBenignFile();
+        var engine = new RecordingEngine(_ => new RealTimeVerdictResult { Verdict = RealTimeVerdict.Clean });
+        var scanner = new FinalReviewScanRegressionTests.ControlledScanner();
+        var coordinator = new ScanCoordinatorService(scanner, new SecurityFindingService());
+        var manual = coordinator.TryStartManualScanAsync(ScanType.Full, string.Empty, () => { });
+        await scanner.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var session = coordinator.CurrentSession;
+        var sweep = new StartupSecuritySweepService(engine, new RecordingVault(), scanCoordinator: coordinator);
+        int completedEvents = 0;
+        sweep.OnSweepCompleted += _ => completedEvents++;
+
+        var result = await sweep.RunSweepAsync(new[] { file });
+
+        Assert.Equal(StartupSweepStatus.Busy, result.FinalStatus);
+        Assert.Equal(0, engine.Inspections);
+        Assert.Equal(0, completedEvents);
+        Assert.Null(sweep.LastResult);
+        Assert.Same(session, coordinator.CurrentSession);
+        Assert.Equal(ScanType.Full, coordinator.CurrentScanType);
+        scanner.Complete.TrySetResult(true);
+        await manual.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task QueuedSweep_DoesNotReplaceActiveCancellationOrExternalClaim()
+    {
+        string file = CreateBenignFile();
+        string sha = ValidHash(file);
+        var engine = new RecordingEngine(_ => new RealTimeVerdictResult
+        {
+            Verdict = RealTimeVerdict.Clean,
+            RecommendedPolicy = RealTimePolicyAction.Allow,
+            SHA256 = sha
+        });
+        var scanner = new FinalReviewScanRegressionTests.ControlledScanner();
+        var coordinator = new ScanCoordinatorService(scanner, new SecurityFindingService());
+        var sweep = new StartupSecuritySweepService(engine, new RecordingVault(), scanCoordinator: coordinator);
+        using var entered = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        int preparingCount = 0;
+        sweep.OnProgressChanged += progress =>
+        {
+            if (progress.Status == StartupSweepStatus.Preparing && Interlocked.Increment(ref preparingCount) == 1)
+            {
+                entered.Set();
+                if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("Synthetic sweep gate timed out.");
+            }
+        };
+
+        var first = Task.Run(() => sweep.RunSweepAsync(new[] { file }));
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            var secondEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var second = Task.Run(async () =>
+            {
+                var pending = sweep.RunSweepAsync(new[] { file });
+                secondEntered.TrySetResult(true);
+                return await pending;
+            });
+            await secondEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(coordinator.IsExternalScanRunning);
+
+            sweep.Cancel();
+            release.Set();
+            var firstResult = await first.WaitAsync(TimeSpan.FromSeconds(10));
+            var secondResult = await second.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.Equal(StartupSweepStatus.Cancelled, firstResult.FinalStatus);
+            Assert.Equal(StartupSweepStatus.Clean, secondResult.FinalStatus);
+            Assert.False(coordinator.IsExternalScanRunning);
+        }
+        finally
+        {
+            release.Set();
+        }
+    }
+
+    [Fact]
     public async Task HighScoreWithoutConfirmedVerdictWarnsButNeverQuarantines()
     {
         string file = CreateBenignFile();
@@ -321,13 +402,31 @@ public sealed class StartupSweepSafetyTests : IDisposable
         public event Action<ScanProgress>? ProgressChanged { add { } remove { } }
         public event Action<ScanResult>? ScanCompleted { add { } remove { } }
         public Task<ScanResult?> StartScanAsync(ScanType scanType, string customPath = "") => Task.FromResult<ScanResult?>(null);
-        public IDisposable RegisterExternalScanner(Action pauseAction, Action resumeAction, Action cancelAction) => new NoopDisposable();
+        public IExternalScanRegistration TryRegisterExternalScanner(Action pauseAction, Action resumeAction, Action cancelAction) =>
+            new RecordingRegistration(this);
+        public IDisposable RegisterExternalScanner(Action pauseAction, Action resumeAction, Action cancelAction) =>
+            TryRegisterExternalScanner(pauseAction, resumeAction, cancelAction);
         public void RegisterExternalScanProgress(ScanProgress progress) { }
         public void CompleteExternalScan(ScanResult result) => LastResult = result;
         public void PauseScan() { }
         public void ResumeScan() { }
         public void CancelScan() { }
 
-        private sealed class NoopDisposable : IDisposable { public void Dispose() { } }
+        private sealed class RecordingRegistration : IExternalScanRegistration
+        {
+            private readonly RecordingCoordinator _owner;
+            private bool _disposed;
+
+            public RecordingRegistration(RecordingCoordinator owner) => _owner = owner;
+            public bool ReportProgress(ScanProgress progress) => !_disposed;
+            public bool Complete(ScanResult result)
+            {
+                if (_disposed) return false;
+                _disposed = true;
+                _owner.LastResult = result;
+                return true;
+            }
+            public void Dispose() => _disposed = true;
+        }
     }
 }
