@@ -16,51 +16,7 @@
         RenderOptions.ClearTypeHint="Enabled"
         FontFamily="{StaticResource FontSans}">
         
-    <Window.Triggers>
-        <EventTrigger RoutedEvent="Window.Loaded">
-            <BeginStoryboard>
-                <Storyboard>
-                    <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.0" To="1.0" Duration="0:0:0.35">
-                        <DoubleAnimation.EasingFunction>
-                            <CubicEase EasingMode="EaseOut"/>
-                        </DoubleAnimation.EasingFunction>
-                    </DoubleAnimation>
-                </Storyboard>
-            </BeginStoryboard>
-        </EventTrigger>
-    </Window.Triggers>
-
     <Grid Background="{DynamicResource BrushAppBg}" UseLayoutRounding="True" SnapsToDevicePixels="True" RenderTransformOrigin="0.5,0.5">
-        <Grid.RenderTransform>
-            <TransformGroup>
-                <ScaleTransform x:Name="WindowRootScale" ScaleX="0.985" ScaleY="0.985"/>
-                <TranslateTransform x:Name="WindowRootTranslate" Y="8"/>
-            </TransformGroup>
-        </Grid.RenderTransform>
-        <Grid.Triggers>
-            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
-                <BeginStoryboard>
-                    <Storyboard>
-                        <DoubleAnimation Storyboard.TargetName="WindowRootScale" Storyboard.TargetProperty="ScaleX" To="1.0" Duration="0:0:0.35">
-                            <DoubleAnimation.EasingFunction>
-                                <CubicEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                        <DoubleAnimation Storyboard.TargetName="WindowRootScale" Storyboard.TargetProperty="ScaleY" To="1.0" Duration="0:0:0.35">
-                            <DoubleAnimation.EasingFunction>
-                                <CubicEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                        <DoubleAnimation Storyboard.TargetName="WindowRootTranslate" Storyboard.TargetProperty="Y" To="0.0" Duration="0:0:0.35">
-                            <DoubleAnimation.EasingFunction>
-                                <CubicEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                    </Storyboard>
-                </BeginStoryboard>
-            </EventTrigger>
-        </Grid.Triggers>
-
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>

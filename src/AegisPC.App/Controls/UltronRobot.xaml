@@ -1,0 +1,66 @@
+<UserControl x:Class="AegisPC.App.Controls.UltronRobot"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="RobotControl"
+             Width="100" Height="92"
+             Focusable="False"
+             UseLayoutRounding="True" SnapsToDevicePixels="True">
+    <UserControl.Resources>
+        <Style x:Key="RobotButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="FocusRing" CornerRadius="16"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FocusRing" Property="BorderBrush" Value="{DynamicResource BrushRobotBody}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="FocusRing" Property="Background" Value="{DynamicResource BrushRobotHover}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Button x:Name="RobotButton" Style="{StaticResource RobotButtonStyle}"
+            Command="{Binding Command, ElementName=RobotControl}"
+            AutomationProperties.Name="Ultron AI Koruma Merkezi’ni aç"
+            AutomationProperties.HelpText="Gözlenen koruma kapsamını, kanıt durumunu ve açık doğrulama kapılarını gösterir."
+            ToolTip="Ultron AI Koruma Merkezi">
+        <Canvas Width="78" Height="70" IsHitTestVisible="False" RenderTransformOrigin="0.5,0.5">
+            <Canvas.RenderTransform>
+                <TransformGroup>
+                    <ScaleTransform x:Name="RobotScale" ScaleX="1" ScaleY="1"/>
+                    <TranslateTransform x:Name="RobotLift"/>
+                </TransformGroup>
+            </Canvas.RenderTransform>
+            <!-- Preserve the supplied cloud/prompt outline instead of introducing a new mascot silhouette. -->
+            <Path x:Name="RobotShell" Fill="Transparent" Stroke="{DynamicResource BrushRobotBody}"
+                  StrokeThickness="3.5" StrokeLineJoin="Round"
+                  Data="M 39,7 C 45,4 52,7 54,11 C 62,9 70,15 69,23 C 77,27 77,37 73,42 C 75,51 68,58 59,58 C 55,67 43,68 38,63 C 30,69 20,65 18,59 C 8,59 4,50 7,43 C 0,36 2,27 9,23 C 8,13 18,7 26,10 C 29,4 36,3 39,7 Z"/>
+            <Canvas x:Name="RobotGaze" Width="78" Height="70">
+                <Canvas.RenderTransform>
+                    <TranslateTransform x:Name="GazeTransform"/>
+                </Canvas.RenderTransform>
+                <Path Stroke="{DynamicResource BrushRobotBody}" StrokeThickness="4" StrokeStartLineCap="Round"
+                      StrokeEndLineCap="Round" StrokeLineJoin="Round" Data="M 22,27 L 31,34 L 22,41"/>
+                <Path Stroke="{DynamicResource BrushRobotBody}" StrokeThickness="4" StrokeStartLineCap="Round"
+                      StrokeEndLineCap="Round" Data="M 42,41 L 55,41"/>
+            </Canvas>
+        </Canvas>
+    </Button>
+</UserControl>

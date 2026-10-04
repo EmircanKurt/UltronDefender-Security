@@ -17,6 +17,9 @@ namespace AegisPC.App.ViewModels
     /// </summary>
     public partial class DashboardViewModel
     {
+        /// <summary>Opens the local protection centre; the robot is not a chat or an independent enforcement authority.</summary>
+        [RelayCommand]
+        public void OpenUltronProtectionCentre() => AppNavigation.NavigateTo(typeof(UltronProtectionCentreView));
         // ═══════════════════════════════════════════════
         // INTERACTIVE COMMAND 1: RANSOMWARE REMEDIATION
         // ═══════════════════════════════════════════════
@@ -112,7 +115,8 @@ namespace AegisPC.App.ViewModels
         [RelayCommand]
         public void ToggleRealTimeProtection()
         {
-            if (IsRealTimeProtectionActive)
+            if (_observedServiceStatus?.IsRealTimeEnabled == true &&
+                _observedServiceStatus.Health?.IsFresh(DateTime.UtcNow) == true && _ipcClient?.IsConnected == true)
             {
                 var res = MessageBox.Show(
                     "⚠️ DİKKAT: Gerçek Zamanlı Korumayı kapatmak bilgisayarınızı virüslere, fidye yazılımlarına ve korsan saldırılara karşı savunmasız bırakır.\n\nBu işlem Yönetici Onayı gerektirir. Yine de korumayı devre dışı bırakmak istiyor musunuz?",
@@ -122,53 +126,26 @@ namespace AegisPC.App.ViewModels
 
                 if (res == MessageBoxResult.Yes)
                 {
-                    IsRealTimeProtectionActive = false;
-                    ProtectionStatusText = "Koruma devre dışı";
-                    ProtectionBadgeText = "Gerçek zamanlı koruma kapalı";
-                    ProtectionStatusColor = "#C41E1E";
-                    TriggerToast("⚠️ Gerçek Zamanlı Koruma kullanıcı tarafından kapatıldı!", "Warning");
-                    UpdateProtectionUptime();
+                    _ = RequestProtectionCommandAsync(AegisPC.ServiceContracts.IpcMessages.ServiceCommandType.DisableProtection);
                 }
             }
             else
             {
-                IsRealTimeProtectionActive = true;
-                ProtectionStatusText = "Sisteminiz güvende";
-                ProtectionBadgeText = "Gerçek zamanlı koruma aktif";
-                ProtectionStatusColor = "#4CAF50";
-                TriggerToast("🛡️ Gerçek Zamanlı Koruma başarıyla etkinleştirildi.", "Success");
-                UpdateProtectionUptime();
+                _ = RequestProtectionCommandAsync(AegisPC.ServiceContracts.IpcMessages.ServiceCommandType.EnableProtection);
             }
         }
 
         // ═══════════════════════════════════════════════
-        // INTERACTIVE COMMAND 5: DEVICE / LICENSE MODAL
+        // INTERACTIVE COMMAND 5: DEVICE MODAL
         // ═══════════════════════════════════════════════
 
         /// <summary>
-        /// Cihaz ve lisans bilgi modal penceresini açar veya kapatır.
+        /// Shows or hides local device information without changing protection state.
         /// </summary>
         [RelayCommand]
         public void ToggleDeviceModal()
         {
             ShowDeviceModal = !ShowDeviceModal;
-        }
-
-        /// <summary>
-        /// Lisans anahtarını panoya (Clipboard) kopyalar.
-        /// </summary>
-        [RelayCommand]
-        public void CopyLicenseKey()
-        {
-            try
-            {
-                Clipboard.SetText(LicenseKey);
-                TriggerToast("Lisans anahtarı panoya kopyalandı!", "Success");
-            }
-            catch
-            {
-                TriggerToast($"Lisans: {LicenseKey}", "Info");
-            }
         }
 
         // ═══════════════════════════════════════════════

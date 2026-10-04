@@ -70,11 +70,28 @@ public sealed class ScanReportHistoryStore
         if (!File.Exists(_path)) return Array.Empty<ScanReportRecord>();
         await using var stream = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.Read, 8192, useAsync: true);
         if (stream.Length > MaximumBytes) throw new InvalidDataException("Report history exceeds the 4 MiB read limit.");
-        var records = await JsonSerializer.DeserializeAsync<List<ScanReportRecord>>(stream, JsonOptions).ConfigureAwait(false)
+        using var document = await ParseHistoryDocumentAsync(stream).ConfigureAwait(false);
+        var records = document.RootElement.Deserialize<List<ScanReportRecord>>(JsonOptions)
             ?? throw new InvalidDataException("Report history contains no valid document.");
         if (records.Count > MaximumRecords || records.Any(r => r == null || r.Result == null || r.Result.Findings == null || r.Actions == null || r.Result.Status == ScanStatus.Running || !Enum.IsDefined(r.Result.Status)))
             throw new InvalidDataException("Report history contains invalid or non-final results.");
+        // Older reports have lifecycle counters only; absence of coverage is not evidence of full inspection.
+        var rawRecords = document.RootElement.EnumerateArray().ToArray();
+        for (int i = 0; i < records.Count; i++)
+        {
+            if (!rawRecords[i].GetProperty("Result").TryGetProperty("Coverage", out var coverage) || coverage.ValueKind == JsonValueKind.Null)
+            {
+                records[i].Result.Coverage = new();
+                records[i].Result.Coverage.RecordLimitation("LegacyReportCoverageNotRecorded");
+            }
+        }
         return records;
+    }
+
+    private static async Task<JsonDocument> ParseHistoryDocumentAsync(Stream stream)
+    {
+        try { return await JsonDocument.ParseAsync(stream, new JsonDocumentOptions { MaxDepth = 32 }).ConfigureAwait(false); }
+        catch (JsonException exception) { throw new JsonException("Report history contains malformed JSON; no data was overwritten.", exception); }
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, MaxDepth = 32 };
@@ -91,10 +108,14 @@ public sealed class ScanReportRecord
     public string ResourceProfile { get; set; } = string.Empty;
     /// <summary>Contains action labels backed by successful user operations, keyed by finding object path.</summary>
     public Dictionary<string, string> Actions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-    /// <summary>Provides a readable timestamp for the report picker.</summary>
-    [JsonIgnore] public string DateText => Result.StartedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss");
+    /// <summary>Shows an actual recorded start time; legacy missing timestamps are not displayed as year one or invented.</summary>
+    [JsonIgnore] public string DateText => Result.StartedAt == default
+        ? "Başlangıç zamanı kaydedilmedi" : Result.StartedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss");
     /// <summary>Distinguishes completed, cancelled, and failed scan reports.</summary>
     [JsonIgnore] public string StatusText => Result.Status switch { ScanStatus.Completed => "Tamamlandı", ScanStatus.Cancelled => "İptal edildi", ScanStatus.Failed => "Başarısız", _ => "Bilinmeyen" };
-    /// <summary>Shows result counts without certifying files that were not inspected.</summary>
-    [JsonIgnore] public string Summary => $"{Result.ScanType} • {StatusText} • {Result.ScannedFiles:N0} dosya • {Result.Findings.Count:N0} bulgu • {Result.FailedFiles:N0} hata";
+    /// <summary>Separates per-file errors from terminal engine failure; older missing diagnostics remain explicitly unknown.</summary>
+    [JsonIgnore] public string Summary => $"{Result.ScanType} • {StatusText} • {Result.ScannedFiles:N0} dosya • {Result.Findings.Count:N0} bulgu • {Result.FailedFiles:N0} dosya hatası" +
+        (Result.Status != ScanStatus.Failed ? string.Empty : Result.FailureInfo is { } failure
+            ? $" • Motor hatası: {failure.Stage}/{failure.Reason} • {failure.CorrelationId}"
+            : " • Motor hatası ayrıntısı kaydedilmemiş");
 }

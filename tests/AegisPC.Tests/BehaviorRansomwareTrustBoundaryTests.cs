@@ -32,7 +32,10 @@ public sealed class BehaviorRansomwareTrustBoundaryTests
             ExecutablePath = executable
         });
 
-        Assert.NotNull(engine.LineageTracker.GetProcess(syntheticPid));
+        Assert.Null(engine.LineageTracker.GetProcess(syntheticPid));
+        var sessions = (System.Collections.IDictionary)typeof(BehaviorEngine)
+            .GetField("_sessions", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(engine)!;
+        Assert.Single(sessions);
         Assert.Empty(await engine.GetActiveIncidentsAsync());
     }
 

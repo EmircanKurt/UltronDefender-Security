@@ -55,7 +55,7 @@ namespace AegisPC.Security.Scanning
         }
 
         /// <summary>Inspects at most 25,000 outer entries and 500 MiB expanded size; nested ZIP members have separate 8-archive, 256-entry and 32 MiB bounds, and remain partial coverage.</summary>
-        public async Task<ArchiveScanResult> ScanArchiveAsync(string filePath, CancellationToken cancellationToken = default)
+        public async Task<ArchiveScanResult> ScanArchiveAsync(string filePath, CancellationToken cancellationToken = default, bool contentIdentifiedZip = false)
         {
             var result = new ArchiveScanResult();
             if (!File.Exists(filePath)) return result;
@@ -64,7 +64,7 @@ namespace AegisPC.Security.Scanning
             bool namedZip = ext is ".zip" or ".jar" or ".nupkg" or ".apk" or ".docx" or ".xlsx" or ".pptx" or ".docm" or ".xlsm" or ".pptm" or ".odt" or ".ods" or ".whl";
             using var headerStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
             bool zipHeader = headerStream.ReadByte() == 0x50 && headerStream.ReadByte() == 0x4b;
-            if (!namedZip && !zipHeader)
+            if (!namedZip && !zipHeader && !contentIdentifiedZip)
             {
                 return result;
             }

@@ -243,6 +243,12 @@
     <SolidColorBrush x:Key="BrushCloudLogo" Color="#000000"/>
     <SolidColorBrush x:Key="BrushCloudCursor" Color="#000000"/>
 
+    <!-- Bright red robot accent for the light canvas. -->
+    <SolidColorBrush x:Key="BrushRobotBody" Color="#EF4444"/>
+    <SolidColorBrush x:Key="BrushRobotFace" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="BrushRobotDetail" Color="#FECACA"/>
+    <SolidColorBrush x:Key="BrushRobotHover" Color="#19EF4444"/>
+
     <!-- ── 8. SCROLLBAR TOKENS (LIGHT) ── -->
     <Color x:Key="ColorScrollThumb">#CBD5E1</Color>
     <Color x:Key="ColorScrollThumbHover">#94A3B8</Color>

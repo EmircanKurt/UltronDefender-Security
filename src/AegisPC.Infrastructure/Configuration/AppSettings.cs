@@ -11,6 +11,8 @@ namespace AegisPC.Infrastructure.Configuration
         public ThemeMode Theme { get; set; } = ThemeMode.System;
         public string Language { get; set; } = "tr-TR";
         public bool IsRealTimeMonitoringEnabled { get; set; } = true;
+        /// <summary>Enables optional local static Ultron AI review; disabling it does not disable signatures, AMSI, or mandatory action validation.</summary>
+        public bool IsUltronAiEnabled { get; set; } = true;
         public bool NotificationsEnabled { get; set; } = true;
         public bool ScanScheduleEnabled { get; set; } = false;
         public string ScanScheduleCron { get; set; } = "0 0 * * *"; // Daily at midnight

@@ -213,8 +213,8 @@ namespace AegisPC.Tests
             var omegaCanary = Path.Combine(_testDir, "~z_ultron_shield_canary.docx");
 
             var canaryManager = new CanaryTrapManager();
-            Assert.True(canaryManager.IsCanaryPath(alphaCanary));
-            Assert.True(canaryManager.IsCanaryPath(omegaCanary));
+            Assert.False(canaryManager.IsCanaryPath(alphaCanary)); // A name alone is not an owned canary identity.
+            Assert.False(canaryManager.IsCanaryPath(omegaCanary));
 
             bool alertTriggered = false;
             _engine.OnRansomwareAttemptDetected += (s, e) =>

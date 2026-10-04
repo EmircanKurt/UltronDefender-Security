@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AegisPC.Core.Models;
 
 namespace AegisPC.Contracts.Detection
 {
@@ -49,6 +50,8 @@ namespace AegisPC.Contracts.Detection
         public ProcessIdentity? ProcessContext { get; set; }
         public Dictionary<string, object> Properties { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public ScanContext? SharedScan { get; set; }
+        /// <summary>Routes all applicable detectors using observed structure; omissions remain explicit coverage.</summary>
+        public FileContentClassification? ContentClassification { get; set; }
         public List<string> CoverageLimitations { get; set; } = new();
     }
 

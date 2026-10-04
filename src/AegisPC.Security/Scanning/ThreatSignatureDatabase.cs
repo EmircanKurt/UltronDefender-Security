@@ -423,6 +423,19 @@ namespace AegisPC.Security.Scanning
         }
 
         /// <summary>
+        /// Checks an already loaded exact SHA-256 entry without initializing, reading, creating or modifying a database or ACL.
+        /// Startup/feed ownership must load the store separately; this read-only gate cannot certify feed provenance.
+        /// </summary>
+        public static bool TryCheckLoadedHash(string? sha256, out (string Name, string Category, int Severity) match)
+        {
+            match = default;
+            if (string.IsNullOrWhiteSpace(sha256) || sha256.Length != 64) return false;
+            foreach (char character in sha256)
+                if (!Uri.IsHexDigit(character)) return false;
+            return _memoryCache.TryGetValue(sha256, out match);
+        }
+
+        /// <summary>
         /// Harici tehdit beslemelerinden (Abuse.ch MalwareBazaar vb.) toplu imza içe aktarma
         /// </summary>
         public static int ImportThreatHashes(IEnumerable<(string Sha256, string Name, string Category, int Severity, string Source)> newThreats)

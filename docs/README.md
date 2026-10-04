@@ -2,7 +2,11 @@
 
 Bu dizin, Ultron Defender Total Security projesinin teknik mimari, araştırma, denetim raporları ve yapay zeka geliştirme standartlarını barındırır.
 
-Güncel kanıt ve önceki iddiaların sınırları: [2026-09-27 son inceleme, ölçümler ve dağıtım öncesi plan](research/FINAL_REVIEW_2026-09-27.md). Eski `VERIFIED/%100/Release Ready` ifadeleri bu turun kanıtı değildir.
+Son ücretsiz sürüm dilimi: [Örnek PRO anahtarının kaldırılması, 69 AI/politika vakası ve 939/1 seçili Review sonucu; main README denetimi](research/FREE_EDITION_AI_REVIEW_2026-10-04.md). Ürün aktivasyonu yoktur; Windows hizmeti korumanın teknik bileşenidir. GitHub kaynak değişiklikleri ayrı taslak PR ile incelenir; yeni gerçek ekran görüntüleri henüz yoktur.
+
+Son Ultron AI/UI dilimi: [İki onaylı anahtar, kaydırma ve tarama tanılaması; bu bilgisayarda beklenen hizmet bulunamadı](research/ULTRON_AI_SHIELD_UI_FIXES_2026-10-04.md). Önceki [P0/karar çekirdeği/robot dilimi](research/ULTRON_AI_CHIEF_PHASE1_2026-10-04.md) bağımsız Guardian entegrasyonunu tamamlamaz.
+
+Güncel uygulama, testler ve açık yayın kapıları: [2026-10-04 RT/USB/içerik uygulama raporu](research/ULTRON_RT_USB_IMPLEMENTATION_2026-10-04.md). [Önceki inceleme](research/FINAL_REVIEW_2026-09-27.md) tarihsel kanıttır. Eski `VERIFIED/%100/Release Ready` ifadeleri güncel çalışma zamanı veya antivirüs etkinlik kanıtı değildir.
 
 ---
 

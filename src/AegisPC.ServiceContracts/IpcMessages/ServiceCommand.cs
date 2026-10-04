@@ -6,7 +6,12 @@ namespace AegisPC.ServiceContracts.IpcMessages
     public enum ServiceCommandType
     {
         StartScan, StopScan, EnableProtection, DisableProtection, GetStatus, UpdateSettings, 
-        EnableRansomwareShield, DisableRansomwareShield, EnableNetworkProtection, DisableNetworkProtection
+        EnableRansomwareShield, DisableRansomwareShield, EnableNetworkProtection, DisableNetworkProtection,
+        GetQuarantine, GetQuarantineItem, QuarantineFile, RestoreQuarantine, DeleteQuarantine, GetDeviceInventory,
+        /// <summary>Enables optional local static review; requires an authenticated administrator.</summary>
+        EnableUltronAi,
+        /// <summary>Disables optional local static review without disabling mandatory security validation; requires an authenticated administrator.</summary>
+        DisableUltronAi
     }
 
     public class ServiceCommand

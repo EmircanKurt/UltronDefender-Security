@@ -256,7 +256,7 @@ namespace AegisPC.App.ViewModels
             _timer?.Stop();
             OnPropertyChanged(nameof(PauseButtonText));
             TimeSpan elapsed = result.ElapsedMs > 0 ? TimeSpan.FromMilliseconds(result.ElapsedMs)
-                : result.CompletedAt.HasValue && result.CompletedAt.Value > result.StartedAt ? result.CompletedAt.Value - result.StartedAt
+                : result.StartedAt != default && result.CompletedAt.HasValue && result.CompletedAt.Value > result.StartedAt ? result.CompletedAt.Value - result.StartedAt
                 : _engineElapsedTime > TimeSpan.Zero ? _engineElapsedTime : _stopwatch.Elapsed;
             ScanDurationFormatted = FormatDuration(elapsed);
             _lastScanStatus = result.Status;
@@ -280,7 +280,9 @@ namespace AegisPC.App.ViewModels
             {
                 ProgressPercentage = Math.Min(99, ProgressPercentage);
                 RemainingEtaFormatted = "Tarama başarısız";
-                CurrentFile = "Tarama başarısız";
+                CurrentFile = result.FailureInfo is { } failure
+                    ? $"Tarama başarısız: {failure.Stage} / {failure.Reason}; kayıt: {failure.CorrelationId}"
+                    : "Tarama başarısız";
             }
             ScannedCount = result.ScannedFiles;
             ScannedItemsFormatted = $"{ScannedCount:N0}";

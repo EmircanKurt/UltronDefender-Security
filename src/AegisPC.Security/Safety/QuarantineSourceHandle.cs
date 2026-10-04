@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Security.Principal;
 using Microsoft.Win32.SafeHandles;
 
 namespace AegisPC.Security.Safety;
@@ -12,16 +13,18 @@ internal sealed class QuarantineSourceHandle : IDisposable
 {
     public FileStream Stream { get; }
     public string FinalPath { get; }
+    /// <summary>Source owner from the same locked file object used for encryption and deletion.</summary>
+    public string OwnerSid { get; }
 
     public QuarantineSourceHandle(string path)
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("Handle-bound quarantine requires Windows.");
-        // GENERIC_READ | DELETE; share only reads. No writer or path replacement can
+        // GENERIC_READ | DELETE | READ_CONTROL; share only reads. No writer or path replacement can
         // slip between the vault snapshot and removal of this exact file object.
         if (path.Length >= 260 && !path.StartsWith(@"\\?\", StringComparison.Ordinal))
             path = path.StartsWith(@"\\", StringComparison.Ordinal) ? @"\\?\UNC\" + path[2..] : @"\\?\" + path;
-        var handle = CreateFileW(path, 0x80010000, 1, IntPtr.Zero, 3, 0x48200000, IntPtr.Zero);
+        var handle = CreateFileW(path, 0x80030000, 1, IntPtr.Zero, 3, 0x48200000, IntPtr.Zero);
         if (handle.IsInvalid)
         {
             int error = Marshal.GetLastWin32Error();
@@ -34,6 +37,7 @@ internal sealed class QuarantineSourceHandle : IDisposable
                 throw new IOException("Kaynak dosya özellikleri güvenle doğrulanamadı.", new Win32Exception(Marshal.GetLastWin32Error()));
             if ((attributes.Attributes & (uint)FileAttributes.ReparsePoint) != 0)
                 throw new IOException("Kaynak dosya bir reparse point; hedefe dokunulmadı.");
+            OwnerSid = ReadOwnerSid(handle);
             var name = new StringBuilder(1024);
             uint length = GetFinalPathNameByHandleW(handle, name, (uint)name.Capacity, 0);
             if (length >= name.Capacity)
@@ -65,6 +69,25 @@ internal sealed class QuarantineSourceHandle : IDisposable
     }
 
     public void Dispose() => Stream.Dispose();
+
+    private static string ReadOwnerSid(SafeFileHandle handle)
+    {
+        uint error = GetSecurityInfo(handle, 1, 1, out var owner, out _, out _, out _, out var descriptor);
+        try
+        {
+            if (error != 0 || owner == IntPtr.Zero)
+                throw new IOException("Source ownership could not be verified from the locked file handle.", new Win32Exception((int)error));
+            return new SecurityIdentifier(owner).Value;
+        }
+        finally { if (descriptor != IntPtr.Zero) LocalFree(descriptor); }
+    }
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern uint GetSecurityInfo(SafeFileHandle handle, int objectType, uint securityInformation,
+        out IntPtr owner, out IntPtr group, out IntPtr dacl, out IntPtr sacl, out IntPtr securityDescriptor);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr LocalFree(IntPtr memory);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FileDispositionInfo { [MarshalAs(UnmanagedType.Bool)] public bool DeleteFile; }

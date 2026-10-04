@@ -243,6 +243,12 @@
     <SolidColorBrush x:Key="BrushCloudLogo" Color="#3B82F6"/>
     <SolidColorBrush x:Key="BrushCloudCursor" Color="#60A5FA"/>
 
+    <!-- Vector robot colors use ordinary brushes without blur or shadow effects. -->
+    <SolidColorBrush x:Key="BrushRobotBody" Color="#3B82F6"/>
+    <SolidColorBrush x:Key="BrushRobotFace" Color="#0D0D0D"/>
+    <SolidColorBrush x:Key="BrushRobotDetail" Color="#93C5FD"/>
+    <SolidColorBrush x:Key="BrushRobotHover" Color="#193B82F6"/>
+
     <!-- ── 8. SCROLLBAR TOKENS (DARK) ── -->
     <Color x:Key="ColorScrollThumb">#4A4A4A</Color>
     <Color x:Key="ColorScrollThumbHover">#6B6B6B</Color>

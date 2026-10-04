@@ -1,0 +1,21 @@
+<Page x:Class="AegisPC.App.Views.UltronProtectionCentreView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Title="Ultron AI Koruma Merkezi" Background="{DynamicResource BrushAppBg}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="28" MaxWidth="940" HorizontalAlignment="Left">
+            <TextBlock Text="Ultron AI · Koruma Merkezi" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
+            <TextBlock Text="Yerel kanıt incelemesi · Sohbet veya indirilen model değildir" Margin="0,8,0,24" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}"/>
+            <Button Content="Güncel durumu yenile" Command="{Binding RefreshCommand}" HorizontalAlignment="Left" Margin="0,0,0,20"/>
+            <TextBlock Text="Gerçek zamanlı koruma" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
+            <TextBlock Text="{Binding ProtectionStatus}" TextWrapping="Wrap" Margin="0,8,0,8" Foreground="{DynamicResource BrushTextPrimary}"/>
+            <TextBlock Text="{Binding CoverageStatus}" TextWrapping="Wrap" Margin="0,0,0,24" Foreground="{DynamicResource BrushTextSecondary}"/>
+            <TextBlock Text="Kanıt ve karar" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
+            <TextBlock Text="{Binding EvidenceStatus}" TextWrapping="Wrap" Margin="0,8,0,8" Foreground="{DynamicResource BrushTextPrimary}"/>
+            <TextBlock Text="{Binding ActionStatus}" TextWrapping="Wrap" Margin="0,0,0,24" Foreground="{DynamicResource BrushTextSecondary}"/>
+            <TextBlock Text="Bağımsız Guardian" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
+            <TextBlock Text="{Binding GuardianStatus}" TextWrapping="Wrap" Margin="0,8,0,24" Foreground="{DynamicResource BrushTextPrimary}"/>
+            <TextBlock Text="Yüksek CPU, uzak bağlantı veya çökme tek başına malware değildir. Tema rengi tehlike göstergesi değildir. Müdahale hatası engelleme başarısı diye raporlanmaz." TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}"/>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

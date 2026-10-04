@@ -1,279 +1,195 @@
 using System;
 using System.Collections.ObjectModel;
-using System.IO;
-using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Threading;
 using AegisPC.App.Services;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Models;
 using AegisPC.Infrastructure.Configuration;
 using AegisPC.Security.RealTime;
+using AegisPC.ServiceContracts;
+using AegisPC.ServiceContracts.IpcMessages;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Win32;
 
-namespace AegisPC.App.ViewModels
+namespace AegisPC.App.ViewModels;
+
+/// <summary>Presents service-observed ransomware monitoring; it never owns local watchers or canaries.</summary>
+public partial class RansomwareShieldViewModel : ObservableObject, IDisposable
 {
-    public partial class RansomwareShieldViewModel : ObservableObject
+    private readonly IServiceIpcClient? _ipc;
+    private readonly IWindowsToastNotificationService? _toastService;
+    private readonly DispatcherTimer? _freshnessTimer;
+    private ProtectionStatus? _observedStatus;
+    private bool _disposed;
+
+    [ObservableProperty] private bool _isShieldEnabled;
+    [ObservableProperty] private bool _isStatusVerified;
+    [ObservableProperty] private string _shieldStatusText = "Fidye izleme durumu doğrulanmadı — koruma hizmeti gerekli";
+    [ObservableProperty] private string _toggleButtonText = "Hizmet Durumunu Yenile";
+    [ObservableProperty] private string _statusMessage = "Klasör ve izin yönetimi bu sürümde yetkili hizmet uç noktası olmadığı için kullanılamıyor.";
+    [ObservableProperty] private int _canaryFileCount;
+    [ObservableProperty] private int _protectedFolderCount;
+    [ObservableProperty] private int _totalBlockedCount;
+    [ObservableProperty] private string _canaryFileCountText = "Doğrulanmadı";
+    [ObservableProperty] private string _protectedFolderCountText = "Doğrulanmadı";
+    [ObservableProperty] private string _totalBlockedCountText = "Doğrulanmadı";
+    [ObservableProperty] private ObservableCollection<ProtectedFolder> _protectedFolders = new();
+    [ObservableProperty] private ObservableCollection<AllowedRansomwareApplication> _allowedApplications = new();
+    [ObservableProperty] private ObservableCollection<RansomwareEvent> _recentEvents = new();
+
+    /// <summary>Legacy engine/settings parameters are accepted for compatibility but are never read or started locally.</summary>
+    public RansomwareShieldViewModel(IRansomwareProtectionEngine? ransomwareEngine = null,
+        SettingsService? settingsService = null, IWindowsToastNotificationService? toastService = null,
+        IServiceIpcClient? ipcClient = null)
     {
-        private readonly IRansomwareProtectionEngine? _ransomwareEngine;
-        private readonly SettingsService? _settingsService;
-        private readonly IWindowsToastNotificationService? _toastService;
-
-        [ObservableProperty]
-        private bool _isShieldEnabled = true;
-
-        [ObservableProperty]
-        private ObservableCollection<ProtectedFolder> _protectedFolders = new();
-
-        [ObservableProperty]
-        private ObservableCollection<RansomwareEvent> _recentEvents = new();
-
-        [ObservableProperty]
-        private string _shieldStatusText = "Fidye Kalkanı Aktif (Tuzaklar ve İzleme Devrede)";
-
-        [ObservableProperty]
-        private string _toggleButtonText = "Kalkanı Kapat";
-
-        [ObservableProperty]
-        private int _canaryFileCount = 8;
-
-        [ObservableProperty]
-        private int _protectedFolderCount = 4;
-
-        public RansomwareShieldViewModel(
-            IRansomwareProtectionEngine? ransomwareEngine = null,
-            SettingsService? settingsService = null,
-            IWindowsToastNotificationService? toastService = null)
+        _ipc = ipcClient;
+        _toastService = toastService;
+        if (_ipc != null) _ipc.StatusChanged += ObserveStatus;
+        if (Application.Current?.Dispatcher is { } dispatcher)
         {
-            _ransomwareEngine = ransomwareEngine;
-            _settingsService = settingsService;
-            _toastService = toastService;
+            _freshnessTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background,
+                OnFreshnessTick, dispatcher);
+            _freshnessTimer.Start();
+        }
+        _ = RefreshStatusAsync();
+    }
 
-            InitializeFolders();
+    private void OnFreshnessTick(object? sender, EventArgs args)
+    {
+        if (!ServiceProtectionStatusPolicy.IsVerified(_ipc, _observedStatus)) MarkUnverified();
+    }
 
-            if (_settingsService != null)
-            {
-                IsShieldEnabled = _settingsService.Current.IsRansomwareShieldEnabled;
-            }
-            else if (_ransomwareEngine != null)
-            {
-                IsShieldEnabled = _ransomwareEngine.IsShieldActive;
-            }
+    private void ObserveStatus(ProtectionStatus status) => OnUi(() =>
+    {
+        if (_disposed) return;
+        _observedStatus = status;
+        if (!ServiceProtectionStatusPolicy.IsVerified(_ipc, status)) { MarkUnverified(); return; }
+        IsStatusVerified = true;
+        IsShieldEnabled = status.IsRansomwareShieldEnabled;
+        ProtectedFolderCount = Math.Max(0, status.RansomwareProtectedFolderCount ?? 0);
+        CanaryFileCount = Math.Max(0, status.RansomwareCanaryFileCount ?? 0);
+        TotalBlockedCount = Math.Max(0, status.RansomwareConfirmedContainments ?? 0);
+        ProtectedFolderCountText = FormatCount(status.RansomwareProtectedFolderCount);
+        CanaryFileCountText = FormatCount(status.RansomwareCanaryFileCount);
+        TotalBlockedCountText = FormatCount(status.RansomwareConfirmedContainments);
+        ShieldStatusText = IsShieldEnabled
+            ? status.Health!.State == ProtectionHealthState.Healthy
+                ? "Hizmetin kullanıcı modu fidye gözlemi etkin — ön-yazma engelleme değildir"
+                : "Hizmette fidye gözlemi etkin; koruma kapsamı kısmi veya kurtarılıyor"
+            : "Hizmetin fidye gözlemi devre dışı";
+        ToggleButtonText = IsShieldEnabled ? "İzlemeyi Kapat" : "İzlemeyi Etkinleştir";
+    });
 
-            UpdateStatusText();
+    private static string FormatCount(int? count) => count.HasValue && count.Value >= 0 ? count.Value.ToString() : "Doğrulanmadı";
 
-            if (_ransomwareEngine != null)
-            {
-                _ransomwareEngine.OnRansomwareAttemptDetected += OnRansomwareDetected;
-                if (IsShieldEnabled && !_ransomwareEngine.IsShieldActive)
-                {
-                    _ransomwareEngine.StartShield();
-                }
-                CanaryFileCount = _ransomwareEngine.CanaryFileCount;
-            }
+    private void MarkUnverified()
+    {
+        IsStatusVerified = false;
+        IsShieldEnabled = false;
+        CanaryFileCount = ProtectedFolderCount = TotalBlockedCount = 0;
+        CanaryFileCountText = ProtectedFolderCountText = TotalBlockedCountText = "Doğrulanmadı";
+        ShieldStatusText = "Fidye izleme durumu doğrulanmadı — güncel hizmet yanıtı gerekli";
+        ToggleButtonText = "Hizmet Durumunu Yenile";
+    }
+
+    private async Task RefreshStatusAsync()
+    {
+        if (_disposed) return;
+        try
+        {
+            if (_ipc?.IsConnected != true) { OnUi(MarkUnverified); return; }
+            ObserveStatus(await _ipc.GetStatusAsync());
+        }
+        catch (Exception exception)
+        {
+            Serilog.Log.Warning(exception, "Ransomware service observation could not be refreshed");
+            OnUi(() => { MarkUnverified(); StatusMessage = "Hizmet yanıtı doğrulanamadı; koruma durumu bilinmiyor."; });
+        }
+    }
+
+    [RelayCommand]
+    private async Task ToggleShieldAsync()
+    {
+        if (_disposed) return;
+        if (!ServiceProtectionStatusPolicy.IsVerified(_ipc, _observedStatus))
+        {
+            await RefreshStatusAsync();
+            OnUi(() => StatusMessage = IsStatusVerified ? "Hizmet durumu yenilendi; değiştirmek için tekrar seçin." : "Hizmet bağlı değil veya durumu doğrulanamadı; değişiklik yapılmadı.");
+            return;
         }
 
-        private void UpdateStatusText()
+        bool enabled = !_observedStatus!.IsRansomwareShieldEnabled;
+        try
         {
-            if (!IsShieldEnabled)
+            var status = await ServiceProtectionStatusPolicy.RequestChangeAsync(_ipc, ransomware: true, enabled);
+            ObserveStatus(status);
+            OnUi(() =>
             {
-                ShieldStatusText = "Fidye Kalkanı Devre Dışı";
-                ToggleButtonText = "Kalkanı Etkinleştir";
-            }
-            else if (ProtectedFolderCount == 0 && CanaryFileCount == 0)
-            {
-                ShieldStatusText = "Kalkan Hazır — Henüz Korumalı Klasör veya Yem Eklenmedi";
-                ToggleButtonText = "Kalkanı Devre Dışı Bırak";
-            }
-            else
-            {
-                ShieldStatusText = $"Fidye Kalkanı Aktif ({ProtectedFolderCount} Klasör, {CanaryFileCount} Tuzak Devrede)";
-                ToggleButtonText = "Kalkanı Devre Dışı Bırak";
-            }
-        }
-
-        [ObservableProperty]
-        private ObservableCollection<AllowedRansomwareApplication> _allowedApplications = new();
-
-        [ObservableProperty]
-        private int _totalBlockedCount;
-
-        private void InitializeFolders()
-        {
-            if (_ransomwareEngine != null)
-            {
-                var dirs = _ransomwareEngine.ProtectedDirectories;
-                var list = dirs.Select(d => new ProtectedFolder
-                {
-                    Name = new DirectoryInfo(d).Name,
-                    Path = d,
-                    IsProtected = true,
-                    SizeBytes = 0
-                }).ToList();
-
-                ProtectedFolders = new ObservableCollection<ProtectedFolder>(list);
-                ProtectedFolderCount = ProtectedFolders.Count;
-
-                var apps = _ransomwareEngine.AllowedApplications;
-                AllowedApplications = new ObservableCollection<AllowedRansomwareApplication>(apps);
-                TotalBlockedCount = _ransomwareEngine.TotalBlockedAttempts;
-            }
-            else
-            {
-                var user = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                var folders = new[]
-                {
-                    new ProtectedFolder { Name = "Belgeler", Path = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), IsProtected = true, SizeBytes = 1024L * 1024 * 500 },
-                    new ProtectedFolder { Name = "Masaüstü", Path = Environment.GetFolderPath(Environment.SpecialFolder.Desktop), IsProtected = true, SizeBytes = 1024L * 1024 * 100 },
-                    new ProtectedFolder { Name = "Resimler", Path = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), IsProtected = true, SizeBytes = 1024L * 1024 * 1200 },
-                    new ProtectedFolder { Name = "Videolar", Path = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), IsProtected = true, SizeBytes = 1024L * 1024 * 2500 }
-                }.Where(f => Directory.Exists(f.Path));
-
-                ProtectedFolders = new ObservableCollection<ProtectedFolder>(folders);
-                ProtectedFolderCount = ProtectedFolders.Count;
-            }
-        }
-
-        private void OnRansomwareDetected(object? sender, RansomwareAlertEventArgs e)
-        {
-            Application.Current?.Dispatcher?.InvokeAsync(() =>
-            {
-                TotalBlockedCount++;
-                RecentEvents.Insert(0, new RansomwareEvent
-                {
-                    Timestamp = e.Timestamp,
-                    ProcessName = !string.IsNullOrEmpty(e.OffendingProcessName) ? e.OffendingProcessName : "Şüpheli Süreç / İhlal",
-                    FilePath = e.OffendingFilePath,
-                    Action = e.ProcessTerminated ? "Süreç Durduruldu ve Engellendi" : "Erişim Engellendi"
-                });
-                while (RecentEvents.Count > 50)
-                {
-                    RecentEvents.RemoveAt(RecentEvents.Count - 1);
-                }
-
-                _toastService?.ShowToast(
-                    e.ProcessTerminated ? "🛑 Fidye Saldırısı Durduruldu!" : "⚠️ Korunan Klasör İhlali Engellendi!",
-                    $"{e.DetectionReason} (Dosya: '{Path.GetFileName(e.OffendingFilePath)}')",
-                    e.ProcessTerminated ? "Error" : "Warning");
+                StatusMessage = "Hizmetin fidye izleme durumu doğrulandı.";
+                _toastService?.ShowToast("Fidye İzleme", StatusMessage, "Info");
             });
         }
-
-        [RelayCommand]
-        private void ToggleShield()
+        catch (Exception exception)
         {
-            IsShieldEnabled = !IsShieldEnabled;
-            UpdateStatusText();
-
-            if (IsShieldEnabled)
-            {
-                _ransomwareEngine?.StartShield();
-                _toastService?.ShowToast("🛡️ Fidye Kalkanı Devrede", "Otomatik tuzak dosyalar ve Controlled Folder Access izleme aktif edildi.", "Success");
-            }
-            else
-            {
-                _ransomwareEngine?.StopShield();
-                _toastService?.ShowToast("⚠️ Fidye Kalkanı Kapatıldı", "Fidye yazılımı ve izinsiz şifreleme koruması devre dışı bırakıldı.", "Warning");
-            }
-
-            if (_settingsService != null)
-            {
-                _settingsService.Current.IsRansomwareShieldEnabled = IsShieldEnabled;
-                _ = _settingsService.SaveAsync();
-            }
-        }
-
-        [RelayCommand]
-        private void AddFolder()
-        {
-            var dialog = new OpenFolderDialog
-            {
-                Title = "Korunacak Klasörü Seçin"
-            };
-
-            if (dialog.ShowDialog() == true)
-            {
-                ProtectedFolders.Add(new ProtectedFolder
-                {
-                    Name = new DirectoryInfo(dialog.FolderName).Name,
-                    Path = dialog.FolderName,
-                    IsProtected = true,
-                    SizeBytes = 0
-                });
-                ProtectedFolderCount = ProtectedFolders.Count;
-                _ransomwareEngine?.AddProtectedDirectory(dialog.FolderName);
-            }
-        }
-
-        [RelayCommand]
-        private void RemoveFolder(ProtectedFolder folder)
-        {
-            if (folder != null)
-            {
-                ProtectedFolders.Remove(folder);
-                ProtectedFolderCount = ProtectedFolders.Count;
-                _ransomwareEngine?.RemoveProtectedDirectory(folder.Path);
-            }
-        }
-
-        [RelayCommand]
-        private void AddAllowedApp()
-        {
-            var dialog = new Microsoft.Win32.OpenFileDialog
-            {
-                Title = "Güvenilir Uygulama Seçin (.exe)",
-                Filter = "Çalıştırılabilir Dosyalar (*.exe)|*.exe|Tüm Dosyalar (*.*)|*.*"
-            };
-
-            if (dialog.ShowDialog() == true)
-            {
-                var exePath = dialog.FileName;
-                var appName = Path.GetFileNameWithoutExtension(exePath);
-
-                if (!AllowedApplications.Any(a => a.ExecutablePath.Equals(exePath, StringComparison.OrdinalIgnoreCase)))
-                {
-                    var app = new AllowedRansomwareApplication
-                    {
-                        ExecutablePath = exePath,
-                        ApplicationName = appName,
-                        Publisher = "Kullanıcı Tarafından Eklendi",
-                        IsSigned = false,
-                        IsSystemWhitelisted = false,
-                        AddedAt = DateTime.UtcNow
-                    };
-
-                    AllowedApplications.Add(app);
-                    _ransomwareEngine?.AddAllowedApplication(exePath, appName);
-                    _toastService?.ShowToast("✅ Uygulamaya İzin Verildi", $"'{appName}' korunan klasörlerde yazma erişimi için güvenilir listeye eklendi.", "Success");
-                }
-            }
-        }
-
-        [RelayCommand]
-        private void RemoveAllowedApp(AllowedRansomwareApplication app)
-        {
-            if (app != null)
-            {
-                AllowedApplications.Remove(app);
-                _ransomwareEngine?.RemoveAllowedApplication(app.ExecutablePath);
-                _toastService?.ShowToast("⚠️ İzin Kaldırıldı", $"'{app.ApplicationName}' güvenilir listeden çıkarıldı.", "Info");
-            }
+            Serilog.Log.Warning(exception, "Service-owned ransomware command was not acknowledged");
+            await RefreshStatusAsync();
+            OnUi(() => { StatusMessage = exception.Message; _toastService?.ShowToast("Durum Doğrulanamadı", StatusMessage, "Warning"); });
         }
     }
 
-    public class ProtectedFolder
+    [RelayCommand] private void AddFolder() => ReportManagementUnavailable();
+    [RelayCommand] private void RemoveFolder(ProtectedFolder? folder) => ReportManagementUnavailable();
+    [RelayCommand] private void AddAllowedApp() => ReportManagementUnavailable();
+    [RelayCommand] private void RemoveAllowedApp(AllowedRansomwareApplication? app) => ReportManagementUnavailable();
+
+    private void ReportManagementUnavailable()
     {
-        public string Path { get; set; } = string.Empty;
-        public string Name { get; set; } = string.Empty;
-        public bool IsProtected { get; set; }
-        public long SizeBytes { get; set; }
+        StatusMessage = "Yetkili hizmette klasör/izin yönetimi uç noktası bulunmuyor; hiçbir liste veya dosya değiştirilmedi.";
+        _toastService?.ShowToast("Yönetim Kullanılamıyor", StatusMessage, "Warning");
     }
 
-    public class RansomwareEvent
+    private void OnUi(Action action)
     {
-        public DateTime Timestamp { get; set; }
-        public string ProcessName { get; set; } = string.Empty;
-        public string FilePath { get; set; } = string.Empty;
-        public string Action { get; set; } = string.Empty;
+        if (_disposed) return;
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess()) dispatcher.InvokeAsync(() => { if (!_disposed) action(); });
+        else action();
     }
+
+    /// <summary>Removes UI metadata subscriptions without modifying service protection.</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        if (_ipc != null) _ipc.StatusChanged -= ObserveStatus;
+        _freshnessTimer?.Stop();
+    }
+}
+
+/// <summary>Detached folder display data; no UI instance grants filesystem protection.</summary>
+public class ProtectedFolder
+{
+    /// <summary>Display path.</summary>
+    public string Path { get; set; } = string.Empty;
+    /// <summary>Display name.</summary>
+    public string Name { get; set; } = string.Empty;
+    /// <summary>Observed protection only when backed by an authorized service list.</summary>
+    public bool IsProtected { get; set; }
+    /// <summary>Measured size, never a fabricated sample.</summary>
+    public long SizeBytes { get; set; }
+}
+
+/// <summary>Detached incident display data; a finding is not proof that an action succeeded.</summary>
+public class RansomwareEvent
+{
+    /// <summary>Observed incident time.</summary>
+    public DateTime Timestamp { get; set; }
+    /// <summary>Observed process label.</summary>
+    public string ProcessName { get; set; } = string.Empty;
+    /// <summary>Authorized display path.</summary>
+    public string FilePath { get; set; } = string.Empty;
+    /// <summary>Confirmed action description.</summary>
+    public string Action { get; set; } = string.Empty;
 }

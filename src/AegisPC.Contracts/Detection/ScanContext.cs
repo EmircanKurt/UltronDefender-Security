@@ -24,6 +24,10 @@ namespace AegisPC.Contracts.Detection
         public string FileName => Path.GetFileName(FilePath);
         public long FileSize { get; set; }
         public DateTime? LastWriteTimeUtc { get; set; }
+        /// <summary>Shares structural content identity computed from the caller's locked source, never filename trust.</summary>
+        public FileContentClassification? ContentClassification { get; set; }
+        /// <summary>Optional borrowed read-only source held by the caller until sequential detector evaluation completes; never disposed here.</summary>
+        public Stream? LockedContent { get; set; }
 
         public string? SHA256
         {
@@ -102,6 +106,7 @@ namespace AegisPC.Contracts.Detection
                 FileSize = FileSize,
                 SHA256 = _sha256,
                 LastWriteTimeUtc = LastWriteTimeUtc,
+                ContentClassification = ContentClassification,
                 SharedScan = this
             };
         }

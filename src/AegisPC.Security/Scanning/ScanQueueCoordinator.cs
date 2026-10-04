@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -174,6 +174,7 @@ namespace AegisPC.Security.Scanning
             _pauseEvent.Dispose();
         }
 
+        /// <summary>Processes every scoped file through the common scanner; fatal pipeline failures abort siblings and are rethrown after cleanup.</summary>
         public async Task<(int TotalFiles, int ScannedFiles, int SkippedFiles, int FailedFiles, int TimedOutFiles)> ExecuteScanQueueDetailedAsync(
             string targetPath,
             ScanType scanType,
@@ -184,6 +185,9 @@ namespace AegisPC.Security.Scanning
             CancellationToken cancellationToken)
         {
             ResetCounters();
+            using var abort = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cancellationToken = abort.Token;
+            ExceptionDispatchInfo? fatalFailure = null;
             int totalFiles = 0;
             int scannedFiles = 0;
             int skippedFiles = 0;
@@ -192,6 +196,8 @@ namespace AegisPC.Security.Scanning
 
             var resourceManager = _injectedResourceManager ?? new AdaptiveScanResourceManager(targetPath);
             Volatile.Write(ref _activeResourceManager, resourceManager);
+            try
+            {
             resourceManager.ConfigureTarget(targetPath);
             resourceManager.RefreshProfile();
             var activeProfile = resourceManager.ActiveProfile;
@@ -206,9 +212,28 @@ namespace AegisPC.Security.Scanning
 
             var queuedPaths = scanType != ScanType.Full ? new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase) : null;
 
+            void Abort(Exception exception)
+            {
+                if (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+                    exception = new InvalidOperationException("Scan pipeline cancelled without a requested scan cancellation.", exception);
+                Interlocked.CompareExchange(ref fatalFailure, ExceptionDispatchInfo.Capture(exception), null);
+                channel.Writer.TryComplete(exception);
+                try { abort.Cancel(); }
+                catch (AggregateException cancellationException)
+                { _logger?.LogWarning(cancellationException, "A scan abort callback failed; the original pipeline failure is retained."); }
+            }
+
+            void NotifyProgress(string filePath, int total, int scanned, int skipped, int failed, int timedOut)
+            {
+                try { reportProgressWithCounters(filePath, total, scanned, skipped, failed, timedOut); }
+                catch (Exception exception)
+                { _logger?.LogWarning(exception, "Scan progress observer failed; file analysis continues."); }
+            }
+
             async Task TryQueueFileAsync(string? filePath)
             {
-                if (string.IsNullOrWhiteSpace(filePath) || cancellationToken.IsCancellationRequested) return;
+                if (string.IsNullOrWhiteSpace(filePath)) return;
+                cancellationToken.ThrowIfCancellationRequested();
 
                 try
                 {
@@ -216,28 +241,8 @@ namespace AegisPC.Security.Scanning
 
                     if (queuedPaths == null || queuedPaths.TryAdd(filePath, 0))
                     {
-                        int curTot = Interlocked.Increment(ref totalFiles);
-
-                        // Content-Over-Extension: Uzantıdan önce içerik adaylığını doğrula.
-                        // Yalnızca PE ("MZ"), Script ("#!"), Arşiv ("PK", "7z", "RAR") veya aday uzantı İÇERMEYEN
-                        // gerçek güvenli medya/veri dosyaları atlanır.
-                        if (!ScanFilterPolicy.IsInspectableCandidate(filePath))
-                        {
-                            int curScn = Interlocked.Increment(ref scannedFiles);
-                            // DİKKAT: Güvenli medya veya veri dosyaları "imzalı temiz" (SignedClean) sayılamaz!
-                            // Yalnızca skippedFiles sayacını artır, sahte imzalı temiz telemetrisi üretme.
-                            int curSkp = Interlocked.Increment(ref skippedFiles);
-                            if (curTot % 20 == 0)
-                            {
-                                int curFail = Volatile.Read(ref failedFiles);
-                                int curTout = Volatile.Read(ref timedOutFiles);
-                                reportProgressWithCounters(filePath, curTot, curScn, curSkp, curFail, curTout);
-                            }
-                            return;
-                        }
-
-                        // Kural 27 gereğince: Oyun / repack klasör adı bazlı dosya atlama bypass'ı TAMAMEN KALDIRILDI.
-                        // Her çalıştırılabilir ikili dosya, script ve arşiv adilce kuyruğa yazılır.
+                        Interlocked.Increment(ref totalFiles);
+                        // Target scope is decided by the walker; only the common hash/content scanner can classify a file.
                         Interlocked.Increment(ref _pendingFiles);
                         try { await channel.Writer.WriteAsync(filePath, cancellationToken); }
                         catch
@@ -247,17 +252,15 @@ namespace AegisPC.Security.Scanning
                         }
                     }
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    // Tarama iptal edildiğinde beklenen durum
-                }
-                catch (ChannelClosedException)
-                {
-                    // Kanal kapatıldığında / iptal edildiğinde beklenen durum
+                    throw; // Stop the producer too, including a walker using the caller's original token.
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogTrace(ex, "Dosya kuyruğa eklenirken hata: {Path}", filePath);
+                    Abort(ex);
+                    _logger?.LogWarning(ex, "Queueing a scoped file failed: {Path}", filePath);
+                    throw;
                 }
             }
 
@@ -268,11 +271,11 @@ namespace AegisPC.Security.Scanning
                 {
                     await producerAction(TryQueueFileAsync);
                 }
-                catch (OperationCanceledException) { }
-                catch (ChannelClosedException) { }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
                 catch (Exception ex)
                 {
-                    _logger?.LogTrace(ex, "Producer task encountered an error.");
+                    Abort(ex);
+                    _logger?.LogWarning(ex, "Scan producer failed; remaining work is aborted.");
                 }
                 finally
                 {
@@ -306,10 +309,7 @@ namespace AegisPC.Security.Scanning
                             // Duraklatma etkinse kuyruktan yeni dosya çekmeyi hemen asenkron dondur
                             await WaitPauseAsync(cancellationToken);
 
-                            if (!channel.Reader.TryRead(out var filePath))
-                            {
-                                continue;
-                            }
+                            if (!channel.Reader.TryRead(out var filePath)) continue;
 
                             if (cancellationToken.IsCancellationRequested)
                             {
@@ -357,6 +357,8 @@ namespace AegisPC.Security.Scanning
                                     case FileScanOutcome.Skipped:
                                         Interlocked.Increment(ref skippedFiles);
                                         break;
+                                    default:
+                                        throw new InvalidOperationException("File scanner returned an unsupported outcome.");
                                 }
                             }
                             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -370,8 +372,10 @@ namespace AegisPC.Security.Scanning
                             }
                             catch (Exception ex)
                             {
-                                _logger?.LogTrace(ex, "Dosya taranırken hata: {Path}", filePath);
                                 Interlocked.Increment(ref failedFiles);
+                                Abort(ex);
+                                _logger?.LogWarning(ex, "File-analysis worker failed: {Path}", filePath);
+                                throw;
                             }
                             finally
                             {
@@ -415,15 +419,16 @@ namespace AegisPC.Security.Scanning
                                     int curSkp = Volatile.Read(ref skippedFiles);
                                     int curFail = Volatile.Read(ref failedFiles);
                                     int curTout = Volatile.Read(ref timedOutFiles);
-                                    reportProgressWithCounters(filePath, curTot, currentScanned, curSkp, curFail, curTout);
+                                    NotifyProgress(filePath, curTot, currentScanned, curSkp, curFail, curTout);
                                 }
                             }
                         }
                     }
-                    catch (OperationCanceledException) { }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
                     catch (Exception ex)
                     {
-                        _logger?.LogTrace(ex, "Worker task exited.");
+                        Abort(ex);
+                        _logger?.LogWarning(ex, "Scan worker exited with a fatal pipeline failure.");
                     }
                 }, cancellationToken));
             }
@@ -433,7 +438,12 @@ namespace AegisPC.Security.Scanning
             {
                 await Task.WhenAll(workerTasks);
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+            }
+            catch (Exception exception)
+            {
+                Interlocked.CompareExchange(ref fatalFailure, ExceptionDispatchInfo.Capture(exception), null);
+            }
             finally
             {
                 Volatile.Write(ref _activeResourceManager, null);
@@ -441,9 +451,16 @@ namespace AegisPC.Security.Scanning
                 // Yerel oluşturulan kaynak yöneticisi güvenle kapatılır
                 if (_injectedResourceManager == null && resourceManager is IDisposable disp)
                 {
-                    disp.Dispose();
+                    try { disp.Dispose(); }
+                    catch (Exception exception)
+                    {
+                        Interlocked.CompareExchange(ref fatalFailure, ExceptionDispatchInfo.Capture(exception), null);
+                        _logger?.LogWarning(exception, "Scan resource cleanup failed.");
+                    }
                 }
             }
+
+            fatalFailure?.Throw();
 
             return (
                 Volatile.Read(ref totalFiles),

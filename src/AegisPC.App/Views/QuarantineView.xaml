@@ -411,7 +411,7 @@
                                         Command="{Binding DataContext.QuarantineSourceFileCommand, RelativeSource={RelativeSource AncestorType=Page}}"
                                         CommandParameter="{Binding}"
                                         Style="{StaticResource DangerActionButtonStyle}" Margin="0,0,10,0" Padding="16,8"/>
-                                <Button Content="Çözüldü Olarak İşaretle" 
+                                <Button Content="İncelendi olarak işaretle"
                                         Command="{Binding DataContext.RemediateIncidentCommand, RelativeSource={RelativeSource AncestorType=Page}}"
                                         CommandParameter="{Binding}"
                                         Style="{StaticResource SecondaryButtonStyle}" Padding="14,8"/>

@@ -73,6 +73,7 @@ namespace AegisPC.Security.Detection.Detectors
                         RuleName = "Trust.KnownGoodHash",
                         Description = "Doğrulanmış Güvenilir Dosya Özeti (Known Trusted Hash)",
                         ScoreContribution = -100,
+                        TrustKind = EvidenceTrustKind.KnownTrustedHash,
                         Confidence = EvidenceConfidence.Absolute,
                         FilePath = context.FilePath,
                         SHA256 = context.SHA256

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Models;
+using AegisPC.Core.Helpers;
 using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.RealTime
@@ -52,11 +54,10 @@ namespace AegisPC.Security.RealTime
     }
 
     /// <summary>
-    /// Windows Controlled Folder Access modeli, Canary tuzakları, kitle modifikasyon anomalisi ve
-    /// entropi delta analizine sahip tam teşekküllü Fidye Yazılımı Savunma Orkestratörü.
-    /// Modüler mimaride CanaryTrapManager, EntropyBurstDetector, ProtectedFolderGate ve RansomwareEnforcementHandler bileşenlerini koordine eder.
+    /// Coordinates user-mode canary, entropy and file-change observations on explicit local roots.
+    /// Heuristic observations are not confirmed malware, attributed attacker activity or kernel Controlled Folder Access.
     /// </summary>
-    public class RansomwareProtectionEngine : IRansomwareProtectionEngine, IDisposable
+    public class RansomwareProtectionEngine : IRansomwareProtectionEngine, IRansomwareCoverageProvider, IDisposable
     {
         private readonly ICanaryTrapManager _canaryManager;
         private readonly IEntropyBurstDetector _entropyBurstDetector;
@@ -67,9 +68,16 @@ namespace AegisPC.Security.RealTime
 
         private readonly List<FileSystemWatcher> _watchers = new();
         private bool _isActive;
+        private bool _coverageGap;
+        private bool _rootResolutionIncomplete;
         private readonly object _lock = new();
 
-        public bool IsShieldActive => _isActive;
+        public bool IsShieldActive { get { lock (_lock) return _isActive && _watchers.Count > 0; } }
+        /// <summary>Samples active user-mode observers and historical unresolved loss, not pre-write blocking.</summary>
+        public RansomwareCoverageSnapshot CaptureRansomwareCoverage()
+        { lock (_lock) return new(_watchers.Count, _coverageGap || _rootResolutionIncomplete); }
+        /// <summary>Retains profile resolution gaps separately from watcher failure or requested enabled state.</summary>
+        public void SetRootResolutionIncomplete(bool incomplete) { lock (_lock) _rootResolutionIncomplete = incomplete; }
         public int CanaryFileCount => _canaryManager.CanaryFileCount;
         public int TotalBlockedAttempts => _enforcementHandler.TotalBlockedAttempts;
         public IReadOnlyList<string> ProtectedDirectories => _folderGate.ProtectedDirectories;
@@ -119,21 +127,29 @@ namespace AegisPC.Security.RealTime
             {
                 if (_isActive) return;
                 _isActive = true;
+                _coverageGap = false;
 
-                _canaryManager.DeployCanaries(_folderGate.ProtectedDirectories);
+                var localRoots = GetEligibleProtectionRoots();
+                try { _canaryManager.DeployCanaries(localRoots); }
+                catch (Exception exception)
+                {
+                    _isActive = false;
+                    _coverageGap = true;
+                    _logger?.LogWarning(exception, "Ransomware canary initialization failed; observation did not become active.");
+                    throw;
+                }
 
-                foreach (var dir in _folderGate.ProtectedDirectories)
+                foreach (var dir in localRoots)
                 {
                     try
                     {
-                        if (!Directory.Exists(dir)) continue;
+                        if (!Directory.Exists(dir)) { _coverageGap = true; continue; }
 
                         var watcher = new FileSystemWatcher(dir)
                         {
                             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
                             IncludeSubdirectories = true,
-                            InternalBufferSize = 32768,
-                            EnableRaisingEvents = true
+                            InternalBufferSize = 32768
                         };
 
                         watcher.Renamed += OnFileRenamed;
@@ -142,23 +158,35 @@ namespace AegisPC.Security.RealTime
                         watcher.Created += OnFileCreated;
                         watcher.Error += (s, e) =>
                         {
-                            try
+                            lock (_lock)
                             {
-                                watcher.EnableRaisingEvents = false;
-                                watcher.EnableRaisingEvents = true;
+                                if (!_isActive || !_watchers.Contains(watcher)) return;
+                                _coverageGap = true;
+                                _logger?.LogWarning(e.GetException(), "Ransomware file events were lost; continuity remains partial.");
+                                try { watcher.EnableRaisingEvents = false; watcher.EnableRaisingEvents = true; }
+                                catch (Exception exception) { _logger?.LogWarning(exception, "Ransomware observer could not restart."); }
                             }
-                            catch { }
                         };
 
                         _watchers.Add(watcher);
+                        try { watcher.EnableRaisingEvents = true; }
+                        catch { _watchers.Remove(watcher); watcher.Dispose(); throw; }
                     }
                     catch (Exception ex)
                     {
+                        _coverageGap = true;
                         _logger?.LogTrace(ex, "Failed to start ransomware watcher for {Dir}", dir);
                     }
                 }
 
-                _logger?.LogInformation("Ransomware Defense Engine activated across {Count} directories with {Canaries} canary decoys.", _folderGate.ProtectedDirectories.Count, _canaryManager.CanaryFileCount);
+                if (_watchers.Count == 0)
+                {
+                    _isActive = false; // A later explicit enable must be able to retry after the roots become available.
+                    _coverageGap = true;
+                    try { _canaryManager.CleanupCanaries(); }
+                    catch (Exception exception) { _logger?.LogWarning(exception, "Inactive ransomware observer canaries could not be cleaned up."); }
+                }
+                _logger?.LogInformation("Ransomware observers registered across {Count} roots with {Canaries} canaries; coverage gap {Gap}. This is not kernel Controlled Folder Access.", _watchers.Count, _canaryManager.CanaryFileCount, _coverageGap);
             }
         }
 
@@ -231,6 +259,7 @@ namespace AegisPC.Security.RealTime
 
         private void OnFileCreated(object sender, FileSystemEventArgs e)
         {
+            if (!AcceptImplicitFileEvent(e.FullPath)) return;
             CheckControlledFolderAccess(e.FullPath, "Yeni dosya oluşturuldu");
             _entropyBurstDetector.CheckRansomwareBurst(e.FullPath, "Yeni dosya oluşturuldu", (path, reason, score) =>
                 EvaluateAndContainThreatAsync(path, reason, score));
@@ -238,6 +267,7 @@ namespace AegisPC.Security.RealTime
 
         private void OnFileRenamed(object sender, RenamedEventArgs e)
         {
+            if (!AcceptImplicitFileEvent(e.FullPath) || !AcceptImplicitFileEvent(e.OldFullPath)) return;
             var newExt = Path.GetExtension(e.FullPath).ToLowerInvariant();
 
             if (_entropyBurstDetector.IsKnownRansomwareExtension(newExt))
@@ -260,6 +290,7 @@ namespace AegisPC.Security.RealTime
 
         private void OnFileModified(object sender, FileSystemEventArgs e)
         {
+            if (!AcceptImplicitFileEvent(e.FullPath)) return;
             if (_canaryManager.IsCanaryPath(e.FullPath))
             {
                 _ = EvaluateAndContainThreatAsync(e.FullPath, "🚨 Kritik Tuzak İhlali: Kalkan Canary dosyası izinsiz değiştirildi!", riskScore: 100);
@@ -311,6 +342,7 @@ namespace AegisPC.Security.RealTime
         private void OnFileDeleted(object sender, FileSystemEventArgs e)
         {
             if (_canaryManager.IsCleaningUpCanaries) return;
+            if (!AcceptImplicitFileEvent(e.FullPath)) return;
 
             if (_canaryManager.IsCanaryPath(e.FullPath))
             {
@@ -324,7 +356,7 @@ namespace AegisPC.Security.RealTime
                     {
                         if (_isActive)
                         {
-                            _canaryManager.DeployCanaries(_folderGate.ProtectedDirectories);
+                            _canaryManager.DeployCanaries(GetEligibleProtectionRoots());
                         }
                     }
                 });
@@ -339,6 +371,27 @@ namespace AegisPC.Security.RealTime
         {
             StopShield();
             _entropyBurstDetector.Dispose();
+        }
+
+        private string[] GetEligibleProtectionRoots()
+        {
+            var declaredRoots = _folderGate.ProtectedDirectories;
+            var localRoots = declaredRoots.Where(path => ImplicitLocalPathPolicy.IsEligible(path)).ToArray();
+            if (localRoots.Length != declaredRoots.Count)
+            {
+                _coverageGap = true;
+                _logger?.LogWarning("Non-local or reparse ransomware roots were not opened; coverage is partial.");
+            }
+            return localRoots;
+        }
+
+        private bool AcceptImplicitFileEvent(string path)
+        {
+            lock (_lock) if (!_isActive) return false;
+            if (ImplicitLocalPathPolicy.IsEligible(path)) return true;
+            lock (_lock) _coverageGap = true;
+            _logger?.LogWarning("An implicit ransomware event path was not opened; observer coverage is partial.");
+            return false;
         }
     }
 }

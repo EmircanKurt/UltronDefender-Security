@@ -1,5 +1,32 @@
 # 📋 FEATURE STATUS MATRIX — ULTRON DEFENDER TOTAL SECURITY
 
+## Ücretsiz sürüm / AI doğrulaması — 2026-10-04
+
+Sabit örnek PRO anahtarı/süre/kopyalama komutu kaldırıldı; ödeme/aktivasyon kapısı eklenmedi. Teknik koruma hizmeti ve şifreleme/güncelleme anahtarları korundu. Release0/0; son normal kullanıcı Review939geçti/1VMskip/0fail, içindeki69AI/politika/tercih vakası ve2ücretsiz-sunum regresyonu geçti. Bunlar canlı AV etkinliği değildir. GitHub bağlantısı ve depo push/admin izni doğrulandı; kaynak değişiklikleri kullanıcı onayıyla ayrı taslak PR'da incelenir. Main birleştirme yapılana kadar eski iddiaları taşır; CI sonucu yerel test sonucu değildir. [Kanıt ve kapsam](../research/FREE_EDITION_AI_REVIEW_2026-10-04.md).
+
+## Ultron AI güncel dilimi — 2026-10-04
+
+Aynı gün sonraki UI/işlev dilimi: AI yerel inceleme anahtarı iki onaylı ve servis onaylı, global kalıcı tercih eşitlemesi; mouse wheel viewport ve event routing düzeltildi, sağlayıcısız scan logging bağlandı. Yeni57/57, seçili Review937 geçti/1 VMskip, Trust35/35; Release0/0. **Bu bilgisayarda beklenen Ultron hizmeti salt-okunur sorguda bulunamadı; gerçek zamanlı koruma etkin denmez.** Güncel kaynak ayrı unsigned artifact'tır; kurulum yapılmadı. Taramanın asıl runtime Failed sebebi hâlâ bilinmiyor. [Kanıt/tespit/ayrı yayın](../research/ULTRON_AI_SHIELD_UI_FIXES_2026-10-04.md).
+
+P0 davranış/AI/scan arızaları, DB readiness ve fidye enable ortak kök çözümleme kaynak düzeyinde düzeltildi; Review 880 geçti/1 VM yetki testi atlandı, Trust35/35, Release0/0. Robot tema/klavye/DPI/lifecycle inert testleri ve offscreen render geçti. Yerel karar/permit/receipt/24h preference/sağlık çekirdeği testlidir; **tüm native işlemlerin merkezi sahibi değildir**. Guardian ayrı source-pilot EXE; solution'a dahil, installer/RT/fidye/vault devri, IPC ve otomatik acil müdahale kapalı. [Kanıt ve açık kapılar](../research/ULTRON_AI_CHIEF_PHASE1_2026-10-04.md). Aşağıdaki önceki test sayıları tarihsel kalır.
+
+## Güncel kaynak uygulaması — 2026-10-04
+
+Bu bölüm eski `ACTIVE/VERIFIED` ifadelerinin yerine geçer. [Kaynak, güvenli test kanıtları ve kalan yayın kapıları](../research/ULTRON_RT_USB_IMPLEMENTATION_2026-10-04.md).
+
+| Yetenek | Bu dilimde durum | Açık sınır |
+| --- | --- | --- |
+| RT/servis sağlığı | Kaynak + seçili benign regresyon; 5 sn örnek/15 sn bayatlık | Seçili post-operation kullanıcı-modu gözlem; kurulu SYSTEM/ETW pilotu yok. |
+| Fidye gözlemi | Servis tek sahip, UI onaylı durum; score/PID yalnız gözlem | Legacy API otomatik Kill/quarantine yapmaz; gerçek actor/action kanıtı ve hasar hesabı yok. |
+| Kasa | SID/ACL, lease, mükerrer ve yedekli migration/streaming motor | UI restore/manual quarantine fail-closed; karşılıklı doğrulanmış kullanıcı-I/O taşıması ve çok kullanıcı VM testi eksik. |
+| İçerik sınıflandırma | Yapı doğrulamalı PE/ZIP/JAR/OOXML/PDF/görsel/betik adayları | Tür tanımak temiz değil; parser/bütçe eksikleri partial/unknown. |
+| USB/disk/HID | Register-first metadata, bus/parent, volume GUID + nesil, mevcut dosya taraması | Fiziksel pilot yok; firmware doğrulama, ilk tuş engelleme ve beklenen aygıt tercihi yok. |
+| Tam/hızlı tarama | Tek dosya/yerel volume ve SYSTEM profile coverage | Disk başına adil bounded manuel kuyruk, temsilî hız ve peak bellek kapısı yok. |
+| Standart kullanıcı bildirimi | Makine-geneli özel yollar gönderilmez | Kendi RT tehditlerine OwnerSid tabanlı yönlendirme eksik. |
+| Güncelleme/dağıtım | Deneysel kaynak | Üretim imza/replay/rollback, .NET geçişi ve imzalı Win10/11 pilotu tamamlanmadı; Defender kapatılmaz. |
+
+Son test/derleme sayıları raporda tutulur. Bu kaynak dilimi kurulu masaüstü EXE/servise veya GitHub'a henüz yayımlanmış sayılmaz.
+
 ## Güncel inceleme — 2026-09-27
 
 3.2.1 ek kanıt: Release335/335 seçili karma regresyon; son installer kaynak testi7/7; App/Service/Helper self-contained win-x64 publish ve Inno EXE derlemesi. Kurulum çalıştırılmadı; kernel/Defender doğrulaması değildir. Raporlar, istisna reload+SHA, gerçekCPU/RSS, nominal16GB AutoHigh ve JAR ortak hub geliştirildi. Bilinmeyen masaüstü **AFK** ertelenir; açıkça etkinleştirilen **saatli** tarama Low modda çalışabilir. [Yeni kanıt ve sınırlar](../research/WORKFLOW_REVIEW_2026-09-27.md).

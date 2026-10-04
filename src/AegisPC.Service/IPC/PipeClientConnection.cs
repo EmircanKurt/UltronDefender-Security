@@ -19,6 +19,8 @@ internal sealed class PipeClientConnection : IDisposable
 
     /// <summary>True only after a command's OS caller identity is authorized for machine-wide controls.</summary>
     public bool MayReceiveMachineThreats { get; set; }
+    /// <summary>Cancellation shared by this connection and service shutdown.</summary>
+    public CancellationToken LifetimeToken => _lifetime.Token;
 
     /// <summary>Creates a writer pump whose shutdown is tied to the service and this connection.</summary>
     public PipeClientConnection(StreamWriter writer, Stream pipe, ILogger logger, CancellationToken stoppingToken)
@@ -61,6 +63,7 @@ internal sealed class PipeClientConnection : IDisposable
         }
         finally
         {
+            _lifetime.Cancel();
             _outbound.Writer.TryComplete();
             try { await writer.DisposeAsync().ConfigureAwait(false); }
             catch (Exception exception) { logger.LogDebug(exception, "IPC writer cleanup failed after disconnect."); }

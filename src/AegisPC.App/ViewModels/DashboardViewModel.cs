@@ -19,6 +19,9 @@ namespace AegisPC.App.ViewModels
             _threatNotificationTimer?.Dispose();
             _uptimeTimer?.Dispose();
             _dailyStatsDebounceTimer?.Dispose();
+            _protectionHealthTimer?.Dispose();
+            if (_ipcClient != null) _ipcClient.StatusChanged -= OnServiceStatusChanged;
+            if (_ipcClient is AegisPC.ServiceContracts.IDeviceNoticeClient devices) devices.DeviceObserved -= OnDeviceObserved;
         }
         private readonly IPerformanceMonitor? _performanceMonitor;
         private readonly IProcessMonitor? _processMonitor;
@@ -57,18 +60,18 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty] private string protectionUptimeText = "0 sn";
 
         // Status Banner Hero
-        [ObservableProperty] private string shortSummary = "Cihazınız ve kişisel verileriniz Ultron Defender tarafından gerçek zamanlı korunuyor.";
-        [ObservableProperty] private string protectionStatusText = "Sisteminiz güvende";
-        [ObservableProperty] private string protectionBadgeText = "Gerçek zamanlı koruma aktif";
-        [ObservableProperty] private string protectionStatusColor = "#4CAF50"; // Bitdefender Safe Green
-        [ObservableProperty] private string protectionStatusSymbol = "ShieldCheckmark24";
+        [ObservableProperty] private string shortSummary = "Koruma kapsamı ve hizmet bağlantısı doğrulanıyor.";
+        [ObservableProperty] private string protectionStatusText = "Koruma henüz doğrulanmadı";
+        [ObservableProperty] private string protectionBadgeText = "Hizmet durumunu bekliyor";
+        [ObservableProperty] private string protectionStatusColor = "#F5A623";
+        [ObservableProperty] private string protectionStatusSymbol = "ShieldAlert24";
         [ObservableProperty] private bool hasThreatsDetected = false;
         [ObservableProperty] private string threatActionText = "Tehditleri İncele";
-        [ObservableProperty] private bool isServiceConnected = true;
-        [ObservableProperty] private bool isRealTimeProtectionActive = true;
+        [ObservableProperty] private bool isServiceConnected = false;
+        [ObservableProperty] private bool isRealTimeProtectionActive = false;
         [ObservableProperty] private int threatsBocked24h = 0;
-        [ObservableProperty] private string signatureDbVersion = "v2026.08.24 (Güncel)";
-        [ObservableProperty] private string engineArchitectureText = "Heuristik + AMSI + ETW Aktif";
+        [ObservableProperty] private string signatureDbVersion = "Güncelleme durumu doğrulanmadı";
+        [ObservableProperty] private string engineArchitectureText = "Modül kapsamı doğrulanıyor";
         [ObservableProperty] private string themeButtonText = AegisPC.App.Services.AppThemeManager.IsDarkMode ? "Gündüz Modu" : "Gece Modu";
 
         // Interactive Feature 1: Ransomware Remediation Banner
@@ -99,10 +102,8 @@ namespace AegisPC.App.ViewModels
 
 
 
-        // Interactive Feature 4: Device & License Modal
+        // Interactive Feature 4: Device Modal
         [ObservableProperty] private bool showDeviceModal = false;
-        [ObservableProperty] private string licenseKey = "ULT-9842-X781-PRO";
-        [ObservableProperty] private string licenseExpires = "365 Gün Kaldı (18.08.2027)";
 
 
 
@@ -117,14 +118,14 @@ namespace AegisPC.App.ViewModels
         // Real-Time Protection Live Activity Telemetry
         public System.Collections.ObjectModel.ObservableCollection<AegisPC.Security.RealTime.RealTimeActivityEvent> LiveActivities { get; } = new();
         public System.Collections.ObjectModel.ObservableCollection<string> WatchedLocationsList { get; } = new();
-        [ObservableProperty] private string realTimeHealthStatus = "Aktif";
-        [ObservableProperty] private string realTimeHealthMessage = "Tüm güvenlik modülleri aktif ve izleniyor";
-        [ObservableProperty] private string realTimeHealthColor = "#35D07F";
-        [ObservableProperty] private string watcherStatusText = "Çalışıyor";
-        [ObservableProperty] private string scannerStatusText = "Normal";
-        [ObservableProperty] private string quarantineStatusText = "Normal";
-        [ObservableProperty] private string eventQueueStatusText = "Normal";
-        [ObservableProperty] private string lastEventTimeAgo = "Aktif";
+        [ObservableProperty] private string realTimeHealthStatus = "Doğrulanmadı";
+        [ObservableProperty] private string realTimeHealthMessage = "Koruma hizmetinden güncel durum bekleniyor";
+        [ObservableProperty] private string realTimeHealthColor = "#F5A623";
+        [ObservableProperty] private string watcherStatusText = "Doğrulanmadı";
+        [ObservableProperty] private string scannerStatusText = "Doğrulanmadı";
+        [ObservableProperty] private string quarantineStatusText = "Hizmet gerekli";
+        [ObservableProperty] private string eventQueueStatusText = "Doğrulanmadı";
+        [ObservableProperty] private string lastEventTimeAgo = "Henüz olay yok";
 
         // Startup Security Sweep Live State
         public System.Collections.ObjectModel.ObservableCollection<AegisPC.Contracts.Services.StartupSweepFinding> StartupSweepFindings { get; } = new();
@@ -182,30 +183,9 @@ namespace AegisPC.App.ViewModels
             _settingsService = settingsService;
             Current = this;
 
-            // Initialize ransomware protection state
-            if (_settingsService != null)
-            {
-                isRansomwareEnabled = _settingsService.Current.IsRansomwareShieldEnabled;
-            }
-            else if (_ransomwareEngine != null)
-            {
-                isRansomwareEnabled = _ransomwareEngine.IsShieldActive;
-            }
-            else
-            {
-                isRansomwareEnabled = true;
-            }
-
-            if (isRansomwareEnabled && _ransomwareEngine != null && !_ransomwareEngine.IsShieldActive)
-            {
-                try
-                {
-                    _ransomwareEngine.StartShield();
-                }
-                catch { }
-            }
-
-            UpdateRansomwareStateTexts(isRansomwareEnabled);
+            // A desired local setting is not observed SYSTEM-service state. Never start a UI-owned shield.
+            isRansomwareEnabled = false;
+            UpdateRansomwareStateTexts(false);
 
             if (_startupSweepService != null)
             {
@@ -359,24 +339,7 @@ namespace AegisPC.App.ViewModels
                     });
                 };
 
-                _realTimeEngine.OnProtectionHealthChanged += (healthy, msg) =>
-                {
-                    Application.Current?.Dispatcher?.InvokeAsync(() =>
-                    {
-                        RealTimeHealthStatus = healthy ? "Aktif" : "Kısıtlı";
-                        RealTimeHealthMessage = msg;
-                        RealTimeHealthColor = healthy ? "#4CAF50" : "#C41E1E";
-                        WatcherStatusText = healthy ? "Çalışıyor" : "Kısıtlı";
-                        IsRealTimeProtectionActive = healthy;
-                        UpdateProtectionUptime();
-                    });
-                };
-
-                // Populate watched locations
-                foreach (var loc in _realTimeEngine.WatchedLocations)
-                {
-                    WatchedLocationsList.Add(loc);
-                }
+                // Local read-only scan telemetry must not overwrite service-owned protection health.
             }
 
             if (_scanCoordinator != null)
@@ -465,15 +428,11 @@ namespace AegisPC.App.ViewModels
 
             if (_ipcClient != null)
             {
-                _ipcClient.StatusChanged += (s) =>
-                {
-                    Application.Current?.Dispatcher?.InvokeAsync(() =>
-                    {
-                        IsServiceConnected = true;
-                        ThreatsBocked24h = s.TotalThreatsBlocked24h;
-                    });
-                };
+            _ipcClient.StatusChanged += OnServiceStatusChanged;
+            if (_ipcClient is AegisPC.ServiceContracts.IDeviceNoticeClient devices) devices.DeviceObserved += OnDeviceObserved;
             }
+            _protectionHealthTimer = new Timer(_ => CheckProtectionFreshness(), null,
+                TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
 
             if (_performanceMonitor != null)
             {
@@ -500,24 +459,10 @@ namespace AegisPC.App.ViewModels
 
         partial void OnIsRansomwareEnabledChanged(bool value)
         {
-            if (value)
-            {
-                _ransomwareEngine?.StartShield();
-                UpdateRansomwareStateTexts(true);
-                TriggerToast("Fidye Kalkanı Devrede! Canary yem tuzakları ve dosya şifreleme izleme motoru aktif.", "Success");
-            }
-            else
-            {
-                _ransomwareEngine?.StopShield();
-                UpdateRansomwareStateTexts(false);
-                TriggerToast("Fidye Kalkanı Devre Dışı Bırakıldı.", "Warning");
-            }
-
-            if (_settingsService != null)
-            {
-                _settingsService.Current.IsRansomwareShieldEnabled = value;
-                _ = _settingsService.SaveAsync();
-            }
+            if (_applyingServiceStatus) return;
+            _ = RequestProtectionCommandAsync(value
+                ? AegisPC.ServiceContracts.IpcMessages.ServiceCommandType.EnableRansomwareShield
+                : AegisPC.ServiceContracts.IpcMessages.ServiceCommandType.DisableRansomwareShield, value);
         }
 
         private void UpdateRansomwareStateTexts(bool active)
@@ -527,8 +472,8 @@ namespace AegisPC.App.ViewModels
                 RansomwareStatusText = "Açık";
                 RansomwareActionText = "Korumalı";
                 RansomwareStatusColor = "#4CAF50";
-                RansomwareTitle = "Fidye Kalkanı Devrede (Tam Koruma)";
-                RansomwareDescription = "Belgelerinizi ve resimlerinizi şifreleme girişimlerine karşı korur.";
+                RansomwareTitle = "Fidye gözlemi hizmette etkin";
+                RansomwareDescription = "Kullanıcı modu gözlemi; zarar oluşmadan engelleme garantisi değildir.";
             }
             else
             {
@@ -601,8 +546,8 @@ namespace AegisPC.App.ViewModels
                         HasThreatsDetected = false;
                         ProtectionStatusText = "İncelenen içerikte aktif bulgu yok";
                         ProtectionBadgeText = "Koruma durumu ayrıca doğrulanır";
-                        ProtectionStatusColor = "#4CAF50";
-                        ProtectionStatusSymbol = "ShieldCheckmark24";
+                        ProtectionStatusColor = IsRealTimeProtectionActive ? "#4CAF50" : "#F5A623";
+                        ProtectionStatusSymbol = IsRealTimeProtectionActive ? "ShieldCheckmark24" : "ShieldAlert24";
                         PendingFindingsCount = 0;
                     }
                 }

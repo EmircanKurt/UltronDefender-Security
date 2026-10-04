@@ -37,6 +37,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{56F822BF
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AegisPC.Tests", "tests\AegisPC.Tests\AegisPC.Tests.csproj", "{4D40FBFB-5D10-4E14-A3B1-4A797BF986A6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AegisPC.Guardian", "src\AegisPC.Guardian\AegisPC.Guardian.csproj", "{D58A1B76-2E51-41F8-A709-71D45268F10B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -46,6 +48,10 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D58A1B76-2E51-41F8-A709-71D45268F10B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D58A1B76-2E51-41F8-A709-71D45268F10B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D58A1B76-2E51-41F8-A709-71D45268F10B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D58A1B76-2E51-41F8-A709-71D45268F10B}.Release|Any CPU.Build.0 = Release|Any CPU
 		{CD8ADFE8-8E05-49B0-AD24-2BE4EAA1FBEE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{CD8ADFE8-8E05-49B0-AD24-2BE4EAA1FBEE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CD8ADFE8-8E05-49B0-AD24-2BE4EAA1FBEE}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -104,6 +110,7 @@ Global
 		{9DA5A831-DEB0-4A59-AC1F-CFBAEEA0074F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{D58A1B76-2E51-41F8-A709-71D45268F10B} = {A3A1980F-2C8C-429C-A18A-EA2AD361EC94}
 		{CD8ADFE8-8E05-49B0-AD24-2BE4EAA1FBEE} = {A3A1980F-2C8C-429C-A18A-EA2AD361EC94}
 		{EB1C8BA0-902D-4F74-9450-8A265CA97559} = {A3A1980F-2C8C-429C-A18A-EA2AD361EC94}
 		{2ABD36C6-EC49-4D17-9632-578430C6AA8B} = {A3A1980F-2C8C-429C-A18A-EA2AD361EC94}

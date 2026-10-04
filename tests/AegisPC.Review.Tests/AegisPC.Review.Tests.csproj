@@ -10,6 +10,23 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ReviewTestDependencies.cs" />
+    <Compile Include="../AegisPC.Tests/FileContentClassificationTests.cs" />
+    <Compile Include="../AegisPC.Tests/DeviceDiscoveryTests.cs" />
+    <Compile Include="../AegisPC.Tests/DecisionEvidenceIntegrityTests.cs" />
+    <Compile Include="../AegisPC.Tests/AmsiDecisionSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/ProtectionCoverageTruthTests.cs" />
+    <Compile Include="../AegisPC.Tests/TargetResolutionTests.cs" />
+    <Compile Include="../AegisPC.Tests/ImplicitLocalPathPolicyTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanQueueFailureSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/FilePipelineCoverageTests.cs" />
+    <Compile Include="../AegisPC.Tests/ProtectionLifecycleDeviceTests.cs" />
+    <Compile Include="../AegisPC.Tests/RealtimeMediaInspectionTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineOwnershipSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/AmsiContentPipelineTests.cs" />
+    <Compile Include="../AegisPC.Tests/ServiceOwnedRansomwareUiTests.cs" />
+    <Compile Include="../AegisPC.Tests/RansomwareObserverHealthTests.cs" />
+    <Compile Include="../AegisPC.Tests/RansomwareActionEvidenceSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/CanaryIdentitySafetyTests.cs" />
     <Compile Include="../AegisPC.Tests/NotificationTruthRegressionTests.cs" />
     <Compile Include="../AegisPC.Tests/ManualScanResourceTelemetryTests.cs" />
     <Compile Include="../AegisPC.Tests/ManualScanOwnershipTests.cs" />
@@ -44,6 +61,8 @@
     <Compile Include="../AegisPC.Tests/IpcBoundaryReviewTests.cs" />
     <Compile Include="../AegisPC.Tests/ProtectionCommandLifecycleReviewTests.cs" />
     <Compile Include="../AegisPC.Tests/RealtimeReviewRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/RealtimeWatcherRecoveryTests.cs" />
+    <Compile Include="../AegisPC.Tests/EtwObservationSafetyTests.cs" />
     <Compile Include="../AegisPC.Tests/ReviewFixRegressionTests.cs" />
     <Compile Include="../AegisPC.Tests/DetectionReviewFixTests.cs" />
     <Compile Include="../AegisPC.Tests/PerformanceReviewFixTests.cs" />
@@ -64,6 +83,20 @@
     <Compile Include="../AegisPC.Tests/YaraConditionParserTests.cs" />
     <Compile Include="../AegisPC.Tests/ScanSessionAndWindowLifecycleTests.cs" />
     <Compile Include="../AegisPC.Tests/GoldenTestSuite.cs" />
+    <Compile Include="../AegisPC.Tests/UltronAiTests.cs" />
+    <Compile Include="../AegisPC.Tests/BehaviorObservationSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/BehaviorChainTests.cs" />
+    <Compile Include="../AegisPC.Tests/BehaviorAnalyzerTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanCoordinatorFailureTests.cs" />
+    <Compile Include="../AegisPC.Tests/UltronRobotUiTests.cs" />
+    <Compile Include="../AegisPC.Tests/UltronChiefSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/UltronStartupSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/UltronAiShieldUiTests.cs" />
+    <Compile Include="../AegisPC.Tests/UltronAiShieldBackendTests.cs" />
+    <Compile Include="../AegisPC.Tests/MouseWheelViewportRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/SafeScanDiagnosticLoggingTests.cs" />
+    <Compile Include="../AegisPC.Tests/UiAiPreferenceSyncTests.cs" />
+    <Compile Include="../AegisPC.Tests/FreeEditionPresentationTests.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />

@@ -64,6 +64,8 @@ namespace AegisPC.Contracts.Safety
 
     public class QuarantineTransactionResult
     {
+        /// <summary>True when an existing verified recovery copy satisfied this operation; no new quarantine notification should be emitted.</summary>
+        public bool WasAlreadyQuarantined { get; set; }
         public bool Success { get; set; }
         public int QuarantineId { get; set; }
         public string OriginalPath { get; set; } = string.Empty;
@@ -81,6 +83,8 @@ namespace AegisPC.Contracts.Safety
     public class QuarantineRestoreResult
     {
         public bool Success { get; set; }
+        /// <summary>True when destination publication succeeded but persistent metadata still requires reconciliation.</summary>
+        public bool AuditPending { get; set; }
         public int QuarantineId { get; set; }
         public string RestoredPath { get; set; } = string.Empty;
         public string Message { get; set; } = string.Empty;

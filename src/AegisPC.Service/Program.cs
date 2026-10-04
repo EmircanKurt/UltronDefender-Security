@@ -78,6 +78,9 @@ namespace AegisPC.Service
 
                         // Security & Scanning
                         services.AddSingleton<IHashService, HashService>();
+                        services.AddSingleton<IFileContentClassifier, FileContentClassifier>();
+                        services.AddSingleton<IScanTargetResolver, WindowsScanTargetResolver>();
+                        services.AddSingleton<IScanVolumeTargetResolver, WindowsScanVolumeTargetResolver>();
                         services.AddSingleton<ISignatureVerifier, SignatureVerifier>();
                         services.AddSingleton<IRiskScoringEngine, RiskScoringEngine>();
                         services.AddSingleton<IExclusionService, AegisPC.Security.Safety.ExclusionService>();
@@ -90,11 +93,11 @@ namespace AegisPC.Service
                         services.AddSingleton<IScanResourceManager, AdaptiveScanResourceManager>();
                         services.AddSingleton<IScanSessionManager, ScanSessionManager>();
                         services.AddSingleton<IFileScanner>(sp => new FileScannerService(
-                            new DirectoryWalker(), new ScanQueueCoordinator(sp.GetRequiredService<IScanResourceManager>()),
+                            new DirectoryWalker(sp.GetRequiredService<IScanTargetResolver>(), sp.GetRequiredService<IScanVolumeTargetResolver>()), new ScanQueueCoordinator(sp.GetRequiredService<IScanResourceManager>()),
                             sp.GetRequiredService<IFileHashMatcher>(),
                             new PupAnalysisCoordinator(sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>(), sp.GetRequiredService<ISecurityFindingService>()),
                             sp.GetRequiredService<ArchiveSafetyScanner>(), sp.GetRequiredService<ISecurityFindingService>(),
-                            sp.GetService<ILogger<FileScannerService>>()));
+                            sp.GetService<ILogger<FileScannerService>>(), sp.GetRequiredService<IFileContentClassifier>()));
                         services.AddSingleton<ScanCoordinatorService>();
                         services.AddSingleton<IScanCoordinatorService>(sp => sp.GetRequiredService<ScanCoordinatorService>());
                         services.AddSingleton<IBackgroundScanCoordinator>(sp => sp.GetRequiredService<ScanCoordinatorService>());
@@ -104,13 +107,27 @@ namespace AegisPC.Service
 
                         // Real-Time Security Engines
                         services.AddSingleton<IBehaviorEngine, BehaviorEngine>();
+                        services.AddSingleton<RansomwareShieldActivation>();
                         services.AddSingleton<IRealTimeProtectionEngine>(sp => new RealTimeProtectionEngine(
                             sp.GetRequiredService<IFileScanner>(), sp.GetRequiredService<IHashService>(), sp.GetRequiredService<ISignatureVerifier>(), sp.GetRequiredService<IRiskScoringEngine>(),
                             sp.GetRequiredService<IQuarantineService>(), sp.GetRequiredService<ISecurityFindingService>(),
                             sp.GetService<IAuditLogService>(), sp.GetService<IReputationService>(), sp.GetService<ILogger<RealTimeProtectionEngine>>(), sp.GetRequiredService<IExclusionService>(),
                             () => sp.GetRequiredService<ISettingsService>().GetSetting("EnableAutoQuarantine", true),
                             () => sp.GetRequiredService<ISettingsService>().GetSetting("AutoQuarantineThreshold", 85),
-                            detectionHub: sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>()));
+                            detectionHub: sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>(),
+                            backgroundResources: sp.GetRequiredService<IScanResourceManager>(),
+                            scanTargets: sp.GetRequiredService<IScanTargetResolver>()));
+                        services.AddSingleton<AegisPC.Contracts.Devices.IDeviceStorageResolver, AegisPC.Service.Devices.WindowsDeviceStorageResolver>();
+                        services.AddSingleton<AegisPC.Contracts.Devices.IDeviceInventorySource, AegisPC.Service.Devices.WindowsDeviceInventorySource>();
+                        services.AddSingleton<AegisPC.Service.Devices.MediaProtectionCoordinator>();
+                        services.AddSingleton<AegisPC.Contracts.Devices.IDeviceInventoryMonitor>(sp =>
+                        {
+                            var media = sp.GetRequiredService<AegisPC.Service.Devices.MediaProtectionCoordinator>();
+                            return new AegisPC.Service.Devices.DeviceInventoryMonitor(
+                                sp.GetRequiredService<AegisPC.Contracts.Devices.IDeviceInventorySource>(),
+                                media.InspectAsync, media.RemoveAsync,
+                                sp.GetService<ILogger<AegisPC.Service.Devices.DeviceInventoryMonitor>>());
+                        });
                         services.AddSingleton<IBackgroundProtectionService, BackgroundProtectionService>();
                         services.AddSingleton<IRansomwareProtectionEngine, RansomwareProtectionEngine>();
                         services.AddSingleton<IWebShieldService, WebShieldService>();
@@ -121,7 +138,9 @@ namespace AegisPC.Service
                             sp.GetRequiredService<ISignatureVerifier>(),
                             yaraEngine: sp.GetRequiredService<AegisPC.Security.Detection.YaraEngine.IYaraEngine>(),
                             reputationService: sp.GetService<IReputationService>(),
-                            exclusionService: sp.GetRequiredService<IExclusionService>()));
+                            exclusionService: sp.GetRequiredService<IExclusionService>(),
+                            amsiScanService: sp.GetRequiredService<IAmsiScanService>(),
+                            isUltronAiEnabled: () => sp.GetRequiredService<ISettingsService>().GetSetting("IsUltronAiEnabled", true)));
                         services.AddSingleton<IEtwPreExecProtectionService>(sp => new EtwPreExecProtectionService(
                             sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>(), sp.GetRequiredService<IRiskScoringEngine>(), sp.GetRequiredService<ISignatureVerifier>(),
                             quarantineService: sp.GetRequiredService<IQuarantineService>(), auditLogService: sp.GetService<IAuditLogService>(),

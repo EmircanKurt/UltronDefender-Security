@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using AegisPC.Contracts.Archive;
 using AegisPC.Contracts.Detection;
 using AegisPC.Core.Enums;
+using AegisPC.Core.Models;
 using AegisPC.Security.Scanning;
 
 namespace AegisPC.Security.Archive;
@@ -55,13 +56,22 @@ public class ArchiveDetectorPlugin : IDetectorPlugin
             inspected = result;
         else
         {
-            var (zipCandidate, unsupported) = ReadContainerHint(context.FilePath);
-            if (!zipCandidate)
+            var classification = context.ContentClassification ?? context.SharedScan?.ContentClassification;
+            if (classification == null)
             {
-                if (unsupported) context.CoverageLimitations.Add("Archive member content is unsupported by the configured unpacker.");
+                using var source = new FileStream(context.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                classification = await new FileContentClassifier().ClassifyAsync(source, Path.GetExtension(context.FilePath), cancellationToken);
+                context.ContentClassification = classification;
+                if (context.SharedScan != null) context.SharedScan.ContentClassification = classification;
+                context.CoverageLimitations.AddRange(classification.CoverageLimitations);
+            }
+            if (!classification.RequiresZipInspection)
+            {
+                if (classification.Formats.Contains(FileContentFormat.UnsupportedContainer))
+                    context.CoverageLimitations.Add("Archive member content is unsupported by the configured unpacker.");
                 return Array.Empty<SecurityEvidence>();
             }
-            inspected = await _memberScanner!.ScanArchiveAsync(context.FilePath, cancellationToken);
+            inspected = await _memberScanner!.ScanArchiveAsync(context.FilePath, cancellationToken, contentIdentifiedZip: true);
         }
 
         if (!inspected.IsComplete)
@@ -110,16 +120,4 @@ public class ArchiveDetectorPlugin : IDetectorPlugin
         return verdict.Evidences;
     }
 
-    private static (bool ZipCandidate, bool Unsupported) ReadContainerHint(string path)
-    {
-        string ext = Path.GetExtension(path).ToLowerInvariant();
-        using var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        Span<byte> header = stackalloc byte[6];
-        int read = source.ReadAtLeast(header, (int)Math.Min(source.Length, header.Length), false);
-        bool zip = read >= 2 && header[0] == 0x50 && header[1] == 0x4b;
-        bool zipHint = ext is ".zip" or ".jar" or ".nupkg" or ".apk" or ".docx" or ".xlsx" or ".pptx" or ".docm" or ".xlsm" or ".pptm" or ".odt" or ".ods" or ".whl";
-        bool unsupported = !zip && (ArchiveEntryInspector.HasContainerHeader(header[..read]) ||
-            ext is ".7z" or ".rar" or ".iso" or ".img" or ".tar" or ".gz" or ".cab" or ".bz2" or ".xz");
-        return (zip || zipHint, unsupported);
-    }
 }

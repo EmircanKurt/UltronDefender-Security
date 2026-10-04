@@ -17,7 +17,11 @@ namespace AegisPC.Contracts.Detection
         BehaviorNetwork,
         Persistence,
         AntiEvasion,
-        DigitalCertificate
+        DigitalCertificate,
+        /// <summary>A successful native AMSI provider supplied an independently recorded content verdict, not a local hash signature.</summary>
+        AmsiProvider,
+        /// <summary>Legacy category name for handcrafted local review heuristics; not a calibrated or trained malware model.</summary>
+        MachineLearningHeuristic
     }
 
     public enum EvidenceConfidence
@@ -26,6 +30,19 @@ namespace AegisPC.Contracts.Detection
         Medium = 2,
         High = 3,
         Absolute = 4
+    }
+
+    /// <summary>Describes independently observed trust metadata without granting a security bypass or subtracting risk.</summary>
+    public enum EvidenceTrustKind
+    {
+        /// <summary>No independently verified trust information accompanies the evidence.</summary>
+        None,
+        /// <summary>The signature verifier validated an Authenticode signature.</summary>
+        VerifiedAuthenticode,
+        /// <summary>The signature verifier validated an operating-system publisher's Authenticode signature.</summary>
+        VerifiedOsAuthenticode,
+        /// <summary>A trusted local source supplied a known-good content hash; unrelated positive evidence still applies.</summary>
+        KnownTrustedHash
     }
 
     public enum DetectionVerdict
@@ -67,6 +84,8 @@ namespace AegisPC.Contracts.Detection
         public string Description { get; set; } = string.Empty;
         public int ScoreContribution { get; set; }
         public EvidenceConfidence Confidence { get; set; } = EvidenceConfidence.Medium;
+        /// <summary>Records typed trust information for explanation only; neither this value nor a rule name can erase positive risk evidence.</summary>
+        public EvidenceTrustKind TrustKind { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
         public int? ProcessId { get; set; }
         public int? ParentProcessId { get; set; }

@@ -37,6 +37,14 @@ namespace AegisPC.App
 
         protected override async void OnStartup(StartupEventArgs e)
         {
+            // Scanner ILogger failures previously had no provider and vanished from runtime diagnostics.
+            Serilog.Log.Logger = AegisPC.Infrastructure.Logging.SerilogConfiguration.Configure();
+            var diagnosticAssembly = typeof(App).Assembly;
+            var diagnosticVersion = diagnosticAssembly.GetName().Version;
+            Serilog.Log.ForContext("SourceContext", "AegisPC.App.Startup")
+                .Information("Application diagnostic session started with module {ModuleId}, version {VersionMajor}.{VersionMinor}.{VersionBuild}.",
+                    diagnosticAssembly.ManifestModule.ModuleVersionId, diagnosticVersion?.Major ?? 0,
+                    diagnosticVersion?.Minor ?? 0, diagnosticVersion?.Build ?? 0);
             Log("=== AegisPC App Startup Begin ===");
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
             DispatcherUnhandledException += App_DispatcherUnhandledException;
@@ -70,6 +78,10 @@ namespace AegisPC.App
                 ServiceRegistration.RegisterServices(serviceCollection);
                 ServiceProvider = serviceCollection.BuildServiceProvider();
                 Log("2. Services registered successfully.");
+                // Schema readiness precedes any repositories, event subscriptions or protection-dependent view models.
+                await ServiceProvider.GetRequiredService<AegisPC.Contracts.Services.IDatabaseService>().InitializeAsync();
+                await ServiceProvider.GetRequiredService<AegisPC.Contracts.Services.ISettingsService>().LoadAsync();
+                _ = ServiceProvider.GetRequiredService<AegisPC.App.Services.UltronAiServicePreferenceSync>();
 
                 // Eagerly resolve ScanViewModel so it attaches to IScanCoordinatorService events immediately from boot
                 try
@@ -274,7 +286,8 @@ namespace AegisPC.App
                         {
                             ipcClient.ThreatDetected += (threat) =>
                             {
-                                toastService.ShowToast($"⚠️ Arka Plan Güvenlik Bulgusu: {threat.ThreatName}", $"Dosya: {threat.FilePath}\nİşlem: {threat.ActionTaken}", "Warning");
+                                string label = threat.IsObservationOnly ? "Güvenlik gözlemi" : "Güvenlik bulgusu";
+                                toastService.ShowToast($"{label}: {threat.ThreatName}", $"Dosya: {threat.FilePath}\nİşlem: {threat.ActionTaken}", "Warning");
                             };
                             _ = ipcClient.ConnectAsync();
                             Log("Protection engines are service-owned; UI connected through IPC without starting duplicate local watchers.");
@@ -294,6 +307,9 @@ namespace AegisPC.App
                 Log($"CRITICAL STARTUP ERROR: {ex}");
                 MessageBox.Show($"Uygulama başlatılırken bir hata oluştu:\n\n{ex.Message}\n\nDetay:\n{ex.StackTrace}", 
                     "Ultron Defender Total Security - Başlatma Hatası", MessageBoxButton.OK, MessageBoxImage.Error);
+                try { splash?.Close(); } catch (Exception closeError) { Serilog.Log.Warning(closeError, "Startup failure splash cleanup failed."); }
+                Shutdown(1);
+                return;
             }
 
             base.OnStartup(e);
@@ -363,6 +379,10 @@ namespace AegisPC.App
             catch (Exception ex)
             {
                 Log($"[WARN] Service cleanup warning: {ex.Message}");
+            }
+            finally
+            {
+                Serilog.Log.CloseAndFlush();
             }
             base.OnExit(e);
         }

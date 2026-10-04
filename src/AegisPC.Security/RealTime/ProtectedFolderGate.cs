@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using AegisPC.Core.Models;
+using AegisPC.Core.Helpers;
 using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.RealTime
@@ -101,11 +102,13 @@ namespace AegisPC.Security.RealTime
                         var loaded = JsonSerializer.Deserialize<List<string>>(json);
                         if (loaded != null && loaded.Count > 0)
                         {
-                            var existing = loaded.Where(Directory.Exists).ToList();
-                            if (existing.Count > 0)
+                            // Load declarations as metadata only. The engine rejects unsafe roots before I/O,
+                            // retaining a visible coverage gap instead of silently overwriting the user's list.
+                            var declared = loaded.Where(path => !string.IsNullOrWhiteSpace(path) && Path.IsPathFullyQualified(path)).ToList();
+                            if (declared.Count > 0)
                             {
                                 _protectedDirs.Clear();
-                                _protectedDirs.AddRange(existing);
+                                _protectedDirs.AddRange(declared);
                                 return;
                             }
                         }
@@ -134,7 +137,7 @@ namespace AegisPC.Security.RealTime
                 };
 
                 var defaults = candidateFolders
-                    .Where(p => !string.IsNullOrWhiteSpace(p) && Directory.Exists(p))
+                    .Where(p => ImplicitLocalPathPolicy.IsEligible(p) && Directory.Exists(p))
                     .Distinct(StringComparer.OrdinalIgnoreCase);
 
                 _protectedDirs.Clear();
@@ -208,7 +211,7 @@ namespace AegisPC.Security.RealTime
         {
             lock (_lock)
             {
-                if (Directory.Exists(path) && !_protectedDirs.Contains(path, StringComparer.OrdinalIgnoreCase))
+                if (ImplicitLocalPathPolicy.IsEligible(path) && Directory.Exists(path) && !_protectedDirs.Contains(path, StringComparer.OrdinalIgnoreCase))
                 {
                     _protectedDirs.Add(path);
                     SaveProtectedDirsToDisk();
