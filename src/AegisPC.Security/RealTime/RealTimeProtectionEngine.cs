@@ -9,14 +9,14 @@ using AegisPC.Contracts.Services;
 using AegisPC.Contracts.Detection;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Models;
+using AegisPC.Core.Helpers;
 using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.RealTime
 {
     /// <summary>
-    /// Gerçek zamanlı, çok aşamalı (Progressive Analysis), olay kararlılığı (Stability Check) doğrulamalı,
-    /// sıfır sahte veri (Zero-Mock) içeren Windows Endpoint Real-Time Protection Ana Orkestratörü.
-    /// Modüler mimaride Ingestor, StabilityChecker, VerdictProcessor ve PolicyEnforcer bileşenlerini koordine eder.
+    /// Coordinates selected-root, post-operation user-mode observations, bounded ingestion and content decisions.
+    /// Observed health and coverage are separate from running state; this does not provide pre-access blocking.
     /// </summary>
     public partial class RealTimeProtectionEngine : IRealTimeProtectionEngine, IDisposable
     {
@@ -35,6 +35,7 @@ namespace AegisPC.Security.RealTime
         private Timer? _cacheCleanupTimer;
         private bool _coverageDegraded;
         private long _engineGeneration;
+        private IScanTargetResolver _scanTargets = new AegisPC.Security.Scanning.WindowsScanTargetResolver();
 
         public bool IsRunning => _isRunning;
 
@@ -57,7 +58,9 @@ namespace AegisPC.Security.RealTime
             IExclusionService? exclusionService = null,
             Func<bool>? enableAutoQuarantine = null,
             Func<int>? autoQuarantineThreshold = null,
-            IDetectionHub? detectionHub = null)
+            IDetectionHub? detectionHub = null,
+            IScanResourceManager? backgroundResources = null,
+            IScanTargetResolver? scanTargets = null)
             : this(
                 new RealTimeEventIngestor(),
                 new RealTimeStabilityChecker(),
@@ -66,6 +69,8 @@ namespace AegisPC.Security.RealTime
                     enableAutoQuarantine, autoQuarantineThreshold),
                 logger)
         {
+            _backgroundResources = backgroundResources;
+            if (scanTargets != null) _scanTargets = scanTargets;
         }
 
         public RealTimeProtectionEngine(
@@ -119,10 +124,20 @@ namespace AegisPC.Security.RealTime
 
                 // 2. Start Background Multi-Worker Pool Consumers
                 int workerCount = Math.Clamp(Environment.ProcessorCount / 2, 2, 4);
-                _eventIngestor.StartWorkers(workerCount, HandleNormalizedEventAsync, _engineCts.Token);
+                try
+                {
+                    _eventIngestor.StartWorkers(workerCount, HandleNormalizedEventAsync, _engineCts.Token);
+                }
+                catch
+                {
+                    // A watcher without consumers would silently discard protection events.
+                    // Roll back the whole generation rather than leaving IsRunning true.
+                    Stop();
+                    throw;
+                }
 
-                // 3. Start WMI Dynamic Removable Media / USB Listener
-                if (watchDefaultLocations) StartUsbArrivalListener();
+                // Device inventory is service-owned and registers before enumeration.
+                // Do not start a second drive-letter-only WMI arrival listener here.
 
                 _cacheCleanupTimer = new Timer(_ =>
                 {
@@ -146,6 +161,9 @@ namespace AegisPC.Security.RealTime
                 _isRunning = false;
                 _engineGeneration++;
                 _reconciliationRoots.Clear();
+                _activeRecoveryTokens.Clear();
+                _mediaRoots.Clear();
+                _mediaInspections.Clear();
                 _reconciliationRunning = false;
 
                 StopUsbArrivalListener();
@@ -188,16 +206,22 @@ namespace AegisPC.Security.RealTime
             return _verdictProcessor.InspectFileAsync(filePath, ct);
         }
 
-        private async Task HandleNormalizedEventAsync(NormalizedFileEvent evt, CancellationToken ct)
+        private async Task<bool> HandleNormalizedEventAsync(NormalizedFileEvent evt, CancellationToken ct)
         {
             try
             {
                 ct.ThrowIfCancellationRequested();
+                if (!ImplicitLocalPathPolicy.IsEligible(evt.NormalizedPath))
+                {
+                    lock (_lock) _coverageDegraded = true;
+                    _logger?.LogWarning("An implicit real-time event path was not opened; local storage or ancestor identity is unavailable.");
+                    return false;
+                }
                 if (Directory.Exists(evt.NormalizedPath))
                 {
                     if (evt.EventType is RealTimeEventType.Created or RealTimeEventType.Renamed)
                         RequestDirectoryInspection(evt.NormalizedPath);
-                    return;
+                    return false;
                 }
                 var fileName = Path.GetFileName(evt.NormalizedPath);
 
@@ -226,7 +250,7 @@ namespace AegisPC.Security.RealTime
                 });
 
                 bool isStable = await _stabilityChecker.WaitForFileStabilityAsync(evt.NormalizedPath, ct);
-                if (!isStable || !File.Exists(evt.NormalizedPath)) return;
+                if (!isStable || !File.Exists(evt.NormalizedPath)) return false;
 
                 // Stage 3: Progressive Instant Arrival Inspection
                 OnActivityLogged?.Invoke(new RealTimeActivityEvent
@@ -328,9 +352,11 @@ namespace AegisPC.Security.RealTime
                         Timestamp = DateTime.Now
                     });
                 }
+                return verdict.Verdict != RealTimeVerdict.Unknown && verdict.InspectionComplete && verdict.ContentClassification?.IsComplete != false;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                return false;
             }
             catch (Exception ex)
             {

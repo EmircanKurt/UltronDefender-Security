@@ -108,18 +108,34 @@ namespace AegisPC.App.Services
             int failedCount = 0,
             int timedOutCount = 0,
             string? resourceProfile = null,
-            ScanStatus scanStatus = ScanStatus.Completed)
+            ScanStatus scanStatus = ScanStatus.Completed,
+            ScanCoverageSummary? coverage = null,
+            ScanFailureInfo? failureInfo = null)
         {
             var safeFindings = findings ?? Array.Empty<SecurityFinding>();
             var sb = new StringBuilder();
             sb.AppendLine("================================================================================");
             sb.AppendLine("            ULTRON DEFENDER TOTAL SECURITY - GÜVENLİK TARAMA RAPORU             ");
             sb.AppendLine("================================================================================");
-            sb.AppendLine($"Tarama Tarihi       : {scanDate:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"Tarama Tarihi       : {(scanDate == default ? "Başlangıç zamanı kaydedilmedi" : scanDate.ToString("yyyy-MM-dd HH:mm:ss"))}");
             sb.AppendLine($"Tarama Süresi       : {duration}");
             sb.AppendLine($"Tarama Tipi         : {scanType}");
             sb.AppendLine($"Tarama Durumu       : {scanStatus}");
+            if (failureInfo != null)
+            {
+                sb.AppendLine($"Hata Aşaması/Nedeni : {failureInfo.Stage} / {failureInfo.Reason}");
+                sb.AppendLine($"Hata Açıklaması     : {failureInfo.SafeMessage}");
+                sb.AppendLine($"Hata Korelasyonu    : {failureInfo.CorrelationId}");
+                if (failureInfo.NativeErrorCode is { } code) sb.AppendLine($"Yerel Hata Kodu    : {code}");
+            }
             sb.AppendLine($"Taranan Dosya Sayısı: {scannedCount:N0}");
+            if (coverage != null)
+            {
+                sb.AppendLine($"İnceleme Kapsamı    : {(coverage.IsComplete ? "Bildirilen kapsamda eksik kaynak yok" : "Kısmi / incelenemeyen kaynak var")}");
+                sb.AppendLine($"Erişilemeyen Dizin/Süreç: {coverage.UnreadableDirectories} / {coverage.UnreadableProcesses}");
+                sb.AppendLine($"Kısmi Arşiv / Reparse : {coverage.PartialArchives} / {coverage.SkippedReparsePoints}");
+                foreach (var limitation in coverage.Limitations) sb.AppendLine("Kapsam Sınırlaması  : " + limitation);
+            }
 
             if (skippedCount > 0)
             {
@@ -219,7 +235,15 @@ namespace AegisPC.App.Services
                 report.Result.FailedFiles,
                 report.Result.TimedOutFiles,
                 report.ResourceProfile,
-                ReportedCoverageComplete = report.Result.Status == ScanStatus.Completed && report.Result.SkippedFiles == 0 && report.Result.FailedFiles == 0 && report.Result.TimedOutFiles == 0,
+                report.Result.Coverage,
+                FailureInfo = report.Result.FailureInfo is { } failure ? new
+                {
+                    Stage = failure.Stage.ToString(),
+                    Reason = failure.Reason.ToString(),
+                    failure.NativeErrorCode, failure.HResult, failure.SafeMessage,
+                    failure.OccurredAtUtc, failure.CorrelationId, failure.IsRetryable
+                } : null,
+                ReportedCoverageComplete = report.Result.Status == ScanStatus.Completed && report.Result.Coverage.IsComplete && report.Result.SkippedFiles == 0 && report.Result.FailedFiles == 0 && report.Result.TimedOutFiles == 0,
                 CoverageNote = "Only engine-reported counters; not proof that every system path, archive member or running process was inspected.",
                 Findings = report.Result.Findings.Select(f => new
                 {

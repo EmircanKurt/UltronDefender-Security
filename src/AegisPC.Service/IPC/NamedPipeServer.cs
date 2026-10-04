@@ -20,7 +20,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Service.IPC
 {
-    public class NamedPipeServer : BackgroundService
+    public partial class NamedPipeServer : BackgroundService
     {
         private readonly ILogger<NamedPipeServer> _logger;
         private readonly IBackgroundProtectionService _protectionService;
@@ -33,6 +33,14 @@ namespace AegisPC.Service.IPC
         private readonly IScanResourceManager? _resourceManager;
         private readonly IExclusionService? _exclusionService;
         private readonly ProtectionCommandLifecycle _fileProtectionLifecycle;
+        private readonly IEtwPreExecProtectionService? _processInspection;
+        private readonly AegisPC.Service.RealTime.EtwProcessMonitor? _processTelemetry;
+        private readonly AegisPC.Service.RealTime.EtwImageLoadMonitor? _imageTelemetry;
+        private readonly AegisPC.Service.DriverBridge.IKernelBridge? _kernelBridge;
+        private readonly AegisPC.Contracts.Devices.IDeviceInventoryMonitor? _devices;
+        private readonly IQuarantineService? _vault;
+        private readonly RansomwareShieldActivation? _shieldActivation;
+        private readonly AegisPC.Contracts.Detection.IDetectionHub? _detectionHub;
         private readonly DateTime _startTime = DateTime.UtcNow;
         private int _totalThreatsBlocked24h = 0;
         private DateTime _threatCounterWindowStart = DateTime.UtcNow;
@@ -72,9 +80,15 @@ namespace AegisPC.Service.IPC
             AegisPC.Service.DriverBridge.IKernelBridge? kernelBridge = null,
             AegisPC.Service.RealTime.EtwProcessMonitor? processMonitor = null,
             AegisPC.Service.RealTime.EtwImageLoadMonitor? imageLoadMonitor = null,
-            IExclusionService? exclusionService = null)
+            IExclusionService? exclusionService = null,
+            AegisPC.Contracts.Devices.IDeviceInventoryMonitor? devices = null,
+            IQuarantineService? vault = null,
+            RansomwareShieldActivation? shieldActivation = null,
+            AegisPC.Contracts.Detection.IDetectionHub? detectionHub = null)
         {
             _logger = logger;
+            _shieldActivation = shieldActivation;
+            _detectionHub = detectionHub;
             _protectionService = protectionService;
             _realTimeProtectionEngine = realTimeProtectionEngine;
             _ransomwareEngine = ransomwareEngine;
@@ -84,8 +98,16 @@ namespace AegisPC.Service.IPC
             _amsiScanService = amsiScanService;
             _resourceManager = resourceManager;
             _exclusionService = exclusionService;
+            _processInspection = etwPreExecService;
+            _processTelemetry = processMonitor;
+            _imageTelemetry = imageLoadMonitor;
+            _kernelBridge = kernelBridge;
+            _devices = devices;
+            _vault = vault;
+            if (_devices != null) _devices.SnapshotChanged += OnDeviceSnapshotChanged;
             _fileProtectionLifecycle = ProtectionCommandLifecycle.Create(realTimeProtectionEngine, protectionService,
-                logger, etwPreExecService, kernelBridge, processMonitor, imageLoadMonitor);
+                logger, etwPreExecService, settingsService.GetSetting("EnableExperimentalKernelBridge", false) ? kernelBridge : null,
+                processMonitor, imageLoadMonitor, devices);
 
             // Wire up real-time events to broadcast to IPC clients
             _protectionService.OnThreatDetected += OnThreatDetected;
@@ -123,18 +145,18 @@ namespace AegisPC.Service.IPC
         {
             ResetThreatCounterIfExpired();
             _lastThreatTime = DateTime.UtcNow;
-            if (e.ProcessTerminated) Interlocked.Increment(ref _totalThreatsBlocked24h);
+            // The legacy event has no verifiable action receipt. A mutable boolean is not containment evidence.
 
             var threatNotification = new ThreatNotification
             {
                 FilePath = e.OffendingFilePath,
                 ProcessName = "RansomwareShield",
                 ProcessId = 0,
-                ThreatName = "RansomwareActivity",
-                RiskLevel = e.RiskScore >= 70 ? RiskLevel.HighRisk : RiskLevel.Suspicious,
-                ActionTaken = e.ProcessTerminated
-                    ? "Süreç sonlandırıldı; dosya karantinası bu olayda doğrulanmadı"
-                    : "Şüpheli etkinlik kaydedildi; müdahale sonucu doğrulanmadı",
+                ThreatName = "RansomwareObservation",
+                // A heuristic score and a file-locking PID do not independently prove malware.
+                RiskLevel = RiskLevel.Suspicious,
+                IsObservationOnly = true,
+                ActionTaken = "Sezgisel gözlem kaydedildi; zararlı yazılım, saldırgan süreç ve engelleme doğrulanmadı",
                 Details = e.DetectionReason,
                 DetectedAt = e.Timestamp
             };
@@ -164,6 +186,12 @@ namespace AegisPC.Service.IPC
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("AegisPC IPC Server starting on pipe: {PipeName}", PipeName);
+            using var heartbeat = new Timer(_ =>
+            {
+                if (stoppingToken.IsCancellationRequested) return;
+                try { BroadcastMessage("Status", BuildCurrentStatus()); }
+                catch (Exception exception) { _logger.LogWarning(exception, "Protection status heartbeat failed."); }
+            }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -268,22 +296,16 @@ namespace AegisPC.Service.IPC
 
         private async Task ProcessCommandAsync(ServiceCommand command, PipeClientConnection client, NamedPipeServerStream pipeServer)
         {
-            string callerIdentity = "Anonymous";
-            try
+            if (IsVaultOrInventoryCommand(command.CommandType))
             {
-                pipeServer.RunAsClient(() =>
-                {
-                    using var id = WindowsIdentity.GetCurrent();
-                    callerIdentity = id?.Name ?? "Anonymous";
-                });
+                await ProcessAuthorizedDataCommandAsync(command, client, pipeServer).ConfigureAwait(false);
+                return;
             }
-            catch (Exception ex)
-            {
-                _logger.LogTrace(ex, "Could not impersonate pipe client for identity extraction.");
-            }
+            using var verifiedCaller = AuthenticatedPipeCaller.Capture(pipeServer);
+            string callerIdentity = verifiedCaller.Identity.Name;
 
-            bool isAuthorized = IsAuthorizedCommand(pipeServer, command.CommandType);
-            client.MayReceiveMachineThreats = IsAuthorizedCommand(pipeServer, ServiceCommandType.EnableProtection);
+            bool isAuthorized = ServiceControlCommandAuthorization.IsAllowed(command.CommandType, verifiedCaller.IsAdministrator);
+            client.MayReceiveMachineThreats = verifiedCaller.IsAdministrator;
 
             _logger.LogInformation("AUDIT IPC: Command {CommandType} from {Caller} (Authorized: {IsAuthorized})",
                 command.CommandType, callerIdentity, isAuthorized);
@@ -315,14 +337,16 @@ namespace AegisPC.Service.IPC
                     break;
 
                 case ServiceCommandType.EnableRansomwareShield:
-                    _ransomwareEngine.StartShield();
+                    if (_shieldActivation != null) await _shieldActivation.StartAsync();
+                    else _ransomwareEngine.StartShield();
                     _settingsService.Current.IsRansomwareShieldEnabled = true;
                     await _settingsService.SaveAsync();
                     await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
                     break;
 
                 case ServiceCommandType.DisableRansomwareShield:
-                    _ransomwareEngine.StopShield();
+                    if (_shieldActivation != null) await _shieldActivation.StopAsync();
+                    else _ransomwareEngine.StopShield();
                     _settingsService.Current.IsRansomwareShieldEnabled = false;
                     await _settingsService.SaveAsync();
                     await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
@@ -340,6 +364,12 @@ namespace AegisPC.Service.IPC
                     _settingsService.Current.IsNetworkProtectionEnabled = false;
                     await _settingsService.SaveAsync();
                     await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
+                    break;
+
+                case ServiceCommandType.EnableUltronAi:
+                case ServiceCommandType.DisableUltronAi:
+                    await SetUltronAiReviewEnabledAsync(command.CommandType == ServiceCommandType.EnableUltronAi);
+                    await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus(command.RequestId))}");
                     break;
 
                 case ServiceCommandType.StartScan:
@@ -448,14 +478,57 @@ namespace AegisPC.Service.IPC
         private ProtectionStatus BuildCurrentStatus(Guid requestId = default)
         {
             ResetThreatCounterIfExpired();
+            var coverage = (_realTimeProtectionEngine as IRealTimeCoverageProvider)?.CaptureCoverage();
+            int processLost = _processTelemetry?.EventsLost ?? -1;
+            int imageLost = _imageTelemetry?.EventsLost ?? -1;
+            var health = ProtectionHealthSampler.Capture(_settingsService.Current.IsFileProtectionEnabled,
+                _protectionService.IsProtectionActive && _realTimeProtectionEngine.IsRunning, coverage,
+                _processTelemetry?.IsRunning == true && _processInspection?.IsEtwSubscribed == true,
+                _imageTelemetry?.IsRunning == true,
+                processLost < 0 || imageLost < 0 ? -1 : (long)processLost + imageLost,
+                _fileProtectionLifecycle.IsHealthy, _kernelBridge?.IsDriverConnected == true,
+                _ransomwareEngine.IsShieldActive);
+            health.DeviceInventoryActive = _devices?.IsRunning == true;
+            var inventory = _devices?.CurrentSnapshot;
+            bool inventoryFresh = inventory != null && inventory.CapturedAtUtc != default && DateTime.UtcNow >= inventory.CapturedAtUtc &&
+                DateTime.UtcNow - inventory.CapturedAtUtc <= TimeSpan.FromSeconds(75);
+            health.DeviceInventoryComplete = inventory?.IsComplete == true && inventoryFresh;
+            health.ObservedDeviceInterfaces = _devices?.CurrentSnapshot.Devices.Count ?? 0;
+            health.DeviceInventoryCapturedAtUtc = _devices?.CurrentSnapshot.CapturedAtUtc;
+            var ransomCoverage = (_ransomwareEngine as IRansomwareCoverageProvider)?.CaptureRansomwareCoverage();
+            if (_settingsService.Current.IsRansomwareShieldEnabled &&
+                (ransomCoverage == null || ransomCoverage.WatcherCount == 0 || ransomCoverage.HasUnresolvedGap))
+            {
+                if (health.State != ProtectionHealthState.Stopped) health.State = ProtectionHealthState.Degraded;
+                health.Limitations = health.Limitations.Append("Ransomware observation roots or event continuity are incomplete.").ToArray();
+            }
+            var amsiObserved = _amsiScanService as IAmsiObservationProvider;
+            health.AmsiLastNativeScanUtc = amsiObserved?.LastNativeScanUtc;
+            health.AmsiContentScanningActive = _amsiScanService?.IsAmsiSupported == true && amsiObserved?.LastNativeRequestCompleted == true &&
+                amsiObserved.LastNativeScanUtc is DateTime nativeTime && nativeTime >= _startTime && nativeTime <= DateTime.UtcNow;
+            if (!health.AmsiContentScanningActive)
+                health.Limitations = health.Limitations.Append("A successfully completed native AMSI content request has not been observed for this service instance.").ToArray();
+            if (_settingsService.Current.IsFileProtectionEnabled &&
+                (!health.DeviceInventoryActive || !health.DeviceInventoryComplete))
+            {
+                health.State = ProtectionHealthState.Degraded;
+                health.Limitations = health.Limitations.Append("Device discovery is unavailable or partial; firmware safety is not verified.").ToArray();
+            }
             return new ProtectionStatus
             {
                 RequestId = requestId,
+                Health = health,
                 IsServiceRunning = true,
                 IsRealTimeEnabled = _protectionService.IsProtectionActive && _realTimeProtectionEngine.IsRunning,
+                IsUltronAiEnabled = _detectionHub?.RegisteredDetectors
+                    .OfType<AegisPC.Security.Detection.Detectors.UltronAiDetectorPlugin>()
+                    .FirstOrDefault()?.IsReviewEnabled,
                 IsRansomwareShieldEnabled = _ransomwareEngine.IsShieldActive,
-                IsNetworkProtectionEnabled = _networkProtectionService?.IsRunning ?? _settingsService.Current.IsNetworkProtectionEnabled,
-                IsAmsiEnabled = _amsiScanService?.IsAmsiSupported ?? false,
+                RansomwareProtectedFolderCount = ransomCoverage?.WatcherCount,
+                RansomwareCanaryFileCount = _ransomwareEngine.CanaryFileCount,
+                RansomwareConfirmedContainments = null,
+                IsNetworkProtectionEnabled = _networkProtectionService?.IsRunning == true && _networkProtectionService.IsDnsSinkholeActive,
+                IsAmsiEnabled = health.AmsiContentScanningActive,
                 ScanScheduleEnabled = _settingsService.Current.ScanScheduleEnabled,
                 ScheduledScanHour = _settingsService.Current.ScheduledScanHour,
                 ScheduledScanIntervalHours = _settingsService.Current.ScheduledScanIntervalHours,
@@ -469,11 +542,13 @@ namespace AegisPC.Service.IPC
                 LastThreatTime = _lastThreatTime,
                 TotalThreatsBlocked24h = _totalThreatsBlocked24h,
                 ServiceUptime = DateTime.UtcNow - _startTime,
-                ProtectionLevel = _protectionService.IsProtectionActive &&
-                                  _realTimeProtectionEngine.IsRunning &&
-                                  _ransomwareEngine.IsShieldActive && _fileProtectionLifecycle.IsHealthy
-                    ? "Tam Koruma"
-                    : "Kısmi Koruma"
+                ProtectionLevel = health.State switch
+                {
+                    ProtectionHealthState.Healthy => "Gözlenen kullanıcı modu koruma etkin",
+                    ProtectionHealthState.Recovering => "Kapsam yeniden inceleniyor",
+                    ProtectionHealthState.Stopped => "Dosya koruması durduruldu",
+                    _ => "Kısıtlı kullanıcı modu koruma"
+                }
             };
         }
 

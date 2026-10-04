@@ -5,6 +5,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Detection;
 using AegisPC.Security.Scanning;
+using AegisPC.Core.Models;
+using System.Linq;
 
 namespace AegisPC.Security.Detection.Detectors
 {
@@ -16,6 +18,7 @@ namespace AegisPC.Security.Detection.Detectors
         public int Priority => 20;
         public bool IsEnabled { get; set; } = true;
 
+        /// <summary>Inspects actual PE structures independently of extension; unsupported structural parsing remains explicit.</summary>
         public async Task<IEnumerable<SecurityEvidence>> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
         {
             var list = new List<SecurityEvidence>();
@@ -24,9 +27,17 @@ namespace AegisPC.Security.Detection.Detectors
                 return list;
             }
 
-            // 1. Multi-Signal Suspicious Win32 API Indicators (Only for files outside known safe system/program directories)
-            bool isKnownSafe = AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(context.FilePath);
-            if (!isKnownSafe)
+            var classification = context.ContentClassification ?? context.SharedScan?.ContentClassification;
+            if (classification != null && !classification.Formats.Contains(FileContentFormat.PortableExecutable)) return list;
+            var peResult = PeAnalyzer.Analyze(context.FilePath);
+            if (!peResult.IsPeFile)
+            {
+                if (classification?.Formats.Contains(FileContentFormat.PortableExecutable) == true)
+                    context.CoverageLimitations.Add("PE candidate could not be fully interpreted by the configured static PE parser.");
+                return list;
+            }
+
+            // API indicators are supporting evidence from PE content, never a directory-based trust exception.
             {
                 var apiIndicators = await MalwareSignatureDatabase.ScanApiIndicatorsAsync(context.FilePath, cancellationToken);
                 foreach (var api in apiIndicators)
@@ -45,13 +56,6 @@ namespace AegisPC.Security.Detection.Detectors
                         ParentProcessId = context.ParentProcessId
                     });
                 }
-            }
-
-            // 2. Perform PE binary header inspection if PE format
-            var peResult = PeAnalyzer.Analyze(context.FilePath);
-            if (!peResult.IsPeFile)
-            {
-                return list;
             }
 
             // 1. W+X Writable & Executable Section Anomaly

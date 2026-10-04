@@ -135,7 +135,7 @@ namespace AegisPC.App.ViewModels
             }
             catch { }
 
-            var baseline = Math.Max(1280, ActiveProcessCount * 12);
+            const int baseline = 0; // Never fabricate a count from process count or an arbitrary minimum.
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
                 FilesScannedCount = baseline;

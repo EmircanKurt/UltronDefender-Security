@@ -16,12 +16,19 @@ internal sealed class ProtectionCommandLifecycle
     private readonly ILogger _logger;
     private readonly SemaphoreSlim _commandGate = new(1, 1);
     private volatile bool _lastTransitionSucceeded = true;
+    private readonly AegisPC.Contracts.Devices.IDeviceInventoryMonitor? _devices;
 
     /// <summary>Creates the lifecycle over existing start/stop operations; callbacks must report actual state.</summary>
     public ProtectionCommandLifecycle(IReadOnlyList<ProtectionCommandComponent> components, ILogger logger)
+        : this(components, logger, null) { }
+
+    /// <summary>Includes media discovery in the same serialized protection transition.</summary>
+    public ProtectionCommandLifecycle(IReadOnlyList<ProtectionCommandComponent> components, ILogger logger,
+        AegisPC.Contracts.Devices.IDeviceInventoryMonitor? devices)
     {
         _components = components;
         _logger = logger;
+        _devices = devices;
     }
 
     /// <summary>Observed listeners must be active; an optional startup failure preserves protection but reports partial health.</summary>
@@ -31,14 +38,15 @@ internal sealed class ProtectionCommandLifecycle
     /// <summary>Builds adapters around the same worker-owned singleton engines and optional telemetry listeners.</summary>
     public static ProtectionCommandLifecycle Create(IRealTimeProtectionEngine realTime, IBackgroundProtectionService background,
         ILogger logger, IEtwPreExecProtectionService? preExec, AegisPC.Service.DriverBridge.IKernelBridge? kernel,
-        AegisPC.Service.RealTime.EtwProcessMonitor? process, AegisPC.Service.RealTime.EtwImageLoadMonitor? image)
+        AegisPC.Service.RealTime.EtwProcessMonitor? process, AegisPC.Service.RealTime.EtwImageLoadMonitor? image,
+        AegisPC.Contracts.Devices.IDeviceInventoryMonitor? devices = null)
     {
         var components = new List<ProtectionCommandComponent>
         {
             new(realTime.Start, realTime.Stop, () => realTime.IsRunning),
             new(background.StartProtection, background.StopProtection, () => background.IsProtectionActive)
         };
-        if (preExec != null) components.Add(new(preExec.Start, preExec.Stop, () => preExec.IsRunning,
+        if (preExec != null) components.Add(new(preExec.Start, preExec.Stop, () => preExec.IsRunning && preExec.IsEtwSubscribed,
             RequireActivation: false, ObserveForHealth: true));
         if (process != null) components.Add(new(process.Start, process.Stop, () => process.IsRunning,
             RequireActivation: false, ObserveForHealth: true));
@@ -46,7 +54,7 @@ internal sealed class ProtectionCommandLifecycle
             RequireActivation: false, ObserveForHealth: true));
         if (kernel != null) components.Add(new(() => { kernel.StartBridge(); }, kernel.StopBridge,
             () => kernel.IsDriverConnected, RequireActivation: false));
-        return new ProtectionCommandLifecycle(components, logger);
+        return new ProtectionCommandLifecycle(components, logger, devices);
     }
 
     /// <summary>Serializes commands; desired settings change only after success and persistence errors mark partial health.</summary>
@@ -56,8 +64,19 @@ internal sealed class ProtectionCommandLifecycle
         var previous = settings.Current.IsFileProtectionEnabled;
         try
         {
-            if (enabled) Enable();
-            else Disable();
+            if (enabled)
+            {
+                Enable();
+                if (_devices != null)
+                {
+                    await _devices.StopAsync().ConfigureAwait(false);
+                    await _devices.StartAsync().ConfigureAwait(false);
+                }
+            }
+            else
+            {
+                await DisableAllAsync().ConfigureAwait(false);
+            }
             settings.Current.IsFileProtectionEnabled = enabled;
             await settings.SaveAsync().ConfigureAwait(false);
         }
@@ -69,6 +88,27 @@ internal sealed class ProtectionCommandLifecycle
             throw;
         }
         finally { _commandGate.Release(); }
+    }
+
+    private async Task DisableAllAsync()
+    {
+        var failures = new List<Exception>();
+        if (_devices != null)
+        {
+            try
+            {
+                await _devices.StopAsync().ConfigureAwait(false);
+                if (_devices.IsRunning) throw new InvalidOperationException("Device discovery remains active after stop.");
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception, "Device discovery stop failed; remaining protection listeners will still be stopped.");
+                failures.Add(exception);
+            }
+        }
+        try { Disable(); }
+        catch (Exception exception) { failures.Add(exception); }
+        if (failures.Count != 0) throw new AggregateException("Not all protection listeners or device discovery stopped.", failures);
     }
 
     /// <summary>Starts inactive components; only required failures roll back this command's listeners, while optional failures report partial health.</summary>

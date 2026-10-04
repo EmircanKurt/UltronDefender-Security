@@ -43,13 +43,7 @@ namespace AegisPC.Security.RealTime
         private readonly IExclusionService? _exclusionService;
         private readonly ILogger? _logger;
         private readonly IDetectionHub? _detectionHub;
-
-
-        private static readonly HashSet<string> DangerousExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".exe", ".dll", ".sys", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".hta", ".jar", 
-            ".iso", ".zip", ".rar", ".7z", ".vbe", ".wsf", ".cpl", ".msi", ".com", ".pif", ".txt", ".bin", ".dat"
-        };
+        private readonly IFileContentClassifier _contentClassifier;
 
         public RealTimeVerdictProcessor(
             IHashService hashService,
@@ -89,7 +83,8 @@ namespace AegisPC.Security.RealTime
             IReputationService? reputationService,
             IExclusionService? exclusionService,
             ILogger? logger = null,
-            IDetectionHub? detectionHub = null)
+            IDetectionHub? detectionHub = null,
+            IFileContentClassifier? contentClassifier = null)
         {
             _hashService = hashService;
             _signatureVerifier = signatureVerifier;
@@ -99,11 +94,13 @@ namespace AegisPC.Security.RealTime
             _exclusionService = exclusionService;
             _logger = logger;
             _detectionHub = detectionHub;
+            _contentClassifier = contentClassifier ?? new FileContentClassifier();
         }
 
         /// <summary>Compatibility hook; unversioned local verdict caching is disabled.</summary>
         public void CleanupCache() { }
 
+        /// <summary>Inspects a locked content identity through shared typed routing; partial inspection is observation, not a clean verdict.</summary>
         public async Task<RealTimeVerdictResult> InspectFileAsync(string filePath, CancellationToken ct = default)
         {
             ct.ThrowIfCancellationRequested();
@@ -138,13 +135,17 @@ namespace AegisPC.Security.RealTime
                     return result;
                 }
 
+                result.ContentClassification = await _contentClassifier.ClassifyAsync(scanLock, fileInfo.Extension, ct);
+                result.InspectionComplete = result.ContentClassification.IsComplete;
+                result.CoverageLimitations = result.ContentClassification.CoverageLimitations.ToArray();
+
                 // STAGE 0: Fast Shared Scan-Cache Lookup (FileHashMatcher)
                 string? verifiedHash = null;
                 if (_fileHashMatcher != null)
                 {
                     var cached = await _fileHashMatcher.TryGetCachedAsync(filePath, fileInfo, ct);
                     verifiedHash = cached.VerifiedHash;
-                    if (cached.Hit && cached.Finding == null && _detectionHub == null)
+                    if (cached.Hit && cached.Finding == null && _detectionHub == null && result.ContentClassification.IsComplete)
                     {
                         result.Verdict = RealTimeVerdict.Clean;
                         result.RecommendedPolicy = RealTimePolicyAction.Allow;
@@ -157,8 +158,6 @@ namespace AegisPC.Security.RealTime
                         return result;
                     }
                 }
-
-                var ext = fileInfo.Extension.ToLowerInvariant();
 
                 // STAGE 1: Fast Hash & Signature Database Check
                 var sha256 = verifiedHash ?? await _hashService.ComputeSha256Async(filePath, ct);
@@ -253,7 +252,7 @@ namespace AegisPC.Security.RealTime
 
                 if (_detectionHub != null)
                 {
-                    await InspectWithDetectionHubAsync(result, fileInfo, sha256, ct);
+                    await InspectWithDetectionHubAsync(result, fileInfo, sha256, scanLock, ct);
                     return result;
                 }
 
@@ -285,8 +284,8 @@ namespace AegisPC.Security.RealTime
 
                 // STAGE 3: Entropy & PE Heuristics
                 var entropy = await EntropyCalculator.CalculateEntropyAsync(filePath, ct);
-                bool isExe = DangerousExtensions.Contains(ext);
-                var peAnalysis = isExe || HasExecutableMagicBytes(scanLock) ? PeAnalyzer.Analyze(filePath) : new PeAnalysisResult();
+                bool isExe = result.ContentClassification.Formats.Contains(FileContentFormat.PortableExecutable);
+                var peAnalysis = isExe ? PeAnalyzer.Analyze(filePath) : new PeAnalysisResult();
 
                 var fileAnalysis = new FileAnalysisResult
                 {
@@ -366,6 +365,14 @@ namespace AegisPC.Security.RealTime
                     result.ThreatTitle = $"⚠️ Şüpheli Dosya Uyarısı: {fileInfo.Name}";
                     result.ThreatDescription = string.Join(" ", reasons.Take(2));
                 }
+                else if (!result.ContentClassification.IsComplete || result.ContentClassification.RequiresZipInspection)
+                {
+                    result.Verdict = RealTimeVerdict.Unknown;
+                    result.RecommendedPolicy = RealTimePolicyAction.Observe;
+                    result.ThreatDescription = "Inspection incomplete: " + string.Join("; ", result.ContentClassification.CoverageLimitations);
+                    if (result.ContentClassification.RequiresZipInspection)
+                        result.Evidences.Add("Archive member inspection requires the shared DetectionHub, which is not configured for this compatibility processor.");
+                }
                 else
                 {
                     result.Verdict = RealTimeVerdict.Clean;
@@ -394,11 +401,18 @@ namespace AegisPC.Security.RealTime
             return result;
         }
 
-        private async Task InspectWithDetectionHubAsync(RealTimeVerdictResult result, FileInfo file, string sha256, CancellationToken ct)
+        private async Task InspectWithDetectionHubAsync(RealTimeVerdictResult result, FileInfo file, string sha256, Stream source, CancellationToken ct)
         {
-            var shared = new ScanContext(file.FullName, sha256, file.Length) { LastWriteTimeUtc = file.LastWriteTimeUtc };
-            var detection = await _detectionHub!.EvaluateAsync(shared.ToDetectionContext(), ct);
+            var shared = new ScanContext(file.FullName, sha256, file.Length)
+                { LastWriteTimeUtc = file.LastWriteTimeUtc, ContentClassification = result.ContentClassification, LockedContent = source };
+            var context = shared.ToDetectionContext();
+            if (result.ContentClassification != null) context.CoverageLimitations.AddRange(result.ContentClassification.CoverageLimitations);
+            var detection = await _detectionHub!.EvaluateAsync(context, ct);
             ct.ThrowIfCancellationRequested();
+            result.InspectionComplete = detection.IsComplete && detection.FailedDetectorCount == 0 && result.ContentClassification?.IsComplete != false;
+            result.CoverageLimitations = detection.CoverageLimitations
+                .Concat(result.ContentClassification?.CoverageLimitations ?? new())
+                .Concat(detection.FailedDetectorCount > 0 ? ["DetectorExecutionFailed"] : Array.Empty<string>()).Distinct().Take(128).ToArray();
             result.RiskScore = detection.RiskScore;
             result.Confidence = detection.OverallConfidence == EvidenceConfidence.Absolute ? 0.99 :
                 detection.OverallConfidence == EvidenceConfidence.High ? 0.8 : 0.5;
@@ -406,7 +420,7 @@ namespace AegisPC.Security.RealTime
             result.Evidences.AddRange(detection.Evidences.Select(e => $"[{e.Category}] {e.Description}"));
             result.ThreatDescription = string.Join(" | ", detection.Evidences.Take(2).Select(e => e.Description));
             bool exact = detection.Verdict == DetectionVerdict.ConfirmedMalicious && detection.Evidences.Any(e =>
-                e.Category == EvidenceCategory.StaticSignature && e.Confidence == EvidenceConfidence.Absolute && e.ScoreContribution >= 80);
+                e.Category is EvidenceCategory.StaticSignature or EvidenceCategory.AmsiProvider && e.Confidence == EvidenceConfidence.Absolute && e.ScoreContribution >= 80);
             if (exact)
             {
                 result.Verdict = RealTimeVerdict.ConfirmedMalicious;
@@ -441,25 +455,5 @@ namespace AegisPC.Security.RealTime
             }
         }
 
-        /// <summary>
-        /// Dosyanın ilk baytlarını kontrol ederek çalıştırılabilir bir dosya olup olmadığını tespit eder.
-        /// MZ (PE), PK (ZIP/JAR), ELF magic byte'ları kontrol edilir.
-        /// </summary>
-        private static bool HasExecutableMagicBytes(FileStream fs)
-        {
-                fs.Position = 0;
-                Span<byte> header = stackalloc byte[4];
-                int read = fs.Read(header);
-                if (read < 2) return false;
-
-                // MZ → PE executable
-                if (header[0] == 0x4D && header[1] == 0x5A) return true;
-                // PK → ZIP archive (potential JAR, DOCM, etc.)
-                if (header[0] == 0x50 && header[1] == 0x4B) return true;
-                // ELF → Linux executable (unlikely on Windows but defensive)
-                if (read >= 4 && header[0] == 0x7F && header[1] == 0x45 && header[2] == 0x4C && header[3] == 0x46) return true;
-
-                return false;
-        }
     }
 }

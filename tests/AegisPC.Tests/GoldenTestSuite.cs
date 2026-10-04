@@ -159,8 +159,8 @@ namespace AegisPC.Tests
 
         #region 3. Zero False Positives on Benign Files
         /// <summary>
-        /// Invariant 3: Verifies that legitimate, benign user files (.txt, .pdf, .jpg)
-        /// never produce malicious or suspicious verdicts (Score &lt; 40, Verdict Clean, Action Allow).
+        /// Invariant 3: Benign content never produces a malware verdict, while unsupported or
+        /// truncated structures remain Unknown/Observe instead of being declared fully inspected.
         /// </summary>
         [Fact]
         public async Task Golden03_ZeroFalsePositives_BenignUserFiles_ProduceCleanAndAllowedVerdict()
@@ -172,10 +172,10 @@ namespace AegisPC.Tests
             // Legitimate text document
             await File.WriteAllTextAsync(txtFile, "Sayin Musteri, Gizlilik ve Hizmet Sozlesmesi ektedir. Tarih: 2026.");
 
-            // Valid PDF header and ASCII content
+            // Header-only PDF: no configured embedded-object decoder, so coverage must be explicit.
             await File.WriteAllBytesAsync(pdfFile, Encoding.UTF8.GetBytes("%PDF-1.4 harmless annual budget report contents"));
 
-            // Valid JPEG JFIF header
+            // Truncated JPEG JFIF header, deliberately not a complete image.
             var dummyJpg = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00 };
             await File.WriteAllBytesAsync(jpgFile, dummyJpg);
 
@@ -185,13 +185,15 @@ namespace AegisPC.Tests
             Assert.True(verdictTxt.RiskScore < 40);
 
             var verdictPdf = await _realTimeEngine.InspectFileAsync(pdfFile);
-            Assert.Equal(RealTimeVerdict.Clean, verdictPdf.Verdict);
-            Assert.Equal(RealTimePolicyAction.Allow, verdictPdf.RecommendedPolicy);
+            Assert.Equal(RealTimeVerdict.Unknown, verdictPdf.Verdict);
+            Assert.Equal(RealTimePolicyAction.Observe, verdictPdf.RecommendedPolicy);
+            Assert.False(verdictPdf.ContentClassification!.IsComplete);
             Assert.True(verdictPdf.RiskScore < 40);
 
             var verdictJpg = await _realTimeEngine.InspectFileAsync(jpgFile);
-            Assert.Equal(RealTimeVerdict.Clean, verdictJpg.Verdict);
-            Assert.Equal(RealTimePolicyAction.Allow, verdictJpg.RecommendedPolicy);
+            Assert.Equal(RealTimeVerdict.Unknown, verdictJpg.Verdict);
+            Assert.Equal(RealTimePolicyAction.Observe, verdictJpg.RecommendedPolicy);
+            Assert.False(verdictJpg.ContentClassification!.IsComplete);
             Assert.True(verdictJpg.RiskScore < 40);
         }
         #endregion

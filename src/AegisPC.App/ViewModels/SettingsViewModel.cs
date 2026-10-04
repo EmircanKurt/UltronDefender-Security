@@ -19,8 +19,6 @@ namespace AegisPC.App.ViewModels
     public partial class SettingsViewModel : ObservableObject, IDisposable
     {
         private readonly SettingsService? _settingsService;
-        private readonly IBackgroundProtectionService? _backgroundProtectionService;
-        private readonly IRansomwareProtectionEngine? _ransomwareProtectionEngine;
         private readonly IAuditLogService? _auditLogService;
         private readonly IWindowsToastNotificationService? _toastNotificationService;
         private readonly IReputationService? _reputationService;
@@ -148,11 +146,21 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty]
         private string statusMessage = string.Empty;
 
+        /// <summary>Whether the current service observation needs a connection notice or protection warning.</summary>
         [ObservableProperty]
         private bool isProtectionWarningVisible = false;
 
+        /// <summary>Plain-language explanation of unavailable service information or an observed protection limitation.</summary>
         [ObservableProperty]
         private string protectionWarningText = string.Empty;
+
+        /// <summary>Short heading that identifies the connection or observed protection condition without activation terminology.</summary>
+        [ObservableProperty]
+        private string protectionWarningTitle = string.Empty;
+
+        /// <summary>Presentation severity for the observed condition; missing information uses the neutral information style.</summary>
+        [ObservableProperty]
+        private string protectionWarningSeverity = nameof(ServiceProtectionNoticeSeverity.Information);
 
         [ObservableProperty]
         private ScanResourceMode selectedResourceMode = ScanResourceMode.Auto;
@@ -214,11 +222,10 @@ namespace AegisPC.App.ViewModels
             AegisPC.Security.Scanning.IFileHashMatcher? fileHashMatcher = null,
             IScanCoordinatorService? scanCoordinator = null,
             IExclusionService? exclusionService = null,
-            IServiceIpcClient? ipcClient = null)
+            IServiceIpcClient? ipcClient = null,
+            IProtectionDisableConfirmation? disableConfirmation = null)
         {
             _settingsService = settingsService;
-            _backgroundProtectionService = backgroundProtectionService;
-            _ransomwareProtectionEngine = ransomwareProtectionEngine;
             _auditLogService = auditLogService;
             _toastNotificationService = toastNotificationService;
             _reputationService = reputationService;
@@ -226,6 +233,7 @@ namespace AegisPC.App.ViewModels
             _scanCoordinator = scanCoordinator;
             _exclusionService = exclusionService;
             _ipcClient = ipcClient;
+            _disableConfirmation = disableConfirmation ?? new ProtectionDisableConfirmation();
 
             if (_ipcClient != null)
             {
@@ -240,6 +248,7 @@ namespace AegisPC.App.ViewModels
             AppThemeManager.ThemeChanged += OnAppThemeChanged;
             try { LoadSettings(); }
             finally { _isLoadingSettings = false; }
+            StartProtectionStatusFreshnessCheck();
             _ = RequestServiceStatusAsync();
         }
 
@@ -309,6 +318,7 @@ namespace AegisPC.App.ViewModels
                 SkipIdleScanOnBattery = s.SkipIdleScanOnBattery;
                 SampleIntervalSeconds = Math.Max(1, s.PerformanceSampleIntervalMs / 1000);
                 IsFileProtectionEnabled = s.IsFileProtectionEnabled;
+                IsUltronAiEnabled = s.IsUltronAiEnabled;
                 IsRansomwareShieldEnabled = s.IsRansomwareShieldEnabled;
                 IsNetworkProtectionEnabled = s.IsNetworkProtectionEnabled;
                 EnableAutoQuarantine = s.EnableAutoQuarantine;
@@ -356,16 +366,13 @@ namespace AegisPC.App.ViewModels
 
         private void EvaluateProtectionWarning()
         {
-            if (!IsFileProtectionEnabled || !IsRansomwareShieldEnabled)
-            {
-                IsProtectionWarningVisible = true;
-                ProtectionWarningText = "⚠️ DİKKAT: Temel güvenlik korumalarından biri veya birkaçı devre dışı bırakıldı! Cihazınız saldırılara karşı savunmasız kalabilir.";
-            }
-            else
-            {
-                IsProtectionWarningVisible = false;
-                ProtectionWarningText = string.Empty;
-            }
+            var notice = ServiceProtectionStatusPolicy.Describe(_ipcClient, _lastProtectionStatus, DateTime.UtcNow);
+            if (!IsProtectionStatusVerified && notice.Title.Length == 0)
+                notice = new ServiceProtectionNotice("Koruma bilgisi alınamadı", "Güncel çalışma durumu için Yenile ile tekrar deneyin.");
+            IsProtectionWarningVisible = notice.Title.Length != 0;
+            ProtectionWarningTitle = notice.Title;
+            ProtectionWarningText = notice.Message;
+            ProtectionWarningSeverity = notice.Severity.ToString();
         }
 
         partial void OnIsFileProtectionEnabledChanged(bool value)
@@ -376,21 +383,7 @@ namespace AegisPC.App.ViewModels
                 return;
             }
 
-            if (_ipcClient?.IsConnected == true)
-            {
-                _ = SendServiceCommandAsync(value ? ServiceCommandType.EnableProtection : ServiceCommandType.DisableProtection);
-            }
-            else if (value)
-            {
-                _backgroundProtectionService?.StartProtection();
-            }
-            else
-            {
-                _backgroundProtectionService?.StopProtection();
-            }
-            EvaluateProtectionWarning();
-            _ = SaveSettingsAsync();
-            _ = LogAuditAsync("Dosya Kalkanı", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı (UYARI)");
+            _ = RequestServiceProtectionChangeAsync(ransomware: false, enabled: value);
         }
 
         partial void OnIsRansomwareShieldEnabledChanged(bool value)
@@ -401,21 +394,7 @@ namespace AegisPC.App.ViewModels
                 return;
             }
 
-            if (_ipcClient?.IsConnected == true)
-            {
-                _ = SendServiceCommandAsync(value ? ServiceCommandType.EnableRansomwareShield : ServiceCommandType.DisableRansomwareShield);
-            }
-            else if (value)
-            {
-                _ransomwareProtectionEngine?.StartShield();
-            }
-            else
-            {
-                _ransomwareProtectionEngine?.StopShield();
-            }
-            EvaluateProtectionWarning();
-            _ = SaveSettingsAsync();
-            _ = LogAuditAsync("Fidye Kalkanı", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı (UYARI)");
+            _ = RequestServiceProtectionChangeAsync(ransomware: true, enabled: value);
         }
 
         partial void OnEnableAutoQuarantineChanged(bool value)
@@ -501,19 +480,7 @@ namespace AegisPC.App.ViewModels
         partial void OnIsNetworkProtectionEnabledChanged(bool value)
         {
             if (_isApplyingServiceStatus || _isLoadingSettings) return;
-
-            AegisPC.Core.Configuration.FeatureFlags.IsNetworkShieldActive = value;
-            if (_settingsService != null)
-            {
-                _settingsService.Current.IsNetworkProtectionEnabled = value;
-            }
-            if (_ipcClient?.IsConnected == true)
-            {
-                _ = SendServiceCommandAsync(value ? ServiceCommandType.EnableNetworkProtection : ServiceCommandType.DisableNetworkProtection);
-            }
-            StatusMessage = value ? "Ağ, DNS ve Web Kalkanı devrede." : "Ağ, DNS ve Web Kalkanı durduruldu.";
-            _ = SaveSettingsAsync();
-            _ = LogAuditAsync("Ağ ve Web Kalkanı", value ? "Aktif Edildi" : "Devre Dışı Bırakıldı");
+            _ = RequestNetworkProtectionChangeAsync(value);
         }
 
         private async Task LogAuditAsync(string component, string action)
@@ -596,23 +563,52 @@ namespace AegisPC.App.ViewModels
 
         private async Task RequestServiceStatusAsync()
         {
-            if (_ipcClient?.IsConnected != true) return;
-            try { await _ipcClient.GetStatusAsync(); }
+            if (_settingsDisposed) return;
+            if (_ipcClient?.IsConnected != true)
+            {
+                IsProtectionStatusVerified = false;
+                UpdateUltronAiObservation();
+                EvaluateProtectionWarning();
+                return;
+            }
+            try { ApplyServiceStatus(await _ipcClient.GetStatusAsync()); }
             catch (Exception ex)
             {
                 Serilog.Log.Warning(ex, "Servis durumu yenilenemedi.");
                 StatusMessage = "Servis bağlantısı doğrulanamadı.";
+                IsProtectionStatusVerified = false;
+                UpdateUltronAiObservation();
+                EvaluateProtectionWarning();
             }
         }
 
         private void ApplyServiceStatus(ProtectionStatus status)
         {
+            if (_settingsDisposed) return;
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                dispatcher.InvokeAsync(() => ApplyServiceStatus(status));
+                return;
+            }
+            IsProtectionStatusVerified = ServiceProtectionStatusPolicy.IsVerified(_ipcClient, status);
+            _lastProtectionStatus = status;
+            UpdateUltronAiObservation();
+            if (!status.IsServiceRunning)
+            {
+                EvaluateProtectionWarning();
+                return;
+            }
             _isApplyingServiceStatus = true;
             try
             {
-                IsFileProtectionEnabled = status.IsRealTimeEnabled;
-                IsRansomwareShieldEnabled = status.IsRansomwareShieldEnabled;
-                IsNetworkProtectionEnabled = status.IsNetworkProtectionEnabled;
+                if (IsProtectionStatusVerified)
+                {
+                    _lastObservedFileProtection = IsFileProtectionEnabled = status.IsRealTimeEnabled;
+                    _lastObservedRansomwareProtection = IsRansomwareShieldEnabled = status.IsRansomwareShieldEnabled;
+                    _lastObservedNetworkProtection = IsNetworkProtectionEnabled = status.IsNetworkProtectionEnabled;
+                    AegisPC.Core.Configuration.FeatureFlags.IsNetworkShieldActive = status.IsNetworkProtectionEnabled;
+                }
                 ScanScheduleEnabled = status.ScanScheduleEnabled;
                 IdleScanEnabled = status.IdleScanEnabled;
                 IdleScanThresholdMinutes = Math.Clamp(status.IdleScanThresholdMinutes, 1, 240);
@@ -628,13 +624,15 @@ namespace AegisPC.App.ViewModels
                 SelectedResourceModeItem = ResourceModes.FirstOrDefault(m => m.Mode == status.ScanResourceMode) ?? ResourceModes[0];
                 EnableAutoQuarantine = status.EnableAutoQuarantine;
                 AutoQuarantineThreshold = Math.Clamp(status.AutoQuarantineThreshold, 0, 100);
-                AegisPC.Core.Configuration.FeatureFlags.IsNetworkShieldActive = status.IsNetworkProtectionEnabled;
                 if (_settingsService != null)
                 {
                     var settings = _settingsService.Current;
-                    settings.IsFileProtectionEnabled = IsFileProtectionEnabled;
-                    settings.IsRansomwareShieldEnabled = IsRansomwareShieldEnabled;
-                    settings.IsNetworkProtectionEnabled = IsNetworkProtectionEnabled;
+                    if (IsProtectionStatusVerified)
+                    {
+                        settings.IsFileProtectionEnabled = IsFileProtectionEnabled;
+                        settings.IsRansomwareShieldEnabled = IsRansomwareShieldEnabled;
+                        settings.IsNetworkProtectionEnabled = IsNetworkProtectionEnabled;
+                    }
                     settings.ScanScheduleEnabled = ScanScheduleEnabled;
                     settings.IdleScanEnabled = IdleScanEnabled;
                     settings.IdleScanThresholdMinutes = IdleScanThresholdMinutes;
@@ -676,8 +674,7 @@ namespace AegisPC.App.ViewModels
             s.IdleScanIntervalHours = Math.Clamp(IdleScanIntervalHours, 1, 168);
             s.SkipIdleScanOnBattery = SkipIdleScanOnBattery;
             s.PerformanceSampleIntervalMs = SampleIntervalSeconds * 1000;
-            s.IsFileProtectionEnabled = IsFileProtectionEnabled;
-            s.IsRansomwareShieldEnabled = IsRansomwareShieldEnabled;
+            // Protection ownership belongs to the service; saving unrelated UI preferences must not persist optimistic toggles.
             s.EnableAutoQuarantine = EnableAutoQuarantine;
             s.AutoQuarantineThreshold = Math.Clamp(AutoQuarantineThreshold, 0, 100);
             s.IsProcessMonitoringEnabled = IsProcessMonitoringEnabled;
@@ -872,6 +869,8 @@ namespace AegisPC.App.ViewModels
 
         public void Dispose()
         {
+            _settingsDisposed = true;
+            _protectionStatusTimer?.Stop();
             AppThemeManager.ThemeChanged -= OnAppThemeChanged;
             if (_ipcClient != null) _ipcClient.StatusChanged -= ApplyServiceStatus;
         }

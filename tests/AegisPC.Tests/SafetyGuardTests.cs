@@ -154,8 +154,8 @@ namespace AegisPC.Tests
 
             // Verify vault container contains encrypted data (not plaintext)
             var vaultBytes = await File.ReadAllBytesAsync(result.VaultContainerPath);
-            var vaultHeader = Encoding.ASCII.GetString(vaultBytes, 0, Encoding.ASCII.GetByteCount("AEGIS_VAULT_V3"));
-            Assert.Equal("AEGIS_VAULT_V3", vaultHeader);
+            var vaultHeader = Encoding.ASCII.GetString(vaultBytes, 0, Encoding.ASCII.GetByteCount("AEGIS_VAULT_V4"));
+            Assert.Equal("AEGIS_VAULT_V4", vaultHeader);
             Assert.DoesNotContain(payloadContent, Encoding.UTF8.GetString(vaultBytes));
 
             // 3. Act: Restore File

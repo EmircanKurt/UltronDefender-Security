@@ -11,6 +11,40 @@ namespace AegisPC.Tests
 {
     public class ScanReportGeneratorTests
     {
+        /// <summary>Legacy missing dates remain unknown in exported text rather than displaying year one.</summary>
+        [Fact]
+        public void MissingStartDate_IsNotInventedInTextExport()
+        {
+            string text = ScanReportGenerator.GenerateTextReport(default, "00:01:29", "Quick", 53311, null,
+                scanStatus: ScanStatus.Failed);
+            Assert.Contains("Başlangıç zamanı kaydedilmedi", text);
+            Assert.DoesNotContain("0001-", text);
+            Assert.Contains("Failed", text);
+        }
+
+        /// <summary>JSON exports preserve structured engine failures independently of per-file counters.</summary>
+        [Fact]
+        public void FailedJsonExport_PreservesCauseAndCorrelation()
+        {
+            var correlation = Guid.NewGuid();
+            var report = new ScanReportRecord { Result = new ScanResult
+            {
+                Status = ScanStatus.Failed, ScannedFiles = 53311, FailedFiles = 0,
+                FailureInfo = new ScanFailureInfo
+                {
+                    Stage = ScanFailureStage.Scanning, Reason = ScanFailureReason.ChannelClosed,
+                    CorrelationId = correlation, HResult = -1, SafeMessage = "Worker channel closed."
+                }
+            }};
+            using var document = System.Text.Json.JsonDocument.Parse(ScanReportGenerator.GenerateJsonReport(report));
+            var failure = document.RootElement.GetProperty("FailureInfo");
+            Assert.Equal("Scanning", failure.GetProperty("Stage").GetString());
+            Assert.Equal("ChannelClosed", failure.GetProperty("Reason").GetString());
+            Assert.Equal(correlation, failure.GetProperty("CorrelationId").GetGuid());
+            Assert.Equal(0, document.RootElement.GetProperty("FailedFiles").GetInt32());
+            Assert.False(document.RootElement.GetProperty("ReportedCoverageComplete").GetBoolean());
+        }
+
         [Fact]
         public void GenerateTextReport_WithFindings_ContainsAllRequiredFields()
         {

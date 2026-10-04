@@ -12,10 +12,9 @@ using Microsoft.Extensions.Logging;
 namespace AegisPC.Security.Detection
 {
     /// <summary>
-    /// AegisPC Modüler Detection Hub.
-    /// Tüm bağımsız dedektörleri orkestre eder, kanıtları toplar,
-    /// kategori bazlı puan tavanı (Category Capping) ve mükerrer kayıt filtrelemesi yaparak
-    /// açıklanabilir (Explainable) nihai güvenlik kararını üretir.
+    /// Orchestrates independent detectors and produces an explainable, category-bounded security decision.
+    /// Positive evidence cannot be erased by signatures, rule-name text, locations, or negative reputation scores.
+    /// Exact signature evidence retains priority; failed or partial inspection cannot establish a clean verdict.
     /// </summary>
     public class DetectionHub : IDetectionHub
     {
@@ -25,7 +24,7 @@ namespace AegisPC.Security.Detection
         private int _failedDetectorCount;
 
         /// <summary>
-        /// Son taramada sessizce başarısız olan dedektör sayısı.
+        /// Returns the failed-detector count of the last completed evaluation; concurrent evaluations carry their own result count.
         /// </summary>
         public int FailedDetectorCount => _failedDetectorCount;
 
@@ -34,6 +33,7 @@ namespace AegisPC.Security.Detection
         private static readonly Dictionary<EvidenceCategory, int> CategoryCaps = new()
         {
             [EvidenceCategory.StaticSignature] = 100,
+            [EvidenceCategory.AmsiProvider] = 100,
             [EvidenceCategory.AntiEvasion] = 80,
             [EvidenceCategory.ScriptHeuristic] = 50,
             [EvidenceCategory.StaticApi] = 45,
@@ -45,7 +45,8 @@ namespace AegisPC.Security.Detection
             [EvidenceCategory.BehaviorNetwork] = 30,
             [EvidenceCategory.Persistence] = 30,
             [EvidenceCategory.ArchiveAnomaly] = 40,
-            [EvidenceCategory.DigitalCertificate] = 10
+            [EvidenceCategory.DigitalCertificate] = 10,
+            [EvidenceCategory.MachineLearningHeuristic] = 75
         };
 
         public IReadOnlyList<IDetectorPlugin> RegisteredDetectors
@@ -96,6 +97,7 @@ namespace AegisPC.Security.Detection
             }
         }
 
+        /// <summary>Evaluates enabled detectors, preserving positive evidence and returning explicit incomplete coverage; cancellation propagates.</summary>
         public async Task<DetectionResult> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
         {
             if (context == null) throw new ArgumentNullException(nameof(context));
@@ -103,7 +105,7 @@ namespace AegisPC.Security.Detection
 
             // Kontrol Noktası (b): İstisna (Exclusion) Kontrolü (Dedektörler çalıştırılmadan ÖNCE)
             // User exclusions never suppress a verified exact signature already in the local feed.
-            bool knownHash = Scanning.MalwareSignatureDatabase.CheckHash(context.SHA256 ?? string.Empty).IsMatched;
+            bool knownHash = Scanning.MalwareSignatureDatabase.HasLoadedHash(context.SHA256);
             if (!knownHash && _exclusionService != null && _exclusionService.IsExcluded(context.FilePath, context.SHA256))
             {
                 return new DetectionResult
@@ -185,25 +187,27 @@ namespace AegisPC.Security.Detection
                 };
             }
 
-            // 2. Deduplicate Evidence by RuleName and FilePath
+            // Independent categories and sources must not erase one another merely by sharing a display rule name.
             var uniqueEvidences = rawEvidences
-                .GroupBy(e => (e.RuleName, e.FilePath))
-                .Select(g => g.First())
+                .GroupBy(e => (e.SourceDetector, e.Category, e.RuleName, e.FilePath))
+                .Select(g => g.OrderByDescending(e => e.ScoreContribution).ThenByDescending(e => e.Confidence).First())
                 .ToList();
 
-            int rawScore = uniqueEvidences.Sum(e => e.ScoreContribution);
+            var positiveEvidences = uniqueEvidences.Where(e => e.ScoreContribution > 0).ToList();
+            int rawScore = positiveEvidences.Sum(e => e.ScoreContribution);
 
             // 3. Correlation Group Deduplication (Dominant signal + 25% corroboration bonus)
-            var groupScores = new Dictionary<string, (EvidenceCategory Category, int Score, List<SecurityEvidence> Items)>(StringComparer.OrdinalIgnoreCase);
-            foreach (var evidence in uniqueEvidences)
+            var groupScores = new Dictionary<(EvidenceCategory Category, string Group), List<SecurityEvidence>>();
+            foreach (var evidence in positiveEvidences)
             {
                 string grpName = string.IsNullOrEmpty(evidence.CorrelationGroup) ? evidence.Category.ToString() : evidence.CorrelationGroup;
-                if (!groupScores.TryGetValue(grpName, out var grpEntry))
+                var groupKey = (evidence.Category, grpName.ToUpperInvariant());
+                if (!groupScores.TryGetValue(groupKey, out var items))
                 {
-                    grpEntry = (evidence.Category, 0, new List<SecurityEvidence>());
-                    groupScores[grpName] = grpEntry;
+                    items = new List<SecurityEvidence>();
+                    groupScores[groupKey] = items;
                 }
-                grpEntry.Items.Add(evidence);
+                items.Add(evidence);
             }
 
             var groupEvaluations = new List<(string GroupName, EvidenceCategory Category, int Dominant, int Corroborating, int EffectiveGroupScore)>();
@@ -211,9 +215,9 @@ namespace AegisPC.Security.Detection
 
             foreach (var kvp in groupScores)
             {
-                string grpName = kvp.Key;
-                var items = kvp.Value.Items;
-                var cat = kvp.Value.Category;
+                string grpName = kvp.Key.Group;
+                var items = kvp.Value;
+                var cat = kvp.Key.Category;
 
                 var dominant = items.OrderByDescending(i => i.ScoreContribution).First();
                 int dominantScore = dominant.ScoreContribution;
@@ -234,74 +238,15 @@ namespace AegisPC.Security.Detection
                 var category = catGroup.Key;
                 int sumInCategory = catGroup.Sum(g => g.EffectiveGroupScore);
                 int cap = CategoryCaps.TryGetValue(category, out int c) ? c : 100;
-                int effectiveScore = sumInCategory >= 0 ? Math.Min(sumInCategory, cap) : sumInCategory;
+                int effectiveScore = Math.Min(sumInCategory, cap);
 
                 categoryBreakdown.Add((category, sumInCategory, cap, effectiveScore));
                 categoryAdjustedScore += effectiveScore;
             }
 
-            // 5. Context Modifier (Digital Trust / Safe Path / Game Crack Heuristic Calibration)
-            double contextModifier = 1.0;
-            bool hasExplicitMalwareSignature = uniqueEvidences.Any(e =>
-                e.Category == EvidenceCategory.StaticSignature &&
-                e.Confidence == EvidenceConfidence.Absolute &&
-                e.ScoreContribution >= 80);
-
-            bool isMicrosoftSigned = uniqueEvidences.Any(e => 
-                e.RuleName.Contains("ValidMicrosoft", StringComparison.OrdinalIgnoreCase) || 
-                e.RuleName.Contains("MicrosoftTrusted", StringComparison.OrdinalIgnoreCase));
-
-            bool isCommercialSigned = uniqueEvidences.Any(e => 
-                e.RuleName.Contains("TrustedPublisher", StringComparison.OrdinalIgnoreCase) ||
-                e.RuleName.Contains("Signature.Valid", StringComparison.OrdinalIgnoreCase) ||
-                e.RuleName.Contains("Cert.ValidPublisher", StringComparison.OrdinalIgnoreCase));
-
-            bool isSystemPath = !string.IsNullOrEmpty(context.FilePath) && 
-                AegisPC.Core.Helpers.PathHelper.IsSystemPath(context.FilePath);
-
-            bool isVerifiedEmulatorHash = !string.IsNullOrEmpty(context.FilePath) && 
-                AegisPC.Core.Helpers.GameCrackClassifier.IsGameCrackOrEmulator(context.FilePath);
-
-            bool isDevelopmentOrPackageDirectory = !string.IsNullOrEmpty(context.FilePath) &&
-                AegisPC.Core.Helpers.PathHelper.IsDevelopmentOrPackageDirectory(context.FilePath);
-
-            if (!hasExplicitMalwareSignature)
-            {
-                // Multi-signal trust evaluation:
-                // A valid signature is a STRONG trust signal, but NOT an absolute bypass for severe malicious payloads (stolen certs, signed trojans, dual-use tools).
-                bool hasSevereMaliciousPayload = uniqueEvidences.Any(e => 
-                    (e.Category is EvidenceCategory.AntiEvasion or EvidenceCategory.BehaviorMemory or EvidenceCategory.BehaviorProcess && e.ScoreContribution >= 40) ||
-                    e.RuleName.Contains("SystemProcessMasquerading", StringComparison.OrdinalIgnoreCase));
-
-                // KRİPTOGRAFİK DOĞRULAMA: Geçerli dijital sertifikası veya doğrulanmış emülatör hash'i olan dosyalar
-                if (isMicrosoftSigned)
-                {
-                    // Doğrulanmış Microsoft / Windows dijital sertifikası
-                    contextModifier = hasSevereMaliciousPayload ? 0.25 : 0.0;
-                }
-                else if (isCommercialSigned)
-                {
-                    // Geçerli ticari sertifika (Adobe, NVIDIA, Valve vb.)
-                    contextModifier = hasSevereMaliciousPayload ? 0.45 : 0.0;
-                }
-                else if (isSystemPath)
-                {
-                    // Sistem yolunda ama sertifika doğrulanmamış (ör. bırakılan zararlı) → Asla sıfırlanmaz!
-                    contextModifier = 0.3;
-                }
-                else if (isVerifiedEmulatorHash)
-                {
-                    // Doğrulanmış bilinen emülatör hash'i (asla dosya yolu değil)
-                    contextModifier = 0.5;
-                }
-                else if (isDevelopmentOrPackageDirectory)
-                {
-                    // Geliştirme paketleri (node_modules, site-packages vb.): Hafif indirim, asla sıfır değil
-                    contextModifier = 0.4;
-                }
-            }
-
-            int finalScore = Math.Clamp((int)Math.Floor(categoryAdjustedScore * contextModifier), 0, 100);
+            // Trust is explanatory metadata, not a veto over independent positive security evidence.
+            const double contextModifier = 1.0;
+            int finalScore = Math.Clamp(categoryAdjustedScore, 0, 100);
 
             // 6. Build Auditable Score Trace String SADECE riskli/şüpheli bulgular için üretilir
             string scoreTrace = string.Empty;
@@ -314,7 +259,7 @@ namespace AegisPC.Security.Detection
                 foreach (var ev in uniqueEvidences)
                 {
                     string grp = string.IsNullOrEmpty(ev.CorrelationGroup) ? ev.Category.ToString() : ev.CorrelationGroup;
-                    traceSb.AppendLine($" • [{ev.Category}] [{grp}] {ev.RuleName}: +{ev.ScoreContribution} (Conf: {ev.Confidence}) — {ev.Description}");
+                    traceSb.AppendLine($" • [{ev.Category}] [{grp}] {ev.RuleName}: {ev.ScoreContribution:+0;-0;0} (Conf: {ev.Confidence}, Trust: {ev.TrustKind}) — {ev.Description}");
                 }
 
                 traceSb.AppendLine("\n[Correlation Group Deduplication]:");
@@ -330,18 +275,24 @@ namespace AegisPC.Security.Detection
                     traceSb.AppendLine($" • {c.Category}: GroupSum={c.RawGroupSum}, Cap={c.Cap} -> CategoryScore={c.EffectiveScore}");
                 }
                 traceSb.AppendLine($"Category Adjusted Sum: {categoryAdjustedScore}");
-                traceSb.AppendLine($"Context Trust Modifier: {contextModifier:F2}");
+                traceSb.AppendLine("Negative reputation scores and contextual trust discounts do not subtract positive evidence.");
                 traceSb.AppendLine($"FINAL CALCULATED RISK SCORE: {finalScore}/100");
                 scoreTrace = traceSb.ToString();
             }
 
             // 7. Calculate Overall Confidence
-            var highestConfidence = uniqueEvidences.Count > 0
-                ? uniqueEvidences.Max(e => e.Confidence)
+            var highestConfidence = positiveEvidences.Count > 0
+                ? positiveEvidences.Max(e => e.Confidence)
                 : EvidenceConfidence.Low;
 
             // 8. Determine Verdict and Policy
             var (verdict, policy, threatTitle) = MapVerdictAndPolicy(finalScore, highestConfidence, uniqueEvidences);
+            if (verdict == DetectionVerdict.Clean && (failedDetectorCount > 0 || context.CoverageLimitations.Count > 0))
+            {
+                verdict = DetectionVerdict.Unknown;
+                policy = DetectionPolicy.Observe;
+                threatTitle = "İnceleme kapsamı eksik";
+            }
 
             stopwatch.Stop();
 
@@ -376,7 +327,7 @@ namespace AegisPC.Security.Detection
         {
             // Exact Signature Match Override
             var signatureMatch = evidences.FirstOrDefault(e =>
-                e.Category == EvidenceCategory.StaticSignature &&
+                (e.Category == EvidenceCategory.StaticSignature || e.Category == EvidenceCategory.AmsiProvider) &&
                 e.Confidence == EvidenceConfidence.Absolute &&
                 e.ScoreContribution >= 80);
             if (signatureMatch != null)
@@ -388,7 +339,7 @@ namespace AegisPC.Security.Detection
             if (score >= 85)
             {
                 bool hasAbsoluteMalwareSignature = evidences.Any(e =>
-                    e.Category == EvidenceCategory.StaticSignature &&
+                    (e.Category == EvidenceCategory.StaticSignature || e.Category == EvidenceCategory.AmsiProvider) &&
                     e.Confidence == EvidenceConfidence.Absolute &&
                     e.ScoreContribution >= 80);
 

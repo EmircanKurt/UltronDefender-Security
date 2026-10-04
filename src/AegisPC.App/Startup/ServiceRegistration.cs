@@ -22,6 +22,7 @@ using AegisPC.Security.Reputation;
 using AegisPC.Security.Scanning;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Serilog;
 
 namespace AegisPC.App.Startup
 {
@@ -30,7 +31,7 @@ namespace AegisPC.App.Startup
         public static void RegisterServices(IServiceCollection services)
         {
             // Core Logging Infrastructure
-            services.AddLogging();
+            services.AddLogging(builder => builder.AddSerilog(Serilog.Log.Logger, dispose: false));
 
             // Windows
             services.AddSingleton<MainWindow>();
@@ -44,6 +45,8 @@ namespace AegisPC.App.Startup
             services.AddSingleton<IAuditLogService, AuditLogService>();
             services.AddSingleton<IElevationService, ElevationService>();
             services.AddSingleton<INotificationService, NotificationService>();
+            services.AddSingleton<IProtectionDisableConfirmation, ProtectionDisableConfirmation>();
+            services.AddSingleton<UltronAiServicePreferenceSync>();
             services.AddSingleton<IWindowsSecurityRegistrationService, WindowsSecurityRegistrationService>();
 
             // Repositories
@@ -71,6 +74,11 @@ namespace AegisPC.App.Startup
 
             // DetectionHub & Modular Detector Plugins (Phase 1-2)
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.HashSignatureDetector>();
+            services.AddSingleton<AegisPC.Contracts.Detection.IUltronAiEngine, AegisPC.Security.UltronAI.UltronAiEngine>();
+            services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin>(sp =>
+                new AegisPC.Security.Detection.Detectors.UltronAiDetectorPlugin(
+                    sp.GetRequiredService<AegisPC.Contracts.Detection.IUltronAiEngine>(),
+                    () => sp.GetRequiredService<ISettingsService>().GetSetting("IsUltronAiEnabled", true)));
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.PeStaticDetector>();
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.PE.DeepPeDetector>();
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.EntropyDetector>();
@@ -94,16 +102,19 @@ namespace AegisPC.App.Startup
             services.AddSingleton<AegisPC.Contracts.Safety.IReparsePointGuard, AegisPC.Security.Safety.ReparsePointGuard>();
             services.AddSingleton<AegisPC.Contracts.Policy.IPolicyEngine, AegisPC.Security.Policy.PolicyEngine>();
             services.AddSingleton<AegisPC.Security.Scanning.IFileHashMatcher, AegisPC.Security.Scanning.FileHashMatcher>();
-            services.AddSingleton<IQuarantineService, QuarantineService>();
+            services.AddSingleton<IQuarantineService, AegisPC.App.Services.ServiceQuarantineClient>();
+            services.AddSingleton<IFileContentClassifier, FileContentClassifier>();
+            services.AddSingleton<IScanTargetResolver, WindowsScanTargetResolver>();
+            services.AddSingleton<IScanVolumeTargetResolver, WindowsScanVolumeTargetResolver>();
             services.AddSingleton<ISecurityFindingService, SecurityFindingService>();
             services.AddSingleton<IScanResourceManager, AdaptiveScanResourceManager>();
             services.AddSingleton<IScanSessionManager, ScanSessionManager>();
             services.AddSingleton<IFileScanner>(sp => new FileScannerService(
-                new DirectoryWalker(), new ScanQueueCoordinator(sp.GetRequiredService<IScanResourceManager>()),
+                new DirectoryWalker(sp.GetRequiredService<IScanTargetResolver>(), sp.GetRequiredService<IScanVolumeTargetResolver>()), new ScanQueueCoordinator(sp.GetRequiredService<IScanResourceManager>()),
                 sp.GetRequiredService<AegisPC.Security.Scanning.IFileHashMatcher>(),
                 new PupAnalysisCoordinator(sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>(), sp.GetRequiredService<ISecurityFindingService>()),
                 sp.GetRequiredService<ArchiveSafetyScanner>(), sp.GetRequiredService<ISecurityFindingService>(),
-                sp.GetService<Microsoft.Extensions.Logging.ILogger<FileScannerService>>()));
+                sp.GetService<Microsoft.Extensions.Logging.ILogger<FileScannerService>>(), sp.GetRequiredService<IFileContentClassifier>()));
             services.AddSingleton<ScanCoordinatorService>();
             services.AddSingleton<IScanCoordinatorService>(sp => sp.GetRequiredService<ScanCoordinatorService>());
             services.AddSingleton<IBackgroundScanCoordinator>(sp => sp.GetRequiredService<ScanCoordinatorService>());
@@ -120,8 +131,9 @@ namespace AegisPC.App.Startup
                 () => sp.GetRequiredService<ISettingsService>().GetSetting("AutoQuarantineThreshold", 85),
                 detectionHub: sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>()));
             services.AddSingleton<AegisPC.Security.RealTime.IBackgroundProtectionService, AegisPC.Security.RealTime.BackgroundProtectionService>();
-            services.AddSingleton<AegisPC.Security.RealTime.IRansomwareProtectionEngine, AegisPC.Security.RealTime.RansomwareProtectionEngine>();
+            services.AddSingleton<AegisPC.Security.RealTime.IRansomwareProtectionEngine, AegisPC.App.Services.ServiceRansomwareClient>();
             services.AddSingleton<IAmsiScanService, AegisPC.Security.Scanning.AmsiScanService>();
+            services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.AmsiContentDetector>();
             services.AddSingleton<AegisPC.Contracts.Services.IEtwProcessMonitorService, AegisPC.Security.RealTime.EtwProcessMonitorService>();
             services.AddSingleton<IEtwPreExecProtectionService>(sp => new AegisPC.Security.RealTime.EtwPreExecProtectionService(
                 sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>(), sp.GetRequiredService<IRiskScoringEngine>(), sp.GetRequiredService<ISignatureVerifier>(),
@@ -187,6 +199,7 @@ namespace AegisPC.App.Startup
             services.AddTransient<RecommendationsViewModel>();
             services.AddTransient<HistoryViewModel>();
             services.AddTransient<IncidentCenterViewModel>();
+            services.AddTransient<UltronProtectionCentreViewModel>();
 
             // Views
             services.AddTransient<DashboardView>();
@@ -208,6 +221,7 @@ namespace AegisPC.App.Startup
             services.AddTransient<NetworkProtectionView>();
             services.AddTransient<ParentalControlsView>();
             services.AddTransient<IncidentCenterView>();
+            services.AddTransient<UltronProtectionCentreView>();
             services.AddTransient<SplashWindow>();
 
             // Service IPC & Tray

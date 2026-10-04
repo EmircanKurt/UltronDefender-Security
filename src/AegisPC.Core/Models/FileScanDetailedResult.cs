@@ -15,6 +15,8 @@ namespace AegisPC.Core.Models
         public TimeSpan Duration { get; set; } = TimeSpan.Zero;
         public bool IsFromCache { get; set; }
         public bool IsSignedClean { get; set; }
+        /// <summary>Reports observed content independently of the name; null means classification was not performed.</summary>
+        public FileContentClassification? ContentClassification { get; set; }
 
         public static FileScanDetailedResult CreateSuccess(string path, SecurityFinding? finding, TimeSpan duration, bool isFromCache = false, bool isSignedClean = false) =>
             new() { FilePath = path, Outcome = FileScanOutcome.Success, Finding = finding, Duration = duration, IsFromCache = isFromCache, IsSignedClean = isSignedClean };

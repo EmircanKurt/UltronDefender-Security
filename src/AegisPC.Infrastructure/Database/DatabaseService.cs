@@ -81,7 +81,9 @@ namespace AegisPC.Infrastructure.Database
         public async Task InitializeAsync(CancellationToken cancellationToken = default)
         {
             using var connection = GetConnection();
+            using var transaction = connection.BeginTransaction();
             using var command = connection.CreateCommand();
+            command.Transaction = transaction;
 
             command.CommandText = @"
                 CREATE TABLE IF NOT EXISTS SecurityFindings (
@@ -389,6 +391,7 @@ namespace AegisPC.Infrastructure.Database
                 CREATE INDEX IF NOT EXISTS IX_CrashEvents_Time ON CrashEvents(OccurredAt);
             ";
             await command.ExecuteNonQueryAsync(cancellationToken);
+            transaction.Commit();
         }
     }
 }

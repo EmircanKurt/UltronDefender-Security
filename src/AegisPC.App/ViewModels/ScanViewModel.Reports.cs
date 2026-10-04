@@ -102,7 +102,7 @@ public partial class ScanViewModel
                 ? ScanReportGenerator.GenerateJsonReport(report)
                 : ScanReportGenerator.GenerateTextReport(report.Result.StartedAt.ToLocalTime(), FormatDuration(TimeSpan.FromMilliseconds(report.Result.ElapsedMs)),
                     report.Result.ScanType.ToString(), report.Result.ScannedFiles, report.Result.Findings, report.Actions,
-                    report.Result.SkippedFiles, report.Result.FailedFiles, report.Result.TimedOutFiles, report.ResourceProfile, report.Result.Status);
+                    report.Result.SkippedFiles, report.Result.FailedFiles, report.Result.TimedOutFiles, report.ResourceProfile, report.Result.Status, report.Result.Coverage, report.Result.FailureInfo);
             await File.WriteAllTextAsync(path, content, System.Text.Encoding.UTF8);
             _toastService?.ShowToast("Rapor Kaydedildi", Path.GetFileName(path), "Success");
             ReportHistoryStatus = "Rapor kaydedildi: " + path;

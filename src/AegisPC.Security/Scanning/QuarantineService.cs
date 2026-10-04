@@ -17,7 +17,7 @@ namespace AegisPC.Security.Scanning
     /// AES-256 şifreli, SQLite ACID veritabanı indeksli, transactional rollback korumalı ve güvenli geri yükleme/silme özellikli Karantina Servisi.
     /// TransactionalQuarantineEngine ile birleştirilmiş tekil üretim motorudur.
     /// </summary>
-    public class QuarantineService : IQuarantineService, IContentBoundQuarantineService, IDisposable
+    public partial class QuarantineService : IQuarantineService, IContentBoundQuarantineService, IDisposable
     {
         private readonly IHashService _hashService;
         private readonly IAuditLogService? _auditLogService;
@@ -72,10 +72,11 @@ namespace AegisPC.Security.Scanning
             return QuarantineCoreAsync(path, reason, expectedSha256, cancellationToken);
         }
 
-        private async Task<bool> QuarantineCoreAsync(string path, string reason, string? expectedSha256, CancellationToken cancellationToken)
+        private async Task<bool> QuarantineCoreAsync(string path, string reason, string? expectedSha256, CancellationToken cancellationToken,
+            string? authenticatedSid = null, bool isAdministrator = false)
         {
             LastError = null;
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return false;
+            if (string.IsNullOrWhiteSpace(path) || (!File.Exists(path) && expectedSha256 == null)) return false;
 
             try
             {
@@ -113,7 +114,9 @@ namespace AegisPC.Security.Scanning
                     DetectionEvidence = null
                 };
 
-                var txResult = await _engine.ExecuteQuarantineAsync(request, cancellationToken);
+                var txResult = authenticatedSid == null
+                    ? await _engine.ExecuteQuarantineAsync(request, cancellationToken)
+                    : await _engine.ExecuteQuarantineForCallerAsync(request, authenticatedSid, isAdministrator, cancellationToken);
 
                 if (!txResult.Success)
                 {
@@ -121,17 +124,19 @@ namespace AegisPC.Security.Scanning
                     _logger?.LogWarning("Quarantine execution failed for {Path}: {Message}", canonicalPath, txResult.Message);
                     return false;
                 }
+                if (txResult.WasAlreadyQuarantined) return true;
 
-                var entry = await _engine.GetItemByIdAsync(txResult.QuarantineId, cancellationToken);
+                QuarantineEntry? entry = null;
+                try { entry = await _engine.GetItemByIdAsync(txResult.QuarantineId, CancellationToken.None); }
+                catch (Exception observerReadEx)
+                { _logger?.LogWarning(observerReadEx, "Committed quarantine notification metadata could not be read for entry {Id}", txResult.QuarantineId); }
                 if (entry != null)
                 {
-                    try
+                    foreach (Action<QuarantineEntry> observer in OnFileQuarantined?.GetInvocationList() ?? Array.Empty<Delegate>())
                     {
-                        OnFileQuarantined?.Invoke(entry);
-                    }
-                    catch (Exception eventEx)
-                    {
-                        _logger?.LogWarning(eventEx, "Quarantine notification subscriber failed for {Path}", canonicalPath);
+                        try { observer(entry); }
+                        catch (Exception eventEx)
+                        { _logger?.LogWarning(eventEx, "Quarantine notification subscriber failed for {Path}", canonicalPath); }
                     }
                 }
 
@@ -212,17 +217,18 @@ namespace AegisPC.Security.Scanning
             }
 
             // Cache invalidation
-            _exclusionService?.AddTemporaryContentExclusion(restoreResult.RestoredPath, entry.SHA256,
-                TimeSpan.FromMinutes(5), "Geri yükleme: yalnız doğrulanmış dosya içeriğine geçici izin");
-            _fileHashMatcher?.InvalidateCache(restoreResult.RestoredPath);
-
             try
             {
-                OnFileRestored?.Invoke(id);
+                _exclusionService?.AddTemporaryContentExclusion(restoreResult.RestoredPath, entry.SHA256,
+                    TimeSpan.FromMinutes(5), "Geri yükleme: yalnız doğrulanmış dosya içeriğine geçici izin");
+                _fileHashMatcher?.InvalidateCache(restoreResult.RestoredPath);
             }
-            catch (Exception ex)
+            catch (Exception ex) { _logger?.LogWarning(ex, "Post-commit recovery cache bookkeeping failed for entry {Id}", id); }
+
+            foreach (Action<int> observer in OnFileRestored?.GetInvocationList() ?? Array.Empty<Delegate>())
             {
-                _logger?.LogWarning(ex, "OnFileRestored event handler failed for ID {Id}", id);
+                try { observer(id); }
+                catch (Exception ex) { _logger?.LogWarning(ex, "OnFileRestored event handler failed for ID {Id}", id); }
             }
 
             return true;

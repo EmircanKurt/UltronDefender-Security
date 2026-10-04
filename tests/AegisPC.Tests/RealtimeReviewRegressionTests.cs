@@ -80,6 +80,17 @@ public sealed class RealtimeReviewRegressionTests : IDisposable
         Assert.Equal(1, ingestor.PendingEventsCount);
     }
 
+    [Theory]
+    [InlineData("minecraft-mod.jar")]
+    [InlineData("download.zip")]
+    public void ExecutableArchivesReceiveCriticalArrivalPriorityWithoutAContentVerdict(string name)
+    {
+        using var ingestor = new RealTimeEventIngestor(8);
+        ingestor.EnqueueEvent(RealTimeEventType.Created, Fixture(name));
+        Assert.Equal(1, ingestor.PendingCriticalCount);
+        Assert.Equal(0, ingestor.TotalProcessedEvents);
+    }
+
     [Fact]
     public void CriticalFloodHasBoundedMemoryAndVisibleEventLoss()
     {
@@ -114,6 +125,37 @@ public sealed class RealtimeReviewRegressionTests : IDisposable
         ingestor.Stop();
         ingestor.EnqueueEvent(RealTimeEventType.Created, Path.Combine(_root, "late.exe"));
         Assert.Equal(0, ingestor.TotalAcceptedEvents);
+    }
+
+    [Fact]
+    public void FailedArrivalWorkerStartupDoesNotLeaveWatcherRunningWithoutConsumers()
+    {
+        var ingestor = new FailingStartIngestor();
+        using var engine = new RealTimeProtectionEngine(ingestor, new Stable(),
+            new VerdictStub(new RealTimeVerdictResult { Verdict = RealTimeVerdict.Unknown }), new FailedAction());
+        engine.AddWatchDirectory(_root);
+
+        Assert.Throws<IOException>(() => engine.Start(watchDefaultLocations: false));
+
+        Assert.False(engine.IsRunning);
+        Assert.Empty(engine.WatchedLocations);
+        Assert.True(ingestor.StopCalled);
+    }
+
+    [Fact]
+    public async Task FailedArrivalHandlerRequestsReconciliationInsteadOfSilentlyLosingCoverage()
+    {
+        using var ingestor = new RealTimeEventIngestor(8);
+        string path = Fixture("handler-failure.exe");
+        var reconciliation = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        ingestor.OnReconciliationRequired += affectedPath => reconciliation.TrySetResult(affectedPath);
+        ingestor.StartWorkers(1, (_, _) => throw new IOException("Benign simulated inspection failure"), CancellationToken.None);
+
+        ingestor.EnqueueEvent(RealTimeEventType.Created, path);
+
+        Assert.Equal(path, await reconciliation.Task.WaitAsync(TimeSpan.FromSeconds(3)));
+        Assert.Equal(1, ingestor.TotalFailedEvents);
+        Assert.Equal(0, ingestor.TotalProcessedEvents);
     }
 
     [Fact]
@@ -356,5 +398,25 @@ public sealed class RealtimeReviewRegressionTests : IDisposable
         public Task EnforceWarningAsync(NormalizedFileEvent evt, RealTimeVerdictResult verdict, CancellationToken ct) => Task.CompletedTask;
         public Task EnforceQuarantineAsync(NormalizedFileEvent evt, RealTimeVerdictResult verdict, CancellationToken ct) => Task.CompletedTask;
         public Task<bool> EnforceQuarantineWithOutcomeAsync(NormalizedFileEvent evt, RealTimeVerdictResult verdict, CancellationToken ct) => Task.FromResult(false);
+    }
+
+    private sealed class FailingStartIngestor : IRealTimeEventIngestor
+    {
+        public bool StopCalled { get; private set; }
+        public long TotalProducedEvents => 0;
+        public long TotalAcceptedEvents => 0;
+        public long TotalProcessedEvents => 0;
+        public long TotalDroppedEvents => 0;
+        public long TotalFailedEvents => 0;
+        public long TotalEnqueuedEvents => 0;
+        public long DroppedEventsCount => 0;
+        public int PendingEventsCount => 0;
+        public int PendingCriticalCount => 0;
+        public int PendingTelemetryCount => 0;
+        public void EnqueueEvent(RealTimeEventType type, string path, string? oldPath = null) { }
+        public void StartWorkers(int workerCount, Func<NormalizedFileEvent, CancellationToken, Task> eventHandler, CancellationToken ct) =>
+            throw new IOException("Benign simulated arrival worker startup failure");
+        public void Stop() => StopCalled = true;
+        public void Dispose() { }
     }
 }

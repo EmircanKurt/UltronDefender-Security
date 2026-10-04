@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -133,7 +133,7 @@ namespace AegisPC.Tests
         }
 
         [Fact]
-        public async Task Test09_MicrosoftSignedSystemFile_ShouldHaveZeroRiskScore()
+        public async Task Test09_SignerRuleNameAndSystemLocation_DoNotEraseIndependentEntropyEvidence()
         {
             var hub = new DetectionHub();
             var context = new DetectionContext { FilePath = @"C:\Windows\System32\cmd.exe" };
@@ -142,8 +142,9 @@ namespace AegisPC.Tests
             hub.RegisterDetector(new MockDetector("MockEntropy", EvidenceCategory.EntropyAnomaly, "Packing", 30, "Compressed system code"));
 
             var result = await hub.EvaluateAsync(context);
-            Assert.Equal(0, result.RiskScore);
-            Assert.Equal(DetectionVerdict.Clean, result.Verdict);
+            Assert.Equal(30, result.RiskScore);
+            Assert.Equal(1.0, result.ContextModifier);
+            Assert.Equal(DetectionVerdict.LowRisk, result.Verdict);
         }
 
         [Fact]

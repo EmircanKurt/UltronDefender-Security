@@ -19,7 +19,7 @@ namespace AegisPC.Security.Safety
     /// SQLite tabanlı, WAL modunda çalışan, ACID işlem garantili ve güvenli geri yükleme/silme özellikli Karantina Motoru.
     /// Korumalı sistem dosyalarını, sembolik bağ tuzaklarını (Symlink LPE/DOS) ve dosya kilitlerini güvenle yönetir.
     /// </summary>
-    public class TransactionalQuarantineEngine : ITransactionalQuarantine, IDisposable
+    public partial class TransactionalQuarantineEngine : ITransactionalQuarantine, IDisposable
     {
         private readonly ICanonicalPathResolver _pathResolver;
         private readonly IProtectedPathGuard _protectedPathGuard;
@@ -28,6 +28,7 @@ namespace AegisPC.Security.Safety
         private readonly ILogger<TransactionalQuarantineEngine>? _logger;
 
         private readonly string _vaultDir;
+        private readonly bool _customVault;
         private readonly string _vaultKeyFilePath;
         private readonly QuarantineVaultDatabase _database;
 
@@ -37,6 +38,7 @@ namespace AegisPC.Security.Safety
         public QuarantineVaultDatabase Database => _database;
         public string VaultDirectory => _vaultDir;
 
+        /// <summary>Requires fail-closed vault ACLs and verified ownership migration before opening the machine-bound recovery key.</summary>
         public TransactionalQuarantineEngine(
             ICanonicalPathResolver? pathResolver = null,
             IProtectedPathGuard? protectedPathGuard = null,
@@ -50,6 +52,7 @@ namespace AegisPC.Security.Safety
             _reparsePointGuard = reparsePointGuard ?? new ReparsePointGuard(_pathResolver, _protectedPathGuard);
             _hashService = hashService ?? new AegisPC.Security.Scanning.HashService();
             _logger = logger;
+            _customVault = !string.IsNullOrEmpty(customVaultDir);
 
             if (!string.IsNullOrEmpty(customVaultDir))
             {
@@ -62,54 +65,15 @@ namespace AegisPC.Security.Safety
             }
 
             Directory.CreateDirectory(_vaultDir);
-            EnsureVaultSecurity(_vaultDir);
+            using var initialization = VaultOperationLease.AcquireAsync(_vaultDir, customVault: _customVault).GetAwaiter().GetResult();
+            bool trustedOwnershipSchema = VaultSecurityPolicy.Prepare(_vaultDir, _customVault);
 
             _vaultKeyFilePath = Path.Combine(_vaultDir, "vault.key");
             EnsureMasterKey();
             // A damaged or inaccessible key must stop construction before metadata migration.
-            _database = new QuarantineVaultDatabase(_vaultDir, _logger);
+            _database = new QuarantineVaultDatabase(_vaultDir, _logger, operationLockHeld: true, resetUnverifiedOwners: !trustedOwnershipSchema);
+            VaultSecurityPolicy.Complete(_vaultDir, trustedOwnershipSchema);
         }
-
-        private void EnsureVaultSecurity(string vaultDir)
-        {
-            if (!OperatingSystem.IsWindows()) return;
-            try
-            {
-                var dirInfo = new DirectoryInfo(vaultDir);
-                var dirSecurity = dirInfo.GetAccessControl();
-
-                var adminSid = new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, null);
-                var systemSid = new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.LocalSystemSid, null);
-                var currentUser = System.Security.Principal.WindowsIdentity.GetCurrent().User;
-
-                dirSecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-
-                dirSecurity.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
-                    systemSid, System.Security.AccessControl.FileSystemRights.FullControl,
-                    System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
-                    System.Security.AccessControl.PropagationFlags.None, System.Security.AccessControl.AccessControlType.Allow));
-
-                dirSecurity.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
-                    adminSid, System.Security.AccessControl.FileSystemRights.FullControl,
-                    System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
-                    System.Security.AccessControl.PropagationFlags.None, System.Security.AccessControl.AccessControlType.Allow));
-
-                if (currentUser != null && !currentUser.Equals(adminSid) && !currentUser.Equals(systemSid))
-                {
-                    dirSecurity.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
-                        currentUser, System.Security.AccessControl.FileSystemRights.FullControl,
-                        System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
-                        System.Security.AccessControl.PropagationFlags.None, System.Security.AccessControl.AccessControlType.Allow));
-                }
-
-                dirInfo.SetAccessControl(dirSecurity);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogTrace(ex, "Could not set strict ACL on vault directory {VaultDir}", vaultDir);
-            }
-        }
-
         public byte[] GetMasterKey() => _cachedMasterKey != null ? (byte[])_cachedMasterKey.Clone() : throw new QuarantineException("Kasa anahtarı yüklenemedi (Fail-Closed).");
 
         private void EnsureMasterKey()
@@ -129,10 +93,10 @@ namespace AegisPC.Security.Safety
                 var oldEntropyPath = Path.Combine(_vaultDir, "entropy.dat");
                 if (File.Exists(_vaultKeyFilePath))
                 {
-                    var encrypted = File.ReadAllBytes(_vaultKeyFilePath);
+                    var encrypted = VaultStateFileReader.Read(_vaultKeyFilePath);
                     var candidates = new List<byte[]>();
-                    if (File.Exists(entropyPath)) candidates.Add(File.ReadAllBytes(entropyPath));
-                    if (File.Exists(oldEntropyPath)) candidates.Add(File.ReadAllBytes(oldEntropyPath));
+                    if (File.Exists(entropyPath)) candidates.Add(VaultStateFileReader.Read(entropyPath));
+                    if (File.Exists(oldEntropyPath)) candidates.Add(VaultStateFileReader.Read(oldEntropyPath));
                     candidates.Add(LegacyDpapiEntropy);
                     foreach (var entropy in candidates)
                     foreach (var scope in new[] { DataProtectionScope.LocalMachine, DataProtectionScope.CurrentUser })
@@ -152,7 +116,7 @@ namespace AegisPC.Security.Safety
                 if (Directory.GetFiles(_vaultDir, "*.quar").Length > 0)
                     throw new CryptographicException("Dolu kasanın anahtarı eksik; yeni anahtar oluşturulmadı.");
 
-                byte[] newEntropy = File.Exists(entropyPath) ? File.ReadAllBytes(entropyPath) : RandomNumberGenerator.GetBytes(32);
+                byte[] newEntropy = File.Exists(entropyPath) ? VaultStateFileReader.Read(entropyPath) : RandomNumberGenerator.GetBytes(32);
                 if (!File.Exists(entropyPath)) WriteDurableNewFile(entropyPath, newEntropy);
                 byte[] newKey = RandomNumberGenerator.GetBytes(32);
                 var protectedKey = ProtectedData.Protect(newKey, newEntropy, DataProtectionScope.LocalMachine);
@@ -188,17 +152,24 @@ namespace AegisPC.Security.Safety
             {
                 try
                 {
-                    return new FileStream(Path.Combine(_vaultDir, "vault.init.lock"), FileMode.OpenOrCreate,
-                        FileAccess.ReadWrite, FileShare.None);
+                    return VaultLockFile.Open(Path.Combine(_vaultDir, "vault.init.lock"), _customVault);
                 }
-                catch (IOException) when (timer.Elapsed < TimeSpan.FromSeconds(30))
+                catch (IOException ex) when (ex.InnerException is System.ComponentModel.Win32Exception native &&
+                    native.NativeErrorCode is 32 or 33 && timer.Elapsed < TimeSpan.FromSeconds(30))
                 { Thread.Sleep(25); }
             }
         }
 
 
-        public async Task<QuarantineTransactionResult> ExecuteQuarantineAsync(QuarantineRequest request, CancellationToken cancellationToken = default)
+        /// <summary>Trusted service-internal containment; source ownership is still captured from the locked file object.</summary>
+        public Task<QuarantineTransactionResult> ExecuteQuarantineAsync(QuarantineRequest request, CancellationToken cancellationToken = default)
+            => ExecuteQuarantineCoreAsync(request, null, true, cancellationToken);
+
+        private async Task<QuarantineTransactionResult> ExecuteQuarantineCoreAsync(QuarantineRequest request,
+            string? callerSid, bool isAdministrator, CancellationToken cancellationToken)
         {
+            ArgumentNullException.ThrowIfNull(request);
+            using var operation = await VaultOperationLease.AcquireAsync(_vaultDir, cancellationToken, _customVault);
             var result = new QuarantineTransactionResult
             {
                 Success = false,
@@ -259,6 +230,11 @@ namespace AegisPC.Security.Safety
 
                 if (!File.Exists(canonicalPath) && !Directory.Exists(canonicalPath))
                 {
+                    if (request.ExpectedSha256 != null)
+                    {
+                        var existing = await FindVerifiedDuplicateAsync(canonicalPath, request.ExpectedSha256, callerSid, isAdministrator, cancellationToken);
+                        if (existing != null) return DuplicateResult(existing, result);
+                    }
                     result.Status = QuarantineTransactionStatus.AbortedFileInaccessible;
                     result.Message = $"Fiziksel dosya bulunamadı: '{canonicalPath}'";
                     return result;
@@ -288,6 +264,8 @@ namespace AegisPC.Security.Safety
                 try
                 {
                     using var source = new QuarantineSourceHandle(canonicalPath);
+                    if (!isAdministrator && !string.Equals(source.OwnerSid, callerSid, StringComparison.Ordinal))
+                        throw new UnauthorizedAccessException("The authenticated caller does not own the locked source file.");
                     if (!string.Equals(source.FinalPath, canonicalPath, StringComparison.OrdinalIgnoreCase))
                         throw new IOException("Kaynak yolu güvenlik denetiminden sonra değişti; dosyaya dokunulmadı.");
                     // 1) Kasa dosyasını oluştur ve doğrula
@@ -297,6 +275,17 @@ namespace AegisPC.Security.Safety
                     result.SHA256 = sha256;
                     if (request.ExpectedSha256 != null && !string.Equals(sha256, request.ExpectedSha256, StringComparison.OrdinalIgnoreCase))
                         throw new IOException("Dosya tespitten sonra değişti; kaynak korunarak karantina iptal edildi.");
+
+                    var duplicate = await FindVerifiedDuplicateAsync(canonicalPath, sha256, source.OwnerSid, false, cancellationToken);
+                    if (duplicate != null)
+                    {
+                        DuplicateResult(duplicate, result);
+                        if (File.Exists(stagingVaultPath)) File.Delete(stagingVaultPath);
+                        source.MarkForDeletion();
+                        originalRemovalCommitted = true;
+                        source.Dispose();
+                        return result;
+                    }
 
                     // Staging dosyasının sağlamlığını doğrula
                     var stagingInfo = new FileInfo(stagingVaultPath);
@@ -335,7 +324,8 @@ namespace AegisPC.Security.Safety
                         FileSize = plainSize,
                         RiskLevel = ResolveRiskLevel(request.DetectionEvidence, sha256),
                         QuarantinedAt = DateTime.UtcNow,
-                        Status = QuarantineStatus.Quarantined
+                        Status = QuarantineStatus.Quarantined,
+                        OwnerSid = source.OwnerSid
                     };
                     result.AuditSteps.Add($"Structured detection risk: {pendingEntry.RiskLevel}.");
 
@@ -420,211 +410,6 @@ namespace AegisPC.Security.Safety
             }
         }
 
-        public async Task<QuarantineRestoreResult> ExecuteRestoreAsync(int quarantineId, string? targetOverride = null, CancellationToken cancellationToken = default)
-        {
-            var gate = _database.GetPathLock(Path.GetFullPath(_vaultDir) + "|entry|" + quarantineId);
-            await gate.WaitAsync(cancellationToken);
-            try { return await ExecuteRestoreCoreAsync(quarantineId, targetOverride, cancellationToken); }
-            finally { gate.Release(); }
-        }
-
-        private async Task<QuarantineRestoreResult> ExecuteRestoreCoreAsync(int quarantineId, string? targetOverride, CancellationToken cancellationToken)
-        {
-            var result = new QuarantineRestoreResult { Success = false, QuarantineId = quarantineId };
-            string? stagingRestorePath = null;
-
-            var entry = await _database.GetEntryByIdAsync(quarantineId, cancellationToken);
-            if (entry == null)
-            {
-                result.Message = $"Karantina kaydı bulunamadı (ID: {quarantineId}).";
-                return result;
-            }
-            if (entry.Status != QuarantineStatus.Quarantined && entry.Status != QuarantineStatus.PartialFailed)
-            {
-                result.Message = "Kasa kaydı aktif karantinada değil; geri yükleme tekrarlanmadı.";
-                return result;
-            }
-
-            var destPath = string.IsNullOrWhiteSpace(targetOverride) ? entry.OriginalPath : targetOverride;
-
-            if (!File.Exists(entry.QuarantinePath))
-            {
-                result.Message = $"Karantina kasa dosyası bulunamadı: '{entry.QuarantinePath}'";
-                return result;
-            }
-
-            try
-            {
-                // 1. GÜVENLİK: Korumalı Sistem Yolu Muhafızı (Protected Path Guard)
-                var canonicalDestPath = _pathResolver.Resolve(destPath);
-                destPath = canonicalDestPath;
-                var protectedEval = _protectedPathGuard.Evaluate(canonicalDestPath);
-                if (protectedEval.IsProtected)
-                {
-                    result.Message = $"Geri yükleme engellendi: Hedef korunan sistem yoludur ({protectedEval.Reason}). Yol: '{canonicalDestPath}'";
-                    _logger?.LogWarning("Restore blocked: target path is protected by system policy: {Path}. Reason: {Reason}", canonicalDestPath, protectedEval.Reason);
-                    return result;
-                }
-
-                // 2. GÜVENLİK: Hedef zaten varsa üzerine sessizce yazma
-                if (File.Exists(destPath))
-                {
-                    // Dosya kilitli mi kontrolü
-                    try
-                    {
-                        using var testStream = new FileStream(destPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-                    }
-                    catch (IOException)
-                    {
-                        result.Message = "Hedef dosya başka bir program tarafından kullanılıyor (dosya kullanımda / kilitli).";
-                        return result;
-                    }
-
-                    result.Message = "Geri yükleme hedefi zaten var; mevcut dosyanın üzerine yazılmadı.";
-                    return result;
-                }
-
-                if (Directory.Exists(destPath))
-                {
-                    result.Message = "Geri yükleme hedefi zaten var; mevcut dizinin üzerine yazılamaz.";
-                    return result;
-                }
-
-                var destDir = Path.GetDirectoryName(canonicalDestPath);
-                if (!string.IsNullOrEmpty(destDir))
-                {
-                    Directory.CreateDirectory(destDir);
-                }
-
-                // 3. GÜVENLİK: Restore öncesi hedef yolda Symlink/Junction/Reparse Point kontrolü
-                if (_reparsePointGuard != null)
-                {
-                    if (!string.IsNullOrEmpty(destDir))
-                    {
-                        var dirReparseInfo = _reparsePointGuard.Inspect(destDir);
-                        if (dirReparseInfo.IsReparsePoint)
-                        {
-                            result.Message = $"Geri yükleme engellendi: Hedef dizin bir {dirReparseInfo.Type} (hedef: {dirReparseInfo.TargetPath}). Yol: '{destDir}'";
-                            return result;
-                        }
-                    }
-                }
-
-                // 4. Akış halinde şifre çözme: .restore.tmp dosyasına atomik yazım
-                stagingRestorePath = destPath + "." + Guid.NewGuid().ToString("N") + ".restore.tmp";
-
-                bool decrypted = false;
-                await using (var outFs = new FileStream(stagingRestorePath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
-                {
-                    decrypted = await VaultContainerCodec.DecryptVaultStreamAsync(
-                        entry.QuarantinePath, outFs, GetMasterKey(), cancellationToken);
-                }
-
-                if (!decrypted)
-                {
-                    await _database.UpdateStatusAsync(entry.Id, QuarantineStatus.Corrupted, cancellationToken: cancellationToken);
-                    result.Message = "Kasa kaydı bozuk veya şifre çözülemedi.";
-                    return result;
-                }
-
-                // 5. Bütünlük doğrulaması (SHA-256)
-                var restoredHash = await _hashService.ComputeSha256Async(stagingRestorePath, cancellationToken);
-                if (!string.IsNullOrWhiteSpace(entry.SHA256) && !string.Equals(restoredHash, entry.SHA256, StringComparison.OrdinalIgnoreCase))
-                {
-                    await _database.UpdateStatusAsync(entry.Id, QuarantineStatus.Corrupted, cancellationToken: cancellationToken);
-                    result.Message = "Kasa kaydı bozuk (bütünlük doğrulaması/hash uyuşmazlığı).";
-                    return result;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                // 6. Atomik Takas: staging dosyasını hedef yola taşı
-                File.Move(stagingRestorePath, destPath, overwrite: false);
-
-                // 7. Veritabanı durumunu güncelle
-                // Publication is already committed. Caller cancellation must not interrupt bookkeeping.
-                await _database.UpdateStatusAsync(entry.Id, QuarantineStatus.Restored, DateTime.UtcNow, CancellationToken.None);
-
-                result.Success = true;
-                result.RestoredPath = destPath;
-                result.Message = $"Dosya başarıyla geri yüklendi: '{destPath}'";
-                return result;
-            }
-            catch (Exception ex)
-            {
-                result.Message = $"Geri yükleme başarısız: {ex.Message}";
-                _logger?.LogError(ex, "Failed to restore quarantine item {Id}", quarantineId);
-                return result;
-            }
-            finally
-            {
-                try
-                {
-                    if (stagingRestorePath != null && File.Exists(stagingRestorePath))
-                        File.Delete(stagingRestorePath);
-                }
-                catch { }
-            }
-        }
-
-        public Task<List<QuarantineEntry>> GetQuarantinedItemsAsync(CancellationToken cancellationToken = default)
-        {
-            return _database.GetActiveQuarantinedAsync(cancellationToken);
-        }
-
-        public Task<QuarantineEntry?> GetItemByIdAsync(int id, CancellationToken cancellationToken = default)
-        {
-            return _database.GetEntryByIdAsync(id, cancellationToken);
-        }
-
-        public async Task<bool> DeleteQuarantinedAsync(int id, CancellationToken cancellationToken = default)
-        {
-            var gate = _database.GetPathLock(Path.GetFullPath(_vaultDir) + "|entry|" + id);
-            await gate.WaitAsync(cancellationToken);
-            try { return await DeleteQuarantinedCoreAsync(id, cancellationToken); }
-            finally { gate.Release(); }
-        }
-
-        private async Task<bool> DeleteQuarantinedCoreAsync(int id, CancellationToken cancellationToken)
-        {
-            var entry = await _database.GetEntryByIdAsync(id, cancellationToken);
-            if (entry == null) return false;
-
-            try
-            {
-                if (File.Exists(entry.QuarantinePath))
-                {
-                    // Kriptografik imha (shred): Dosyayı sıfırlarla ezerek sil
-                    try
-                    {
-                        var length = new FileInfo(entry.QuarantinePath).Length;
-                        await using (var fs = new FileStream(entry.QuarantinePath, FileMode.Open, FileAccess.Write, FileShare.None))
-                        {
-                            byte[] zeros = new byte[Math.Min(81920, length)];
-                            long written = 0;
-                            while (written < length)
-                            {
-                                int toWrite = (int)Math.Min(zeros.Length, length - written);
-                                await fs.WriteAsync(zeros.AsMemory(0, toWrite), cancellationToken);
-                                written += toWrite;
-                            }
-                            await fs.FlushAsync(cancellationToken);
-                        }
-                    }
-                    catch { }
-
-                    File.Delete(entry.QuarantinePath);
-                }
-
-                await _database.UpdateStatusAsync(id, QuarantineStatus.Deleted, cancellationToken: cancellationToken);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "Failed to shred/delete quarantine file {Path}", entry.QuarantinePath);
-                return false;
-            }
-        }
 
         private static void KillHoldingProcesses(string filePath, List<string> audit)
         {

@@ -4,6 +4,7 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
       xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
+      xmlns:controls="clr-namespace:AegisPC.App.Controls"
       Title="{Binding PageTitle}"
       Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True"
@@ -29,16 +30,34 @@
                 <TextBlock Text="Koruma kalkanları, bildirimler ve tarama zamanlamasını yapılandırın." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
             </StackPanel>
 
-            <!-- 2. Protection Warning Alert Card (Strict Crimson Red) -->
-            <Border Background="{DynamicResource BrushStatusDangerBg}" BorderBrush="{DynamicResource BrushStatusDangerBorder}" BorderThickness="1" CornerRadius="8" Padding="16,14" Margin="0,0,0,20"
+            <!-- Connection information is not a malware or activation alert. -->
+            <Border BorderThickness="1" CornerRadius="8" Padding="16,14" Margin="0,0,0,20"
                     Visibility="{Binding IsProtectionWarningVisible, Converter={StaticResource BoolToVis}}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource BrushCardBgAlt}"/>
+                        <Setter Property="BorderBrush" Value="{DynamicResource BrushCardBorder}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ProtectionWarningSeverity}" Value="Warning">
+                                <Setter Property="Background" Value="{DynamicResource BrushStatusWarningBg}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource BrushStatusWarningBorder}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <ui:SymbolIcon Symbol="Warning24" Foreground="{DynamicResource BrushStatusDanger}" FontSize="22" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1" Text="{Binding ProtectionWarningText}" Foreground="{DynamicResource BrushStatusDangerText}" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    <ui:SymbolIcon Symbol="Info24" Foreground="{DynamicResource BrushTextSecondary}" FontSize="22" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding ProtectionWarningTitle}" Foreground="{DynamicResource BrushTextPrimary}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding ProtectionWarningText}" Foreground="{DynamicResource BrushTextSecondary}" Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <Button Grid.Column="2" Content="Durumu Yenile" Command="{Binding RefreshProtectionStatusCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0" VerticalAlignment="Center"/>
                 </Grid>
             </Border>
 
@@ -47,14 +66,14 @@
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                         <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="Temel Güvenlik Kalkanları" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
+                        <TextBlock Text="Gerçek Zamanlı Güvenlik Kalkanları" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center"/>
                     </StackPanel>
 
                     <!-- Row 1: File Protection -->
                     <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
                             <TextBlock Text="Gerçek Zamanlı Dosya Koruması" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
-                            <TextBlock Text="İndirilen ve oluşturulan dosyaları anlık olarak tarar ve tehditleri engeller." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                            <TextBlock Text="İzlenen köklerde dosya değişiminden sonra içerik inceler; ön-erişim engelleme değildir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding IsFileProtectionEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
@@ -63,9 +82,24 @@
                     <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
                             <TextBlock Text="Fidye Yazılımı Kalkanı (Ransomware Shield)" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
-                            <TextBlock Text="Kritik kullanıcı belgelerini izler, canary tuzak dosyalarıyla şifreleme girişimlerini durdurur." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Kapsam dahilindeki belge değişimlerini ve canary olaylarını gözler; aktör doğrulanmadan otomatik süreç sonlandırmaz." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding IsRansomwareShieldEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <!-- Optional AI review is service-owned; the one-way switch cannot bypass its two approvals. -->
+                    <Grid Margin="0,0,0,14">
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
+                            <TextBlock Text="Ultron AI — Ek Yerel İnceleme" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Dosya içeriğini ek kurallarla değerlendirir. Kapatma iki onay ister; diğer kalkanları kapatmaz."
+                                       Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding UltronAiStatusText}" Style="{StaticResource CaptionTextStyle}"
+                                       Foreground="{DynamicResource BrushTextMuted}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <controls:ObservedProtectionSwitch IsChecked="{Binding IsUltronAiEnabled, Mode=OneWay}" Command="{Binding ToggleUltronAiCommand}"
+                                  Style="{StaticResource BrandToggleSwitchStyle}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                  AutomationProperties.Name="Ultron AI ek yerel inceleme"
+                                  ToolTip="Ayar yalnız hizmetin güncel yanıtıyla doğrulanır. Kapatmak için iki onay gerekir."/>
                     </Grid>
 
                     <!-- Row 3: Auto-Quarantine -->
@@ -77,7 +111,7 @@
                                     <TextBlock Text="ÖNERİLEN" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusSafeText}"/>
                                 </Border>
                             </StackPanel>
-                            <TextBlock Text="Risk eşiği (varsayılan 85) aşılan kritik zararlıları otomatik engeller ve AES-256 kasaya kilitler. 60-84 arası şüpheli durumlar Olay Merkezine kaydedilir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Karantina politikası doğrulanmış zararlı kanıtı gerektirir; risk puanı tek başına engelleme yetkisi değildir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                             <TextBlock Text="Eşik:" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" Margin="0,0,6,0"/>
@@ -92,23 +126,25 @@
                     <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
                             <TextBlock Text="Süreç ve Bellek İzleme" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
-                            <TextBlock Text="Çalışan arka plan süreçlerini analiz eder ve şüpheli davranışları raporlar." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Süreç gözlemi dosya kalkanına bağlıdır. Bu ayrı anahtar henüz motora bağlı olmadığı için kullanılamaz." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
-                        <ui:ToggleSwitch IsChecked="{Binding IsProcessMonitoringEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                        <ui:ToggleSwitch IsChecked="False" IsEnabled="False" ToolTip="Bağımsız süreç kalkanı anahtarı henüz bağlı değil."
+                                         HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
 
                     <!-- Row 4: Game & Crack Sandbox Watchdog -->
                     <Grid Margin="0,0,0,14">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Oyun &amp; Crack Koruma Kalkanı (Sandbox Watchdog)" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                                <TextBlock Text="Oyun / Mod İçeriği İncelemesi" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
                                 <Border Style="{StaticResource BadgeSafeStyle}" Padding="6,1" Margin="8,0,0,0">
-                                    <TextBlock Text="AKILLI" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusSafeText}"/>
+                                    <TextBlock Text="AYRI MOTOR BAĞLI DEĞİL" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusSafeText}"/>
                                 </Border>
                             </StackPanel>
-                            <TextBlock Text="Korsan/Crack oyunların Belgelerim/Save kayıtlarına izin verir; gizli dropper ve şifre çalma hareketlerini anında engeller." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Mod ve arşivler ortak dosya motoruyla incelenir. Ayrı sandbox/watchdog koruması bağlı değil; oyun adı güven kanıtı değildir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
-                        <ui:ToggleSwitch IsChecked="{Binding IsGameCrackWatchdogEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                        <ui:ToggleSwitch IsChecked="False" IsEnabled="False" ToolTip="Bağımsız sandbox/watchdog motoru henüz bağlı değil."
+                                         HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
 
                     <!-- Row 5: Network Protection -->
@@ -120,7 +156,7 @@
                                     <TextBlock Text="DNS/WEB" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushStatusInfoText}"/>
                                 </Border>
                             </StackPanel>
-                            <TextBlock Text="Zararlı web siteleri, phishing alan adları ve DNS tabanlı tehdit filtreleme kalkanı." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Hizmetin DNS/ağ yardımcı katmanını yönetir; tüm ağ trafiğinin incelendiği anlamına gelmez." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
                         <ui:ToggleSwitch IsChecked="{Binding IsNetworkProtectionEnabled}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>

@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using AegisPC.Core.Enums;
+using AegisPC.Core.Models;
 using AegisPC.Security.Scanning;
 using Xunit;
 
@@ -37,10 +38,11 @@ public sealed class ManualScanOwnershipTests
         var scanner = new FinalReviewScanRegressionTests.ControlledScanner();
         var coordinator = new ScanCoordinatorService(scanner, new SecurityFindingService());
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            coordinator.TryStartManualScanAsync(ScanType.Quick, string.Empty,
-                () => throw new InvalidOperationException("Synthetic profile failure")));
+        var result = await coordinator.TryStartManualScanAsync(ScanType.Quick, string.Empty,
+            () => throw new InvalidOperationException("Synthetic profile failure"));
 
+        Assert.Equal(ScanStatus.Failed, result?.Status);
+        Assert.Equal(ScanFailureStage.Preparation, result?.FailureInfo?.Stage);
         Assert.Null(coordinator.CurrentSession);
         Assert.Equal(0, scanner.StartCount);
         var retry = coordinator.TryStartManualScanAsync(ScanType.Quick, string.Empty, () => { });

@@ -127,7 +127,8 @@ namespace AegisPC.Security.RealTime
 
         private static readonly HashSet<string> CriticalExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
-            ".exe", ".dll", ".sys", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".hta", ".cpl", ".msi", ".com", ".pif", ".vbe", ".wsf"
+            // Queue priority only, never a trust or malware verdict. Archives may contain executable code.
+            ".exe", ".dll", ".sys", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".hta", ".cpl", ".msi", ".com", ".pif", ".vbe", ".wsf", ".jar", ".zip"
         };
 
         /// <summary>Creates independent bounded queues with a positive capacity per priority.</summary>
@@ -192,11 +193,17 @@ namespace AegisPC.Security.RealTime
                     Interlocked.Exchange(ref _lastWarningLogged, dropped);
                     _logger?.LogWarning("Real-time arrival queue is saturated or stopped ({Capacity} per priority). Lost arrivals: {Dropped}", _telemetryCapacity, dropped);
                 }
-                try { OnReconciliationRequired?.Invoke(normalizedPath); }
-                catch (Exception ex)
-                {
-                    _logger?.LogError(ex, "Arrival reconciliation callback failed for {Path}", normalizedPath);
-                }
+                RequestReconciliation(normalizedPath);
+            }
+        }
+
+        /// <summary>Signals an inspection gap without allowing a subscriber failure to stop the arrival pump.</summary>
+        private void RequestReconciliation(string normalizedPath)
+        {
+            try { OnReconciliationRequired?.Invoke(normalizedPath); }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Arrival reconciliation callback failed for {Path}", normalizedPath);
             }
         }
 
@@ -261,6 +268,7 @@ namespace AegisPC.Security.RealTime
                     {
                         Interlocked.Increment(ref _totalFailedEvents);
                         _logger?.LogWarning(ex, "Worker {WorkerId} error handling event {Path}", workerId, evt.FilePath);
+                        RequestReconciliation(evt.NormalizedPath);
                     }
                 }
             }

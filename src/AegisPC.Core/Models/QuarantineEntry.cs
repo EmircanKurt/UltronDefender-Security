@@ -5,6 +5,8 @@ namespace AegisPC.Core.Models;
 
 public class QuarantineEntry
 {
+    /// <summary>SID captured from the locked source security descriptor; null legacy ownership is unknown and administrator-only.</summary>
+    public string? OwnerSid { get; set; }
     public int Id { get; set; }
     public string OriginalPath { get; set; } = string.Empty;
     public string QuarantinePath { get; set; } = string.Empty;

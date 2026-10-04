@@ -269,7 +269,7 @@ namespace AegisPC.Tests
                     vm.CancelScanCommand.Execute(null);
 
                     Assert.True(vm.IsCancellationRequested);
-                    Assert.Equal("Tehdit Taraması İptal Edildi", vm.ScanResultTitle);
+                    Assert.Equal("Tarama İptal Edildi", vm.ScanResultTitle);
                     Assert.Equal("Tarama İptal Edildi", vm.CleanStateTitle);
                     Assert.Equal("İptal edildi", vm.RemainingEtaFormatted);
                 }

@@ -14,7 +14,7 @@ using AegisPC.ServiceContracts.IpcMessages;
 
 namespace AegisPC.App.Services
 {
-    public class ServiceIpcClient : IServiceIpcClient, IDisposable
+    public partial class ServiceIpcClient : IServiceIpcClient, IServiceRequestClient, IDeviceNoticeClient, IDisposable
     {
         private NamedPipeClientStream? _pipeClient;
         private readonly CancellationTokenSource _cts = new();
@@ -82,12 +82,18 @@ namespace AegisPC.App.Services
 
         public async Task SendCommandAsync(ServiceCommand command)
         {
+            try { await SendFrameAsync(command, _cts.Token).ConfigureAwait(false); }
+            catch (Exception exception) { Trace.WriteLine($"IPC write failed: {exception.Message}"); }
+        }
+
+        private async Task SendFrameAsync(ServiceCommand command, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             var pipe = _pipeClient;
-            if (!IsConnected || pipe == null || _isDisposed) return;
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+            if (!IsConnected || pipe == null || _isDisposed) throw new IOException("Protection service is not connected.");
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, cancellationToken);
             deadline.CancelAfter(TimeSpan.FromSeconds(5));
-            try { await _writeLock.WaitAsync(deadline.Token); }
-            catch (OperationCanceledException) { return; }
+            await _writeLock.WaitAsync(deadline.Token).ConfigureAwait(false);
             try
             {
                 var json = JsonSerializer.Serialize(command);
@@ -99,8 +105,8 @@ namespace AegisPC.App.Services
             }
             catch (Exception exception)
             {
-                Trace.WriteLine($"IPC write failed: {exception.Message}");
                 pipe.Dispose();
+                throw new IOException("IPC transmission failed; a partially transmitted action has no confirmed result.", exception);
             }
             finally
             {
@@ -166,7 +172,18 @@ namespace AegisPC.App.Services
 
                     try
                     {
-                        if (line.StartsWith("Threat:", StringComparison.OrdinalIgnoreCase))
+                        if (line.StartsWith("Reply:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var reply = JsonSerializer.Deserialize<ServiceReply>(line.Substring(6));
+                            if (reply?.RequestId != Guid.Empty && reply != null &&
+                                _pendingOperationRequests.TryRemove(reply.RequestId, out var operation)) operation.TrySetResult(reply);
+                        }
+                        else if (line.StartsWith("Device:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var notice = JsonSerializer.Deserialize<DeviceNotice>(line.Substring(7));
+                            if (notice != null) DeviceObserved?.Invoke(notice);
+                        }
+                        else if (line.StartsWith("Threat:", StringComparison.OrdinalIgnoreCase))
                         {
                             var json = line.Substring(7);
                             var threat = JsonSerializer.Deserialize<ThreatNotification>(json);
@@ -207,6 +224,8 @@ namespace AegisPC.App.Services
                     _pipeClient = null;
                     _lastKnownStatus = null;
                     FailPendingStatusRequests(new IOException("Protection service IPC connection ended before a matching status response."));
+                    try { StatusChanged?.Invoke(new ProtectionStatus { IsServiceRunning = false, ProtectionLevel = "Hizmet bağlantısı yok" }); }
+                    catch (Exception exception) { Trace.WriteLine($"IPC disconnect notification failed: {exception.Message}"); }
                     if (!_cts.Token.IsCancellationRequested) _ = ConnectAsync();
                 }
             }
@@ -224,6 +243,8 @@ namespace AegisPC.App.Services
 
         private void FailPendingStatusRequests(Exception exception)
         {
+            foreach (var request in _pendingOperationRequests)
+                if (_pendingOperationRequests.TryRemove(request.Key, out var operation)) operation.TrySetException(exception);
             foreach (var request in _pendingStatusRequests)
             {
                 if (_pendingStatusRequests.TryRemove(request.Key, out var completion))

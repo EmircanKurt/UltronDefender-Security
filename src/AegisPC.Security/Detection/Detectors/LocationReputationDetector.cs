@@ -10,6 +10,7 @@ using AegisPC.Core.Helpers;
 
 namespace AegisPC.Security.Detection.Detectors
 {
+    /// <summary>Collects location review hints and verified signature metadata without exempting development directories or erasing content evidence.</summary>
     public class LocationReputationDetector : IDetectorPlugin
     {
         private readonly ISignatureVerifier _signatureVerifier;
@@ -35,11 +36,13 @@ namespace AegisPC.Security.Detection.Detectors
             ".js", ".jse", ".wsf", ".wsh", ".hta", ".cpl", ".sys"
         };
 
+        /// <summary>Requires a verifier of the actual file signature; locations and publisher strings alone cannot establish trust.</summary>
         public LocationReputationDetector(ISignatureVerifier signatureVerifier)
         {
-            _signatureVerifier = signatureVerifier;
+            _signatureVerifier = signatureVerifier ?? throw new ArgumentNullException(nameof(signatureVerifier));
         }
 
+        /// <summary>Produces explanatory signature facts and review evidence; verification failures propagate to the hub.</summary>
         public async Task<IEnumerable<SecurityEvidence>> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
         {
             var list = new List<SecurityEvidence>();
@@ -75,7 +78,8 @@ namespace AegisPC.Security.Detection.Detectors
                         SourceDetector = DisplayName,
                         RuleName = "Signature.Valid.TrustedPublisher",
                         Description = $"Doğrulanmış dijital imza: '{publisher ?? "Güvenilir Yayımcı"}'",
-                        ScoreContribution = -40, // Trust bonus
+                        ScoreContribution = 0,
+                        TrustKind = EvidenceTrustKind.VerifiedAuthenticode,
                         Confidence = EvidenceConfidence.High,
                         FilePath = path,
                         SHA256 = context.SHA256
@@ -98,11 +102,8 @@ namespace AegisPC.Security.Detection.Detectors
             }
             catch { throw; }
 
-            // 2. High-Risk Location Checks (ONLY for binaries/scripts)
-            // 2. High-Risk Location Checks (ONLY for binaries/scripts, skip if inside verified development environment)
-            bool isDevDir = PathHelper.IsDevelopmentOrPackageDirectory(path);
-
-            if (isBinaryOrScript && !isDevDir)
+            // A directory name cannot exempt an executable or script from the same location review rules.
+            if (isBinaryOrScript)
             {
                 if (PathHelper.IsTempPath(path) || path.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase))
                 {

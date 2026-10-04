@@ -18,6 +18,7 @@ namespace AegisPC.Security.Detection
 {
     public static class DetectionHubFactory
     {
+        /// <summary>Builds the shared decision pipeline; native AMSI is explicit and the optional AI getter controls only local static review, not other detectors.</summary>
         public static IDetectionHub CreateDefault(
             IHashService? hashService = null,
             ISignatureVerifier? signatureVerifier = null,
@@ -32,7 +33,9 @@ namespace AegisPC.Security.Detection
             IYaraEngine? yaraEngine = null,
             IReputationService? reputationService = null,
             AegisPC.Contracts.ThreatIntelligence.IThreatIntelligenceStore? threatStore = null,
-            IExclusionService? exclusionService = null)
+            IExclusionService? exclusionService = null,
+            IAmsiScanService? amsiScanService = null,
+            Func<bool>? isUltronAiEnabled = null)
         {
             var hash = hashService ?? new HashService();
             var sigVerifier = signatureVerifier ?? new SignatureVerifier();
@@ -57,8 +60,11 @@ namespace AegisPC.Security.Detection
                 new ProcessBehaviorDetector(lineageTracker, chainCorrelator),
                 new MemoryBehaviorDetector(injectionDetector, memoryScanner),
                 new NetworkBehaviorDetector(networkCorrelator),
-                new YaraDetector(yara)
+                new YaraDetector(yara),
+                new UltronAiDetectorPlugin(isReviewEnabled: isUltronAiEnabled)
             };
+
+            if (amsiScanService != null) detectors.Add(new AmsiContentDetector(amsiScanService));
 
             return new DetectionHub(detectors, exclusionService: exclusionService);
         }

@@ -22,6 +22,10 @@ namespace AegisPC.Service.Workers
         private readonly AegisPC.Service.RealTime.EtwProcessMonitor? _processMonitor;
         private readonly AegisPC.Service.RealTime.EtwImageLoadMonitor? _imageLoadMonitor;
         private readonly AegisPC.Service.Network.INetworkProtectionService? _networkProtectionService;
+        private bool _lastEtwCoverageDegraded;
+        private readonly AegisPC.Contracts.Devices.IDeviceInventoryMonitor? _devices;
+        private readonly IScanTargetResolver? _scanTargets;
+        private readonly RansomwareShieldActivation? _shieldActivation;
 
         public ProtectionWorker(
             ILogger<ProtectionWorker> logger,
@@ -34,7 +38,10 @@ namespace AegisPC.Service.Workers
             AegisPC.Service.DriverBridge.IKernelBridge? kernelBridge = null,
             AegisPC.Service.RealTime.EtwProcessMonitor? processMonitor = null,
             AegisPC.Service.RealTime.EtwImageLoadMonitor? imageLoadMonitor = null,
-            AegisPC.Service.Network.INetworkProtectionService? networkProtectionService = null)
+            AegisPC.Service.Network.INetworkProtectionService? networkProtectionService = null,
+            AegisPC.Contracts.Devices.IDeviceInventoryMonitor? devices = null,
+            IScanTargetResolver? scanTargets = null,
+            RansomwareShieldActivation? shieldActivation = null)
         {
             _logger = logger;
             _fileProtectionService = fileProtectionService;
@@ -47,6 +54,9 @@ namespace AegisPC.Service.Workers
             _processMonitor = processMonitor;
             _imageLoadMonitor = imageLoadMonitor;
             _networkProtectionService = networkProtectionService;
+            _devices = devices;
+            _scanTargets = scanTargets;
+            _shieldActivation = shieldActivation;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -102,8 +112,12 @@ namespace AegisPC.Service.Workers
 
                     try
                     {
-                        _logger.LogInformation("Starting Kernel Minifilter Driver Bridge...");
-                        _kernelBridge?.StartBridge();
+                        if (_settingsService.GetSetting("EnableExperimentalKernelBridge", false))
+                        {
+                            _logger.LogInformation("Connecting explicitly enabled experimental kernel bridge.");
+                            _kernelBridge?.StartBridge();
+                        }
+                        else _logger.LogInformation("Experimental kernel bridging is disabled; supplemental user-mode protection remains selected.");
                     }
                     catch (Exception ex)
                     {
@@ -130,7 +144,13 @@ namespace AegisPC.Service.Workers
                     try
                     {
                         _logger.LogInformation("Starting Ransomware Canary Shield subsystem...");
-                        _ransomwareEngine.StartShield();
+                        if (_shieldActivation != null) await _shieldActivation.StartAsync(stoppingToken).ConfigureAwait(false);
+                        else
+                        {
+                            if (_scanTargets != null)
+                                await new RansomwareShieldActivation(_ransomwareEngine, _scanTargets).StartAsync(stoppingToken).ConfigureAwait(false);
+                            else _ransomwareEngine.StartShield();
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -138,14 +158,38 @@ namespace AegisPC.Service.Workers
                     }
                 }
 
-                _logger.LogInformation("AegisPC Protection Service is active and monitoring.");
+                if (_devices != null)
+                {
+                    try { await _devices.StartAsync(stoppingToken).ConfigureAwait(false); }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    { _logger.LogWarning(ex, "Device inventory is unavailable; no firmware or pre-input protection is claimed."); }
+                }
+                _logger.LogInformation("Protection service initialization finished; observed health is reported separately.");
 
                 // Heartbeat / health check loop
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
-                    _logger.LogDebug("ProtectionWorker heartbeat: FileProtection={FileActive}, RansomwareShield={RansomwareActive}, KernelBridge={KernelActive}, NetworkProtection={NetworkActive}",
-                        _fileProtectionService.IsProtectionActive, _ransomwareEngine.IsShieldActive, _kernelBridge?.IsDriverConnected ?? false, _networkProtectionService?.IsRunning ?? false);
+                    int processEventsLost = _processMonitor?.EventsLost ?? -1;
+                    int imageEventsLost = _imageLoadMonitor?.EventsLost ?? -1;
+                    bool processEtwActive = _processMonitor?.IsRunning ?? false;
+                    bool imageEtwActive = _imageLoadMonitor?.IsRunning ?? false;
+                    bool etwCoverageDegraded = _settingsService.Current.IsFileProtectionEnabled &&
+                        (!processEtwActive || !imageEtwActive || processEventsLost != 0 || imageEventsLost != 0);
+
+                    _logger.LogDebug("ProtectionWorker heartbeat: FileProtection={FileActive}, RansomwareShield={RansomwareActive}, KernelBridge={KernelActive}, NetworkProtection={NetworkActive}, ProcessEtw={ProcessEtwActive}, ImageEtw={ImageEtwActive}, ProcessEventsLost={ProcessEventsLost}, ImageEventsLost={ImageEventsLost}",
+                        _fileProtectionService.IsProtectionActive, _ransomwareEngine.IsShieldActive, _kernelBridge?.IsDriverConnected ?? false,
+                        _networkProtectionService?.IsRunning ?? false, processEtwActive, imageEtwActive, processEventsLost, imageEventsLost);
+
+                    if (etwCoverageDegraded != _lastEtwCoverageDegraded)
+                    {
+                        if (etwCoverageDegraded)
+                            _logger.LogWarning("Optional ETW process/module telemetry is degraded: ProcessActive={ProcessActive}, ImageActive={ImageActive}, ProcessEventsLost={ProcessEventsLost}, ImageEventsLost={ImageEventsLost}. This is not pre-access blocking.",
+                                processEtwActive, imageEtwActive, processEventsLost, imageEventsLost);
+                        else
+                            _logger.LogInformation("Optional ETW process/module telemetry is active with no reported event loss.");
+                        _lastEtwCoverageDegraded = etwCoverageDegraded;
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -159,6 +203,8 @@ namespace AegisPC.Service.Workers
             finally
             {
                 _logger.LogInformation("Stopping protection engines during service shutdown.");
+                try { if (_devices != null) await _devices.StopAsync(CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Error stopping device inventory"); }
                 try { _realTimeProtectionEngine?.Stop(); } catch (Exception ex) { _logger.LogWarning(ex, "Error stopping RealTimeProtectionEngine"); }
                 try { _fileProtectionService?.StopProtection(); } catch (Exception ex) { _logger.LogWarning(ex, "Error stopping FileProtectionService"); }
                 try { _ransomwareEngine?.StopShield(); } catch (Exception ex) { _logger.LogWarning(ex, "Error stopping RansomwareEngine"); }

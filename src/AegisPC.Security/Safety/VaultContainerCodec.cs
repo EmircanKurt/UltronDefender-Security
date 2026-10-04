@@ -239,16 +239,20 @@ namespace AegisPC.Security.Safety
             CancellationToken cancellationToken)
         {
             using var br = new BinaryReader(fsIn, Encoding.UTF8, leaveOpen: true);
-            string magic = br.ReadString();
+            string magic = ReadBoundedLegacyString(br, 14);
             if (magic != V2HeaderMagic) return false;
 
             int ivLength = br.ReadInt32();
             if (ivLength != 16) return false;
             byte[] iv = br.ReadBytes(ivLength);
 
-            string sha256 = br.ReadString();
+            string sha256 = ReadBoundedLegacyString(br, 128);
+            if (sha256.Length != 64 || !IsHexDigest(sha256)) return false;
             int encryptedLength = br.ReadInt32();
-            if (encryptedLength < 0) return false;
+            const int maximumLegacyCipherBytes = 64 * 1024 * 1024;
+            if (encryptedLength > maximumLegacyCipherBytes)
+                throw new InvalidDataException("LegacyMigrationRequired: V2 recovery content exceeds the supported 64 MiB budget.");
+            if (encryptedLength <= 0 || encryptedLength % 16 != 0 || encryptedLength != fsIn.Length - fsIn.Position) return false;
 
             using var aes = Aes.Create();
             aes.Key = masterKey;
@@ -261,6 +265,23 @@ namespace AegisPC.Security.Safety
             await cryptoStream.CopyToAsync(outputStream, 81920, cancellationToken).ConfigureAwait(false);
             await outputStream.FlushAsync(cancellationToken).ConfigureAwait(false);
 
+            return true;
+        }
+
+        private static string ReadBoundedLegacyString(BinaryReader reader, int maximumBytes)
+        {
+            int byteCount = reader.Read7BitEncodedInt();
+            if (byteCount < 0 || byteCount > maximumBytes)
+                throw new InvalidDataException("LegacyMigrationRequired: V2 metadata exceeds its bounded format budget.");
+            byte[] value = reader.ReadBytes(byteCount);
+            if (value.Length != byteCount) throw new EndOfStreamException("Legacy V2 metadata was truncated.");
+            return Encoding.UTF8.GetString(value);
+        }
+
+        private static bool IsHexDigest(string value)
+        {
+            foreach (char character in value)
+                if (!Uri.IsHexDigit(character)) return false;
             return true;
         }
 
