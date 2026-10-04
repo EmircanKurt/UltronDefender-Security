@@ -1,15 +1,7 @@
-﻿# 📜 Contributor Covenant Code of Conduct
+# Community standards
 
-## Our Pledge
-We as members, contributors, and leaders pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, caste, color, religion, or sexual identity and orientation.
+Be respectful, constructive and welcoming. Discuss code and evidence rather than attacking contributors. Harassment, discrimination, threats, doxxing, credential exposure and deliberate harmful submissions are not acceptable.
 
-## Our Standards
-Examples of behavior that contributes to a positive environment include:
-* Using welcoming and inclusive language
-* Being respectful of differing viewpoints and experiences
-* Gracefully accepting constructive criticism
-* Focusing on what is best for the community
-* Showing empathy towards other community members
+Respect privacy in logs, screenshots and samples. Follow [SECURITY.md](SECURITY.md) for vulnerabilities, not public exploit discussions.
 
-## Enforcement
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project maintainers.
+Maintainers may remove harmful content or restrict participation. Report conduct concerns through an available private channel; do not expose another person's private information. Enforcement is best effort in this small experimental project.

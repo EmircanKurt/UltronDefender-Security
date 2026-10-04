@@ -1,47 +1,17 @@
-﻿# 🔒 SECURITY POLICY & VULNERABILITY DISCLOSURE
+# Security policy
 
-Ultron Defender Total Security is committed to security and transparency. We welcome responsible security vulnerability reports from the security research community.
+Ultron is an experimental preview, not a validated replacement for your antivirus. Fixes are best effort; no production support or response-time guarantee is offered.
 
----
+## Reporting
 
-## 1. Supported Versions
+Check **Security → Advisories** for a private reporting option. If available, use it for privilege escalation, quarantine ownership, IPC authentication, unsafe restoration or update integrity issues. Availability must be checked; this file does not enable private reporting.
 
-| Version | Supported | Security Updates |
-| :--- | :---: | :--- |
-| **v3.0.x (Current)** | ✅ YES | Active security patches & bug fixes |
-| **v2.x / v1.x** | ❌ NO | Deprecated |
+If no private channel is available, open a minimal issue requesting a confidential contact **without exploit code, sensitive logs or vulnerability details**. Do not assume an unlisted maintainer email exists. Never attach credentials or live malware.
 
----
+Include the affected commit/version, Windows build, benign reproduction steps, expected/observed behavior and impact. Privileged testing requires an isolated authorized VM.
 
-## 2. Reporting a Vulnerability
+## Boundaries
 
-If you discover a security vulnerability, privilege escalation, bypass, or denial-of-service issue in Ultron Defender:
+User-mode monitoring cannot guarantee survival against an already privileged SYSTEM/kernel attacker. Missing observers, lost events, partial archives and unavailable service status must remain visible. A heuristic score alone must not authorize process termination or irreversible deletion.
 
-1. **Do NOT open a public GitHub issue.**
-2. Please submit your finding privately via **GitHub Private Vulnerability Reporting** (under the `Security` tab of this repository) or email the maintainers directly.
-3. Include:
-   * A clear technical description of the vulnerability.
-   * Steps to reproduce, proof-of-concept (PoC) code, or execution trace.
-   * Impact assessment (e.g. Local Privilege Escalation, Evasion, Denial of Service).
-   * Affected operating system version and build.
-
----
-
-## 3. Vulnerability Handling & Response Timeline
-
-* **Initial Acknowledgment:** Within **48 hours**.
-* **Triage & Reproduction:** Within **5 business days**.
-* **Patch Release & Advisory:** Coordinated public release after fix verification.
-
----
-
-## 4. Scope & Guidelines
-
-* **In Scope:**
-  * Local privilege escalation via ElevatedHelper or Windows Service.
-  * DPAPI Quarantine vault decryption bypass or plaintext leaks.
-  * Memory corruption, arbitrary code execution, or denial of service in `FileScannerService` / `SecureArchiveEngine`.
-  * Single-instance mutex manipulation allowing concurrent process corruption.
-* **Out of Scope:**
-  * Attacks requiring physical access to an unlocked administrator desktop with root debugger attached.
-  * Malware executing with `NT AUTHORITY\SYSTEM` or kernel driver privileges prior to Ultron Defender installation.
+Old setup files can differ from development source. Distribution requires signing and installation/rollback/VM checks; local regressions are not certification. Keep Defender or organizational protection enabled.
