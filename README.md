@@ -1,130 +1,64 @@
-# 🛡️ Ultron Defender Total Security (v3.2.0)
+<p align="center"><img src="docs/screenshots/logo.png" width="96" alt="Ultron Defender shield"></p>
 
-> [!NOTE]
-> **Açık Kaynak Uç Nokta Güvenlik ve Antivirüs Savunma Platformu**  
-> Güvenlik araştırmacıları, geliştiriciler ve bireysel kullanıcılar için Windows Internals, heuristik tarama ve proaktif siber savunma kalkanı.
+# Ultron Defender
 
-[![Status](https://img.shields.io/badge/status-v3.2.0%20Release%20Ready-brightgreen.svg)](#)
-[![Build & Test Status](https://img.shields.io/badge/tests-616%20passed%20(100%25)-brightgreen.svg)](#testing)
-[![Target Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-blue.svg)](#supported-windows-versions)
-[![Framework](https://img.shields.io/badge/.NET-8.0%20WPF-purple.svg)](#build-from-source)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Setup](https://img.shields.io/badge/Setup-UltronDefenderSetup.exe-success.svg)](UltronDefenderSetup.exe)
+A free, open-source Windows security project focused on understandable file analysis, local monitoring and honest protection status.
 
-**Ultron Defender Total Security** is a high-performance, open-source Windows endpoint protection and advanced malware defense platform written in **C# (.NET 8), WPF XAML, Native Win32 APIs, SQLite, and 14 modular detection plugins**.
+**Experimental preview — use alongside Microsoft Defender, not instead of it.** Independent antivirus efficacy testing and isolated Windows VM deployment testing have not yet been completed. VM testing is planned next; no completion date is promised.
 
-Designed from real-world adversarial incident forensics, Ultron Defender brings commercial-grade heuristic scanning, deep PE disassembly, AMSI in-memory script inspection, ransomware decoy honeypots, and atomic DPAPI AES-256 quarantine vault isolation to everyone for free.
+## Why I started
 
----
+I started this project after losing access to gaming and email accounts in an incident I believe was connected to a malicious game mod. I had disabled Windows protection after dismissing earlier warnings. That experience encouraged me to learn more about software development and defensive security, and to build something useful from it.
 
-## 📸 Arayüz & Görseller (Visual Showcase)
+This is my personal account, not a verified forensic investigation or proof that Ultron would have prevented the incident. My goal is to make security decisions easier to understand, without suggesting that any tool guarantees safety.
 
-### 0. Resmi Siber Kalkan Logosu (Official Cyber Spartan Shield Logo)
-![Official Logo](docs/screenshots/logo.png)
+— Emircan Kurt · [Writing on Medium](https://medium.com/@kurtemircan118)
 
-### 1. Modern & Sade Kontrol Paneli (Executive Dashboard)
-<img width="1296" height="873" alt="Ekran görüntüsü 2026-09-09 160358" src="https://github.com/user-attachments/assets/153efeae-9fc4-49b5-a9b3-ac93db7ca65a" />
+## What the current code does
 
+- Quick, full and selected-path scans with findings, counters and reports.
+- File structure classification rather than trusting extensions, with bounded archive inspection.
+- User-mode monitoring of configured folders and post-start process observations. Background protection depends on a running, compatible Windows service.
+- Local Ultron AI review: handwritten rules and mathematical scoring, **not a chatbot, downloaded LLM or calibrated malware probability**.
+- USB/storage/HID discovery and notices. A reported keyboard identity is not proof of safe firmware.
+- Quarantine infrastructure with ownership and integrity checks. Some UI operations remain deliberately blocked while their authorization path is unfinished.
 
+These are implemented components, not claims of complete coverage. Independent Guardian protection and emergency native actions remain development work. Ultron does not promise pre-access blocking, firmware verification or superiority to Defender, Bitdefender or Kaspersky.
 
-### 2. ESET Tarzı Canlı Animasyonlu Tarayıcı Penceresi (Active Scanner)
-<img width="866" height="566" alt="Ekran görüntüsü 2026-09-09 161057 - Kopya" src="https://github.com/user-attachments/assets/03536966-a5e3-4848-9414-97cd015a0083" />
+## Free means free
 
+The current edition has no paid activation key, subscription or expiry. The MIT source license is not an activation requirement. A Windows protection service is a technical background component, not a paid feature. Missing service information must not be presented as active protection.
 
-### 3. Çoklu Seçimli Tehdit Analiz Tablosu (Threat Scan Results)
-<img width="1289" height="1027" alt="Ekran görüntüsü 2026-09-11 113613" src="https://github.com/user-attachments/assets/b5b80432-182a-465f-ac4c-f742c7a160a8" />
+## Testing and limits
 
+See the [current verification report](docs/STATUS.md) for actual results and outstanding gates. Regression totals do **not** measure malware detection or false-positive rates. EICAR is a workflow test, not real-world efficacy evidence.
 
-### 4. Sessiz & Kayan ESET Bildirim Kartı (Silent Threat Notification)
-<img width="464" height="160" alt="Ekran görüntüsü 2026-09-10 160532" src="https://github.com/user-attachments/assets/43cd542c-0ed3-45c6-953f-b3f2779bc7be" />
+Windows 10/11 x64 are development targets; this .NET 8 build does not support Windows 7. Antivirus cannot repair operating-system vulnerabilities or replace supported Windows updates. Keep Defender and workplace protection enabled. School/work deployment requires administrator approval and an isolated pilot.
 
+## Build and review
 
----
+Requirements: Windows and .NET 8 SDK; Inno Setup 6 only for installer generation.
 
-## 🇹🇷 Neden Bu Projeyi Geliştirdim? (Türkçe Açıklama)
-
-Bu proje, bilgisayarıma internet tarayıcısı üzerinden bırakılan izinsiz bir zararlı dosya sonucunda kişisel hesaplarımın ve verilerimin tehlikeye girdiği gerçek bir güvenlik ihlalinden sonra doğdu.
-
-Olayın ardından bir güvenlik araştırmacısı gözüyle sistemi incelerken geleneksel antivirüslerin şu kritik açıklarını fark ettim:
-* **Uzantı Aldatmacası:** Saldırganlar `.exe` uzantısını gizleyip `.bin`, `.dat` veya `.tmp` yaptığında birçok tarayıcı dosyayı atlıyor.
-* **Görünmezlik:** Masaüstüne veya İndirilenler klasörüne yeni bir zararlı düştüğünde güvenlik yazılımı onu bazen saatlerce fark etmiyor.
-* **Sahte Alarmlar:** Meşru oyun modları (`.lua`, `.so`, crackli oyun kayıtları) gereksiz yere silinirken, gerçek zararlı komut dosyaları (LOLBin, DDE CSV enjeksiyonu) kaçırılabiliyor.
-
-Bu tecrübeyi fırsata dönüştürerek Windows Internals, Minifilter mimarisi, PE başlık analizi ve süreç soyağacı takibini temel alan **Ultron Defender Total Security**'yi geliştirdim. Amacım kapalı kutu antivirüslerin aksine **%100 şeffaf, açıklanabilir ve test edilebilir** bir açık kaynak savunma kalkanı sunmaktır.
-
----
-
-## 🚀 Öne Çıkan Özellikler (Key Highlights)
-
-* 🛑 **Kesintisiz Tarama Durum Yönetimi (State Machine):** Tek bir gerçek durum makinesi (`ScanCoordinatorService`), çalışan iş parçacıklarının işlemi derhal bırakmasını sağlayan hard-stop ve dosya bazlı `CancellationToken` kontrolleri.
-* 🎯 **Sıfır Yanlış Pozitif Politikası:** `TrustedSoftwarePolicy` ile Microsoft ve ticari imzalı uygulamalar için tam güven bypass'ı; UPX ve entropi yalnızca bağımsız tehdit göstergeleriyle birleştiğinde ağırlık kazanır.
-* 🚀 **SSD/NVMe Uyumlu Çok Çekirdekli Tarama Motoru:** `AdaptiveScanResourceManager` ile donanıma göre (cores*2/3/4) paralel işçi havuzu, SSD sürücülerde sıfır gecikme, 65k kuyruk kapasitesi.
-* 🛡️ **Gelişmiş Fidye Kalkanı & CFA (Controlled Folder Access):** Korumalı klasör kapıları (Protected Folders), Windows Restart Manager (`rstrtmgr.dll`) ile kilitli süreç tespiti, çift yönlü bal küpü (canary trap) dosya yemleri ve yetkisiz süreçlerin anında engellenmesi.
-* 🔌 **Ring-0 Minifilter & fltLib IPC:** `KernelIpcService` üzerinden `FilterConnectCommunicationPort` ve `FilterReplyMessage` çift yönlü haberleşmesi. Sürücü yüklü olmadığında dürüstçe `Degraded (User-Mode Only)` raporlama.
-* 📦 **Birleşik Karantina & Olay Merkezi:** DPAPI AES-256 ile şifrelenmiş tehditleri güvenle inceler, siler veya tek tıkla geri yükler.
-* 🔕 **Sessiz Kayan Bildirimler:** Rahatsız edici sistem sesleri olmadan, ekranın sağ altında açılan modern kırmızı uyarı kartı (`NotificationAggregator`).
-
----
-
-## 🧪 Canlı Test ve Doğrulama (Live Test Suite)
-
-Tüm modüller 616 otomatik birim ve entegrasyon testi ile test edilmiştir:
-
-```bash
-dotnet test tests/AegisPC.Tests/AegisPC.Tests.csproj -c Release
-```
-
-```text
-Toplam 1 test dosyası belirtilen desenle eşleşti.
-Başarılı!  - Başarısız: 0, Başarılı: 616, Atlanan: 0, Toplam: 616, Süre: ~3 dk
-```
-
-| Senaryo | Dosya Türü | Tespit Türü | Sonuç |
-|---|---|---|:---:|
-| **EICAR Testi** | `.txt / .com` | Bilinen Zararlı İmza | ** 60/100 (Engellendi)** |
-| **Fidye Yazılımı** | `.bat / .locked` | Gölge Kopyaları Silme / Şifreleme Uzantısı | ** 70/100 (Engellendi)** |
-| **CSV Enjeksiyonu**| `.csv` | DDE Formül Enjeksiyonu (`=cmd\|...`) | ** 50/100 (Yakaladı)** |
-| **Arşiv Dropper** | `.zip` | ZIP İçi Powershell Dropper | ** 70/100 (Engellendi)** |
-| **Meşru Kurulum / Oyun Yaması** | `.exe / .dll` | Dijital İmza / Meşru Dizin Güveni | ** 50/100 (Temiz Kabul Edildi)** |
-
----
-
-## 🛠️ Kernel Sürücüsü ve Dağıtım (Driver & AMSI Distribution)
-
-### 1. Kernel Minifilter Sürücüsü Derleme & İmzalama (Test-Signing):
-```powershell
-# Sürücü önkoşullarını kontrol edin (WDK / MSBuild):
-powershell -ExecutionPolicy Bypass -File drivers\Test-DriverPrerequisites.ps1
-
-# Sürücüyü derleyin ve test sertifikasıyla imzalayın:
-powershell -ExecutionPolicy Bypass -File drivers\Build-And-Sign-Driver.ps1 -Configuration Release -Sign
-```
-
-### 2. AMSI Sağlayıcı Kaydı (In-Process Script Scanning):
-```powershell
-# AMSI sağlayıcı COM DLL'ini kaydedin:
-powershell -ExecutionPolicy Bypass -File tools\AmsiProvider\Register-AmsiProvider.ps1 -DllPath tools\AmsiProvider\AmsiProvider.dll -Register
-```
-
----
-
-## 💻 Projeyi Kaynaktan Derleme (Build from Source)
-
-### Gereksinimler:
-* Windows 10 / 11 (x64)
-* .NET 8.0 SDK
-* Inno Setup 6 (Kurulum paketi derlemek için)
+The reviewed development code is currently in [pull request #3](https://github.com/EmircanKurt/UltronDefender-Security/pull/3). The default branch can still contain older code until the staged changes are reviewed and merged. The commands below intentionally select the reviewed preview branch.
 
 ```powershell
-# 1. Depoyu klonlayın
-git clone https://github.com/EmircanKurt/UltronDefender-Security.git
+git clone --branch codex/rt-ai-free-preview-2026-10-04 https://github.com/EmircanKurt/UltronDefender-Security.git
 cd UltronDefender-Security
-
-# 2. Tek komutla derleyin, test edin ve kurulum paketini üretin:
-powershell -ExecutionPolicy Bypass -File .\build_and_deploy.ps1
+dotnet build tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release -warnaserror
+dotnet test tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --no-build --filter "FullyQualifiedName!~Golden01_&FullyQualifiedName!~SettingsViewModelRegressionTests"
+dotnet publish src/AegisPC.App/AegisPC.App.csproj -c Release -o artifacts/preview/app
 ```
 
----
+These commands do not install/start a service. The main test project includes live OS/credential/process fixtures: do not run its whole suite on an everyday PC. Building an installer is not installing it or validating a release.
 
-## 📄 Lisans (License)
-Bu proje [MIT Lisansı](LICENSE) altında açık kaynaklı olarak paylaşılmaktadır.
+## Downloads and screenshots
+
+Older setup files may not contain the latest source fixes. There is no newly validated, signed production installer. Signing, installation/uninstallation, rollback and isolated VM checks are required before a new setup is presented as a recommended download.
+
+Historical images remain in [docs/screenshots](docs/screenshots). They can show older layouts and protection labels; they are **not evidence of current protection**. New screenshots will follow a manually verified current-build run; generated previews will be labeled as previews.
+
+## Help improve Ultron
+
+Useful contributions include reproducible scan failures, benign false-positive cases, readable UI improvements and measured performance reports. Do not attach credentials or live malware to public issues.
+
+[Contributing](CONTRIBUTING.md) · [Security reporting](SECURITY.md) · [Community standards](CODE_OF_CONDUCT.md) · [MIT license](LICENSE) · [Third-party notices](docs/architecture/THIRD_PARTY_NOTICES.md)
