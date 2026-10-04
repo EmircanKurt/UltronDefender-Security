@@ -117,7 +117,7 @@ namespace AegisPC.App.Services
             sb.AppendLine("================================================================================");
             sb.AppendLine("            ULTRON DEFENDER TOTAL SECURITY - GÜVENLİK TARAMA RAPORU             ");
             sb.AppendLine("================================================================================");
-            sb.AppendLine($"Tarama Tarihi       : {scanDate:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"Tarama Tarihi       : {(scanDate == default ? "Başlangıç zamanı kaydedilmedi" : scanDate.ToString("yyyy-MM-dd HH:mm:ss"))}");
             sb.AppendLine($"Tarama Süresi       : {duration}");
             sb.AppendLine($"Tarama Tipi         : {scanType}");
             sb.AppendLine($"Tarama Durumu       : {scanStatus}");
@@ -236,6 +236,13 @@ namespace AegisPC.App.Services
                 report.Result.TimedOutFiles,
                 report.ResourceProfile,
                 report.Result.Coverage,
+                FailureInfo = report.Result.FailureInfo is { } failure ? new
+                {
+                    Stage = failure.Stage.ToString(),
+                    Reason = failure.Reason.ToString(),
+                    failure.NativeErrorCode, failure.HResult, failure.SafeMessage,
+                    failure.OccurredAtUtc, failure.CorrelationId, failure.IsRetryable
+                } : null,
                 ReportedCoverageComplete = report.Result.Status == ScanStatus.Completed && report.Result.Coverage.IsComplete && report.Result.SkippedFiles == 0 && report.Result.FailedFiles == 0 && report.Result.TimedOutFiles == 0,
                 CoverageNote = "Only engine-reported counters; not proof that every system path, archive member or running process was inspected.",
                 Findings = report.Result.Findings.Select(f => new

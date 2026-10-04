@@ -121,7 +121,9 @@ public sealed class UltronAiShieldUiTests : IDisposable
     {
         var ipc = new FixtureIpc { IsConnected = false };
         using var vm = new SettingsViewModel(ipcClient: ipc);
-        Assert.Contains("bağlanılamıyor", vm.ProtectionWarningText);
+        Assert.Contains("bağlanılamadı", vm.ProtectionWarningTitle);
+        Assert.Equal("Information", vm.ProtectionWarningSeverity);
+        Assert.DoesNotContain("anahtar", vm.ProtectionWarningText);
         ipc.IsConnected = true;
         await vm.RefreshProtectionStatusCommand.ExecuteAsync(null);
         Assert.True(vm.IsUltronAiStatusVerified);

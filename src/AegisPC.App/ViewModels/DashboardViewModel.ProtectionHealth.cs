@@ -49,24 +49,24 @@ public partial class DashboardViewModel
                 health!.State == ProtectionHealthState.Healthy;
             IsRansomwareEnabled = fresh && status!.IsRansomwareShieldEnabled;
             UpdateRansomwareStateTexts(IsRansomwareEnabled);
-            RealTimeHealthStatus = !fresh ? "Doğrulanmadı" : health!.State switch
+            RealTimeHealthStatus = !fresh ? "Durum alınamadı" : health!.State switch
             {
                 ProtectionHealthState.Healthy => "Kapsam dahilinde etkin",
                 ProtectionHealthState.Recovering => "Yeniden inceleniyor",
                 ProtectionHealthState.Stopped => "Durduruldu",
                 _ => "Kısıtlı"
             };
-            RealTimeHealthMessage = !fresh ? "Güncel hizmet durumu yok; eski veya yerel ayarlar koruma kanıtı değildir"
+            RealTimeHealthMessage = !fresh ? "Arka plan korumasından güncel yanıt alınamadı. Ayarlar bölümünden durumu yenileyin."
                 : $"{health!.WatcherCount} izleme kökü; {health.PendingFileEvents} bekleyen olay; " +
                   $"{health.ManagedEventsLost} dosya / {health.OperatingSystemEventsLost} ETW olay kaybı. " +
                   (health.State == ProtectionHealthState.Healthy ? "Olay-sonrası kullanıcı modu koruma; ön-erişim engelleme değildir."
                       : string.Join(" ", health.Limitations.Take(4)));
             RealTimeHealthColor = IsRealTimeProtectionActive ? "#4CAF50" : "#F5A623";
-            WatcherStatusText = fresh ? $"{health!.WatcherCount} kök" : "Doğrulanmadı";
-            EventQueueStatusText = fresh ? $"{health!.PendingFileEvents} bekliyor" : "Doğrulanmadı";
+            WatcherStatusText = fresh ? $"{health!.WatcherCount} kök" : "Bilgi yok";
+            EventQueueStatusText = fresh ? $"{health!.PendingFileEvents} bekliyor" : "Bilgi yok";
             QuarantineStatusText = connected ? "Hizmet üzerinden" : "Hizmet gerekli";
             EngineArchitectureText = fresh
-                ? $"Dosya izleme / süreç ETW: {(health!.ProcessTelemetryActive ? "etkin" : "kısıtlı")}; AMSI içerik: {(health.AmsiContentScanningActive ? "etkin" : "bağlı değil")}" : "Modül kapsamı doğrulanmadı";
+                ? $"Dosya izleme / süreç ETW: {(health!.ProcessTelemetryActive ? "etkin" : "kısıtlı")}; AMSI içerik: {(health.AmsiContentScanningActive ? "etkin" : "bağlı değil")}" : "İzleme bileşenlerinden bilgi alınamadı";
             if (fresh) EngineArchitectureText += $"; USB/HID: {(health!.DeviceInventoryActive && health.DeviceInventoryComplete ? "gözlem etkin" : "kısıtlı")}";
             if (connected) ThreatsBocked24h = status!.TotalThreatsBlocked24h;
             if (!IsScanning && !HasThreatsDetected)

@@ -146,11 +146,21 @@ namespace AegisPC.App.ViewModels
         [ObservableProperty]
         private string statusMessage = string.Empty;
 
+        /// <summary>Whether the current service observation needs a connection notice or protection warning.</summary>
         [ObservableProperty]
         private bool isProtectionWarningVisible = false;
 
+        /// <summary>Plain-language explanation of unavailable service information or an observed protection limitation.</summary>
         [ObservableProperty]
         private string protectionWarningText = string.Empty;
+
+        /// <summary>Short heading that identifies the connection or observed protection condition without activation terminology.</summary>
+        [ObservableProperty]
+        private string protectionWarningTitle = string.Empty;
+
+        /// <summary>Presentation severity for the observed condition; missing information uses the neutral information style.</summary>
+        [ObservableProperty]
+        private string protectionWarningSeverity = nameof(ServiceProtectionNoticeSeverity.Information);
 
         [ObservableProperty]
         private ScanResourceMode selectedResourceMode = ScanResourceMode.Auto;
@@ -356,31 +366,13 @@ namespace AegisPC.App.ViewModels
 
         private void EvaluateProtectionWarning()
         {
-            if (!IsProtectionStatusVerified)
-            {
-                IsProtectionWarningVisible = true;
-                ProtectionWarningText = _ipcClient?.IsConnected != true
-                    ? "Arka plan koruma hizmetine bağlanılamıyor. Açık görünen anahtarlar kayıtlı tercihlerdir; korumanın çalıştığı doğrulanmadı. Durumu Yenile'yi kullanın."
-                    : _lastProtectionStatus?.Health == null
-                        ? "Hizmet bağlı, ancak güncel koruma sağlık bilgisi alınamıyor. Uygulama ve hizmet sürümleri uyumsuz olabilir. Durumu Yenile'yi kullanın."
-                        : "Koruma hizmetinin sağlık yanıtı eski veya hizmet çalışmıyor. Korumanın güncel durumu bilinmiyor; Durumu Yenile'yi kullanın.";
-            }
-            else if (!IsFileProtectionEnabled || !IsRansomwareShieldEnabled ||
-                (IsUltronAiStatusVerified && !IsUltronAiEnabled))
-            {
-                IsProtectionWarningVisible = true;
-                ProtectionWarningText = "Bir veya daha fazla koruma katmanı kapalı. Bu katmanların incelediği tehditler fark edilmeyebilir; diğer kalkanların ve Defender'ın durumunu ayrıca kontrol edin.";
-            }
-            else if (_lastProtectionStatus?.Health?.State != AegisPC.Core.Models.ProtectionHealthState.Healthy)
-            {
-                IsProtectionWarningVisible = true;
-                ProtectionWarningText = "Koruma hizmeti yanıt veriyor, ancak izleme kapsamı kısmi veya yeniden kuruluyor. Ayrıntıları Ultron AI Koruma Merkezi'nde inceleyin.";
-            }
-            else
-            {
-                IsProtectionWarningVisible = false;
-                ProtectionWarningText = string.Empty;
-            }
+            var notice = ServiceProtectionStatusPolicy.Describe(_ipcClient, _lastProtectionStatus, DateTime.UtcNow);
+            if (!IsProtectionStatusVerified && notice.Title.Length == 0)
+                notice = new ServiceProtectionNotice("Koruma bilgisi alınamadı", "Güncel çalışma durumu için Yenile ile tekrar deneyin.");
+            IsProtectionWarningVisible = notice.Title.Length != 0;
+            ProtectionWarningTitle = notice.Title;
+            ProtectionWarningText = notice.Message;
+            ProtectionWarningSeverity = notice.Severity.ToString();
         }
 
         partial void OnIsFileProtectionEnabledChanged(bool value)

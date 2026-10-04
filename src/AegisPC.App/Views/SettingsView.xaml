@@ -30,17 +30,32 @@
                 <TextBlock Text="Koruma kalkanları, bildirimler ve tarama zamanlamasını yapılandırın." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
             </StackPanel>
 
-            <!-- 2. Protection Warning Alert Card (Strict Crimson Red) -->
-            <Border Background="{DynamicResource BrushStatusDangerBg}" BorderBrush="{DynamicResource BrushStatusDangerBorder}" BorderThickness="1" CornerRadius="8" Padding="16,14" Margin="0,0,0,20"
+            <!-- Connection information is not a malware or activation alert. -->
+            <Border BorderThickness="1" CornerRadius="8" Padding="16,14" Margin="0,0,0,20"
                     Visibility="{Binding IsProtectionWarningVisible, Converter={StaticResource BoolToVis}}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource BrushCardBgAlt}"/>
+                        <Setter Property="BorderBrush" Value="{DynamicResource BrushCardBorder}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ProtectionWarningSeverity}" Value="Warning">
+                                <Setter Property="Background" Value="{DynamicResource BrushStatusWarningBg}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource BrushStatusWarningBorder}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <ui:SymbolIcon Symbol="Warning24" Foreground="{DynamicResource BrushStatusDanger}" FontSize="22" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1" Text="{Binding ProtectionWarningText}" Foreground="{DynamicResource BrushStatusDangerText}" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    <ui:SymbolIcon Symbol="Info24" Foreground="{DynamicResource BrushTextSecondary}" FontSize="22" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding ProtectionWarningTitle}" Foreground="{DynamicResource BrushTextPrimary}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding ProtectionWarningText}" Foreground="{DynamicResource BrushTextSecondary}" Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
                     <Button Grid.Column="2" Content="Durumu Yenile" Command="{Binding RefreshProtectionStatusCommand}"
                             Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0" VerticalAlignment="Center"/>
                 </Grid>
