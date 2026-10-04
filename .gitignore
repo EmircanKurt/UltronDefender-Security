@@ -47,6 +47,8 @@ $RECYCLE.BIN/
 
 scratch/
 AegisPC_App/
+AegisPC_App_Optimized/
+AegisPC_Staging/
 UltronDefenderSetup.exe
 UltronDefender_Setup_*.exe
 all_tests.txt
@@ -57,9 +59,19 @@ memory-bank/
 AI_GUIDELINES.md
 
 ## Temporary build and trace files
+artifacts/
+docs/ai/
+/MASTER_PLAN.md
+artifacts/final-review-2026-09-27/
+artifacts/release-3.2.1/
+artifacts/workflow-review-2026-09-27/
 *_wpftmp.csproj
 host_trace.txt
 last_prompt.txt
 tools/uninstaller_out/
 
+## Machine-specific shortcuts and obsolete generated manuals
+*.lnk
+/user_manual.pdf
+/scripts/user_manual.pdf
 
