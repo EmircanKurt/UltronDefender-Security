@@ -69,3 +69,9 @@ artifacts/workflow-review-2026-09-27/
 host_trace.txt
 last_prompt.txt
 tools/uninstaller_out/
+
+## Machine-specific shortcuts and obsolete generated manuals
+*.lnk
+/user_manual.pdf
+/scripts/user_manual.pdf
+
