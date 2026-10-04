@@ -1,57 +1,64 @@
-# 🛡️ Ultron Defender Total Security
+<p align="center"><img src="docs/screenshots/logo.png" width="96" alt="Ultron Defender shield"></p>
 
-[![Status](https://img.shields.io/badge/status-experimental%20preview-orange.svg)](docs/architecture/FEATURE_STATUS.md)
-[![Review](https://img.shields.io/badge/review-2026--10--04-blue.svg)](docs/research/FREE_EDITION_AI_REVIEW_2026-10-04.md)
-[![Target Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-blue.svg)](#)
-[![Framework](https://img.shields.io/badge/.NET-8.0%20WPF-purple.svg)](#)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-Master%20Index-blue.svg)](docs/README.md)
+# Ultron Defender
 
-**Ultron Defender Total Security** is an experimental, open-source Windows security project written in **C# (.NET 8), WPF XAML, Native Win32 APIs and SQLite**. It includes file scanning, user-mode event monitoring, heuristic analysis and an encrypted quarantine vault. These components do not establish commercial antivirus efficacy or production readiness.
+A free, open-source Windows security project focused on understandable file analysis, local monitoring and honest protection status.
 
-### Ücretsiz sürüm
+**Experimental preview — use alongside Microsoft Defender, not instead of it.** Independent antivirus efficacy testing and isolated Windows VM deployment testing have not yet been completed. VM testing is planned next; no completion date is promised.
 
-Mevcut sürüm ücretsizdir; ürün aktivasyon anahtarı, abonelik veya süre sınırı gerektirmez. Gelecekteki ücretli sürüm bu sürümün bir özelliği değildir. MIT kaynak lisansı ürün aktivasyonu anlamına gelmez. Windows koruma hizmeti, kasa şifreleme anahtarları ve isteğe bağlı üçüncü taraf API kimlikleri teknik bileşenlerdir; ödeme şartı değildir. Arka plan hizmetinin doğrulanamaması gerçek bir koruma/kapsam uyarısıdır, lisans uyarısı değildir. Sabit örnek PRO anahtarı/süre alanları kaldırıldı; son güvenli Review koşusunda 939 geçti / 1 VM-yetki testi atlandı. İçindeki 69 AI/politika/tercih vakası zararlı yakalama oranı değildir. [Ücretsiz sürüm, test ayrımı ve GitHub denetimi](docs/research/FREE_EDITION_AI_REVIEW_2026-10-04.md).
+## Why I started
 
-Ultron AI is a local, handwritten review/policy layer, not an LLM or a calibrated malware-probability model. The latest slice fixes observation-only behavior decisions and terminal scan failures, adds tested permit/receipt contracts and an accessible animated robot. **Independent Guardian protection and production native actions remain gated.** [Implementation evidence and unfinished gates](docs/research/ULTRON_AI_CHIEF_PHASE1_2026-10-04.md).
+I started this project after losing access to gaming and email accounts in an incident I believe was connected to a malicious game mod. I had disabled Windows protection after dismissing earlier warnings. That experience encouraged me to learn more about software development and defensive security, and to build something useful from it.
 
-The subsequent UI slice adds a service-acknowledged optional AI-review switch with two disable confirmations, persistent preference synchronization, wheel/viewport fixes and bounded privacy-safe diagnostics. Safe selected regressions: 937 passed / 1 VM-privilege skip; these are not a malware detection rate. The expected protection service was not found on the development machine; prepared unsigned artifacts were not installed. The repeated runtime scan failure's exception is still unknown. [Current evidence and limitations](docs/research/ULTRON_AI_SHIELD_UI_FIXES_2026-10-04.md).
+This is my personal account, not a verified forensic investigation or proof that Ultron would have prevented the incident. My goal is to make security decisions easier to understand, without suggesting that any tool guarantees safety.
 
----
+— Emircan Kurt · [Writing on Medium](https://medium.com/@kurtemircan118)
 
-### 🇹🇷 Proje Hakkında (About in Turkish)
+## What the current code does
 
-4 Ekim 2026 yerel geliştirme dilimi; yapılandırılmış kanıt politikası, taze servis sağlığı, uzantıdan bağımsız içerik sınıflandırma, servis sahipli kasa ve USB/disk/HID keşfi üzerinde ilerledi. Test sayıları ve kapsam [güncel uygulama raporundadır](docs/research/ULTRON_RT_USB_IMPLEMENTATION_2026-10-04.md); seçili benign regresyonlar zararlı yakalama oranı değildir. **Yayın engelleri:** kullanıcı-bağlamı taşıması tamamlanana kadar arayüzden geri yükleme/manüel karantina reddedilir; standart kullanıcıya özel RT tehdit bildirimi henüz yoktur. Fidye sezgileri tek başına süreç öldürmez; HID keşfi firmware güvenliğini veya ilk kötü tuşun engellenmesini kanıtlamaz. [Önceki güvenlik düzeltmeleri](docs/research/ANTIVIRUS_SAFETY_2026-09-28.md).
+- Quick, full and selected-path scans with findings, counters and reports.
+- File structure classification rather than trusting extensions, with bounded archive inspection.
+- User-mode monitoring of configured folders and post-start process observations. Background protection depends on a running, compatible Windows service.
+- Local Ultron AI review: handwritten rules and mathematical scoring, **not a chatbot, downloaded LLM or calibrated malware probability**.
+- USB/storage/HID discovery and notices. A reported keyboard identity is not proof of safe firmware.
+- Quarantine infrastructure with ownership and integrity checks. Some UI operations remain deliberately blocked while their authorization path is unfinished.
 
-Bu .NET 8 sürümü **Windows 7 desteklemez**; Windows 10/11 x64 hedeflerinde sürüm ve edisyon uyumu ayrıca doğrulanmalıdır ([Microsoft destek matrisi](https://learn.microsoft.com/dotnet/core/install/windows)). İmzalı kernel koruması veya Defender'dan üstünlük iddiası yoktur. Kurulum paketini yalnız oluşturmak için `./build_and_deploy.ps1` kullanılır; varsayılan masaüstü/servis/Defender ayarlarını değiştirmez. Kurulum EXE'sini çalıştırmak ayrı, yönetici yetkisi gerektiren işlemdir.
-Ultron Defender, açıklanabilir dosya analizi ve donanıma göre uyarlanan tarama üzerinde geliştirilen bir önizleme projesidir. Mevcut gerçek zamanlı izleme, seçili klasörlerde kullanıcı-modu dosya olayları ve süreç başladıktan sonraki gözlemlere dayanır; normal kurulum imzalı kernel sürücüsünü etkinleştirmez ve yürütme öncesi engelleme garantisi vermez. Yanlış pozitiflerin sıfır olduğu iddia edilmez. Okul/iş bilgisayarlarında dağıtımdan önce yönetici onayı ve izole pilot gerekir; mevcut Defender/kurumsal korumayı kapatmayın. [Güncel gerçek zamanlı kapsam ve doğrulama sınırları](docs/research/REALTIME_COVERAGE_PHASE1_2026-09-30.md).
+These are implemented components, not claims of complete coverage. Independent Guardian protection and emergency native actions remain development work. Ultron does not promise pre-access blocking, firmware verification or superiority to Defender, Bitdefender or Kaspersky.
 
----
+## Free means free
 
-### 💻 Nasıl Derlenir? (Build from Source)
-Gereksinimler: Windows 10/11 (x64), .NET 8.0 SDK, Inno Setup 6.
+The current edition has no paid activation key, subscription or expiry. The MIT source license is not an activation requirement. A Windows protection service is a technical background component, not a paid feature. Missing service information must not be presented as active protection.
+
+## Testing and limits
+
+See the [current verification report](docs/STATUS.md) for actual results and outstanding gates. Regression totals do **not** measure malware detection or false-positive rates. EICAR is a workflow test, not real-world efficacy evidence.
+
+Windows 10/11 x64 are development targets; this .NET 8 build does not support Windows 7. Antivirus cannot repair operating-system vulnerabilities or replace supported Windows updates. Keep Defender and workplace protection enabled. School/work deployment requires administrator approval and an isolated pilot.
+
+## Build and review
+
+Requirements: Windows and .NET 8 SDK; Inno Setup 6 only for installer generation.
+
+The reviewed development code is currently in [pull request #3](https://github.com/EmircanKurt/UltronDefender-Security/pull/3). The default branch can still contain older code until the staged changes are reviewed and merged. The commands below intentionally select the reviewed preview branch.
+
 ```powershell
-git clone https://github.com/EmircanKurt/UltronDefender-Security.git
+git clone --branch codex/rt-ai-free-preview-2026-10-04 https://github.com/EmircanKurt/UltronDefender-Security.git
 cd UltronDefender-Security
-dotnet build AegisPC.sln -c Release
+dotnet build tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release -warnaserror
+dotnet test tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --no-build --filter "FullyQualifiedName!~Golden01_&FullyQualifiedName!~SettingsViewModelRegressionTests"
 dotnet publish src/AegisPC.App/AegisPC.App.csproj -c Release -o artifacts/preview/app
-dotnet publish src/AegisPC.Service/AegisPC.Service.csproj -c Release -o artifacts/preview/service
 ```
 
-### 🧪 Nasıl Test Edilir? (Run Tests)
-```powershell
-dotnet test tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --filter "FullyQualifiedName!~Golden01_&FullyQualifiedName!~SettingsViewModelRegressionTests"
-dotnet test tests/AegisPC.Trust.Tests/AegisPC.Trust.Tests.csproj -c Release
-```
+These commands do not install/start a service. The main test project includes live OS/credential/process fixtures: do not run its whole suite on an everyday PC. Building an installer is not installing it or validating a release.
 
-4 Ekim son ücretsiz sürüm Release koşusunda Review **939 geçti / 1 VM-yetki testi atlandı / 0 başarısız**. Önceki Trust **35/35** sonucu bu tur yeniden koşulmadı; ortak vakalar iki kez sayılmaz. Bu koşu zararsız geçici dosyalar ve karar/altyapı testlerini kullanır; gerçek zararlı yazılım etkinlik testi değildir. Ana test projesi canlı süreç/kimlik bilgisi testleri ve fiziksel EICAR fikstürü de içerir: tüm paketi sıradan okul/iş bilgisayarında çalıştırmayın. Dağıtım/kurulum scriptleri sistemi değiştirir; yukarıdaki yayınlama komutları uygulamayı kurmaz. [Koşular ve kapsam](docs/research/FREE_EDITION_AI_REVIEW_2026-10-04.md).
+## Downloads and screenshots
 
-Kasa symlink testi mevcut host yetkisi nedeniyle VM kapısına ayrılmıştır; atlanan test geçti sayılmaz. Yeni kaynak değişiklikleri kurulu eski EXE'ye otomatik uygulanmaz; bu dilimde imzalı kurulum veya canlı servis pilotu yapılmamıştır.
+Older setup files may not contain the latest source fixes. There is no newly validated, signed production installer. Signing, installation/uninstallation, rollback and isolated VM checks are required before a new setup is presented as a recommended download.
 
----
+Historical images remain in [docs/screenshots](docs/screenshots). They can show older layouts and protection labels; they are **not evidence of current protection**. New screenshots will follow a manually verified current-build run; generated previews will be labeled as previews.
 
-### 📚 Dokümantasyon ve Mimari Haritası (Documentation & Architecture)
-* 🗺️ **Mimari Haritası:** [`docs/architecture/CURRENT_ARCHITECTURE.md`](docs/architecture/CURRENT_ARCHITECTURE.md) & [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md)
-* 📋 **Özellik Durum Matrisi:** [`docs/architecture/FEATURE_STATUS.md`](docs/architecture/FEATURE_STATUS.md)
-* 📖 **Tüm Dokümanlar İndeksi:** [`docs/README.md`](docs/README.md) (Mimari, Araştırma, Raporlar ve AI Yönergeleri)
-* 📜 **Sürüm Değişiklikleri:** [`CHANGELOG.md`](CHANGELOG.md) | **Lisans:** [MIT License](LICENSE)
+## Help improve Ultron
+
+Useful contributions include reproducible scan failures, benign false-positive cases, readable UI improvements and measured performance reports. Do not attach credentials or live malware to public issues.
+
+[Contributing](CONTRIBUTING.md) · [Security reporting](SECURITY.md) · [Community standards](CODE_OF_CONDUCT.md) · [MIT license](LICENSE) · [Third-party notices](docs/architecture/THIRD_PARTY_NOTICES.md)

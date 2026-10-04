@@ -1,4 +1,4 @@
-﻿# 📜 THIRD-PARTY NOTICES & OPEN-SOURCE ATTRIBUTIONS
+# 📜 THIRD-PARTY NOTICES & OPEN-SOURCE ATTRIBUTIONS
 
 Ultron Defender Total Security utilizes or draws architectural inspiration from several open-source libraries, frameworks, and reference projects. We gratefully acknowledge the following contributions:
 
