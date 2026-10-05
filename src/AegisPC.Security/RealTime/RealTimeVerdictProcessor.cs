@@ -145,7 +145,9 @@ namespace AegisPC.Security.RealTime
                 {
                     var cached = await _fileHashMatcher.TryGetCachedAsync(filePath, fileInfo, ct);
                     verifiedHash = cached.VerifiedHash;
-                    if (cached.Hit && cached.Finding == null && _detectionHub == null && result.ContentClassification.IsComplete)
+                    if (cached.Hit && cached.Finding == null && _detectionHub == null && result.ContentClassification.IsComplete &&
+                        AegisPC.Contracts.ThreatIntelligence.Sha256Identity.IsValid(verifiedHash) &&
+                        !MalwareSignatureDatabase.HasLoadedHash(verifiedHash))
                     {
                         result.Verdict = RealTimeVerdict.Clean;
                         result.RecommendedPolicy = RealTimePolicyAction.Allow;
@@ -162,7 +164,8 @@ namespace AegisPC.Security.RealTime
                 // STAGE 1: Fast Hash & Signature Database Check
                 var sha256 = verifiedHash ?? await _hashService.ComputeSha256Async(filePath, ct);
                 ct.ThrowIfCancellationRequested();
-                if (string.IsNullOrWhiteSpace(sha256)) throw new IOException("File hashing failed; no clean verdict is available.");
+                if (!AegisPC.Contracts.ThreatIntelligence.Sha256Identity.IsValid(sha256))
+                    throw new IOException("Content identity is unavailable; no clean or confirmed-malware verdict can be issued.");
                 result.SHA256 = sha256;
 
                 if (sha256 == "VIRUS_INFECTED_OS_BLOCKED")
@@ -220,35 +223,7 @@ namespace AegisPC.Security.RealTime
                     return result;
                 }
 
-                // Check Cloud Reputation (Abuse.ch MalwareBazaar) if enabled
-                if (!hashMatch.IsMatched && _reputationService != null && _reputationService.IsCloudLookupEnabled && !string.IsNullOrEmpty(sha256))
-                {
-                    try
-                    {
-                        var cloudRep = await _reputationService.CheckReputationAsync(sha256, ct);
-                        if (cloudRep.IsMalicious)
-                        {
-                            result.Verdict = RealTimeVerdict.ConfirmedMalicious;
-                            result.RecommendedPolicy = RealTimePolicyAction.BlockAndQuarantine;
-                            result.Confidence = 0.99;
-                            result.RiskScore = cloudRep.Severity > 0 ? cloudRep.Severity : 100;
-                            result.RiskLevel = RiskLevel.ConfirmedMalicious;
-                            result.ThreatTitle = $"🚨 Bulut Tehdit Tespiti: {cloudRep.ThreatName}";
-                            result.ThreatDescription = $"Dosya Abuse.ch MalwareBazaar küresel tehdit veritabanında '{cloudRep.ThreatName}' olarak doğrulandı.";
-                            result.Evidences.Add($"Bulut İmzası: {cloudRep.ThreatName} ({cloudRep.MalwareFamily ?? "Malware"})");
-                            result.Evidences.Add($"Kaynak: {cloudRep.Source}");
-
-                            result.ScanEndTime = DateTime.UtcNow;
-                            result.VerdictTime = DateTime.UtcNow;
-                            return result;
-                        }
-                    }
-                    catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogDebug(ex, "Optional cloud reputation lookup failed for {Path}; continuing local inspection", filePath);
-                    }
-                }
+                // Local-only edition: no endpoint hash is sent to a reputation provider.
 
                 if (_detectionHub != null)
                 {
@@ -457,3 +432,4 @@ namespace AegisPC.Security.RealTime
 
     }
 }
+

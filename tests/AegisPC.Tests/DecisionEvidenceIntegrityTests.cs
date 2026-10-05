@@ -163,7 +163,7 @@ public sealed class DecisionEvidenceIntegrityTests
     }
 
     [Fact]
-    public async Task AlreadyLoadedFeedHash_CannotBeHiddenByExclusionAndDoesNotInitializeStorage()
+    public async Task UnsignedLoadedFeedHash_CannotForgeConfirmedDetectionAndDoesNotInitializeStorage()
     {
         string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("inert loaded feed exclusion fixture")));
         var table = (ConcurrentDictionary<string, (string Name, string Category, int Severity)>)typeof(ThreatSignatureDatabase)
@@ -175,9 +175,9 @@ public sealed class DecisionEvidenceIntegrityTests
         table[hash] = ("Inert memory-only decision fixture", "Test", 100);
         try
         {
-            Assert.True(ThreatSignatureDatabase.TryCheckLoadedHash(hash, out var match));
-            Assert.Equal(100, match.Severity);
-            Assert.True(MalwareSignatureDatabase.HasLoadedHash(hash));
+            Assert.False(ThreatSignatureDatabase.TryCheckLoadedHash(hash, out _));
+            Assert.True(ThreatSignatureDatabase.TryGetUnverifiedMetadata(hash, out _));
+            Assert.False(MalwareSignatureDatabase.HasLoadedHash(hash));
             var exclusions = new ExcludesEverything();
             var detector = new InertDetector("fixture", new[]
             {
@@ -186,8 +186,8 @@ public sealed class DecisionEvidenceIntegrityTests
             var result = await new DetectionHub(new[] { detector }, exclusionService: exclusions)
                 .EvaluateAsync(new DetectionContext { FilePath = "inert:excluded-feed-fixture", SHA256 = hash });
 
-            Assert.Equal(DetectionVerdict.ConfirmedMalicious, result.Verdict);
-            Assert.Equal(0, exclusions.Calls);
+            Assert.NotEqual(DetectionVerdict.ConfirmedMalicious, result.Verdict);
+            Assert.Equal(1, exclusions.Calls);
             Assert.Equal(beforePath, ThreatSignatureDatabase.CurrentDbPath);
             Assert.Equal(beforeInitialized, (bool)initialized.GetValue(null)!);
         }
@@ -258,3 +258,4 @@ public sealed class DecisionEvidenceIntegrityTests
         public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }
+

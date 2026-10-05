@@ -23,18 +23,15 @@ public sealed class ExclusionDetectionPriorityTests
     [Fact]
     public async Task ExactKnownHash_IsEvaluatedEvenInsideExcludedPath()
     {
-        string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("inert Ultron exclusion priority fixture")));
-        var table = (Dictionary<string, (string, string, int, string)>)typeof(MalwareSignatureDatabase)
-            .GetField("KnownThreatHashes", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        const string hash = "275A021BBFB6489E54D471899F7DB9D1663FC695EC2FE2A2C4538AABF651FD0F";
         var detector = new FixtureDetector();
-        table.Add(hash, ("Inert test-only fixture", "Test", 100, "2026-09-27"));
         try
         {
             await new DetectionHub(new[] { detector }, exclusionService: new ExcludesEverything())
                 .EvaluateAsync(new DetectionContext { FilePath = "inert-fixture", SHA256 = hash });
             Assert.Equal(1, detector.Calls);
         }
-        finally { table.Remove(hash); }
+        finally { /* No mutable signature fixture or payload was created. */ }
     }
 
     [Fact]
@@ -51,19 +48,23 @@ public sealed class ExclusionDetectionPriorityTests
     {
         string path = Path.Combine(Path.GetTempPath(), "Ultron_InertPriority_" + Guid.NewGuid().ToString("N") + ".dat");
         byte[] bytes = Encoding.UTF8.GetBytes("inert real-time exclusion priority fixture");
-        string hash = Convert.ToHexString(SHA256.HashData(bytes));
-        var table = (Dictionary<string, (string, string, int, string)>)typeof(MalwareSignatureDatabase)
-            .GetField("KnownThreatHashes", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         await File.WriteAllBytesAsync(path, bytes);
-        table.Add(hash, ("Inert test-only fixture", "Test", 100, "2026-09-27"));
         try
         {
-            var processor = new RealTimeVerdictProcessor(new HashService(), new SignatureVerifier(), new RiskScoringEngine(),
+            var processor = new RealTimeVerdictProcessor(new SimulatedTestMarkerHash(), new SignatureVerifier(), new RiskScoringEngine(),
                 fileHashMatcher: null, reputationService: null, exclusionService: new ExcludesEverything());
             var result = await processor.InspectFileAsync(path);
             Assert.Equal(AegisPC.Core.Enums.RealTimeVerdict.ConfirmedMalicious, result.Verdict);
         }
-        finally { table.Remove(hash); File.Delete(path); }
+        finally { File.Delete(path); }
+    }
+
+    private sealed class SimulatedTestMarkerHash : IHashService
+    {
+        // Inert workflow stub, not a real sample or a detection efficacy test.
+        public Task<string> ComputeSha256Async(string path, CancellationToken ct = default) =>
+            Task.FromResult("275A021BBFB6489E54D471899F7DB9D1663FC695EC2FE2A2C4538AABF651FD0F");
+        public Task<string> ComputeSha1Async(string path, CancellationToken ct = default) => Task.FromResult(new string('A', 40));
     }
 
     private sealed class FixtureDetector : IDetectorPlugin
@@ -91,3 +92,4 @@ public sealed class ExclusionDetectionPriorityTests
         public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
     }
 }
+

@@ -8,14 +8,15 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using Microsoft.Data.Sqlite;
 using Serilog;
+using AegisPC.Contracts.ThreatIntelligence;
+using AegisPC.Security.ThreatIntelligence;
 
 namespace AegisPC.Security.Scanning
 {
     /// <summary>
     /// Genişletilebilir yerel tehdit imzası veritabanı (SQLite + InMemory Fast Cache).
-    /// Gerçek dünya zararlı yazılım imzalarını abuse.ch MalwareBazaar API üzerinden indirip
-    /// SQLite üzerinde saklar ve O(1) hızında bellek içi arama sunar.
-    /// Yalnızca doğrulanmış EICAR test imzaları gömülü tutulur.
+    /// Retains legacy/imported metadata for review. SQLite labels/checksums are not provenance.
+    /// Exact detection uses the same authenticated catalogue as manual and real-time scanning.
     /// </summary>
     public static class ThreatSignatureDatabase
     {
@@ -24,7 +25,8 @@ namespace AegisPC.Security.Scanning
         private static string _dbPath = string.Empty;
         private static readonly ConcurrentDictionary<string, (string Name, string Category, int Severity)> _memoryCache = new(StringComparer.OrdinalIgnoreCase);
 
-        public static int TotalSignaturesCount => _memoryCache.Count;
+        public static int TotalSignaturesCount => AuthoritativeThreatCatalog.Count;
+        public static int UnverifiedMetadataCount => _memoryCache.Count;
         public static DateTime LastDatabaseUpdate { get; private set; } = DateTime.Now;
         public static string CurrentDbPath => _dbPath;
 
@@ -171,7 +173,8 @@ namespace AegisPC.Security.Scanning
                     var name = reader.GetString(1);
                     var cat = reader.GetString(2);
                     var sev = reader.GetInt32(3);
-                    _memoryCache[sha] = (name, cat, sev);
+                    if (Sha256Identity.IsValid(sha) && _memoryCache.Count < MaxMemoryCacheEntries)
+                        _memoryCache.TryAdd(sha, (name, cat, sev));
                 }
             }
             catch (Exception ex)
@@ -194,21 +197,10 @@ namespace AegisPC.Security.Scanning
 
                     if (!string.Equals(expectedHash, currentHash, StringComparison.OrdinalIgnoreCase))
                     {
-                        // GÜVENLİK İHLALİ: İmza veritabanı dışarıdan kurcalanmış (tampering)
+                        // A checksum is corruption detection, not publisher authentication.
                         Log.ForContext("SourceContext", "SECURITY").Error(
-                            "signature db tampering: threat signatures database hash mismatch. Expected {ExpectedHash}, Actual {ActualHash}. Recreating database.",
+                            "Signature metadata checksum mismatch. Preserving a backup before schema reconciliation. Expected {ExpectedHash}, Actual {ActualHash}.",
                             expectedHash, currentHash);
-
-                        try
-                        {
-                            SqliteConnection.ClearAllPools();
-                            File.Delete(dbPath);
-                            File.Delete(hashPath);
-                        }
-                        catch (Exception delEx)
-                        {
-                            Log.Error(delEx, "Bütünlüğü bozulan tehdit veritabanı dosyası silinemedi: {DbPath}", dbPath);
-                        }
 
                         InitSqliteDatabase(dbPath);
                         return;
@@ -224,7 +216,9 @@ namespace AegisPC.Security.Scanning
             else
             {
                 InitSqliteDatabase(dbPath);
+                return;
             }
+            InitSqliteDatabase(dbPath);
         }
 
         private static void InitSqliteDatabase(string dbPath)
@@ -238,6 +232,17 @@ namespace AegisPC.Security.Scanning
             using (var conn = new SqliteConnection($"Data Source={dbPath}"))
             {
                 conn.Open();
+                // Consistent SQLite backup (includes committed WAL), before any legacy migration.
+                using (var probe = conn.CreateCommand())
+                {
+                    probe.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ThreatSignatures'";
+                    if (Convert.ToInt32(probe.ExecuteScalar()) > 0)
+                    {
+                        using var backup = new SqliteConnection($"Data Source={dbPath}.backup-{Guid.NewGuid():N};Pooling=False");
+                        backup.Open();
+                        conn.BackupDatabase(backup);
+                    }
+                }
 
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
@@ -254,18 +259,29 @@ namespace AegisPC.Security.Scanning
                 cmd.ExecuteNonQuery();
 
                 using var trans = conn.BeginTransaction();
-
-                // Eski/sentetik gömülü kayıtları temizle
-                using var cleanCmd = conn.CreateCommand();
-                cleanCmd.Transaction = trans;
-                cleanCmd.CommandText = "DELETE FROM ThreatSignatures WHERE Source = 'Embedded';";
-                cleanCmd.ExecuteNonQuery();
+                var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                using (var schema = conn.CreateCommand())
+                {
+                    schema.Transaction = trans;
+                    schema.CommandText = "PRAGMA table_info(ThreatSignatures)";
+                    using var fields = schema.ExecuteReader();
+                    while (fields.Read()) columns.Add(fields.GetString(1));
+                }
+                foreach (string column in new[] { "SourceReference", "PackageVersion", "VerificationStatus" })
+                {
+                    if (columns.Contains(column)) continue;
+                    using var migration = conn.CreateCommand();
+                    migration.Transaction = trans;
+                    string defaultValue = column == "VerificationStatus" ? "'Unverified'" : "''";
+                    migration.CommandText = $"ALTER TABLE ThreatSignatures ADD COLUMN {column} TEXT NOT NULL DEFAULT {defaultValue}";
+                    migration.ExecuteNonQuery();
+                }
 
                 // Yalnızca doğrulanmış gömülü tehditleri (EICAR) ekle
                 using var insertCmd = conn.CreateCommand();
                 insertCmd.Transaction = trans;
                 insertCmd.CommandText = @"
-                    INSERT OR REPLACE INTO ThreatSignatures (Sha256, Name, Category, Severity, Source, AddedUtc)
+                    INSERT OR IGNORE INTO ThreatSignatures (Sha256, Name, Category, Severity, Source, AddedUtc)
                     VALUES ($sha256, $name, $category, $severity, 'Embedded', $addedUtc);
                 ";
 
@@ -402,23 +418,8 @@ namespace AegisPC.Security.Scanning
         /// </summary>
         public static (bool IsMatched, string Name, string Category, int Severity) CheckHash(string sha256)
         {
-            if (string.IsNullOrEmpty(sha256))
-                return (false, string.Empty, string.Empty, 0);
-
-            // Boş dosya (0 byte) SHA256 değeri asla zararlı değildir
-            if (sha256.Equals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", StringComparison.OrdinalIgnoreCase))
-                return (false, string.Empty, string.Empty, 0);
-
-            if (!_isInitialized)
-            {
-                Initialize();
-            }
-
-            if (_memoryCache.TryGetValue(sha256, out var match))
-            {
-                return (true, match.Name, match.Category, match.Severity);
-            }
-
+            if (AuthoritativeThreatCatalog.TryGet(sha256, out var match) && match != null)
+                return (true, match.ThreatName, match.Category, match.Severity);
             return (false, string.Empty, string.Empty, 0);
         }
 
@@ -429,14 +430,17 @@ namespace AegisPC.Security.Scanning
         public static bool TryCheckLoadedHash(string? sha256, out (string Name, string Category, int Severity) match)
         {
             match = default;
-            if (string.IsNullOrWhiteSpace(sha256) || sha256.Length != 64) return false;
-            foreach (char character in sha256)
-                if (!Uri.IsHexDigit(character)) return false;
-            return _memoryCache.TryGetValue(sha256, out match);
+            if (!AuthoritativeThreatCatalog.TryGet(sha256, out var verified) || verified == null) return false;
+            match = (verified.ThreatName, verified.Category, verified.Severity);
+            return true;
         }
 
+        /// <summary>Read-only legacy lookup for audit; never a malware verdict or action authority.</summary>
+        public static bool TryGetUnverifiedMetadata(string sha256, out (string Name, string Category, int Severity) metadata) =>
+            _memoryCache.TryGetValue(sha256, out metadata);
+
         /// <summary>
-        /// Harici tehdit beslemelerinden (Abuse.ch MalwareBazaar vb.) toplu imza içe aktarma
+        /// Retains unsigned source metadata for audit only. This import cannot activate detection hashes.
         /// </summary>
         public static int ImportThreatHashes(IEnumerable<(string Sha256, string Name, string Category, int Severity, string Source)> newThreats)
         {
@@ -444,9 +448,12 @@ namespace AegisPC.Security.Scanning
             if (string.IsNullOrEmpty(_dbPath) || !File.Exists(_dbPath)) return 0;
 
             var pendingThreats = new List<(string Sha256, string Name, string Category, int Severity, string Source)>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int visited = 0;
             foreach (var threat in newThreats)
             {
-                if (string.IsNullOrWhiteSpace(threat.Sha256) || threat.Sha256.Length < 32)
+                if (++visited > SignedThreatIntelStore.MaxRecords) break;
+                if (!Sha256Identity.IsValid(threat.Sha256))
                     continue;
 
                 string normalizedHash = threat.Sha256.Trim().ToLowerInvariant();
@@ -458,14 +465,15 @@ namespace AegisPC.Security.Scanning
                     continue;
                 }
 
-                if (_memoryCache.ContainsKey(normalizedHash))
+                if (_memoryCache.ContainsKey(normalizedHash) || !seen.Add(normalizedHash))
                 {
                     continue;
                 }
 
                 string name = threat.Name ?? "Generic.Malware";
                 string category = threat.Category ?? "Malware";
-                int severity = threat.Severity > 0 ? threat.Severity : 100;
+                int severity = Math.Clamp(threat.Severity, 1, 100);
+                if (name.Length > 256 || category.Length > 80) continue;
 
                 pendingThreats.Add((normalizedHash, name, category, severity, source));
             }
@@ -512,12 +520,15 @@ namespace AegisPC.Security.Scanning
                         if (rowsInserted > 0)
                         {
                             imported++;
-                            EnforceCacheLimit();
-                            _memoryCache[threat.Sha256] = (threat.Name, threat.Category, threat.Severity);
                         }
                     }
 
                     trans.Commit();
+                    foreach (var threat in pendingThreats)
+                    {
+                        EnforceCacheLimit();
+                        _memoryCache.TryAdd(threat.Sha256, (threat.Name, threat.Category, threat.Severity));
+                    }
                 }
 
                 if (imported > 0)
@@ -528,9 +539,11 @@ namespace AegisPC.Security.Scanning
             catch (Exception ex)
             {
                 Log.Error(ex, "Tehdit imzaları SQLite veritabanına aktarılırken hata oluştu.");
+                return 0;
             }
 
             return imported;
         }
     }
 }
+

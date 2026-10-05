@@ -137,12 +137,12 @@ public sealed class ProcessArchiveWorkflowTests : IDisposable
     [Fact]
     public async Task JarMemberHash_IsComputedFromDecompressedBytesNotOuterArchive()
     {
-        byte[] member = Encoding.UTF8.GetBytes("BENIGN HASH PIPELINE FIXTURE " + Guid.NewGuid().ToString("N"));
+        byte[] member = Encoding.UTF8.GetBytes("Educational reference: amsiInitFailed; BENIGN HASH PIPELINE FIXTURE " + Guid.NewGuid().ToString("N"));
         string hash = Convert.ToHexString(SHA256.HashData(member));
         var field = typeof(MalwareSignatureDatabase).GetField("KnownThreatHashes", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var signatures = (Dictionary<string, (string Name, string Category, int Severity, string FirstSeen)>)field.GetValue(null)!;
+        var signatures = (System.Collections.Concurrent.ConcurrentDictionary<string, (string Name, string Category, int Severity, string FirstSeen)>)field.GetValue(null)!;
         // This temporary in-memory entry tests member hashing, not trusted malware intelligence.
-        signatures.Add(hash, ("Benign.TestOnly.HashPipeline", "TestFixture", 95, "test-only"));
+        signatures.TryAdd(hash, ("Benign.TestOnly.HashPipeline", "TestFixture", 95, "test-only"));
         try
         {
             string path = await CreateArchiveAsync("fixture.jar", "Fixture.class", member);
@@ -153,7 +153,7 @@ public sealed class ProcessArchiveWorkflowTests : IDisposable
             Assert.Equal(RiskLevel.Suspicious, finding.RiskLevel);
             Assert.InRange(finding.RiskScore, 1, 65);
         }
-        finally { signatures.Remove(hash); }
+        finally { signatures.TryRemove(hash, out _); }
     }
 
     [Fact]
@@ -247,3 +247,4 @@ public sealed class ProcessArchiveWorkflowTests : IDisposable
         }
     }
 }
+

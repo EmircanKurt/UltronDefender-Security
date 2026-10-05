@@ -8,8 +8,8 @@ using AegisPC.Security.Scanning;
 namespace AegisPC.Security.ThreatIntelligence
 {
     /// <summary>
-    /// Çevrimdışı öncelikli, yüksek performanslı Tehdit İstihbarat Deposu implementasyonu.
-    /// O(1) bellek içi hash eşleştirmesi, SQLite arka plan desteği ve doğrulanmış üretici listesi sunar.
+    /// Shared verified local catalogue plus bounded legacy review metadata.
+    /// Unsigned hashes, publisher display names and caller allowlist entries are not detection/trust proof.
     /// </summary>
     public class ThreatIntelligenceStore : IThreatIntelligenceStore
     {
@@ -34,12 +34,13 @@ namespace AegisPC.Security.ThreatIntelligence
             "Oracle America, Inc."
         };
 
-        public int MaliciousSignaturesCount => _maliciousHashes.Count;
-        public int TrustedHashesCount => _trustedHashes.Count;
+        public int MaliciousSignaturesCount => AuthoritativeThreatCatalog.Count;
+        public int TrustedHashesCount => 0;
 
         public ThreatIntelligenceStore()
         {
-            // 1. Standart EICAR ve Doğrulanmış Test İmzalarını İlklendir
+            // Historical labels retained for audit only; all Register calls below are unverified metadata.
+            // Canonical test markers are resolved separately by AuthoritativeThreatCatalog.
             RegisterMaliciousHash(
                 "275A021BBFB6489E54D471899F7DB9D1663FC695EC2FE2A2C4538AABF651FD0F",
                 "EICAR-Standard-AV-Test-File",
@@ -97,58 +98,36 @@ namespace AegisPC.Security.ThreatIntelligence
 
         public bool IsMaliciousHash(string sha256, out ThreatIntelRecord? record)
         {
+            return AuthoritativeThreatCatalog.TryGet(sha256, out record);
+        }
+
+        /// <summary>Returns a copy of legacy/caller metadata for investigation only; never authorizes intervention.</summary>
+        public bool TryGetUnverifiedRecord(string sha256, out ThreatIntelRecord? record)
+        {
             record = null;
-            if (string.IsNullOrWhiteSpace(sha256)) return false;
-
-            // 1. Önce yerel in-memory depoyu sorgula
-            if (_maliciousHashes.TryGetValue(sha256, out record))
-            {
-                return true;
-            }
-
-            // 2. MalwareSignatureDatabase (gömülü + SQLite motoru) sorgula
-            var match = MalwareSignatureDatabase.CheckHash(sha256);
-            if (match.IsMatched)
-            {
-                record = new ThreatIntelRecord
-                {
-                    Sha256 = sha256,
-                    ThreatName = match.ThreatName,
-                    Category = match.ThreatCategory,
-                    Severity = match.SeverityScore,
-                    Source = match.DetectionMethod,
-                    TimestampUtc = DateTime.UtcNow
-                };
-                _maliciousHashes[sha256] = record;
-                return true;
-            }
-
-            return false;
+            if (!Sha256Identity.IsValid(sha256) || !_maliciousHashes.TryGetValue(sha256, out var stored)) return false;
+            record = new ThreatIntelRecord { Sha256 = stored.Sha256, ThreatName = stored.ThreatName,
+                Category = stored.Category, Severity = stored.Severity, Source = stored.Source,
+                TimestampUtc = stored.TimestampUtc, Verification = ThreatIntelVerification.Unverified };
+            return true;
         }
 
         public bool IsTrustedHash(string sha256)
         {
-            if (string.IsNullOrWhiteSpace(sha256)) return false;
-            return _trustedHashes.ContainsKey(sha256);
+            if (!Sha256Identity.IsValid(sha256)) return false;
+            // An unproven caller-provided allowlist entry is a preference, not clean-content proof.
+            return false;
         }
 
         public bool IsTrustedPublisher(string? publisher)
         {
-            if (string.IsNullOrWhiteSpace(publisher)) return false;
-
-            foreach (var trusted in TrustedPublishers)
-            {
-                if (publisher.Contains(trusted, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
+            // A display name, including an exact well-known name, is not certificate validation.
             return false;
         }
 
         public void RegisterMaliciousHash(string sha256, string threatName, string category = "Malware", int severity = 100)
         {
-            if (string.IsNullOrWhiteSpace(sha256)) return;
+            if (!Sha256Identity.IsValid(sha256) || _maliciousHashes.Count >= 25000) return;
             _maliciousHashes[sha256] = new ThreatIntelRecord
             {
                 Sha256 = sha256,
@@ -156,14 +135,16 @@ namespace AegisPC.Security.ThreatIntelligence
                 Category = category,
                 Severity = severity,
                 Source = "ThreatIntelligenceStore",
-                TimestampUtc = DateTime.UtcNow
+                TimestampUtc = DateTime.UtcNow,
+                Verification = ThreatIntelVerification.Unverified
             };
         }
 
         public void RegisterTrustedHash(string sha256)
         {
-            if (string.IsNullOrWhiteSpace(sha256)) return;
+            if (!Sha256Identity.IsValid(sha256) || _trustedHashes.Count >= 25000) return;
             _trustedHashes.TryAdd(sha256, 0);
         }
     }
 }
+

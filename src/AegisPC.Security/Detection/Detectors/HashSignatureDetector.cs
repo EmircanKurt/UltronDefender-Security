@@ -48,7 +48,7 @@ namespace AegisPC.Security.Detection.Detectors
             // 2. Exact Hash Lookup in Threat Intelligence Store
             if (!string.IsNullOrEmpty(context.SHA256))
             {
-                if (_threatStore.IsMaliciousHash(context.SHA256, out var record) && record != null)
+                if (_threatStore.IsMaliciousHash(context.SHA256, out var record) && record != null && record.IsAuthoritative)
                 {
                     list.Add(new SecurityEvidence
                     {
@@ -79,38 +79,7 @@ namespace AegisPC.Security.Detection.Detectors
                         SHA256 = context.SHA256
                     });
                 }
-                else if (_reputationService != null && _reputationService.IsCloudLookupEnabled)
-                {
-                    // 2b. Bulut Tehdit İstihbaratı ve Gerçek Zamanlı Hash Doğrulama (Abuse.ch MalwareBazaar)
-                    try
-                    {
-                        var cloudResult = await _reputationService.CheckReputationAsync(context.SHA256, cancellationToken);
-                        if (cloudResult.IsMalicious)
-                        {
-                            list.Add(new SecurityEvidence
-                            {
-                                Category = EvidenceCategory.StaticSignature,
-                                SourceDetector = "Bulut Tehdit İstihbarat Motoru (Cloud Reputation)",
-                                RuleName = $"Signature.Cloud.{cloudResult.MalwareFamily ?? "Malware"}",
-                                Description = $"Bulut İstihbaratı Tehdit Tespiti: {cloudResult.ThreatName ?? "Bilinmeyen Zararlı"}",
-                                ScoreContribution = cloudResult.Severity > 0 ? cloudResult.Severity : 100,
-                                Confidence = EvidenceConfidence.Absolute,
-                                FilePath = context.FilePath,
-                                SHA256 = context.SHA256,
-                                ProcessId = context.ProcessId,
-                                ParentProcessId = context.ParentProcessId
-                            });
-                        }
-                    }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch (Exception)
-                    {
-                        // Kesintisiz çalışma: Bulut sorgusu başarısız olsa bile yerel analiz devam eder
-                    }
-                }
+                // Local-only edition: no endpoint hash is sent to a reputation provider.
             }
 
             // 3. Content Pattern & YARA-like Byte Signatures
@@ -166,3 +135,4 @@ namespace AegisPC.Security.Detection.Detectors
         }
     }
 }
+
