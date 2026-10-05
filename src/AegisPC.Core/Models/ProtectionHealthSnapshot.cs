@@ -18,6 +18,15 @@ public enum ProtectionHealthState
 /// <summary>Versioned, timestamped observed health. Missing capabilities never imply enabled protection.</summary>
 public sealed class ProtectionHealthSnapshot
 {
+    /// <summary>Actual bounded AI consumer availability; not malware detection efficacy.</summary>
+    public bool BehaviorObservationActive { get; set; }
+    public bool FileIoAttributionActive { get; set; }
+    public int PendingBehaviorEvents { get; set; }
+    public long BehaviorEventsLost { get; set; }
+    public long UnattributedFileWrites { get; set; }
+    public bool SignedThreatIntelProvisioned { get; set; }
+    /// <summary>Watcher errors are incident counts; unknown lost-file counts are not invented.</summary>
+    public long FileWatcherErrors { get; set; }
     /// <summary>Whether the service-owned device observation loop is running.</summary>
     public bool DeviceInventoryActive { get; set; }
     /// <summary>Whether the latest device/volume descriptors could all be resolved.</summary>
@@ -61,3 +70,4 @@ public sealed class ProtectionHealthSnapshot
     public bool IsFresh(DateTime utcNow) => ProtocolVersion == 1 && CapturedAtUtc != default &&
         utcNow >= CapturedAtUtc && utcNow - CapturedAtUtc <= TimeSpan.FromSeconds(15);
 }
+

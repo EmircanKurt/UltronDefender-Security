@@ -9,4 +9,5 @@ public interface IRealTimeCoverageProvider
 
 /// <summary>Filesystem-only observed coverage, safe to include in aggregate status for standard users.</summary>
 public sealed record RealTimeCoverageSnapshot(int WatcherCount, bool HasPersistentGap,
-    bool RecoveryPending, int PendingEvents, long LostEvents);
+    bool RecoveryPending, int PendingEvents, long LostEvents, long WatcherErrors = 0);
+

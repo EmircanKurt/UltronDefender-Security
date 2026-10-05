@@ -36,6 +36,7 @@ internal static class ProtectionHealthSampler
             PendingFileEvents = coverage?.PendingEvents ?? 0,
             RecoveryPending = coverage?.RecoveryPending ?? false,
             ManagedEventsLost = coverage?.LostEvents ?? 0,
+            FileWatcherErrors = coverage?.WatcherErrors ?? 0,
             OperatingSystemEventsLost = osEventsLost,
             ProcessTelemetryActive = processSubscribed,
             ImageTelemetryActive = imagePumpActive,
@@ -47,3 +48,4 @@ internal static class ProtectionHealthSampler
         };
     }
 }
+

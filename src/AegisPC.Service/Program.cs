@@ -150,6 +150,13 @@ namespace AegisPC.Service
                         services.AddSingleton<AegisPC.Service.DriverBridge.IKernelBridge, AegisPC.Service.DriverBridge.KernelBridge>();
                         services.AddSingleton<AegisPC.Service.RealTime.EtwProcessMonitor>();
                         services.AddSingleton<AegisPC.Service.RealTime.EtwImageLoadMonitor>();
+                        services.AddSingleton<AegisPC.Contracts.Protection.IUltronDecisionEngine, AegisPC.Security.UltronAI.UltronDecisionEngine>();
+                        services.AddSingleton<AegisPC.Contracts.Protection.IBehaviorObservationSource, AegisPC.Security.UltronAI.BoundedBehaviorObservationSource>();
+                        services.AddSingleton<AegisPC.Security.UltronAI.BehaviorWindowCorrelator>();
+                        services.AddSingleton<AegisPC.Service.RealTime.EtwFileIoObservationWorker>();
+                        services.AddHostedService(sp => sp.GetRequiredService<AegisPC.Service.RealTime.EtwFileIoObservationWorker>());
+                        services.AddSingleton<UltronObservationWorker>();
+                        services.AddHostedService(sp => sp.GetRequiredService<UltronObservationWorker>());
 
                         // Network & Offline DNS Protection
                         services.AddSingleton<AegisPC.Service.Network.HostsInjectionHelper>();
@@ -208,3 +215,4 @@ namespace AegisPC.Service
         }
     }
 }
+
