@@ -40,6 +40,8 @@ namespace AegisPC.Service.RealTime
         private readonly ILogger<EtwProcessMonitor>? _logger;
         private readonly IProcessLineageTracker? _lineageTracker;
         private readonly IBehaviorEngine? _behaviorEngine;
+        private readonly AegisPC.Contracts.Protection.IBehaviorObservationSource? _observations;
+        private string _bootId = string.Empty;
 
         private TraceEventSession? _session;
         private Task? _processingTask;
@@ -90,11 +92,13 @@ namespace AegisPC.Service.RealTime
             IProcessLineageTracker? lineageTracker = null,
             IAuditLogService? auditLogService = null,
             IBehaviorEngine? behaviorEngine = null,
-            ISecurityFindingService? findingService = null)
+            ISecurityFindingService? findingService = null,
+            AegisPC.Contracts.Protection.IBehaviorObservationSource? observations = null)
         {
             _logger = logger;
             _lineageTracker = lineageTracker;
             _behaviorEngine = behaviorEngine;
+            _observations = observations;
             _ = auditLogService;
             _ = findingService;
         }
@@ -108,6 +112,7 @@ namespace AegisPC.Service.RealTime
                 CleanupSession();
                 _cts = new CancellationTokenSource();
                 _lastEventsLost = 0;
+                _bootId = _observations == null ? string.Empty : WindowsBootObservationIdentity.Resolve(_logger);
 
                 string sessionName = $"{DefaultSessionName}-{Environment.ProcessId}-{Guid.NewGuid():N}";
 
@@ -266,7 +271,8 @@ namespace AegisPC.Service.RealTime
                                 ExecutablePath = imagePath,
                                 ProcessName = Path.GetFileName(imagePath),
                                 CommandLine = commandLine,
-                                StartTimeUtc = timestampUtc
+                                StartTimeUtc = timestampUtc,
+                                BootId = _bootId
                             });
                         }
                         catch (Exception ex)
@@ -301,6 +307,12 @@ namespace AegisPC.Service.RealTime
 
                     // 4. LOLBAS ve Şüpheli Komut Satırı Analizi
                     bool isSuspicious = CheckSuspiciousCommandLine(imagePath, commandLine, out string reason);
+                    _observations?.TryPublish(new AegisPC.Contracts.Protection.BehaviorObservation(
+                        $"process-{pid}-{timestampUtc.Ticks}", isSuspicious ? "CommandHints" : "ProcessStart",
+                        AegisPC.Contracts.Protection.BehaviorObservationKind.ProcessStarted,
+                        new(pid, timestampUtc, _bootId), timestampUtc,
+                        isSuspicious ? "Command-line hints require review; malicious intent is not established." : "Observed process creation.",
+                        ReviewWeight: isSuspicious ? 10 : 0));
 
                     var telemetry = new ProcessStartTelemetry
                     {
@@ -338,7 +350,9 @@ namespace AegisPC.Service.RealTime
                     {
                         try
                         {
-                            _lineageTracker.MarkTerminated(pid);
+                            if (_lineageTracker is AegisPC.Security.Behavior.ProcessLineageTracker generations)
+                                generations.MarkTerminatedAt(pid, timestampUtc);
+                            else _lineageTracker.MarkTerminated(pid);
                         }
                         catch (Exception ex)
                         {
@@ -490,3 +504,4 @@ namespace AegisPC.Service.RealTime
         }
     }
 }
+

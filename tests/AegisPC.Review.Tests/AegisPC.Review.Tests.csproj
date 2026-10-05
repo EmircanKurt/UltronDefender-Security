@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="ReviewTestDependencies.cs" />
     <Compile Include="ThreatIntelProvenanceReviewTests.cs" />
+    <Compile Include="BehaviorCorrelationReviewTests.cs" />
     <Compile Include="MetadataCollectorReviewTests.cs" />
     <Compile Include="../../tools/Ultron.ThreatIntel.Collector/MetadataCollector.cs" Link="DeveloperTools/MetadataCollector.cs" />
     <Compile Include="../AegisPC.Tests/FileContentClassificationTests.cs" />

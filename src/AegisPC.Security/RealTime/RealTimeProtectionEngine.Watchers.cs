@@ -22,6 +22,7 @@ namespace AegisPC.Security.RealTime
         private readonly Dictionary<string, CancellationTokenSource> _activeRecoveryTokens = new(StringComparer.OrdinalIgnoreCase);
         private long _unwatchedRecoveryRequests;
         private long _unwatchedRecoveryGeneration = -1;
+        private long _watcherErrorCount;
         /// <summary>
         /// Gerçek zamanlı olarak izlenen klasör yollarının salt-okunur listesi.
         /// </summary>
@@ -219,6 +220,7 @@ namespace AegisPC.Security.RealTime
             {
                 // An error callback already in flight must not restart a removed or stopped root.
                 if (!_isRunning || !_watchers.Contains(watcher)) return;
+                _watcherErrorCount++;
                 RequestReconciliation(path);
                 try
                 {
@@ -441,3 +443,4 @@ namespace AegisPC.Security.RealTime
         }
     }
 }
+

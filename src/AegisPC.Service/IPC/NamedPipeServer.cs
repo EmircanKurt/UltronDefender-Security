@@ -41,6 +41,9 @@ namespace AegisPC.Service.IPC
         private readonly IQuarantineService? _vault;
         private readonly RansomwareShieldActivation? _shieldActivation;
         private readonly AegisPC.Contracts.Detection.IDetectionHub? _detectionHub;
+        private readonly AegisPC.Contracts.Protection.IBehaviorObservationSource? _behaviorObservations;
+        private readonly AegisPC.Service.Workers.UltronObservationWorker? _aiObservationWorker;
+        private readonly AegisPC.Service.RealTime.EtwFileIoObservationWorker? _fileIoObservationWorker;
         private readonly DateTime _startTime = DateTime.UtcNow;
         private int _totalThreatsBlocked24h = 0;
         private DateTime _threatCounterWindowStart = DateTime.UtcNow;
@@ -84,11 +87,17 @@ namespace AegisPC.Service.IPC
             AegisPC.Contracts.Devices.IDeviceInventoryMonitor? devices = null,
             IQuarantineService? vault = null,
             RansomwareShieldActivation? shieldActivation = null,
-            AegisPC.Contracts.Detection.IDetectionHub? detectionHub = null)
+            AegisPC.Contracts.Detection.IDetectionHub? detectionHub = null,
+            AegisPC.Contracts.Protection.IBehaviorObservationSource? behaviorObservations = null,
+            AegisPC.Service.Workers.UltronObservationWorker? aiObservationWorker = null,
+            AegisPC.Service.RealTime.EtwFileIoObservationWorker? fileIoObservationWorker = null)
         {
             _logger = logger;
             _shieldActivation = shieldActivation;
             _detectionHub = detectionHub;
+            _behaviorObservations = behaviorObservations;
+            _aiObservationWorker = aiObservationWorker;
+            _fileIoObservationWorker = fileIoObservationWorker;
             _protectionService = protectionService;
             _realTimeProtectionEngine = realTimeProtectionEngine;
             _ransomwareEngine = ransomwareEngine;
@@ -489,6 +498,21 @@ namespace AegisPC.Service.IPC
                 _fileProtectionLifecycle.IsHealthy, _kernelBridge?.IsDriverConnected == true,
                 _ransomwareEngine.IsShieldActive);
             health.DeviceInventoryActive = _devices?.IsRunning == true;
+            var observations = _behaviorObservations?.CaptureHealth();
+            health.BehaviorObservationActive = _aiObservationWorker?.IsObservationActive == true;
+            health.PendingBehaviorEvents = observations?.Pending ?? 0;
+            health.BehaviorEventsLost = (observations?.Dropped ?? 0) + (observations?.Invalid ?? 0) +
+                (_fileIoObservationWorker?.DroppedEvents ?? 0) + Math.Max(0, _fileIoObservationWorker?.OsEventsLost ?? 0);
+            health.FileIoAttributionActive = _fileIoObservationWorker?.IsObservationActive == true;
+            health.UnattributedFileWrites = _fileIoObservationWorker?.UnattributedWrites ?? 0;
+            health.SignedThreatIntelProvisioned = AegisPC.Security.ThreatIntelligence.AuthoritativeThreatCatalog.Count > 2;
+            if (_settingsService.GetSetting("IsUltronAiEnabled", true) &&
+                (!health.BehaviorObservationActive || !health.FileIoAttributionActive || health.BehaviorEventsLost > 0 ||
+                    health.UnattributedFileWrites > 0))
+            {
+                if (health.State != ProtectionHealthState.Stopped) health.State = ProtectionHealthState.Degraded;
+                health.Limitations = health.Limitations.Append("AI event review or file-writer attribution is unavailable/partial; native actions remain gated.").ToArray();
+            }
             var inventory = _devices?.CurrentSnapshot;
             bool inventoryFresh = inventory != null && inventory.CapturedAtUtc != default && DateTime.UtcNow >= inventory.CapturedAtUtc &&
                 DateTime.UtcNow - inventory.CapturedAtUtc <= TimeSpan.FromSeconds(75);
@@ -578,3 +602,4 @@ namespace AegisPC.Service.IPC
         }
     }
 }
+
