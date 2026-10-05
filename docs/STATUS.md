@@ -26,7 +26,7 @@ dotnet build tools/Ultron.ThreatIntel.Collector/Ultron.ThreatIntel.Collector.csp
 dotnet test tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~ThreatIntelProvenanceReviewTests|FullyQualifiedName~MetadataCollectorReviewTests|FullyQualifiedName~CloudAuthenticationSafetyTests"
 ```
 
-The focused run was taken from the combined intelligence/correlation working tree; it is not an independent build certification of every intermediate PR commit. No release/merge is authorized by these results.
+The tests describe the local combined intelligence/correlation working tree, not independent CI certification of each remote PR. Pre-existing unrelated local edits were preserved and not included in these scoped commits; remote branch builds/regressions must be repeated before merge. No release/merge is authorized by these results.
 
 ## Unfinished deployment gates
 
