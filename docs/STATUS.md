@@ -1,32 +1,37 @@
-# Current verification — 4 October 2026
+# Intelligence verification — 5 October 2026
 
-Development evidence, not antivirus certification.
+Development evidence, not antivirus certification. This stage builds on the existing draft RT/AI preview, not the old default-branch installer.
 
-Evaluated development changes are proposed in PR #3, not a claim about the older default-branch binary. Source commit: `7a0a8218dad34eb18df611c14ee594f0c6603062`.
+## Local-only intelligence
 
-## Current fixes
+Unsigned embedded/XOR/SQLite records are retained as review metadata; they no longer authorize an exact-malware verdict. SHA-256 fields require exactly 64 ASCII hexadecimal characters. EICAR remains a separately identified **test marker**, not a real-malware efficacy test.
 
-- The old running process was verified at `AegisPC_App/UltronDefender.exe`. Its managed DLL differed from the tested release artifact. Source changes do not automatically update an old running program.
-- Report-table foreground and selection use theme resources. Offscreen WPF tests check dark/light contrast, theme replacement and native logical wheel scrolling. These are infrastructure checks, not live app screenshots/tests.
-- The generic red banner is neutral connection information. Disabled/degraded protection remains visible; missing/stale data never means active protection.
-- Text export does not invent a year-one start date. JSON preserves structured engine failure stage/reason/correlation independently of per-file counters.
-- The old 53,311-file failed report recorded no engine failure cause. Its exact exception remains unknown. Current tests verify preserved results and privacy-safe diagnostics, not resolution of that unrecorded exception.
+Manual and real-time exact matches share the authenticated catalogue. Caller-supplied hashes, publisher display names and family labels do not certify malicious or clean content. This intentionally reduces the active exact-signature count: the current build has two built-in EICAR hashes and **no activated third-party package**. Content/AMSI/heuristic analysis remains separate.
+
+The endpoint no longer queries MalwareBazaar or sends scanned files/hashes there, even with an old cloud preference. A separate developer tool issues only the documented recent-metadata query, with bounded response size, duration and record count. It cannot download samples or upload endpoint files/hashes. It reports missing intervals, partial results, cancellation and timeout distinctly. Last-hour results do not cover a missed day. [MalwareBazaar API](https://bazaar.abuse.ch/api/)
+
+Developer tool: `tools/Ultron.ThreatIntel.Collector`. Configure `ULTRON_MB_AUTH_KEY` locally, never in a committed setting, command-line argument or chat. Output must end in `.intel-collection.json` and is ignored by Git. No real API credential was used and no live metadata collection was performed in these tests.
+
+Separate RSA-PSS/SHA-256 intelligence manifests bind exact content hash, size, sequence, version, expiry and source metadata. Offline journal replacement/previous-good rollback are implemented and tested in private temporary directories. Legacy SQLite migration takes a consistent backup and keeps old rows review-only. Expired signed history retains the replay floor without blocking a fresh verified update; expired records cannot be used for detection or rollback.
+
+**Production activation remains closed:** a real pinned publisher key, private signing workflow, protected service-owned repository ACL, public redistribution permission/terms review, and VM integration must be completed. A signed label is publisher accountability, not independent malware certification. The application being free does not establish unlimited provider-data redistribution rights. [Provider terms](https://abuse.ch/terms-of-use/)
 
 ## Evidence
 
-Current Review Release build: **0 errors, 0 warnings**. Focused regressions: **56 passed, 0 failed**. Wider safe selected Review run: **945 passed, 1 privilege/VM test skipped, 0 failed** (946 total). Focused cases are included in the wider total, not added to it.
+Review Release build and separate developer-tool Release build: **0 errors, 0 warnings**. Intelligence/privacy focused tests: **31 passed, 0 failed**. These cover inert metadata, generated lab signing keys, disk-backed package rollback/migration and fake HTTP responses—not malware detection rate, live provider access or a deployed SYSTEM service.
 
 ```powershell
 dotnet build tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --no-restore -warnaserror
-dotnet test tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --no-build --filter "FullyQualifiedName!~Golden01_&FullyQualifiedName!~SettingsViewModelRegressionTests"
+dotnet build tools/Ultron.ThreatIntel.Collector/Ultron.ThreatIntel.Collector.csproj -c Release -warnaserror
+dotnet test tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~ThreatIntelProvenanceReviewTests|FullyQualifiedName~MetadataCollectorReviewTests|FullyQualifiedName~CloudAuthenticationSafetyTests"
 ```
 
-Local TRX artifacts: `TestResults/ScanUiContinuation2026-10-04/targeted-final.trx` and `review.trx`. Private diagnostics are not committed. These are benign regressions, policy/fault-injection and infrastructure tests, not a measured malware detection rate. The skipped privilege-dependent quarantine symlink test did not pass. Earlier 939/1 results are historical, not additional successes.
+The focused run was taken from the combined intelligence/correlation working tree; it is not an independent build certification of every intermediate PR commit. No release/merge is authorized by these results.
 
-## Unfinished gates
+## Unfinished deployment gates
 
-Isolated Windows VM deployment testing has **not yet been completed** and is planned next. Physical USB/UASP/HID, multi-user service/quarantine isolation, Guardian continuity, installation/uninstallation/rollback and low-end performance require separate pilots.
+Windows VM testing, multi-user SYSTEM/IPC/vault authorization, production repository ACL/replay isolation, installer signing and installation/uninstallation/rollback are still pending. No real malware or attack firmware was used. Defender, installed protection services and boot configuration were not changed. Current builds are experimental supplemental protection, not a Defender replacement.
 
-No live malware or attack firmware was executed. Defender settings, service installation, boot configuration and production quarantine were not changed. Prepared builds remain unsigned unless a later report verifies signing.
+### Şüphecilik ve Doğrulama Notu
 
-Ultron AI is handwritten local review logic, not an LLM or measured probability. User-mode monitoring is not a signed kernel pre-access driver. Do not claim commercial-product parity from these tests.
+Şu an emin olmadığım / tam doğrulayamadığım nokta şudur: üretim paket deposunun çok kullanıcılı ACL/replay davranışı ve MalwareBazaar verilerinin kamuya yeniden dağıtım izni henüz doğrulanmadı.

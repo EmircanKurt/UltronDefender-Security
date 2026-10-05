@@ -10,6 +10,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ReviewTestDependencies.cs" />
+    <Compile Include="ThreatIntelProvenanceReviewTests.cs" />
+    <Compile Include="MetadataCollectorReviewTests.cs" />
+    <Compile Include="../../tools/Ultron.ThreatIntel.Collector/MetadataCollector.cs" Link="DeveloperTools/MetadataCollector.cs" />
     <Compile Include="../AegisPC.Tests/FileContentClassificationTests.cs" />
     <Compile Include="../AegisPC.Tests/DeviceDiscoveryTests.cs" />
     <Compile Include="../AegisPC.Tests/DecisionEvidenceIntegrityTests.cs" />
@@ -106,3 +109,4 @@
     <None Include="../AegisPC.Tests/xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
+

@@ -15,7 +15,7 @@ namespace AegisPC.Tests;
 public sealed class HashDetectorCancellationTests
 {
     [Fact]
-    public async Task CallerCancellationDuringCloudLookupPropagatesToScanPipeline()
+    public async Task PreCancelledCallerPropagatesWithoutCloudLookup()
     {
         string path = Path.Combine(Path.GetTempPath(), "UltronHashCancel_" + Guid.NewGuid().ToString("N") + ".txt");
         await File.WriteAllTextAsync(path, "benign cancellation fixture");
@@ -24,6 +24,7 @@ public sealed class HashDetectorCancellationTests
             using var cts = new CancellationTokenSource();
             var detector = new HashSignatureDetector(new NoopHash(), new CancellingCloud(cts, path), new EmptyStore());
             var context = new DetectionContext { FilePath = path, SHA256 = new string('A', 64) };
+            cts.Cancel();
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => detector.EvaluateAsync(context, cts.Token));
         }
@@ -61,3 +62,4 @@ public sealed class HashDetectorCancellationTests
         public int TrustedHashesCount => 0;
     }
 }
+

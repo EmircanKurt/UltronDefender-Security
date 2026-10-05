@@ -74,4 +74,7 @@ tools/uninstaller_out/
 *.lnk
 /user_manual.pdf
 /scripts/user_manual.pdf
+# Developer intelligence reports and credentials are never release assets.
+*.intel-collection.json
+*.private.pem
 
