@@ -20,7 +20,7 @@ namespace AegisPC.Security.Safety
     /// <summary>
     /// Meşru ve doğrulanmış ticari yazılımlar, Windows sistem bileşenleri ve
     /// güvenli kurulum yolları için merkezi güven politikası.
-    /// Yanlış pozitifleri (False Positives) sıfırlamak üzere tasarlanmıştır.
+    /// Publisher reputation is supporting evidence, never proof of safety.
     /// </summary>
     public static class TrustedSoftwarePolicy
     {
@@ -54,7 +54,22 @@ namespace AegisPC.Security.Safety
             "Slack Technologies",
             "Telegram",
             "Notepad++",
-            "VideoLAN"
+            "VideoLAN",
+            "Python Software Foundation",
+            "Node.js",
+            "Rust Foundation",
+            "Docker",
+            "Git for Windows",
+            "PostgreSQL",
+            "Canonical",
+            "Wireshark",
+            "Atlassian",
+            "VMware",
+            "Red Hat",
+            "Brave Software",
+            "Opera Software",
+            "7-Zip",
+            "Igor Pavlov"
         };
 
         /// <summary>
@@ -66,7 +81,8 @@ namespace AegisPC.Security.Safety
 
             foreach (var trusted in KnownTrustedPublishers)
             {
-                if (publisher.Contains(trusted, StringComparison.OrdinalIgnoreCase))
+                // Match complete simple names only, never arbitrary distinguished-name text.
+                if (IsExactPublisherMatch(publisher, trusted))
                 {
                     return true;
                 }
@@ -76,14 +92,44 @@ namespace AegisPC.Security.Safety
         }
 
         /// <summary>
+        /// Matches a complete simple publisher name against explicit aliases; never accepts substrings.
+        /// </summary>
+        private static bool IsExactPublisherMatch(string publisher, string trustedName)
+        {
+            // This API accepts the certificate's simple publisher name, not a DN or substring.
+            if (string.Equals(publisher.Trim(), trustedName, StringComparison.OrdinalIgnoreCase))
+                return true;
+            var aliases = trustedName switch
+            {
+                "Microsoft" => new[] { "Microsoft Corporation", "Microsoft Windows", "Microsoft Windows Publisher", "Microsoft Windows Operating System" },
+                "Google" => new[] { "Google LLC", "Google Inc.", "Google Inc" },
+                "Valve" => new[] { "Valve Corporation", "Valve Corp." },
+                "Mozilla" => new[] { "Mozilla Corporation", "Mozilla Foundation" },
+                "NVIDIA" => new[] { "NVIDIA Corporation", "NVIDIA Corp" },
+                "Discord" => new[] { "Discord Inc.", "Discord Inc" },
+                "Spotify" => new[] { "Spotify AB", "Spotify Ltd" },
+                "Epic Games" => new[] { "Epic Games, Inc.", "Epic Games Inc.", "Epic Games Inc" },
+                "Docker" => new[] { "Docker Inc", "Docker Inc." },
+                "Node.js" => new[] { "Node.js Foundation" },
+                "Atlassian" => new[] { "Atlassian Pty Ltd" },
+                "Wireshark" => new[] { "Wireshark Foundation" },
+                "Apple" => new[] { "Apple Inc.", "Apple Inc" },
+                "Adobe" => new[] { "Adobe Inc.", "Adobe Systems Incorporated" },
+                "Intel" => new[] { "Intel Corporation", "Intel Corp" },
+                _ => Array.Empty<string>()
+            };
+            return Array.Exists(aliases, alias => string.Equals(publisher.Trim(), alias, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
         /// Dosyanın Microsoft / Windows işletim sistemi çekirdek veya sistem bileşeni olup olmadığını doğrular.
         /// </summary>
         public static bool IsTrustedOsPublisher(string? publisher)
         {
             if (string.IsNullOrWhiteSpace(publisher)) return false;
 
-            return publisher.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) ||
-                   publisher.Contains("Windows", StringComparison.OrdinalIgnoreCase);
+            return IsExactPublisherMatch(publisher, "Microsoft") ||
+                   IsExactPublisherMatch(publisher, "Windows");
         }
 
         /// <summary>
@@ -93,24 +139,36 @@ namespace AegisPC.Security.Safety
         {
             if (string.IsNullOrWhiteSpace(path)) return false;
 
-            if (PathHelper.IsSystemPath(path)) return true;
-
-            var pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-            var pf86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-
-            if (!string.IsNullOrEmpty(pf) && path.StartsWith(pf, StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            if (!string.IsNullOrEmpty(pf86) && path.StartsWith(pf86, StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            // Kullanıcı bazlı meşru modern kurulum dizinleri (Chrome, VS Code, Discord, Slack vb.)
-            if (path.Contains(@"\AppData\Local\Programs\", StringComparison.OrdinalIgnoreCase) ||
-                path.Contains(@"\AppData\Local\Microsoft\WindowsApps\", StringComparison.OrdinalIgnoreCase))
+            try
             {
-                return true;
-            }
+                if (!Path.IsPathFullyQualified(path)) return false;
+                var fullPath = Path.GetFullPath(path);
 
+                // Downloads ve Temp meşru kurulum klasörü değildir (Drop Zone)
+                if (fullPath.Contains(@"\Downloads\", StringComparison.OrdinalIgnoreCase) ||
+                    fullPath.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase) ||
+                    fullPath.Contains(@"\Windows\Temp\", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                // 1. Standart Windows ve Program Files klasörleri
+                foreach (var folder in new[] {
+                    Environment.SpecialFolder.Windows,
+                    Environment.SpecialFolder.ProgramFiles,
+                    Environment.SpecialFolder.ProgramFilesX86 })
+                {
+                    var root = Environment.GetFolderPath(folder);
+                    if (!string.IsNullOrEmpty(root) && fullPath.StartsWith(
+                        Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar,
+                        StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                System.Diagnostics.Trace.TraceWarning("Invalid installation path: {0}", ex.Message);
+            }
             return false;
         }
 
@@ -153,9 +211,9 @@ namespace AegisPC.Security.Safety
             // 1. Doğrulanmış Microsoft OS bileşeni meşru sistem veya program klasöründe
             if (isSigned && isSignatureValid && isOsPublisher && isLegitLocation)
             {
-                result.IsFullyTrusted = true;
+                // Publisher and location never establish a clean verdict.
                 result.IsOsComponent = true;
-                result.TrustScoreDiscount = -100;
+                result.TrustScoreDiscount = -10;
                 result.Reason = $"Doğrulanmış Microsoft sistem bileşeni: '{publisher}'";
                 return result;
             }
@@ -164,7 +222,7 @@ namespace AegisPC.Security.Safety
             if (isSigned && isSignatureValid && isOsPublisher)
             {
                 result.IsOsComponent = true;
-                result.TrustScoreDiscount = -60;
+                result.TrustScoreDiscount = -10;
                 result.Reason = $"Doğrulanmış Microsoft ikilisi: '{publisher}'";
                 return result;
             }
@@ -172,9 +230,9 @@ namespace AegisPC.Security.Safety
             // 3. Doğrulanmış bilinen ticari yayımcı (Google, Valve, NVIDIA, Mozilla vb.) meşru kurulum klasöründe
             if (isSigned && isSignatureValid && isCommercial && isLegitLocation)
             {
-                result.IsFullyTrusted = true;
+                // Publisher and location never establish a clean verdict.
                 result.IsCommercialTrusted = true;
-                result.TrustScoreDiscount = -80;
+                result.TrustScoreDiscount = -10;
                 result.Reason = $"Doğrulanmış güvenilir yayımcı meşru yazılım klasöründe: '{publisher}'";
                 return result;
             }
@@ -183,7 +241,7 @@ namespace AegisPC.Security.Safety
             if (isSigned && isSignatureValid && isCommercial)
             {
                 result.IsCommercialTrusted = true;
-                result.TrustScoreDiscount = -50;
+                result.TrustScoreDiscount = -10;
                 result.Reason = $"Doğrulanmış ticari yayımcı: '{publisher}'";
                 return result;
             }
@@ -191,7 +249,7 @@ namespace AegisPC.Security.Safety
             // 5. Genel geçerli sertifika
             if (isSigned && isSignatureValid)
             {
-                result.TrustScoreDiscount = -40;
+                result.TrustScoreDiscount = -10;
                 result.Reason = $"Geçerli dijital imza: '{publisher ?? "Bilinmeyen Yayımcı"}'";
                 return result;
             }
@@ -207,7 +265,7 @@ namespace AegisPC.Security.Safety
             // 7. Meşru yazılım kurulum klasöründeki imzasız dosya (daha düşük şüphe)
             if (isLegitLocation)
             {
-                result.TrustScoreDiscount = -20;
+                result.TrustScoreDiscount = 0;
                 result.Reason = "Meşru uygulama klasöründe yer alıyor (Program Files / AppData Programs)";
                 return result;
             }

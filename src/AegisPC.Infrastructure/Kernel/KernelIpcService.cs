@@ -1,23 +1,17 @@
 using System;
-using System.IO;
 using System.Runtime.InteropServices;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Win32.SafeHandles;
 
 namespace AegisPC.Infrastructure.Kernel
 {
     /// <summary>
-    /// Ring-0 Kernel Minifilter (AegisFilter.sys) ile Ring-3 Windows Servisi arasındaki
-    /// FilterCommunicationPort çift yönlü haberleşme ve I/O gating altyapı servisi.
-    /// 64-bit bellek hizalaması (x64 structure alignment), çok kanallı worker havuzu
-    /// ve sistem kilitlenmelerini önleyen fail-open zaman aşımı mekanizması içerir.
+    /// Retains legacy transport framing for compatibility tests. Native listener/action activation remains
+    /// closed until authenticated identity-bound protocol, signing and isolated VM validation exist.
     /// </summary>
     public class KernelIpcService : IDisposable
     {
         public const string DefaultPortName = "\\AegisFilterPort";
         private SafeFileHandle? _portHandle;
-        private CancellationTokenSource? _cts;
         private bool _isConnected;
         private readonly object _lock = new();
 
@@ -137,128 +131,23 @@ namespace AegisPC.Infrastructure.Kernel
             }
         }
 
-        /// <summary>
-        /// Ring-0 ObRegisterCallbacks koruması için mevcut korunan antivirüs servis sürecinin PID'sini sürücüye kaydeder.
-        /// </summary>
-        public bool RegisterProtectedProcess(uint pid)
-        {
-            if (!IsConnected || _portHandle == null) return false;
-
-            try
-            {
-                var cmd = new AegisControlCommand
-                {
-                    CommandCode = 0x1001, // AEGIS_MSG_REGISTER_PROTECTED_PID
-                    ProcessId = pid
-                };
-
-                int cmdSize = Marshal.SizeOf<AegisControlCommand>();
-                IntPtr inBuffer = Marshal.AllocHGlobal(cmdSize);
-                try
-                {
-                    Marshal.StructureToPtr(cmd, inBuffer, false);
-                    int hr = FilterSendMessage(_portHandle, inBuffer, (uint)cmdSize, IntPtr.Zero, 0, out _);
-                    return hr == 0;
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(inBuffer);
-                }
-            }
-            catch
-            {
-                return false;
-            }
-        }
+        /// <summary>Rejects unauthenticated payload PID registration; no native anti-tamper authority is granted.</summary>
+        public bool RegisterProtectedProcess(uint pid) => false;
 
         /// <summary>
-        /// Kernelden gelen dosya/süreç I/O isteklerini çok iş parçacıklı (worker pool) olarak dinler ve yanıtlar.
+        /// Refuses to activate the unverified legacy listener. A path/PID/boolean ABI lacks file identity,
+        /// peer authentication and applied receipts; an experimental switch is not an enforcement permit.
         /// </summary>
         public void StartListener(Func<ScanRequest, bool> evaluationCallback, int workerThreads = 4)
         {
-            if (!IsConnected || _portHandle == null) return;
-            _cts = new CancellationTokenSource();
-
-            int headerSize = Marshal.SizeOf<FilterMessageHeader>();
-            int requestSize = Marshal.SizeOf<ScanRequest>();
-            int bufferSize = headerSize + requestSize;
-            int replySize = Marshal.SizeOf<ScanReplyPacket>();
-
-            for (int i = 0; i < Math.Max(1, workerThreads); i++)
-            {
-                Task.Factory.StartNew(() =>
-                {
-                    IntPtr msgBuffer = Marshal.AllocHGlobal(bufferSize);
-                    IntPtr replyBuffer = Marshal.AllocHGlobal(replySize);
-
-                    try
-                    {
-                        while (!_cts.Token.IsCancellationRequested && IsConnected)
-                        {
-                            int hr = FilterGetMessage(_portHandle, msgBuffer, (uint)bufferSize, IntPtr.Zero);
-                            if (hr != 0)
-                            {
-                                if (_cts.Token.IsCancellationRequested) break;
-                                Thread.Sleep(20);
-                                continue;
-                            }
-
-                            try
-                            {
-                                var msgHeader = Marshal.PtrToStructure<FilterMessageHeader>(msgBuffer);
-                                var request = Marshal.PtrToStructure<ScanRequest>(msgBuffer + headerSize);
-
-                                bool shouldBlock = false;
-                                try
-                                {
-                                    shouldBlock = evaluationCallback(request);
-                                }
-                                catch
-                                {
-                                    // Fail-open: Hata durumunda işletim sistemini kilitlememek için izin ver
-                                    shouldBlock = false;
-                                }
-
-                                var reply = new ScanReplyPacket
-                                {
-                                    Header = new FilterReplyHeader
-                                    {
-                                        Status = 0, // STATUS_SUCCESS
-                                        Reserved = 0,
-                                        MessageId = msgHeader.MessageId
-                                    },
-                                    Response = new ScanResponse
-                                    {
-                                        BlockAccess = shouldBlock
-                                    }
-                                };
-
-                                Marshal.StructureToPtr(reply, replyBuffer, false);
-                                FilterReplyMessage(_portHandle, replyBuffer, (uint)replySize);
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Diagnostics.Trace.WriteLine($"KernelIpc worker error: {ex.Message}");
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        Marshal.FreeHGlobal(msgBuffer);
-                        Marshal.FreeHGlobal(replyBuffer);
-                    }
-                }, _cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-            }
+            ArgumentNullException.ThrowIfNull(evaluationCallback);
+            throw new NotSupportedException("Legacy native listener is disabled until identity-bound protocol and isolated VM gates are verified.");
         }
 
         public void Disconnect()
         {
             lock (_lock)
             {
-                _cts?.Cancel();
-                _cts?.Dispose();
-                _cts = null;
-
                 if (_portHandle != null && !_portHandle.IsInvalid)
                 {
                     _portHandle.Dispose();

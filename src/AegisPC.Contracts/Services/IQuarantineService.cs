@@ -11,6 +11,8 @@ public interface IQuarantineService
     event System.Action<int>? OnFileRestored;
     event System.Action<int>? OnFileDeleted;
 
+    string? LastError { get; }
+
     Task<bool> QuarantineFileAsync(string path, string reason, CancellationToken cancellationToken = default);
     Task<bool> RestoreFileAsync(int id, CancellationToken cancellationToken = default);
     Task<bool> RestoreFileAsync(int id, string? customDestinationPath, CancellationToken cancellationToken = default);

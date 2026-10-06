@@ -17,22 +17,23 @@ using Microsoft.Extensions.Logging;
 namespace AegisPC.Security.Kernel
 {
     /// <summary>
-    /// Çekirdek düzeyinde dosya açma (IRP_MJ_CREATE) ve yazma (IRP_MJ_WRITE) işlemlerini
-    /// anlık olarak kesip (Pre-Op Gating) zararlı işlemleri STATUS_ACCESS_DENIED (0xC0000022) ile engelleyen motor.
-    /// 4 Kademeli Karar Matrisi (Temiz, Şüpheli, Yüksek Risk, Kritik Karantina), Güvenilir Yazılım Politikası
-    /// ve Fail-Open zaman aşımı güvenlik mimarisini içerir.
+    /// Reviews legacy path-only requests without authorizing native actions. A current file hash can
+    /// support an observation but does not bind the kernel's pending stream or prove an applied block.
     /// </summary>
     public class KernelGatingEngine : IKernelGatingEngine
     {
         private const uint STATUS_SUCCESS = 0x00000000;
-        private const uint STATUS_ACCESS_DENIED = 0xC0000022;
-
         private readonly IDetectionHub? _detectionHub;
-        private readonly IScanCacheService? _scanCache;
-        private readonly ISignatureVerifier? _signatureVerifier;
-        private readonly IQuarantineService? _quarantineService;
         private readonly ILogger<KernelGatingEngine>? _logger;
+        private int _timeoutFallbackCount;
+        private DateTime _lastTimeoutAlert = DateTime.MinValue;
 
+        /// <summary>
+        /// Timeout nedeniyle fail-open izin verilen toplam dosya sayısı.
+        /// </summary>
+        public int TimeoutFallbackCount => _timeoutFallbackCount;
+
+        /// <summary>Creates a read-only review engine; compatibility cache/signature/action dependencies cannot authorize native operations.</summary>
         public KernelGatingEngine(
             IDetectionHub? detectionHub = null,
             IScanCacheService? scanCache = null,
@@ -41,17 +42,16 @@ namespace AegisPC.Security.Kernel
             ILogger<KernelGatingEngine>? logger = null)
         {
             _detectionHub = detectionHub;
-            _scanCache = scanCache;
-            _signatureVerifier = signatureVerifier;
-            _quarantineService = quarantineService;
             _logger = logger;
         }
 
+        /// <summary>Creates the observation-only engine with optional diagnostic logging.</summary>
         public KernelGatingEngine(ILogger<KernelGatingEngine>? logger)
             : this(null, null, null, null, logger)
         {
         }
 
+        /// <summary>Reports a bounded review result with no block/quarantine authority; legacy write inputs remain uninspected.</summary>
         public async Task<KernelGatingDecision> EvaluatePreOpDecisionAsync(KernelIpcMessage request, CancellationToken cancellationToken = default)
         {
             var sw = Stopwatch.StartNew();
@@ -63,6 +63,14 @@ namespace AegisPC.Security.Kernel
                 decision.NtStatus = STATUS_SUCCESS;
                 decision.IsBlocked = false;
                 decision.ShouldQuarantine = false;
+                decision.ElapsedMs = sw.Elapsed.TotalMilliseconds;
+                return decision;
+            }
+
+            if (request.OpCode == MinifilterOperationType.PreWrite)
+            {
+                decision.Status = KernelGatingStatus.Allowed;
+                decision.BlockReason = "Incoming write content is unavailable in this legacy protocol; no authoritative write inspection or action occurred.";
                 decision.ElapsedMs = sw.Elapsed.TotalMilliseconds;
                 return decision;
             }
@@ -87,93 +95,9 @@ namespace AegisPC.Security.Kernel
                     return decision;
                 }
 
-                // 2. Öz-koruma ve Canary Tuzak Dosyaları Bypass
-                if (ScanFilterPolicy.IsCanaryFile(request.FilePath) || ScanFilterPolicy.IsSelfOwnedPath(request.FilePath))
-                {
-                    decision.IsBlocked = false;
-                    decision.NtStatus = STATUS_SUCCESS;
-                    decision.Status = KernelGatingStatus.Allowed;
-                    decision.BlockReason = "Öz-koruma: Antivirüs veya Canary dosyası bypass";
-                    decision.ElapsedMs = sw.Elapsed.TotalMilliseconds;
-                    return decision;
-                }
-
-                // 3. Kritik Windows Sistem Dosyası Koruması
-                string fileName = Path.GetFileName(request.FilePath);
-                if (PathHelper.IsSystemPath(request.FilePath) && CriticalProcesses.IsCriticalProcess(fileName))
-                {
-                    decision.IsBlocked = false;
-                    decision.NtStatus = STATUS_SUCCESS;
-                    decision.Status = KernelGatingStatus.Allowed;
-                    decision.BlockReason = "Kritik Windows Sistem Dosyası";
-                    decision.ElapsedMs = sw.Elapsed.TotalMilliseconds;
-                    return decision;
-                }
-
-                // 4. L1/L2 Çok Katmanlı Tarama Önbelleği (ScanCache)
-                if (_scanCache != null && File.Exists(request.FilePath))
-                {
-                    try
-                    {
-                        var fi = new FileInfo(request.FilePath);
-                        var cached = await _scanCache.TryGetVerdictAsync(request.FilePath, "", fi.Length, fi.LastWriteTimeUtc, linkedCts.Token);
-                        if (cached != null && cached.Verdict == RealTimeVerdict.Clean && cached.RiskScore < 40)
-                        {
-                            decision.IsBlocked = false;
-                            decision.NtStatus = STATUS_SUCCESS;
-                            decision.Status = KernelGatingStatus.Allowed;
-                            decision.RiskScore = cached.RiskScore;
-                            decision.BlockReason = "Önbellek: Doğrulanmış Temiz Dosya";
-                            decision.ElapsedMs = sw.Elapsed.TotalMilliseconds;
-                            return decision;
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch { }
-                }
-
-                // 5. TrustedSoftwarePolicy: Dijital İmza ve Güvenilir Ticari Yayımcı Fast-Path
-                if (File.Exists(request.FilePath))
-                {
-                    try
-                    {
-                        var verifier = _signatureVerifier ?? new SignatureVerifier();
-                        var sigInfo = await verifier.VerifySignatureAsync(request.FilePath, linkedCts.Token);
-                        if (sigInfo.IsSigned && sigInfo.IsValid)
-                        {
-                            var trust = TrustedSoftwarePolicy.EvaluateTrust(
-                                request.FilePath,
-                                sigInfo.Publisher,
-                                sigInfo.IsSigned,
-                                sigInfo.IsValid,
-                                TrustedSoftwarePolicy.IsLegitimateInstallLocation(request.FilePath));
-
-                            if (trust.IsFullyTrusted || trust.IsOsComponent || trust.IsCommercialTrusted)
-                            {
-                                decision.IsBlocked = false;
-                                decision.NtStatus = STATUS_SUCCESS;
-                                decision.Status = KernelGatingStatus.BypassedTrustedProcess;
-                                decision.BlockReason = $"Güvenilir Yayımcı: {trust.Reason}";
-                                decision.RiskScore = 0;
-                                decision.ShouldQuarantine = false;
-                                decision.ElapsedMs = sw.Elapsed.TotalMilliseconds;
-                                return decision;
-                            }
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch { }
-                }
-
-                // 6. Statik Hızlı Desen / İmza ve Tehdit Analizi
+                // Paths, filenames, publishers and path/mtime caches do not establish a complete clean verdict.
                 int riskScore = 0;
-                string threatTitle = "Temiz";
+                string threatTitle = "No confirmed evidence";
 
                 if (File.Exists(request.FilePath))
                 {
@@ -185,15 +109,8 @@ namespace AegisPC.Security.Kernel
                     }
                 }
 
-                // Tehlikeli LOLBin / Ransomware Dropper Betikleri
-                if (fileName.Equals("vssadmin_drop.bat", StringComparison.OrdinalIgnoreCase) ||
-                    request.FilePath.Contains("malware_blocked", StringComparison.OrdinalIgnoreCase))
-                {
-                    riskScore = Math.Max(riskScore, 95);
-                    threatTitle = "Bilinen Tehdit Deseni / Zararlı Kod";
-                }
-
-                // 7. Zenginleştirilmiş DetectionHub Değerlendirmesi
+                // Review all applicable detectors; signatures never suppress independent evidence.
+                bool verifiedConfirmation = false;
                 if (_detectionHub != null && File.Exists(request.FilePath))
                 {
                     try
@@ -209,6 +126,8 @@ namespace AegisPC.Security.Kernel
                         var hubResult = await _detectionHub.EvaluateAsync(ctx, linkedCts.Token);
                         if (hubResult != null)
                         {
+                            verifiedConfirmation = await KernelEvidenceGate.HasCurrentAbsoluteSignatureAsync(
+                                hubResult, request.FilePath, linkedCts.Token);
                             if (hubResult.RiskScore > riskScore)
                             {
                                 riskScore = hubResult.RiskScore;
@@ -229,60 +148,41 @@ namespace AegisPC.Security.Kernel
                     }
                 }
 
-                // 8. 4 Kademeli Karar Matrisi
+                // Even verified path content is an observation, not a native stream-bound action permit.
                 decision.RiskScore = riskScore;
 
-                if (riskScore >= 85)
+                if (verifiedConfirmation)
                 {
-                    // Kademe 4: Kritik (>=85) -> Block + Quarantine
-                    decision.IsBlocked = true;
-                    decision.NtStatus = STATUS_ACCESS_DENIED;
-                    decision.Status = KernelGatingStatus.BlockedAccessDenied;
-                    decision.ShouldQuarantine = true;
-                    decision.BlockReason = $"🚨 Çekirdek Engeli (Kernel Gating - Kritik Tehdit {riskScore}): {threatTitle}";
-
-                    if (_quarantineService != null && File.Exists(request.FilePath))
-                    {
-                        _ = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                await _quarantineService.QuarantineFileAsync(request.FilePath, decision.BlockReason);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger?.LogTrace(ex, "Background quarantine failed for {Path}", request.FilePath);
-                            }
-                        });
-                    }
-                }
-                else if (riskScore >= 70)
-                {
-                    // Kademe 3: Yüksek Risk (70-84) -> Block (Quarantine yok)
-                    decision.IsBlocked = true;
-                    decision.NtStatus = STATUS_ACCESS_DENIED;
-                    decision.Status = KernelGatingStatus.BlockedAccessDenied;
+                    decision.IsBlocked = false;
+                    decision.NtStatus = STATUS_SUCCESS;
+                    decision.Status = KernelGatingStatus.Allowed;
                     decision.ShouldQuarantine = false;
-                    decision.BlockReason = $"🚨 Çekirdek Engeli (Kernel Gating - Yüksek Risk {riskScore}): {threatTitle}";
+                    decision.BlockReason = $"Verified content signature observed: {threatTitle}. Identity-bound native enforcement and an applied receipt are unavailable; no block occurred.";
                 }
                 else if (riskScore >= 40)
                 {
-                    // Kademe 2: Şüpheli (40-69) -> Allowed (İzleme / Log)
                     decision.IsBlocked = false;
                     decision.NtStatus = STATUS_SUCCESS;
                     decision.Status = KernelGatingStatus.Allowed;
                     decision.ShouldQuarantine = false;
-                    decision.BlockReason = $"İzleme: Şüpheli dosya aktivitesi ({riskScore}) - {threatTitle}";
+                    decision.BlockReason = $"İzleme: doğrulanmamış dosya sinyali ({riskScore}) - {threatTitle}";
                 }
                 else
                 {
-                    // Kademe 1: Temiz (<40) -> Allowed
                     decision.IsBlocked = false;
                     decision.NtStatus = STATUS_SUCCESS;
                     decision.Status = KernelGatingStatus.Allowed;
                     decision.ShouldQuarantine = false;
-                    decision.BlockReason = "Güvenli / Temiz dosya";
+                    decision.BlockReason = "No verified block evidence; access allowed.";
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                decision.IsBlocked = false;
+                decision.NtStatus = STATUS_SUCCESS;
+                decision.Status = KernelGatingStatus.Allowed;
+                decision.ShouldQuarantine = false;
+                decision.BlockReason = "Review cancelled by the caller; no native action occurred.";
             }
             catch (OperationCanceledException)
             {
@@ -294,6 +194,13 @@ namespace AegisPC.Security.Kernel
                 decision.RiskScore = 0;
                 decision.BlockReason = "Zaman aşımı nedeniyle fail-open izni verildi.";
                 _logger?.LogWarning("Kernel gating timeout exceeded ({Timeout}ms) for {Path}. Fail-open granted.", request.TimeoutMs, request.FilePath);
+                var count = Interlocked.Increment(ref _timeoutFallbackCount);
+                // Kısa sürede çok sayıda timeout → potansiyel DoS/stres saldırısı uyarısı
+                if (count > 50 && (DateTime.UtcNow - _lastTimeoutAlert).TotalMinutes >= 5)
+                {
+                    _lastTimeoutAlert = DateTime.UtcNow;
+                    _logger?.LogWarning("Legacy review exceeded its budget {Count} times; this is a coverage/performance limitation, not attack evidence.", count);
+                }
             }
             catch (Exception ex)
             {

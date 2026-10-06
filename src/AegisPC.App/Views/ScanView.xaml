@@ -3,19 +3,20 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
       Title="{Binding PageTitle}"
       Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True"
       SnapsToDevicePixels="True"
       TextOptions.TextFormattingMode="Display"
-      TextOptions.TextRenderingMode="ClearType"
-      PreviewMouseWheel="OnPagePreviewMouseWheel">
+      TextOptions.TextRenderingMode="ClearType">
 
     <Page.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
     </Page.Resources>
 
     <ScrollViewer x:Name="RootScrollViewer" 
+                  helpers:WheelScrollHelper.EnableRootRedirect="True"
                   Margin="28,20,28,24" 
                   Focusable="False" 
                   CanContentScroll="False"
@@ -25,14 +26,19 @@
 
             <!-- 1. Header -->
             <StackPanel Margin="0,0,0,20">
-                <TextBlock Style="{StaticResource PageHeadingStyle}" Text="Virüs ve Zararlı Yazılım Taraması" Margin="0,0,0,4"/>
+                <TextBlock Style="{StaticResource PageHeadingStyle}" Text="Tarama" Margin="0,0,0,4"/>
                 <TextBlock Text="Sisteminizi hızlı, tam veya özel klasör seçenekleriyle derinlemesine analiz edin." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+                <Button Content="Zamanlayıcı" Command="{Binding OpenSchedulerCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,10,0"/>
+                <Button Content="Tarama Raporları" Command="{Binding OpenReportsCommand}" Style="{StaticResource SecondaryButtonStyle}"/>
             </StackPanel>
 
             <!-- ══════════════════════════════════════════════════════
                  2. SCAN MODE SELECTION CARDS
             ══════════════════════════════════════════════════════ -->
-            <UniformGrid Columns="3" Margin="0,0,0,20">
+            <UniformGrid x:Name="ScanOptionsGrid" Columns="3" Margin="0,0,0,20">
                 <!-- Quick Scan -->
                 <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,12,0" Padding="20">
                     <Grid>
@@ -63,7 +69,7 @@
                             <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="20" Margin="0,0,8,0"/>
                             <TextBlock Text="Tam Sistem Taraması" Style="{StaticResource SectionHeadingStyle}" FontSize="15"/>
                         </StackPanel>
-                        <TextBlock Grid.Row="1" Text="Tüm sabit disklerdeki bütün dosyaları, IFEO kaçırmalarını, Hosts dosyası ve bellek enjeksiyonlarını derinlemesine tarar." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,14"/>
+                        <TextBlock Grid.Row="1" Text="Sabit disklerde erişilebilir dosyaları ve etkin sistem denetimlerini inceler. Kilitli, desteklenmeyen veya atlanan öğeler raporda belirtilir." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,14"/>
                         <Button Grid.Row="2" Content="Tam Taramayı Başlat" Style="{StaticResource PrimaryButtonStyle}" 
                                 Command="{Binding StartFullScanCommand}" HorizontalAlignment="Stretch"/>
                     </Grid>
@@ -81,7 +87,7 @@
                             <ui:SymbolIcon Symbol="Folder24" Foreground="{DynamicResource BrushStatusWarning}" FontSize="20" Margin="0,0,8,0"/>
                             <TextBlock Text="Özel Dizin Taraması" Style="{StaticResource SectionHeadingStyle}" FontSize="15"/>
                         </StackPanel>
-                        <TextBlock Grid.Row="1" Text="Seçeceğiniz belirli bir klasörü, crackli oyun dizinini veya USB depolama birimini analiz eder." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,14"/>
+                        <TextBlock Grid.Row="1" Text="Seçeceğiniz klasörü, oyun veya mod dizinini ya da USB depolama birimini içerik ve etkin kurallarla analiz eder." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,14"/>
                         <Button Grid.Row="2" Content="Klasör Seç ve Tara" Style="{StaticResource SecondaryButtonStyle}" 
                                 Command="{Binding StartCustomScanCommand}" HorizontalAlignment="Stretch"/>
                     </Grid>
@@ -89,30 +95,7 @@
             </UniformGrid>
 
             <!-- ══════════════════════════════════════════════════════
-                 3. ADAPTİF DONANIM KOTA & DONMA ÖNLEME BİLGİLENDİRMESİ
-            ══════════════════════════════════════════════════════ -->
-            <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="16,14">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0" Width="38" Height="38" CornerRadius="8"
-                            Background="{DynamicResource BrushPastelBlueBg}"
-                            BorderBrush="{DynamicResource BrushPastelBlueBorder}"
-                            BorderThickness="1" Margin="0,0,14,0" VerticalAlignment="Center">
-                        <ui:SymbolIcon Symbol="DeveloperBoard24" Foreground="{DynamicResource BrushPastelBlueIcon}" FontSize="18"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding HardwareTuningText}" Style="{StaticResource SectionHeadingStyle}" FontSize="13.5"/>
-                        <TextBlock Text="{Binding HardwareProfileDetail}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- ══════════════════════════════════════════════════════
-                 4. SCAN STATUS & ACTIVE SCAN WINDOW LAUNCHER
+                 3. SCAN STATUS & ACTIVE SCAN WINDOW LAUNCHER
             ══════════════════════════════════════════════════════ -->
             <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
                 <Grid>
@@ -132,7 +115,7 @@
                         <TextBlock Text="{Binding RemainingEtaFormatted}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
                     </StackPanel>
 
-                    <Button Grid.Column="2" Content="Tarayıcı Penceresini Aç" Style="{StaticResource SecondaryButtonStyle}"
+                    <Button Grid.Column="2" Content="{Binding OpenScanWindowButtonText, FallbackValue='Tarayıcı Penceresini Aç'}" Style="{StaticResource SecondaryButtonStyle}"
                             Command="{Binding OpenActiveScanWindowCommand}" VerticalAlignment="Center"/>
                 </Grid>
             </Border>

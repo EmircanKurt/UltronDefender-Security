@@ -1,13 +1,9 @@
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Behavior;
 using AegisPC.Contracts.Services;
-using AegisPC.Core.Enums;
 using AegisPC.Core.Helpers;
 using AegisPC.Core.Models;
 using Microsoft.Diagnostics.Tracing;
@@ -35,63 +31,93 @@ namespace AegisPC.Service.RealTime
     }
 
     /// <summary>
-    /// Microsoft-Windows-Kernel-Process ETW Sağlayıcısı üzerinden gerçek zamanlı
-    /// süreç başlatma (ProcessStart), süreç sonlandırma (ProcessExit) ve çıkış zamanı (ProcessExitTime)
-    /// telemetri motoru.
-    /// 256 MB döngüsel bellek (circular buffer), C:\ProgramData\UltronDefender\EtwLogs\ dizinine yerel ETL/log kaydı,
-    /// IBehaviorEngine ve ISecurityFindingService entegrasyonu sunar.
+    /// Observes process start and stop events through a live ETW session. Event loss or a
+    /// stopped message pump degrades this optional, post-start telemetry; it cannot block execution.
+    /// Command-line heuristics are observations, not confirmed-malware findings.
     /// </summary>
     public class EtwProcessMonitor : IDisposable
     {
         private readonly ILogger<EtwProcessMonitor>? _logger;
         private readonly IProcessLineageTracker? _lineageTracker;
-        private readonly IAuditLogService? _auditLogService;
         private readonly IBehaviorEngine? _behaviorEngine;
-        private readonly ISecurityFindingService? _findingService;
+        private readonly AegisPC.Contracts.Protection.IBehaviorObservationSource? _observations;
+        private string _bootId = string.Empty;
 
         private TraceEventSession? _session;
         private Task? _processingTask;
         private CancellationTokenSource? _cts;
-        private bool _isRunning;
+        private volatile bool _isRunning;
+        private int _lastEventsLost;
         private readonly object _lock = new();
 
         public static readonly Guid KernelProcessProviderGuid = new("22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716");
         public const string DefaultSessionName = "AegisPCEtwSession";
         public const string DefaultLogDirectory = @"C:\ProgramData\UltronDefender\EtwLogs";
-        private const int DefaultBufferSizeMB = 256;
+        private const int DefaultBufferSizeMB = 32;
 
-        private StreamWriter? _etlLogWriter;
+        private BoundedEtwLogWriter? _etlLogWriter;
         private readonly object _logLock = new();
 
-        public bool IsRunning => _isRunning;
+        /// <summary>True only while the ETW message pump has not terminated; this does not imply pre-execution blocking.</summary>
+        public bool IsRunning => _isRunning && _processingTask?.IsCompleted != true;
+
+        /// <summary>Returns ETW's live lost-event count, or -1 when the active session cannot be queried.</summary>
+        public int EventsLost
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    if (_session == null) return _lastEventsLost;
+                    try
+                    {
+                        _lastEventsLost = Math.Max(_lastEventsLost, _session.EventsLost);
+                        return _lastEventsLost;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Could not read ETW process event-loss counter.");
+                        return -1;
+                    }
+                }
+            }
+        }
 
         public event Action<ProcessStartTelemetry>? ProcessStarted;
         public event Action<ProcessStopTelemetry>? ProcessStopped;
 
+        /// <summary>Creates an optional process observer; supplied collaborators receive telemetry only after ETW starts.</summary>
         public EtwProcessMonitor(
             ILogger<EtwProcessMonitor>? logger = null,
             IProcessLineageTracker? lineageTracker = null,
             IAuditLogService? auditLogService = null,
             IBehaviorEngine? behaviorEngine = null,
-            ISecurityFindingService? findingService = null)
+            ISecurityFindingService? findingService = null,
+            AegisPC.Contracts.Protection.IBehaviorObservationSource? observations = null)
         {
             _logger = logger;
             _lineageTracker = lineageTracker;
-            _auditLogService = auditLogService;
             _behaviorEngine = behaviorEngine;
-            _findingService = findingService;
+            _observations = observations;
+            _ = auditLogService;
+            _ = findingService;
         }
 
+        /// <summary>Starts a live ETW session; on failure the monitor remains stopped and cleans partial resources.</summary>
         public void Start()
         {
             lock (_lock)
             {
-                if (_isRunning) return;
-                _isRunning = true;
+                if (IsRunning) return;
+                CleanupSession();
                 _cts = new CancellationTokenSource();
+                _lastEventsLost = 0;
+                _bootId = _observations == null ? string.Empty : WindowsBootObservationIdentity.Resolve(_logger);
+
+                string sessionName = $"{DefaultSessionName}-{Environment.ProcessId}-{Guid.NewGuid():N}";
 
                 _logger?.LogInformation("Starting ETW Process Monitor (Session: {Session}, Buffer: {Buffer}MB)...",
-                    DefaultSessionName, DefaultBufferSizeMB);
+                    sessionName, DefaultBufferSizeMB);
 
                 try
                 {
@@ -104,27 +130,17 @@ namespace AegisPC.Service.RealTime
                         }
 
                         string logFilePath = Path.Combine(DefaultLogDirectory, "ProcessEvents.log");
-                        var fs = new FileStream(logFilePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-                        _etlLogWriter = new StreamWriter(fs, Encoding.UTF8) { AutoFlush = true };
+                        _etlLogWriter = new BoundedEtwLogWriter(logFilePath);
                     }
                     catch (Exception ex)
                     {
                         _logger?.LogWarning(ex, "Could not initialize local ETW log file at {Dir}. Continuing in-memory.", DefaultLogDirectory);
                     }
 
-                    // 2. Önceki artık oturum varsa güvenle temizle
-                    try
-                    {
-                        var existingSession = TraceEventSession.GetActiveSession(DefaultSessionName);
-                        existingSession?.Dispose();
-                    }
-                    catch { }
-
-                    // 3. 256 MB Döngüsel Bellek (Circular Buffer) ile Gerçek Zamanlı ETW Oturumu
-                    _session = new TraceEventSession(DefaultSessionName, TraceEventSessionOptions.Create)
+                    // A circular in-memory session has no live Source; this must remain real-time.
+                    _session = new TraceEventSession(sessionName, TraceEventSessionOptions.Create)
                     {
                         BufferSizeMB = DefaultBufferSizeMB,
-                        CircularBufferMB = DefaultBufferSizeMB,
                         StopOnDispose = true
                     };
 
@@ -134,72 +150,79 @@ namespace AegisPC.Service.RealTime
                         TraceEventLevel.Informational,
                         matchAnyKeywords: 0x10);
 
-                    // 4. Olay Dinleyicisi Tanımlama
-                    _session.Source.Dynamic.All += OnKernelProcessEvent;
+                    var session = _session;
+                    session.Source.Dynamic.All += OnKernelProcessEvent;
 
-                    // 5. Arka Plan Dinleme Görevi
+                    _isRunning = true;
                     _processingTask = Task.Factory.StartNew(
                         () =>
                         {
                             try
                             {
-                                _session.Source.Process();
+                                session.Source.Process();
                             }
                             catch (Exception ex)
                             {
-                                _logger?.LogDebug(ex, "ETW Process message pump terminated.");
+                                if (_isRunning)
+                                    _logger?.LogError(ex, "ETW process message pump failed; process telemetry is unavailable.");
+                                else
+                                    _logger?.LogDebug(ex, "ETW process message pump stopped during shutdown.");
+                            }
+                            finally
+                            {
+                                if (_isRunning)
+                                    _logger?.LogWarning("ETW process message pump stopped unexpectedly; process telemetry is unavailable.");
+                                lock (_lock)
+                                {
+                                    if (ReferenceEquals(_session, session)) _isRunning = false;
+                                }
                             }
                         },
                         _cts.Token,
                         TaskCreationOptions.LongRunning,
                         TaskScheduler.Default);
 
-                    _logger?.LogInformation("ETW Process Monitor active and listening to Microsoft-Windows-Kernel-Process.");
+                    _logger?.LogInformation("ETW process session configured; message pump scheduled.");
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogWarning(ex, "Failed to start ETW Process Monitor session (non-admin rights or session limit). Progressive fallback active.");
+                    _logger?.LogWarning(ex, "Failed to start ETW process session; process telemetry is unavailable.");
                     _isRunning = false;
+                    CleanupSession();
                 }
             }
         }
 
+        /// <summary>Stops the ETW session and releases partial resources even if the message pump already failed.</summary>
         public void Stop()
         {
             lock (_lock)
             {
-                if (!_isRunning) return;
                 _isRunning = false;
-
-                try
-                {
-                    _cts?.Cancel();
-                    _session?.Stop();
-                    _session?.Dispose();
-                    _session = null;
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogTrace(ex, "Error stopping ETW Process Monitor session.");
-                }
-                finally
-                {
-                    _cts?.Dispose();
-                    _cts = null;
-
-                    lock (_logLock)
-                    {
-                        try
-                        {
-                            _etlLogWriter?.Flush();
-                            _etlLogWriter?.Dispose();
-                            _etlLogWriter = null;
-                        }
-                        catch { }
-                    }
-                }
+                CleanupSession();
 
                 _logger?.LogInformation("ETW Process Monitor stopped.");
+            }
+        }
+
+        private void CleanupSession()
+        {
+            _cts?.Cancel();
+            if (_session != null)
+            {
+                try { _lastEventsLost = Math.Max(_lastEventsLost, _session.EventsLost); }
+                catch (Exception ex) { _logger?.LogWarning(ex, "Could not read final ETW process loss count."); }
+                try { _session.Dispose(); }
+                catch (Exception ex) { _logger?.LogWarning(ex, "Could not dispose ETW process session."); }
+                _session = null;
+            }
+            _cts?.Dispose();
+            _cts = null;
+            lock (_logLock)
+            {
+                try { _etlLogWriter?.Dispose(); }
+                catch (Exception ex) { _logger?.LogWarning(ex, "Could not close ETW process log."); }
+                _etlLogWriter = null;
             }
         }
 
@@ -222,7 +245,7 @@ namespace AegisPC.Service.RealTime
 
                 if (isStart)
                 {
-                    int pid = data.ProcessID;
+                    int pid = ExtractTargetProcessId(data);
                     if (pid <= 4) return; // System idle / kernel bypass
 
                     string imagePath = ExtractPayloadString(data, "ImageFileName", "FileName", "ImageName");
@@ -234,7 +257,7 @@ namespace AegisPC.Service.RealTime
                     else if (ppidPayload != null && int.TryParse(ppidPayload.ToString(), out int parsedPpid)) ppid = parsedPpid;
 
                     // 1. Yerel Log Dosyasına Yaz (C:\ProgramData\UltronDefender\EtwLogs\ProcessEvents.log)
-                    WriteToLocalLog($"[START] {timestampUtc:yyyy-MM-dd HH:mm:ss.fff} | PID: {pid} | PPID: {ppid} | Image: {imagePath} | Cmd: {commandLine}");
+                    WriteToLocalLog($"[START] {timestampUtc:yyyy-MM-dd HH:mm:ss.fff} | PID: {pid} | PPID: {ppid} | Image: {imagePath}");
 
                     // 2. Süreç Soy Ağacına Kaydet (ProcessLineageTracker)
                     if (_lineageTracker != null && !string.IsNullOrWhiteSpace(imagePath))
@@ -248,10 +271,14 @@ namespace AegisPC.Service.RealTime
                                 ExecutablePath = imagePath,
                                 ProcessName = Path.GetFileName(imagePath),
                                 CommandLine = commandLine,
-                                StartTimeUtc = timestampUtc
+                                StartTimeUtc = timestampUtc,
+                                BootId = _bootId
                             });
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogWarning(ex, "Could not record ETW process lineage for PID {Pid}.", pid);
+                        }
                     }
 
                     // 3. Davranış Motoruna Besle (BehaviorEngine.ProcessEventAsync)
@@ -270,13 +297,22 @@ namespace AegisPC.Service.RealTime
                                 Timestamp = timestampUtc,
                                 Details = $"ETW ProcessStart detected. PPID: {ppid}, Image: {imagePath}"
                             };
-                            _ = _behaviorEngine.ProcessEventAsync(behaviorEvent);
+                            ObserveBehaviorTask(_behaviorEngine.ProcessEventAsync(behaviorEvent));
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogWarning(ex, "Could not enqueue ETW process behavior for PID {Pid}.", pid);
+                        }
                     }
 
                     // 4. LOLBAS ve Şüpheli Komut Satırı Analizi
                     bool isSuspicious = CheckSuspiciousCommandLine(imagePath, commandLine, out string reason);
+                    _observations?.TryPublish(new AegisPC.Contracts.Protection.BehaviorObservation(
+                        $"process-{pid}-{timestampUtc.Ticks}", isSuspicious ? "CommandHints" : "ProcessStart",
+                        AegisPC.Contracts.Protection.BehaviorObservationKind.ProcessStarted,
+                        new(pid, timestampUtc, _bootId), timestampUtc,
+                        isSuspicious ? "Command-line hints require review; malicious intent is not established." : "Observed process creation.",
+                        ReviewWeight: isSuspicious ? 10 : 0));
 
                     var telemetry = new ProcessStartTelemetry
                     {
@@ -289,47 +325,24 @@ namespace AegisPC.Service.RealTime
                         ThreatReason = reason
                     };
 
-                    // 5. Şüpheli Davranış Bulunduysa SecurityFinding Oluştur ve Servise Bildir
+                    // Heuristics alone cannot establish a malware verdict or quarantine action.
                     if (isSuspicious)
                     {
-                        _logger?.LogWarning("SECURITY ALERT: Suspicious Process/LOLBAS Activity! PID: {Pid}, Exe: {Exe}, Reason: {Reason}",
+                        _logger?.LogInformation("ETW process heuristic observation: PID: {Pid}, Exe: {Exe}, Reason: {Reason}",
                             pid, imagePath, reason);
-
-                        WriteToLocalLog($"[SECURITY_ALERT] PID: {pid} | Threat: {reason} | Exe: {imagePath}");
-
-                        if (_findingService != null)
-                        {
-                            var finding = new SecurityFinding
-                            {
-                                Id = Guid.NewGuid(),
-                                ObjectPath = imagePath,
-                                ObjectName = Path.GetFileName(imagePath),
-                                RiskLevel = RiskLevel.ConfirmedMalicious,
-                                RiskScore = 95,
-                                Category = FindingCategory.MalwareSuspicion,
-                                Title = $"LOLBAS / Ransomware Behavior: {reason}",
-                                Description = $"Suspicious process execution detected via ETW. PID: {pid}, PPID: {ppid}, Exe: {imagePath}, Command: {commandLine}",
-                                RiskReasons = new List<string> { reason, $"Command: {commandLine}", $"Parent PID: {ppid}" },
-                                ConfidenceLevel = ConfidenceLevel.High,
-                                FirstObserved = timestampUtc,
-                                LastObserved = timestampUtc,
-                                CreatedAt = timestampUtc,
-                                UpdatedAt = timestampUtc,
-                                Status = FindingStatus.Active
-                            };
-
-                            _ = _findingService.AddFindingAsync(finding);
-                        }
+                        WriteToLocalLog($"[HEURISTIC_OBSERVATION] PID: {pid} | Reason: {reason} | Exe: {imagePath}");
                     }
 
                     ProcessStarted?.Invoke(telemetry);
                 }
                 else if (isStop)
                 {
-                    int pid = data.ProcessID;
+                    int pid = ExtractTargetProcessId(data);
+                    if (pid <= 4) return;
                     int exitCode = 0;
                     var exitCodePayload = data.PayloadByName("ExitCode");
                     if (exitCodePayload is int ec) exitCode = ec;
+                    else if (exitCodePayload is uint unsignedExitCode) exitCode = unchecked((int)unsignedExitCode);
 
                     WriteToLocalLog($"[EXIT]  {timestampUtc:yyyy-MM-dd HH:mm:ss.fff} | PID: {pid} | ExitCode: {exitCode}");
 
@@ -337,9 +350,14 @@ namespace AegisPC.Service.RealTime
                     {
                         try
                         {
-                            _lineageTracker.MarkTerminated(pid);
+                            if (_lineageTracker is AegisPC.Security.Behavior.ProcessLineageTracker generations)
+                                generations.MarkTerminatedAt(pid, timestampUtc);
+                            else _lineageTracker.MarkTerminated(pid);
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogWarning(ex, "Could not update ETW process lineage for PID {Pid}.", pid);
+                        }
                     }
 
                     ProcessStopped?.Invoke(new ProcessStopTelemetry
@@ -356,19 +374,38 @@ namespace AegisPC.Service.RealTime
             }
         }
 
+        private void ObserveBehaviorTask(Task task)
+        {
+            _ = task.ContinueWith(
+                completed => _logger?.LogWarning(completed.Exception, "ETW process behavior processing failed."),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
+        }
+
         private void WriteToLocalLog(string entry)
         {
-            if (_etlLogWriter == null) return;
             lock (_logLock)
             {
+                if (_etlLogWriter == null) return;
                 try
                 {
-                    _etlLogWriter.WriteLine(entry);
+                    if (_etlLogWriter.TryWrite(entry)) return;
+                    _logger?.LogWarning("ETW process observation log reached its {ByteBudget} byte budget; process telemetry continues without local file logging.", BoundedEtwLogWriter.MaxLogBytes);
+                    _etlLogWriter.Dispose();
+                    _etlLogWriter = null;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Could not write ETW process log; process telemetry continues without local file logging.");
+                    try { _etlLogWriter?.Dispose(); }
+                    catch (Exception disposeException) { _logger?.LogWarning(disposeException, "Could not close failed ETW process log."); }
+                    _etlLogWriter = null;
+                }
             }
         }
 
+        /// <summary>Returns an unconfirmed command-line observation, never a standalone malware verdict.</summary>
         public static bool CheckSuspiciousCommandLine(string imagePath, string commandLine, out string reason)
         {
             reason = string.Empty;
@@ -446,6 +483,19 @@ namespace AegisPC.Service.RealTime
                 }
             }
             return string.Empty;
+        }
+
+        private static int ExtractTargetProcessId(TraceEvent data)
+        {
+            // The provider's ProcessID payload identifies the affected process; the ETW header can identify the emitter.
+            var payload = data.PayloadByName("ProcessID");
+            return payload switch
+            {
+                int pid => pid,
+                uint pid when pid <= int.MaxValue => (int)pid,
+                _ when int.TryParse(payload?.ToString(), out int parsed) => parsed,
+                _ => 0
+            };
         }
 
         public void Dispose()

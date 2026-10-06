@@ -9,6 +9,7 @@ using AegisPC.Core.Enums;
 using AegisPC.Core.Helpers;
 using System.Collections.Concurrent;
 using AegisPC.Core.Models;
+using AegisPC.Security.Safety;
 
 namespace AegisPC.Security.Scanning
 {
@@ -32,6 +33,13 @@ namespace AegisPC.Security.Scanning
         // Çalışma zamanında veya güncellemeyle eklenebilir dinamik PUP/Hacktool hash kümesi
         private static readonly ConcurrentDictionary<string, byte> DynamicPupHashes = new(StringComparer.OrdinalIgnoreCase);
         private const int MaxDynamicPupHashes = 100000;
+
+        private readonly ILocalReputationService? _localReputationService;
+
+        public RiskScoringEngine(ILocalReputationService? localReputationService = null)
+        {
+            _localReputationService = localReputationService;
+        }
 
         public static void RegisterPupHash(string sha256)
         {
@@ -58,42 +66,68 @@ namespace AegisPC.Security.Scanning
             FileAnalysisResult result,
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!string.IsNullOrWhiteSpace(result.SHA256) &&
+                (MalwareSignatureDatabase.CheckHash(result.SHA256).IsMatched ||
+                 ThreatSignatureDatabase.CheckHash(result.SHA256).IsMatched))
+                return (100, RiskLevel.ConfirmedMalicious, new List<string> { "Known malicious SHA-256 match" });
             int score = 0;
             var reasons = new List<string>();
+
+            // TR: Yerel İtibar Hizmeti (Local Reputation) değerlendirmesi (6 aydır sorunsuz dosyalara -10 puan güven indirimi)
+            if (_localReputationService != null && !string.IsNullOrWhiteSpace(result.SHA256))
+            {
+                var rep = await _localReputationService.EvaluateReputationAsync(result.SHA256, cancellationToken);
+                if (rep.ScoreModifier < 0)
+                {
+                    score += rep.ScoreModifier;
+                    reasons.Add(rep.Reason);
+                }
+            }
 
             bool isVerifiedGameBinary = GameCrackClassifier.IsGameCrackOrEmulator(result.FilePath);
 
             bool isKnownPup = IsKnownPupHash(result.SHA256);
 
-            // TR: Aşama 0: Merkezi Güven Politikası (TrustedSoftwarePolicy) değerlendirmesi
-            var trust = AegisPC.Security.Safety.TrustedSoftwarePolicy.EvaluateTrust(
-                result.FilePath,
-                result.SignaturePublisher,
-                result.IsSigned,
-                result.SignatureValid,
-                result.IsKnownLocation);
-
-            if (trust.IsFullyTrusted && !isKnownPup)
+            // Çift uzantı kamuflaj kontrolü (örn. .pdf.exe veya .docx.scr aldatmacası)
+            bool isDoubleExtensionDisguise = false;
+            if (!string.IsNullOrEmpty(result.FileName) && result.FileName.Count(c => c == '.') > 1)
             {
-                reasons.Add($"-100 {trust.Reason}");
-                return (0, RiskLevel.Clean, reasons);
+                var lower = result.FileName.ToLowerInvariant();
+                if ((lower.EndsWith(".exe") || lower.EndsWith(".scr") || lower.EndsWith(".vbs") || lower.EndsWith(".bat") || lower.EndsWith(".cmd") || lower.EndsWith(".ps1")) &&
+                    (lower.Contains(".pdf.") || lower.Contains(".docx.") || lower.Contains(".xlsx.") || lower.Contains(".jpg.") || lower.Contains(".png.")))
+                {
+                    isDoubleExtensionDisguise = true;
+                    score += 70;
+                    reasons.Add("+70 Çift uzantı kamuflajı tespit edildi (Örn: .pdf.exe aldatmacası)");
+                }
             }
 
-            // TR: Aşama 1: Dijital imza geçerliliği ve güvenilir sistem dizini (System32/Program Files) kontrolleri.
-            // EN: Stage 1: Verified digital signature and trusted system directories (System32/Program Files).
-            // 1. Digital Signature & Known Location Safe Modifiers
-            if (result.IsSigned && result.SignatureValid)
+            // Authenticode güven değerlendirmesi:
+            // YALNIZCA zararlı içerik / çift uzantı / bilinen zararlı yoksa güven indirimi uygulanır.
+            // Zararlı içerik (EICAR, çift uzantı vb.) tespit edilirse güven indirimi HÜKÜMSÜZDÜR.
+            if (!isDoubleExtensionDisguise && !isKnownPup && result.IsSigned && result.SignatureValid)
             {
-                int discount = trust.TrustScoreDiscount < 0 ? trust.TrustScoreDiscount : -40;
-                score += discount;
-                reasons.Add($"{discount} {trust.Reason}");
-            }
+                var trust = TrustedSoftwarePolicy.EvaluateTrust(
+                    result.FilePath,
+                    result.SignaturePublisher,
+                    result.IsSigned,
+                    result.SignatureValid,
+                    result.IsKnownLocation);
 
-            if (result.IsKnownLocation)
-            {
-                // System32 or Program Files location
-                score -= 30;
-                reasons.Add("-30 Güvenilir Windows sistem konumu (System32 / Program Files)");
+                if (trust.TrustScoreDiscount < 0)
+                {
+                    score += trust.TrustScoreDiscount;
+                    if (!string.IsNullOrEmpty(trust.Reason))
+                    {
+                        reasons.Add(trust.Reason);
+                    }
+                }
+                else
+                {
+                    score -= 10;
+                    reasons.Add($"-10 Doğrulanmış dijital imza: {result.SignaturePublisher ?? "Doğrulanmış İmza"}");
+                }
             }
 
             if (isVerifiedGameBinary && !isKnownPup)
@@ -157,8 +191,16 @@ namespace AegisPC.Security.Scanning
 
             if (PathHelper.IsTempPath(path) || path.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase))
             {
-                score += 25;
-                reasons.Add("+25 Dosya geçici dizinde (Temp) çalıştırılıyor / indirildi");
+                if (!result.IsSigned && !isVerifiedGameBinary)
+                {
+                    score += 25;
+                    reasons.Add("+25 İmzasız dosya geçici dizinde (Temp) çalıştırılıyor / indirildi");
+                }
+                else if (result.IsSigned && !result.SignatureValid)
+                {
+                    score += 25;
+                    reasons.Add("+25 Geçersiz imzalı dosya geçici dizinde (Temp) çalıştırılıyor");
+                }
             }
             else if (path.Contains(@"\AppData\Roaming\", StringComparison.OrdinalIgnoreCase) && !result.IsSigned && !isInstalledAppFolder && !isVerifiedGameBinary)
             {
@@ -203,19 +245,6 @@ namespace AegisPC.Security.Scanning
                 }
             }
 
-            // TR: Aşama 5: Çift uzantı kamuflaj kontrolü (örn. .pdf.exe veya .docx.scr gibi kullanıcıyı aldatmaya yönelik uzantılar).
-            // EN: Stage 5: Double extension disguise detection (e.g., .pdf.exe or .docx.scr disguise patterns).
-            // 5. File extension disguise check (e.g. .pdf.exe or .docx.scr)
-            if (result.FileName.Count(c => c == '.') > 1)
-            {
-                var lower = result.FileName.ToLowerInvariant();
-                if ((lower.EndsWith(".exe") || lower.EndsWith(".scr") || lower.EndsWith(".vbs") || lower.EndsWith(".bat") || lower.EndsWith(".cmd") || lower.EndsWith(".ps1")) &&
-                    (lower.Contains(".pdf.") || lower.Contains(".docx.") || lower.Contains(".xlsx.") || lower.Contains(".jpg.") || lower.Contains(".png.")))
-                {
-                    score += 85;
-                    reasons.Add("+85 Çift uzantı kamuflajı tespit edildi (Örn: .pdf.exe aldatmacası)");
-                }
-            }
 
             // TR: Aşama 6: İmzasız çalıştırılabilir dosya risk cezası (yalnızca güvenilir olmayan yollardaki ikililer için).
             // EN: Stage 6: Unsigned executable risk penalty (only applied to binaries outside trusted system/app folders).
@@ -257,28 +286,6 @@ namespace AegisPC.Security.Scanning
                     score += 20;
                     reasons.Add("+20 PE Davranışsal Gösterge: Bellek enjeksiyonu veya Process Hollowing API tespiti");
                 }
-            }
-
-            // TR: Aşama 8: Microsoft imzalı güvenilir ikililer için LOLBin koruması ve skorun 0-100 aralığına sınırlandırılması.
-            // EN: Stage 8: LOLBin mitigation for Microsoft-signed binaries and score clamping between 0 and 100.
-            // Microsoft or trusted OS binaries: zero risk ONLY IF in legitimate system/program directories.
-            // If placed in Temp/Downloads/untrusted drop zones, reduce risk but do not zero it (prevents LOLBin staging).
-            if (!isKnownPup && result.IsSigned && result.SignatureValid && 
-                (result.SignaturePublisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true ||
-                 result.SignaturePublisher?.Contains("Windows", StringComparison.OrdinalIgnoreCase) == true))
-            {
-                if (result.IsKnownLocation || PathHelper.IsKnownSafePath(result.FilePath) || AegisPC.Security.Safety.TrustedSoftwarePolicy.IsLegitimateInstallLocation(result.FilePath))
-                {
-                    score = 0;
-                }
-                else
-                {
-                    score = Math.Max(0, score - 30);
-                }
-            }
-            else if (!isKnownPup && PathHelper.IsSystemPath(result.FilePath) && result.IsKnownLocation)
-            {
-                score = 0;
             }
 
             // Clamp score between 0 and 100

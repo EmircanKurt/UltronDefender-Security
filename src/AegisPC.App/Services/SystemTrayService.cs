@@ -3,9 +3,10 @@ using System.Drawing;
 using System.IO;
 using System.Windows;
 using System.Windows.Forms;
+using AegisPC.App.ViewModels;
 using AegisPC.Contracts.Services;
-using AegisPC.Core.Enums;
 using AegisPC.Security.RealTime;
+using Microsoft.Extensions.DependencyInjection;
 using Application = System.Windows.Application;
 
 namespace AegisPC.App.Services
@@ -20,7 +21,6 @@ namespace AegisPC.App.Services
     public class SystemTrayService : ISystemTrayService
     {
         private NotifyIcon? _notifyIcon;
-        private readonly IScanCoordinatorService? _scanCoordinator;
         private readonly IBackgroundProtectionService? _protectionService;
         private ToolStripMenuItem? _statusMenuItem;
         private bool _isDisposed;
@@ -29,7 +29,6 @@ namespace AegisPC.App.Services
             IScanCoordinatorService? scanCoordinator = null,
             IBackgroundProtectionService? protectionService = null)
         {
-            _scanCoordinator = scanCoordinator;
             _protectionService = protectionService;
         }
 
@@ -99,10 +98,25 @@ namespace AegisPC.App.Services
             _statusMenuItem.Enabled = false;
             contextMenu.Items.Add(_statusMenuItem);
 
-            var scanItem = new ToolStripMenuItem("🔍 Hızlı Tarama Başlat", null, (s, e) =>
+            var scanItem = new ToolStripMenuItem("🔍 Hızlı Tarama Başlat", null, async (s, e) =>
             {
-                RestoreMainWindow();
-                _ = _scanCoordinator?.StartScanAsync(ScanType.Quick);
+                try
+                {
+                    var dispatcher = Application.Current?.Dispatcher
+                        ?? throw new InvalidOperationException("Application dispatcher is unavailable.");
+                    await dispatcher.InvokeAsync(async () =>
+                    {
+                        RestoreMainWindow();
+                        var scanVm = App.ServiceProvider?.GetService<ScanViewModel>()
+                            ?? throw new InvalidOperationException("Scan view model is unavailable.");
+                        await scanVm.StartQuickScanAsync();
+                    }).Task.Unwrap();
+                }
+                catch (Exception ex)
+                {
+                    Serilog.Log.Warning(ex, "Tray quick scan request failed");
+                    ShowNotification("Tarama başlatılamadı", "Tarayıcı hazır değil. Uygulamayı açıp tekrar deneyin.", ToolTipIcon.Warning);
+                }
             });
             contextMenu.Items.Add(scanItem);
 
@@ -130,6 +144,7 @@ namespace AegisPC.App.Services
             {
                 Application.Current.Dispatcher.Invoke(() =>
                 {
+                    App.IsStartMinimized = false;
                     var mainWindow = Application.Current.MainWindow;
                     if (mainWindow != null)
                     {

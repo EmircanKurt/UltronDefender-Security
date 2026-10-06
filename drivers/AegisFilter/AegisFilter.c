@@ -1,8 +1,8 @@
 #include <fltKernel.h>
 #include <dontuse.h>
 #include <suppress.h>
+#include "UltronFilterPilotSafety.h"
 
-#pragma prefast(disable:__WARNING_ENCODE_MEMBER_FUNCTION_POINTER, "Minifilter callbacks do not require encoded function pointers")
 
 // ============================================================================
 // SABİTLER VE BELLEK HAVUZU TANIMLARI
@@ -152,7 +152,6 @@ NTSTATUS AegisMessageNotifyCallback(
 #pragma alloc_text(PAGE, AegisInstanceTeardownStart)
 #pragma alloc_text(PAGE, AegisInstanceTeardownComplete)
 #pragma alloc_text(PAGE, AegisPreCreate)
-#pragma alloc_text(PAGE, AegisPreWrite)
 #pragma alloc_text(PAGE, AegisConnectNotifyCallback)
 #pragma alloc_text(PAGE, AegisDisconnectNotifyCallback)
 #pragma alloc_text(PAGE, AegisMessageNotifyCallback)
@@ -292,7 +291,7 @@ NTSTATUS DriverEntry(
         return status;
     }
 
-    KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[AegisFilter] Sürücü basariyla yüklendi: Minifilter, ProcessNotify ve ObCallbacks devrede.\n"));
+    KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, "[UltronFilter] Audit-only driver loaded; native enforcement and anti-tamper remain unavailable.\n"));
     return STATUS_SUCCESS;
 }
 
@@ -416,7 +415,7 @@ FLT_PREOP_CALLBACK_STATUS AegisPreCreate(
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
-    currentPid = (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
+    currentPid = FltGetRequestorProcessId(Data);
     if (currentPid <= 4 || (gProtectedPid != 0 && currentPid == gProtectedPid)) {
         return FLT_PREOP_SUCCESS_NO_CALLBACK; // System veya kendi servisimiz bypass
     }
@@ -475,18 +474,11 @@ FLT_PREOP_CALLBACK_STATUS AegisPreCreate(
         &replyLength,
         &timeout);
 
-    // 7. Karar Yönetimi: Kullanıcı modu tehdit tespit edip bloklama istedi mi?
-    if (NT_SUCCESS(status) && scanResponse.BlockAccess) {
-        KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL, 
-            "[AegisFilter] BLOKLANDI! Zararlı I/O engellendi. PID: %u, Dosya: %ws\n", 
-            currentPid, scanRequest->FilePath));
-
-        ExFreePoolWithTag(scanRequest, AEGIS_FILTER_TAG);
-        FltReleaseFileNameInformation(nameInfo);
-
-        Data->IoStatus.Status = STATUS_ACCESS_DENIED;
-        Data->IoStatus.Information = 0;
-        return FLT_PREOP_COMPLETE;
+    // STATUS_TIMEOUT is a success-class NTSTATUS, but is never a valid reply.
+    if (AegisIsValidLegacyReply(status, replyLength, scanResponse.BlockAccess) &&
+        scanResponse.BlockAccess == TRUE) {
+        KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+            "[UltronFilter] Proposed path-only block observed; audit-only pilot did not block access.\n"));
     }
 
     // 8. Post-Create takibi gerekiyorsa bağlam hazırla
@@ -520,91 +512,12 @@ FLT_PREOP_CALLBACK_STATUS AegisPreWrite(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _Flt_CompletionContext_Outptr_ PVOID *CompletionContext)
 {
-    NTSTATUS status;
-    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
-    PAEGIS_SCAN_REQUEST scanRequest = NULL;
-    AEGIS_SCAN_RESPONSE scanResponse = { 0 };
-    ULONG replyLength = sizeof(AEGIS_SCAN_RESPONSE);
-    LARGE_INTEGER timeout;
-    ULONG currentPid;
-
+    UNREFERENCED_PARAMETER(Data);
     UNREFERENCED_PARAMETER(FltObjects);
     *CompletionContext = NULL;
-    PAGED_CODE();
-
-    if (Data->RequestorMode == KernelMode) {
-        return FLT_PREOP_SUCCESS_NO_CALLBACK;
-    }
-
-    if (FlagOn(Data->Iopb->OperationFlags, SL_OPEN_PAGING_FILE)) {
-        return FLT_PREOP_SUCCESS_NO_CALLBACK;
-    }
-
-    if (gClientPort == NULL) {
-        return FLT_PREOP_SUCCESS_NO_CALLBACK;
-    }
-
-    currentPid = (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
-    if (currentPid <= 4 || (gProtectedPid != 0 && currentPid == gProtectedPid)) {
-        return FLT_PREOP_SUCCESS_NO_CALLBACK;
-    }
-
-    status = FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
-    if (!NT_SUCCESS(status)) {
-        status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
-        if (!NT_SUCCESS(status)) {
-            return FLT_PREOP_SUCCESS_NO_CALLBACK;
-        }
-    }
-
-    status = FltParseFileNameInformation(nameInfo);
-    if (!NT_SUCCESS(status) || nameInfo->Name.Length == 0) {
-        FltReleaseFileNameInformation(nameInfo);
-        return FLT_PREOP_SUCCESS_NO_CALLBACK;
-    }
-
-    scanRequest = (PAEGIS_SCAN_REQUEST)AegisAllocatePaged(sizeof(AEGIS_SCAN_REQUEST));
-    if (scanRequest == NULL) {
-        FltReleaseFileNameInformation(nameInfo);
-        return FLT_PREOP_SUCCESS_NO_CALLBACK;
-    }
-
-    RtlZeroMemory(scanRequest, sizeof(AEGIS_SCAN_REQUEST));
-    scanRequest->ProcessId = currentPid;
-    scanRequest->IsWriteOperation = TRUE;
-
-    RtlCopyMemory(
-        scanRequest->FilePath,
-        nameInfo->Name.Buffer,
-        min(nameInfo->Name.Length, (AEGIS_MAX_PATH_CHARS - 1) * sizeof(WCHAR)));
-    scanRequest->FilePath[min(nameInfo->Name.Length / sizeof(WCHAR), AEGIS_MAX_PATH_CHARS - 1)] = L'\0';
-
-    timeout.QuadPart = -2000000LL; // 200 ms timeout
-
-    status = FltSendMessage(
-        gFilterHandle,
-        &gClientPort,
-        scanRequest,
-        sizeof(AEGIS_SCAN_REQUEST),
-        &scanResponse,
-        &replyLength,
-        &timeout);
-
-    if (NT_SUCCESS(status) && scanResponse.BlockAccess) {
-        KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL, 
-            "[AegisFilter] YAZMA İŞLEMİ BLOKLANDI! PID: %u, Dosya: %ws\n", 
-            currentPid, scanRequest->FilePath));
-
-        ExFreePoolWithTag(scanRequest, AEGIS_FILTER_TAG);
-        FltReleaseFileNameInformation(nameInfo);
-
-        Data->IoStatus.Status = STATUS_ACCESS_DENIED;
-        Data->IoStatus.Information = 0;
-        return FLT_PREOP_COMPLETE;
-    }
-
-    ExFreePoolWithTag(scanRequest, AEGIS_FILTER_TAG);
-    FltReleaseFileNameInformation(nameInfo);
+    // The legacy message has no incoming write bytes or stream generation.
+    // Inspecting the old path cannot establish the safety of this write.
+    // Never wait on user-mode or claim a pre-write block in this audit-only pilot.
     return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
@@ -707,11 +620,10 @@ VOID AegisProcessNotifyRoutine(
             &replyLen,
             &timeout);
 
-        if (NT_SUCCESS(status) && scanResp.BlockAccess) {
-            KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_WARNING_LEVEL,
-                "[AegisFilter] ÇEKİRDEKTE SÜREÇ ENGELLEMESİ! STATUS_ACCESS_DENIED, PID: %u, İmaj: %ws\n",
-                pid, scanReq.FilePath));
-            CreateInfo->CreationStatus = STATUS_ACCESS_DENIED;
+        if (AegisIsValidLegacyReply(status, replyLen, scanResp.BlockAccess) &&
+            scanResp.BlockAccess == TRUE) {
+            KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL,
+                "[UltronFilter] Proposed process block observed; audit-only pilot did not prevent process creation.\n"));
         }
     }
 }
@@ -767,23 +679,9 @@ OB_PREOP_CALLBACK_STATUS AegisPreOpenProcess(
 
 NTSTATUS RegisterObjectCallbacks(VOID)
 {
-    OB_CALLBACK_REGISTRATION callbackReg;
-    OB_OPERATION_REGISTRATION opReg;
-
-    RtlZeroMemory(&opReg, sizeof(opReg));
-    opReg.ObjectType = PsProcessType;
-    opReg.Operations = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
-    opReg.PreOperation = AegisPreOpenProcess;
-    opReg.PostOperation = NULL;
-
-    RtlZeroMemory(&callbackReg, sizeof(callbackReg));
-    callbackReg.Version = OB_FLT_REGISTRATION_VERSION;
-    callbackReg.OperationRegistrationCount = 1;
-    RtlInitUnicodeString(&callbackReg.Altitude, L"320500");
-    callbackReg.RegistrationContext = NULL;
-    callbackReg.OperationRegistration = &opReg;
-
-    return ObRegisterCallbacks(&callbackReg, &gObRegistrationHandle);
+    // Payload-supplied PID registration is not authenticated peer identity.
+    // Do not enable anti-tamper callbacks until that independent pilot gate exists.
+    return STATUS_NOT_SUPPORTED;
 }
 
 VOID UnregisterObjectCallbacks(VOID)
@@ -848,15 +746,9 @@ NTSTATUS AegisMessageNotifyCallback(
         *ReturnOutputBufferLength = 0;
     }
 
-    if (InputBuffer != NULL && InputBufferSize >= sizeof(AEGIS_CONTROL_COMMAND)) {
-        PAEGIS_CONTROL_COMMAND cmd = (PAEGIS_CONTROL_COMMAND)InputBuffer;
-        if (cmd->CommandCode == AEGIS_MSG_REGISTER_PROTECTED_PID) {
-            gProtectedPid = cmd->ProcessId;
-            KdPrintEx((DPFLTR_DEFAULT_ID, DPFLTR_INFO_LEVEL, 
-                "[AegisFilter] Korunan Servis PID kaydedildi: %u. ObRegisterCallbacks koruması devrede.\n", gProtectedPid));
-            return STATUS_SUCCESS;
-        }
+    if (InputBuffer == NULL || InputBufferSize != sizeof(AEGIS_CONTROL_COMMAND)) {
+        return STATUS_INVALID_PARAMETER;
     }
-
-    return STATUS_SUCCESS;
+    // No arbitrary PID supplied over this legacy port acquires protection/bypass authority.
+    return STATUS_NOT_SUPPORTED;
 }

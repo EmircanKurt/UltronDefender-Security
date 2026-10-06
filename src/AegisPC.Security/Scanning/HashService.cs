@@ -15,12 +15,13 @@ namespace AegisPC.Security.Scanning
 
         public async Task<string> ComputeSha256Async(string filePath, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(filePath)) return string.Empty;
 
             try
             {
                 using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                    FileShare.ReadWrite | FileShare.Delete, BufferSize,
+                    FileShare.Read, BufferSize,
                     FileOptions.SequentialScan | FileOptions.Asynchronous);
                 var hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
                 return Convert.ToHexString(hashBytes).ToLowerInvariant();
@@ -30,6 +31,7 @@ namespace AegisPC.Security.Scanning
                 // Windows Win32 ERROR_VIRUS_INFECTED (0x800700E1): Dosya işletim sistemi/Defender tarafından virüs içerdiği gerekçesiyle kilitlendi
                 return "VIRUS_INFECTED_OS_BLOCKED";
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception)
             {
                 return string.Empty;
@@ -38,16 +40,18 @@ namespace AegisPC.Security.Scanning
 
         public async Task<string> ComputeSha1Async(string filePath, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(filePath)) return string.Empty;
 
             try
             {
                 using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                    FileShare.ReadWrite | FileShare.Delete, BufferSize,
+                    FileShare.Read, BufferSize,
                     FileOptions.SequentialScan | FileOptions.Asynchronous);
                 var hashBytes = await SHA1.HashDataAsync(stream, cancellationToken);
                 return Convert.ToHexString(hashBytes).ToLowerInvariant();
             }
+            catch (OperationCanceledException) { throw; }
             catch
             {
                 return string.Empty;

@@ -17,6 +17,9 @@ namespace AegisPC.App.ViewModels
     /// </summary>
     public partial class DashboardViewModel
     {
+        /// <summary>Opens the local protection centre; the robot is not a chat or an independent enforcement authority.</summary>
+        [RelayCommand]
+        public void OpenUltronProtectionCentre() => AppNavigation.NavigateTo(typeof(UltronProtectionCentreView));
         // ═══════════════════════════════════════════════
         // INTERACTIVE COMMAND 1: RANSOMWARE REMEDIATION
         // ═══════════════════════════════════════════════
@@ -69,50 +72,40 @@ namespace AegisPC.App.ViewModels
         // ═══════════════════════════════════════════════
 
         /// <summary>
-        /// Hızlı sistem taramasını başlatır veya tarama zaten çalışıyorsa iptal eder.
+        /// Devam eden veya sonlanan aktif tarayıcı penceresini ekranda öne getirir.
+        /// </summary>
+        [RelayCommand]
+        public void OpenActiveScanWindow()
+        {
+            var scanVm = App.ServiceProvider?.GetService<ScanViewModel>();
+            if (scanVm != null)
+            {
+                Views.ActiveScanWindow.ShowScanWindow(scanVm);
+            }
+        }
+
+        /// <summary>
+        /// Routes an explicitly requested quick scan through the scan view model so
+        /// resource selection, state reset, and an already-running scan share one path.
         /// </summary>
         [RelayCommand]
         public async Task StartQuickScanAsync()
         {
-            if (_scanCoordinator == null) return;
-
-            if (_scanCoordinator.IsScanning)
+            var scanVm = App.ServiceProvider?.GetService<ScanViewModel>();
+            if (scanVm == null)
             {
-                var runningVm = App.ServiceProvider?.GetService<ScanViewModel>();
-                if (runningVm != null)
-                {
-                    Views.ActiveScanWindow.ShowScanWindow(runningVm);
-                }
+                TriggerToast("Tarayıcı hizmeti hazır değil; tarama başlatılamadı.", "Warning");
                 return;
             }
 
-            IsScanning = true;
-            ScanProgress = 0;
-            ScanScannedCount = 0;
-            ScanThreatCount = 0;
-            QuickScanButtonText = "Durdur";
-            ProtectionStatusText = "Sistem taranıyor...";
-            ProtectionBadgeText = "Hızlı tarama çalışıyor";
-            ProtectionStatusColor = "#2196F3";
-
-            TriggerToast("Hızlı sistem taraması başlatıldı...", "Info");
-
             try
             {
-                var scanVm = App.ServiceProvider?.GetService<ScanViewModel>();
-                if (scanVm != null)
-                {
-                    scanVm.ResetScanState(AegisPC.Core.Enums.ScanType.Quick);
-                    Views.ActiveScanWindow.ShowScanWindow(scanVm);
-                }
-
-                await _scanCoordinator.StartScanAsync(AegisPC.Core.Enums.ScanType.Quick);
+                await scanVm.StartQuickScanAsync();
             }
             catch (Exception ex)
             {
+                Serilog.Log.Warning(ex, "Dashboard quick scan request failed");
                 TriggerToast($"Tarama sırasında hata: {ex.Message}", "Warning");
-                IsScanning = false;
-                QuickScanButtonText = "Taramayı Başlat";
             }
         }
 
@@ -122,7 +115,8 @@ namespace AegisPC.App.ViewModels
         [RelayCommand]
         public void ToggleRealTimeProtection()
         {
-            if (IsRealTimeProtectionActive)
+            if (_observedServiceStatus?.IsRealTimeEnabled == true &&
+                _observedServiceStatus.Health?.IsFresh(DateTime.UtcNow) == true && _ipcClient?.IsConnected == true)
             {
                 var res = MessageBox.Show(
                     "⚠️ DİKKAT: Gerçek Zamanlı Korumayı kapatmak bilgisayarınızı virüslere, fidye yazılımlarına ve korsan saldırılara karşı savunmasız bırakır.\n\nBu işlem Yönetici Onayı gerektirir. Yine de korumayı devre dışı bırakmak istiyor musunuz?",
@@ -132,53 +126,26 @@ namespace AegisPC.App.ViewModels
 
                 if (res == MessageBoxResult.Yes)
                 {
-                    IsRealTimeProtectionActive = false;
-                    ProtectionStatusText = "Koruma devre dışı";
-                    ProtectionBadgeText = "Gerçek zamanlı koruma kapalı";
-                    ProtectionStatusColor = "#C41E1E";
-                    TriggerToast("⚠️ Gerçek Zamanlı Koruma kullanıcı tarafından kapatıldı!", "Warning");
-                    UpdateProtectionUptime();
+                    _ = RequestProtectionCommandAsync(AegisPC.ServiceContracts.IpcMessages.ServiceCommandType.DisableProtection);
                 }
             }
             else
             {
-                IsRealTimeProtectionActive = true;
-                ProtectionStatusText = "Sisteminiz güvende";
-                ProtectionBadgeText = "Gerçek zamanlı koruma aktif";
-                ProtectionStatusColor = "#4CAF50";
-                TriggerToast("🛡️ Gerçek Zamanlı Koruma başarıyla etkinleştirildi.", "Success");
-                UpdateProtectionUptime();
+                _ = RequestProtectionCommandAsync(AegisPC.ServiceContracts.IpcMessages.ServiceCommandType.EnableProtection);
             }
         }
 
         // ═══════════════════════════════════════════════
-        // INTERACTIVE COMMAND 5: DEVICE / LICENSE MODAL
+        // INTERACTIVE COMMAND 5: DEVICE MODAL
         // ═══════════════════════════════════════════════
 
         /// <summary>
-        /// Cihaz ve lisans bilgi modal penceresini açar veya kapatır.
+        /// Shows or hides local device information without changing protection state.
         /// </summary>
         [RelayCommand]
         public void ToggleDeviceModal()
         {
             ShowDeviceModal = !ShowDeviceModal;
-        }
-
-        /// <summary>
-        /// Lisans anahtarını panoya (Clipboard) kopyalar.
-        /// </summary>
-        [RelayCommand]
-        public void CopyLicenseKey()
-        {
-            try
-            {
-                Clipboard.SetText(LicenseKey);
-                TriggerToast("Lisans anahtarı panoya kopyalandı!", "Success");
-            }
-            catch
-            {
-                TriggerToast($"Lisans: {LicenseKey}", "Info");
-            }
         }
 
         // ═══════════════════════════════════════════════
@@ -268,8 +235,22 @@ namespace AegisPC.App.ViewModels
         {
             if (_startupSweepService != null && !IsStartupSweepRunning)
             {
-                TriggerToast("Başlangıç Güvenlik Taraması başlatıldı...", "Info");
-                await _startupSweepService.RunSweepAsync();
+                try
+                {
+                    var result = await _startupSweepService.RunSweepAsync();
+                    if (result.FinalStatus == StartupSweepStatus.Busy)
+                    {
+                        (StartupSweepStatusText, StartupSweepBadgeColor) = GetStartupSweepSummary(result);
+                        TriggerToast("Başka bir tarama sürüyor; başlangıç kontrolü başlatılmadı.", "Info");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Serilog.Log.Warning(ex, "Startup sweep request failed");
+                    StartupSweepStatusText = "Başlangıç kontrolü başlatılamadı";
+                    StartupSweepBadgeColor = "#F5A623";
+                    TriggerToast("Başlangıç kontrolü başlatılamadı.", "Warning");
+                }
             }
         }
 
@@ -318,7 +299,8 @@ namespace AegisPC.App.ViewModels
                     }
                     else
                     {
-                        TriggerToast("Geri yükleme başarısız oldu!", "Warning");
+                        var reason = _quarantineService.LastError ?? "Geri yükleme başarısız oldu!";
+                        TriggerToast(reason, "Warning");
                     }
                 }
                 else

@@ -7,6 +7,8 @@ namespace AegisPC.Core.Enums
     {
         Clean,
         Suspicious,
-        ConfirmedMalicious
+        ConfirmedMalicious,
+        /// <summary>Inspection failed or could not establish a verdict; never represents clean content.</summary>
+        Unknown
     }
 }

@@ -1,38 +1,29 @@
 using System;
-using System.Diagnostics;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
-using AegisPC.Core.Constants;
 using AegisPC.Core.Enums;
-using AegisPC.Security.Scanning;
 using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.RealTime
 {
     /// <summary>
-    /// Fidye virüsü eylemlerini durduran, süreci sonlandıran ve karantina uygulayan infazcı arayüzü.
+    /// Reports ransomware-related observations without inferring authority to contain a process or file.
     /// </summary>
     public interface IRansomwareEnforcementHandler
     {
-        /// <summary>
-        /// Toplam engellenen fidye saldırısı sayısı.
-        /// </summary>
+        /// <summary>Gets verified blocked attempts, excluding unverified observations.</summary>
         int TotalBlockedAttempts { get; }
 
-        /// <summary>
-        /// Fidye saldırısı tespit edildiğinde tetiklenen olay.
-        /// </summary>
+        /// <summary>Raised for an observation; its process and damage fields require independent evidence.</summary>
         event EventHandler<RansomwareAlertEventArgs>? OnRansomwareAttemptDetected;
 
-        /// <summary>
-        /// Kullanıcı arayüzüne bildirim (Toast) gönderildiğinde tetiklenen olay.
-        /// </summary>
+        /// <summary>Raised for an observation notification, not a claim of successful containment.</summary>
         event Action<string, string, string>? OnNotificationRaised;
 
         /// <summary>
-        /// Tehdidi değerlendirir, saldırgan süreci tespit edip sonlandırır ve dosyayı karantinaya alır.
+        /// Reports an observation. The legacy reason, score, and PID arguments do not provide
+        /// authenticated process correlation or authoritative malware evidence and cannot authorize mutation.
         /// </summary>
         Task<RansomwareDamageAssessment?> EvaluateAndContainThreatAsync(
             string offendingPath,
@@ -44,35 +35,41 @@ namespace AegisPC.Security.RealTime
     }
 
     /// <summary>
-    /// Fidye yazılımı tehditlerini değerlendiren, hedef süreci derhal öldüren (Kill)
-    /// ve zararlı ikiliyi AES-256 kasaya kilitleyen infaz sınıfı.
+    /// Observation-only compatibility handler. It never resolves processes, terminates a process,
+    /// opens an observed path, or requests quarantine from an unverified heuristic observation.
     /// </summary>
     public class RansomwareEnforcementHandler : IRansomwareEnforcementHandler
     {
-        private readonly IQuarantineService? _quarantineService;
-        private readonly ISecurityFindingService? _findingService;
         private readonly IAuditLogService? _auditLogService;
         private readonly ILogger? _logger;
+        private int _observedAlertCount;
 
-        private int _totalBlockedCount;
+        /// <summary>Gets zero because this handler performs no verified blocking operation.</summary>
+        public int TotalBlockedAttempts => 0;
 
-        public int TotalBlockedAttempts => _totalBlockedCount;
-
+        /// <summary>Raised for suspicious activity without asserting process attribution or damage.</summary>
         public event EventHandler<RansomwareAlertEventArgs>? OnRansomwareAttemptDetected;
+
+        /// <summary>Raised for an observation warning; subscriber failures are isolated.</summary>
         public event Action<string, string, string>? OnNotificationRaised;
 
+        /// <summary>
+        /// Preserves legacy dependency compatibility. Quarantine and finding services are deliberately
+        /// unused because this API does not receive authoritative containment evidence.
+        /// </summary>
         public RansomwareEnforcementHandler(
             IQuarantineService? quarantineService = null,
             ISecurityFindingService? findingService = null,
             IAuditLogService? auditLogService = null,
             ILogger? logger = null)
         {
-            _quarantineService = quarantineService;
-            _findingService = findingService;
+            _ = quarantineService;
+            _ = findingService;
             _auditLogService = auditLogService;
             _logger = logger;
         }
 
+        /// <inheritdoc />
         public async Task<RansomwareDamageAssessment?> EvaluateAndContainThreatAsync(
             string offendingPath,
             string reason,
@@ -81,227 +78,121 @@ namespace AegisPC.Security.RealTime
             Func<string, bool>? isAppAllowed = null,
             DateTime? incidentTimestamp = null)
         {
+            _ = isAppAllowed; // Uncorrelated caller allowlists cannot establish process identity.
             var incidentTime = incidentTimestamp ?? DateTime.UtcNow;
-            Interlocked.Increment(ref _totalBlockedCount);
-
-            int targetPid = 0;
-            string targetProcName = "Bilinmeyen Süreç";
-            string targetProcPath = string.Empty;
-            bool processTerminated = false;
-
-            // 1. PID Adaylarını Belirle:
-            // A. Eğer arayan doğrudan PID verdiyse onu değerlendir
-            // B. Eğer pid verilmediyse (0 ise) Restart Manager ile dosyayı kilitleyen süreci bul
-            var candidatePids = new List<int>();
-            if (pid > 0)
-            {
-                candidatePids.Add(pid);
-            }
-            else if (!string.IsNullOrWhiteSpace(offendingPath))
-            {
-                try
-                {
-                    var lockingPids = FileLockProcessResolver.FindLockingProcessIds(offendingPath);
-                    if (lockingPids.Count > 0)
-                    {
-                        candidatePids.AddRange(lockingPids);
-                    }
-                }
-                catch { }
-            }
-
-            // 2. Aday Süreçleri Güvenlik Kalkanı ve PID-Reuse Filtresinden Geçir
-            foreach (var candPid in candidatePids)
-            {
-                // Kritik PID Kontrolü (System Idle Process, System, vb.)
-                if (candPid <= 4 || candPid == Environment.ProcessId)
-                {
-                    _logger?.LogDebug("Skipping PID {Pid}: Core system or current process.", candPid);
-                    continue;
-                }
-
-                try
-                {
-                    using var proc = Process.GetProcessById(candPid);
-                    if (proc.HasExited)
-                    {
-                        _logger?.LogDebug("Skipping PID {Pid}: Process has already exited.", candPid);
-                        continue;
-                    }
-
-                    string procName = proc.ProcessName;
-
-                    // Kritik Süreç İsim Filtresi (explorer, svchost, csrss, dwm, etc.)
-                    if (CriticalProcesses.IsCriticalProcess(procName))
-                    {
-                        _logger?.LogWarning("Threat associated with critical process '{Proc}' (PID: {Pid}). Termination blocked for system stability.", procName, candPid);
-                        targetProcName = procName;
-                        continue;
-                    }
-
-                    // Süreç Dosya Yolu Alımı
-                    string procPath = string.Empty;
-                    try
-                    {
-                        procPath = proc.MainModule?.FileName ?? string.Empty;
-                    }
-                    catch { }
-
-                    // Öz-Koruma: Antivirüs ve koruma süreçleri asla öldürülmez
-                    if (!string.IsNullOrEmpty(procPath) && FileScannerService.IsSelfOwnedPath(procPath))
-                    {
-                        _logger?.LogDebug("Skipping PID {Pid}: Self-owned protection binary.", candPid);
-                        continue;
-                    }
-
-                    // İzinli / Güvenilir Uygulama Filtresi (Controlled Folder Access Allowlist)
-                    if (isAppAllowed != null && (isAppAllowed(procName) || (!string.IsNullOrEmpty(procPath) && isAppAllowed(procPath))))
-                    {
-                        _logger?.LogInformation("Skipping PID {Pid}: Application '{Proc}' is allowed to access protected folders.", candPid, procName);
-                        continue;
-                    }
-
-                    // PID-Reuse Koruması (StartTime Check):
-                    // Süreç, olay tespit zamanından sonra başlamışsa bu PID işletim sistemi tarafından başka bir sürece atanmış demektir.
-                    try
-                    {
-                        var procStartTime = proc.StartTime.ToUniversalTime();
-                        if (procStartTime > incidentTime.AddSeconds(2))
-                        {
-                            _logger?.LogWarning("PID reuse guard tripped! Process '{Proc}' (PID: {Pid}) started at {Start}, which is after incident time {Incident}. Termination aborted.",
-                                procName, candPid, procStartTime, incidentTime);
-                            continue;
-                        }
-                    }
-                    catch { }
-
-                    // Windows Sistem Dizinleri Koruması (System32, SysWOW64, WinSxS)
-                    if (!string.IsNullOrEmpty(procPath))
-                    {
-                        string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-                        string sys32 = Path.Combine(winDir, "System32");
-                        string syswow = Path.Combine(winDir, "SysWOW64");
-                        string winsxs = Path.Combine(winDir, "WinSxS");
-
-                        bool isSystemBinary = procPath.StartsWith(sys32, StringComparison.OrdinalIgnoreCase) ||
-                                              procPath.StartsWith(syswow, StringComparison.OrdinalIgnoreCase) ||
-                                              procPath.StartsWith(winsxs, StringComparison.OrdinalIgnoreCase);
-
-                        if (isSystemBinary && (CriticalProcesses.IsCriticalProcess(procName) || CriticalProcesses.IsCriticalProcess(Path.GetFileName(procPath))))
-                        {
-                            _logger?.LogWarning("Refusing to terminate core Windows system binary: {Path}", procPath);
-                            targetProcName = procName;
-                            continue;
-                        }
-                    }
-
-                    // Güvenlik kontrollerini geçen ilk doğrulanmış saldırgan süreç
-                    targetPid = candPid;
-                    targetProcName = procName;
-                    targetProcPath = procPath;
-                    break;
-                }
-                catch (ArgumentException)
-                {
-                    // Süreç arama sırasında sonlanmış
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogDebug(ex, "Error inspecting candidate process {Pid}", candPid);
-                }
-            }
-
-            // 3. Yüksek/Kritik Riskte Aktif Güvenli Süreç İnfazı (Kill)
-            if (riskScore >= 70 && targetPid > 4 && targetPid != Environment.ProcessId)
-            {
-                try
-                {
-                    using var procToKill = Process.GetProcessById(targetPid);
-                    if (!procToKill.HasExited)
-                    {
-                        // İnfazdan hemen önce yarış durumuna karşı son StartTime doğrulaması
-                        try
-                        {
-                            if (procToKill.StartTime.ToUniversalTime() > incidentTime.AddSeconds(2))
-                            {
-                                throw new InvalidOperationException("PID reuse detected immediately before termination.");
-                            }
-                        }
-                        catch (InvalidOperationException) { throw; }
-                        catch { }
-
-                        procToKill.Kill(entireProcessTree: true);
-                        procToKill.WaitForExit(1500);
-                        processTerminated = true;
-                        _logger?.LogWarning("Ransomware offending process successfully terminated: {Proc} (PID: {Pid})", targetProcName, targetPid);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(ex, "Failed to terminate offending process {Proc} (PID: {Pid})", targetProcName, targetPid);
-                }
-            }
-
-            // 4. Saldırgan İkiliyi (Source Binary) Karantinaya Al
-            if ((processTerminated || riskScore >= 90) &&
-                !string.IsNullOrEmpty(targetProcPath) &&
-                File.Exists(targetProcPath) &&
-                !FileScannerService.IsSelfOwnedPath(targetProcPath) &&
-                _quarantineService != null)
-            {
-                try
-                {
-                    await _quarantineService.QuarantineFileAsync(targetProcPath, $"Ransomware Activity: {reason}");
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogError(ex, "Failed to quarantine ransomware binary {Path}", targetProcPath);
-                }
-            }
-
-            // 4. Create Security Incident
+            var observedScore = Math.Clamp(riskScore, 0, 100);
+            var observationNumber = Interlocked.Increment(ref _observedAlertCount);
             var assessment = new RansomwareDamageAssessment
             {
-                FilesTargeted = 1,
-                FilesModified = 1,
-                FilesBlocked = _totalBlockedCount,
-                OffendingProcess = targetProcName,
-                IncidentTime = DateTime.UtcNow
+                FilesTargeted = 0,
+                FilesModified = 0,
+                FilesRenamed = 0,
+                FilesDeleted = 0,
+                FilesBlocked = 0,
+                OffendingProcess = "UnknownProcess",
+                IncidentTime = incidentTime
             };
-
-            var alertArgs = new RansomwareAlertEventArgs
+            var alert = new RansomwareAlertEventArgs
             {
-                OffendingFilePath = offendingPath,
-                OffendingProcessName = targetProcName,
-                OffendingProcessId = targetPid,
-                DetectionReason = reason,
-                RiskScore = riskScore,
-                ProcessTerminated = processTerminated,
-                FilesAffected = assessment.FilesTargeted,
-                Timestamp = DateTime.UtcNow
+                OffendingFilePath = offendingPath ?? string.Empty,
+                OffendingProcessName = "UnknownProcess",
+                OffendingProcessId = 0,
+                DetectionReason = $"Unverified observation: {reason}",
+                RiskScore = observedScore,
+                ProcessTerminated = false,
+                FilesAffected = 0,
+                Timestamp = incidentTime
             };
 
-            OnRansomwareAttemptDetected?.Invoke(this, alertArgs);
+            _logger?.LogWarning(
+                "Ransomware-related activity observed. Observation={ObservationNumber}, Path={ObservedPath}, " +
+                "ReportedPid={ReportedProcessId}, Score={HeuristicScore}, Reason={ReportedReason}, " +
+                "ProcessCorrelationVerified={ProcessCorrelationVerified}, ContainmentPerformed={ContainmentPerformed}",
+                observationNumber, offendingPath, pid, observedScore, reason, false, false);
+            PublishObservation(alert);
+            PublishNotification();
+            await RecordObservationAsync(alert).ConfigureAwait(false);
+            return assessment;
+        }
 
-            string toastTitle = processTerminated ? "🛑 Fidye Saldırısı Durduruldu ve Süreç Kapatıldı!" : "🚨 Fidye Kalkanı Tehdit Uyarısı!";
-            string toastMsg = processTerminated
-                ? $"'{targetProcName}' süreci durduruldu. {reason}"
-                : $"Korunan klasörde şüpheli şifreleme girişimi engellendi: '{Path.GetFileName(offendingPath)}'";
+        private void PublishObservation(RansomwareAlertEventArgs alert)
+        {
+            var observers = OnRansomwareAttemptDetected;
+            if (observers == null) return;
+            foreach (EventHandler<RansomwareAlertEventArgs> observer in observers.GetInvocationList())
+            {
+                try { observer(this, CopyObservation(alert)); }
+                catch (Exception exception)
+                {
+                    _logger?.LogWarning(exception,
+                        "A ransomware observation subscriber failed; no containment result was changed.");
+                }
+            }
+        }
 
-            OnNotificationRaised?.Invoke(toastTitle, toastMsg, "Danger");
+        private static RansomwareAlertEventArgs CopyObservation(RansomwareAlertEventArgs source) => new()
+        {
+            OffendingFilePath = source.OffendingFilePath,
+            OffendingProcessName = source.OffendingProcessName,
+            OffendingProcessId = source.OffendingProcessId,
+            DetectionReason = source.DetectionReason,
+            RiskScore = source.RiskScore,
+            ProcessTerminated = false,
+            FilesAffected = 0,
+            Timestamp = source.Timestamp
+        };
 
-            if (_auditLogService != null)
+        private void PublishNotification()
+        {
+            var observers = OnNotificationRaised;
+            if (observers == null) return;
+            foreach (Action<string, string, string> observer in observers.GetInvocationList())
+            {
+                try
+                {
+                    observer("Suspicious file activity observed",
+                        "A heuristic observation requires review. Process identity and file damage are unverified. " +
+                        "No process was terminated and no file was quarantined or blocked.", "Warning");
+                }
+                catch (Exception exception)
+                {
+                    _logger?.LogWarning(exception,
+                        "A ransomware notification subscriber failed; no containment result was changed.");
+                }
+            }
+        }
+
+        private async Task RecordObservationAsync(RansomwareAlertEventArgs alert)
+        {
+            if (_auditLogService == null) return;
+            try
             {
                 await _auditLogService.LogActionAsync(
-                    AuditAction.ProcessTerminated,
-                    "RansomwareShield",
-                    targetProcName,
-                    offendingPath,
-                    $"{reason} - Skor: {riskScore}/100 - Süreç Sonlandırıldı: {processTerminated}",
-                    AuditResult.Success);
+                    AuditAction.ThreatObserved,
+                    "RansomwareObservation",
+                    "UnknownProcess",
+                    alert.OffendingFilePath,
+                    $"{alert.DetectionReason}; HeuristicScore={alert.RiskScore}; " +
+                    "ProcessCorrelationVerified=false; ProcessTerminated=false; FileQuarantined=false; " +
+                    "FilesAffected=0; FilesBlocked=0; ContainmentPerformed=false",
+                    AuditResult.Success).ConfigureAwait(false);
             }
+            catch (Exception exception)
+            {
+                _logger?.LogWarning(exception,
+                    "Ransomware observation audit persistence failed; containment was not performed.");
+            }
+        }
 
-            return assessment;
+        private static bool IsExplicitlyAllowedProcess(
+            string processName,
+            string processPath,
+            Func<string, bool>? isAppAllowed)
+        {
+            // Retain the regression seam: a copied process name never grants path-based allowance.
+            _ = processName;
+            return !string.IsNullOrWhiteSpace(processPath) &&
+                   isAppAllowed?.Invoke(processPath) == true;
         }
     }
 }

@@ -9,7 +9,7 @@ namespace AegisPC.Tests
     public class NetworkProcessCorrelatorTests
     {
         [Fact]
-        public void Test_NetworkProcessCorrelator_DetectsLolbinExternalConnection()
+        public void Test_NetworkProcessCorrelator_DoesNotConvictCommandByName()
         {
             var correlator = new NetworkProcessCorrelator();
 
@@ -24,13 +24,13 @@ namespace AegisPC.Tests
 
             var verdict = correlator.CorrelateFlow(flow);
 
-            Assert.True(verdict.IsSuspicious);
-            Assert.True(verdict.RiskScore >= 45);
-            Assert.Contains(verdict.Evidences, e => e.RuleName == "NET_LOLBIN_OUTBOUND_C2");
+            Assert.False(verdict.IsSuspicious);
+            Assert.Equal(0, verdict.RiskScore);
+            Assert.Empty(verdict.Evidences);
         }
 
         [Fact]
-        public void Test_NetworkProcessCorrelator_DetectsC2Beaconing()
+        public void Test_NetworkProcessCorrelator_PeriodicityWithoutLifetimeIsNotC2()
         {
             var correlator = new NetworkProcessCorrelator();
             int pid = 8888;
@@ -61,10 +61,9 @@ namespace AegisPC.Tests
 
             var verdict = correlator.CorrelateFlow(latestFlow);
 
-            Assert.True(verdict.IsSuspicious);
-            Assert.True(verdict.IsC2Beaconing);
-            Assert.True(verdict.RiskScore >= 80);
-            Assert.Contains(verdict.Evidences, e => e.RuleName == "NET_C2_BEACONING_PATTERN");
+            Assert.False(verdict.IsSuspicious);
+            Assert.False(verdict.IsC2Beaconing);
+            Assert.Equal(0, verdict.RiskScore);
         }
 
         [Fact]

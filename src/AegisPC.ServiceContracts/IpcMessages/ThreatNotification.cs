@@ -13,5 +13,7 @@ namespace AegisPC.ServiceContracts.IpcMessages
         public required string ActionTaken { get; set; }
         public required string Details { get; set; }
         public DateTime DetectedAt { get; set; }
+        /// <summary>True when this message lacks independently confirmed malware/action evidence; defaults safe for legacy senders.</summary>
+        public bool IsObservationOnly { get; set; } = true;
     }
 }

@@ -22,6 +22,10 @@ namespace AegisPC.Contracts.Network
     {
         public string EventId { get; set; } = Guid.NewGuid().ToString("N");
         public int ProcessId { get; set; }
+        /// <summary>Native process start time; missing identity prevents PID-only behavioral correlation.</summary>
+        public DateTime? ProcessStartedAtUtc { get; set; }
+        /// <summary>Native boot generation; caller supplied values are observations, never action authority.</summary>
+        public string BootId { get; set; } = string.Empty;
         public string ProcessName { get; set; } = string.Empty;
         public string ExecutablePath { get; set; } = string.Empty;
         public NetworkFlowDirection Direction { get; set; } = NetworkFlowDirection.Outbound;
@@ -41,6 +45,10 @@ namespace AegisPC.Contracts.Network
     {
         public bool IsSuspicious { get; set; }
         public bool IsC2Beaconing { get; set; }
+        /// <summary>Periodicity can prioritize review but does not establish C2 or authorize containment.</summary>
+        public bool HasPeriodicPattern { get; set; }
+        /// <summary>Whether process lifetime metadata was present; this is not independently validated action proof.</summary>
+        public bool IsActorIdentityKnown { get; set; }
         public int RiskScore { get; set; }
         public string ThreatTitle { get; set; } = string.Empty;
         public string ThreatCategory { get; set; } = "NetworkC2";

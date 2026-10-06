@@ -22,13 +22,14 @@ namespace AegisPC.Security.Scanning
     /// Modüler mimaride DirectoryWalker, ScanQueueCoordinator, FileHashMatcher,
     /// PupAnalysisCoordinator, ScanEtaEstimator ve per-file timeout koruması ile çalışır.
     /// </summary>
-    public class FileScannerService : IFileScanner
+    public partial class FileScannerService : IFileScanner
     {
         private readonly IDirectoryWalker _directoryWalker;
         private readonly IScanQueueCoordinator _queueCoordinator;
         private readonly IFileHashMatcher _hashMatcher;
         private readonly IPupAnalysisCoordinator _pupCoordinator;
         private readonly ArchiveSafetyScanner _archiveScanner;
+        private readonly IFileContentClassifier _contentClassifier;
         private readonly ISecurityFindingService? _findingService;
         private readonly ILogger<FileScannerService>? _logger;
 
@@ -62,6 +63,7 @@ namespace AegisPC.Security.Scanning
 
         public static bool IsSelfOwnedPath(string path) => ScanFilterPolicy.IsSelfOwnedPath(path);
 
+        /// <summary>Builds the shared detector pipeline and bounded content classifier; names and signatures never establish clean content alone.</summary>
         public FileScannerService(
             IHashService hashService,
             ISignatureVerifier signatureVerifier,
@@ -71,18 +73,22 @@ namespace AegisPC.Security.Scanning
             IDetectionHub? detectionHub = null,
             ArchiveSafetyScanner? archiveScanner = null,
             IScanResourceManager? resourceManager = null,
-            ILogger<FileScannerService>? logger = null)
+            ILogger<FileScannerService>? logger = null,
+            IExclusionService? exclusionService = null,
+            IFileContentClassifier? contentClassifier = null)
             : this(
                 new DirectoryWalker(),
                 new ScanQueueCoordinator(resourceManager),
-                new FileHashMatcher(hashService, signatureVerifier, allowlistService),
-                new PupAnalysisCoordinator(detectionHub ?? DetectionHubFactory.CreateDefault(hashService, signatureVerifier), findingService),
+                new FileHashMatcher(hashService, signatureVerifier, allowlistService, exclusionService),
+                new PupAnalysisCoordinator(detectionHub ?? DetectionHubFactory.CreateDefault(hashService, signatureVerifier, exclusionService: exclusionService), findingService),
                 archiveScanner,
                 findingService,
-                logger)
+                logger,
+                contentClassifier)
         {
         }
 
+        /// <summary>Uses a supplied shared detection hub so manual and real-time providers make the same evidence decisions.</summary>
         public FileScannerService(
             IHashService hashService,
             ISignatureVerifier signatureVerifier,
@@ -91,18 +97,22 @@ namespace AegisPC.Security.Scanning
             ArchiveSafetyScanner? archiveScanner = null,
             ISecurityFindingService? findingService = null,
             IScanResourceManager? resourceManager = null,
-            ILogger<FileScannerService>? logger = null)
+            ILogger<FileScannerService>? logger = null,
+            IExclusionService? exclusionService = null,
+            IFileContentClassifier? contentClassifier = null)
             : this(
                 new DirectoryWalker(),
                 new ScanQueueCoordinator(resourceManager),
-                new FileHashMatcher(hashService, signatureVerifier, allowlistService),
+                new FileHashMatcher(hashService, signatureVerifier, allowlistService, exclusionService),
                 new PupAnalysisCoordinator(detectionHub, findingService),
                 archiveScanner,
                 findingService,
-                logger)
+                logger,
+                contentClassifier)
         {
         }
 
+        /// <summary>Accepts isolated collaborators for traversal, queueing and detector routing without starting live protection.</summary>
         public FileScannerService(
             IDirectoryWalker directoryWalker,
             IScanQueueCoordinator queueCoordinator,
@@ -110,167 +120,44 @@ namespace AegisPC.Security.Scanning
             IPupAnalysisCoordinator pupCoordinator,
             ArchiveSafetyScanner? archiveScanner = null,
             ISecurityFindingService? findingService = null,
-            ILogger<FileScannerService>? logger = null)
+            ILogger<FileScannerService>? logger = null,
+            IFileContentClassifier? contentClassifier = null)
         {
             _directoryWalker = directoryWalker;
             _queueCoordinator = queueCoordinator;
             _hashMatcher = hashMatcher;
             _pupCoordinator = pupCoordinator;
             _archiveScanner = archiveScanner ?? new ArchiveSafetyScanner();
+            _contentClassifier = contentClassifier ?? new FileContentClassifier();
             _findingService = findingService;
             _logger = logger;
         }
 
-        public async Task<SecurityFinding?> ScanFileAsync(string path, CancellationToken cancellationToken = default)
-        {
-            var detailed = await ScanFileDetailedAsync(path, TimeSpan.FromSeconds(10), cancellationToken);
-            return detailed.Finding;
-        }
 
-        public async Task<FileScanDetailedResult> ScanFileDetailedAsync(
-            string path,
-            TimeSpan perFileTimeout,
-            CancellationToken cancellationToken = default)
-        {
-            var sw = Stopwatch.StartNew();
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (!File.Exists(path))
-            {
-                return FileScanDetailedResult.CreateSkipped(path, "Dosya mevcut değil");
-            }
-
-            // SELF-PROTECTION: Uygulamanın kendi imza/veritabanı/log/config dosyalarını asla tarama
-            if (IsSelfOwnedPath(path))
-            {
-                return FileScanDetailedResult.CreateSkipped(path, "AegisPC kendi dosyası");
-            }
-
-            // Per-file timeout koruması: Kilitli dosya veya askıda kalan işlem tüm taramayı donduramaz
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            linkedCts.CancelAfter(perFileTimeout);
-
-            try
-            {
-                var fileInfo = new FileInfo(path);
-                if (fileInfo.Length == 0)
-                {
-                    return FileScanDetailedResult.CreateSkipped(path, "Boş dosya");
-                }
-
-                var ext = fileInfo.Extension.ToLowerInvariant();
-
-                // Multi-Tier Caching: Değişmemiş temiz dosyalar için derin dedektör taramasını atla
-                if (_hashMatcher.TryGetCached(path, fileInfo, false, out var cachedFinding))
-                {
-                    if (cachedFinding == null || cachedFinding.Status == FindingStatus.Resolved || cachedFinding.IsAllowlisted)
-                    {
-                        return FileScanDetailedResult.CreateSuccess(path, null, sw.Elapsed);
-                    }
-                    return FileScanDetailedResult.CreateSuccess(path, cachedFinding, sw.Elapsed);
-                }
-
-                // 1. SHA256 Hesaplama & Güvenli Beyaz Liste / Çözüldü & Fast-Path WHQL İmza
-                var (sha256, isAllowlisted, isMicrosoftBypassed) = await _hashMatcher.EvaluateHashAndAllowlistAsync(path, linkedCts.Token);
-                if (isAllowlisted || isMicrosoftBypassed)
-                {
-                    fileInfo.Refresh();
-                    _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, null);
-                    return FileScanDetailedResult.CreateSuccess(path, null, sw.Elapsed);
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                // 2. Arşiv Dosyası Güvenlik Taraması (Zip bomb, path traversal, nested payload)
-                // Kural 27 gereğince: Yol güveni tamamen kaldırıldı (isGameDir = false)
-                if (ext is ".zip" or ".jar" or ".nupkg" or ".apk")
-                {
-                    var archiveResult = await _archiveScanner.ScanArchiveAsync(path, linkedCts.Token);
-                    if (archiveResult.Findings.Count > 0)
-                    {
-                        var topFinding = archiveResult.Findings.OrderByDescending(f => f.RiskScore).First();
-                        if (topFinding.Status != FindingStatus.Resolved && !topFinding.IsAllowlisted)
-                        {
-                            if (_findingService != null)
-                            {
-                                await _findingService.AddFindingAsync(topFinding, linkedCts.Token);
-                            }
-                            fileInfo.Refresh();
-                            _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, topFinding);
-                            return FileScanDetailedResult.CreateSuccess(path, topFinding, sw.Elapsed);
-                        }
-                    }
-                }
-
-                if (sha256 == "VIRUS_INFECTED_OS_BLOCKED")
-                {
-                    var osFinding = new SecurityFinding
-                    {
-                        ObjectPath = path,
-                        ObjectName = fileInfo.Name,
-                        RiskLevel = RiskLevel.ConfirmedMalicious,
-                        RiskScore = 100,
-                        Category = FindingCategory.KnownMalwareHash,
-                        Title = $"🚨 Zararlı Yazılım / EICAR: {fileInfo.Name}",
-                        Description = "Dosya işletim sistemi çekirdeği tarafından virüslü olduğu gerekçesiyle kilitlendi (ERROR_VIRUS_INFECTED).",
-                        ConfidenceLevel = ConfidenceLevel.High,
-                        FirstObserved = DateTime.UtcNow,
-                        LastObserved = DateTime.UtcNow,
-                        Status = FindingStatus.Active
-                    };
-                    if (_findingService != null)
-                    {
-                        await _findingService.AddFindingAsync(osFinding, linkedCts.Token);
-                    }
-                    fileInfo.Refresh();
-                    _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, osFinding);
-                    return FileScanDetailedResult.CreateSuccess(path, osFinding, sw.Elapsed);
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                // 3. Bütünleşik DetectionHub ve PUP/Risk Eşik Değerlendirmesi
-                // Kural 27: Yol indirimleri kaldırıldı (isGameDir = false)
-                var finding = await _pupCoordinator.AnalyzeAsync(path, fileInfo, sha256, false, linkedCts.Token);
-                if (finding != null && (finding.Status == FindingStatus.Resolved || finding.IsAllowlisted))
-                {
-                    finding = null;
-                }
-                fileInfo.Refresh();
-                _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, finding);
-                return FileScanDetailedResult.CreateSuccess(path, finding, sw.Elapsed);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                // Global tarama iptali: İşçiyi ve kuyruğu hemen durdurmak için istisnayı yukarı fırlat
-                throw;
-            }
-            catch (OperationCanceledException)
-            {
-                // Tekil dosya per-file timeout'a uğradı
-                _logger?.LogWarning("Per-file scan timed out for {Path} after {Timeout}s", path, perFileTimeout.TotalSeconds);
-                return FileScanDetailedResult.CreateTimeout(path, sw.Elapsed);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogTrace(ex, "Error scanning file {Path}", path);
-                return FileScanDetailedResult.CreateFailed(path, ex.Message, sw.Elapsed);
-            }
-        }
-
+        /// <summary>Runs one scan and separately reports lifecycle completion and observed coverage gaps.</summary>
         public async Task<ScanResult> ScanDirectoryAsync(
             string path,
             ScanType scanType,
             IProgress<ScanProgress>? progress = null,
             CancellationToken cancellationToken = default)
         {
+            _hashMatcher.IsScanActive = true;
+            _hashMatcher.ResetCounters();
             var stopwatch = Stopwatch.StartNew();
-            lock (_pauseLock)
-            {
-                _activeScanStopwatch = stopwatch;
-            }
+            var coverage = new ScanCoverageSummary();
             var findings = new ConcurrentBag<SecurityFinding>();
+            int finalTotal = 0, finalScanned = 0, finalSkipped = 0, finalFailed = 0, finalTimedOut = 0;
+
+            try
+            {
+                using var coverageScope = (_directoryWalker as IDirectoryCoverageProvider)?.BeginCoverage(coverage);
+                using var processTelemetry = new ScanProcessTelemetry(_logger);
+                lock (_pauseLock)
+                {
+                    _activeScanStopwatch = stopwatch;
+                }
             var etaEstimator = new ScanEtaEstimator();
+            string currentPhase = "Hazırlık";
 
             int maxReportedPercent = 0;
             var lastReport = Stopwatch.StartNew();
@@ -288,7 +175,17 @@ namespace AegisPC.Security.Scanning
             {
                 if (progress == null) return;
 
-                lock (progressLock)
+                if (!force)
+                {
+                    if (lastReport.ElapsedMilliseconds < 100) return;
+                    if (!Monitor.TryEnter(progressLock)) return;
+                }
+                else
+                {
+                    Monitor.Enter(progressLock);
+                }
+
+                try
                 {
                     if (!force && lastReport.ElapsedMilliseconds < 100)
                     {
@@ -328,18 +225,23 @@ namespace AegisPC.Security.Scanning
                     int reportedPercent = Math.Max(maxReportedPercent, calculatedPercent);
                     maxReportedPercent = reportedPercent;
 
-                    // Canlı bellek kullanımı
-                    double ramMb = GC.GetTotalMemory(false) / (1024.0 * 1024.0);
+                    var metrics = processTelemetry.Sample();
 
                     progress.Report(new ScanProgress
                     {
                         ScanType = scanType,
+                        Phase = currentPhase,
                         TotalFiles = Math.Max(tot, scn),
                         ScannedFiles = scn,
+                        ScannedFromCache = _queueCoordinator.ScannedFromCache,
+                        SkippedSignedClean = _queueCoordinator.SkippedSignedClean,
+                        NewlyScanned = _queueCoordinator.NewlyScanned,
                         SkippedFiles = skp,
                         FailedFiles = fail,
                         TimedOutFiles = tout,
                         FindingsCount = findings.Count,
+                        ConfirmedMaliciousCount = findings.Count(f => f.RiskLevel == RiskLevel.ConfirmedMalicious),
+                        SuspiciousCount = findings.Count(f => f.RiskLevel is RiskLevel.Suspicious or RiskLevel.HighRisk),
                         CurrentFile = currentFile,
                         ProgressPercent = reportedPercent,
                         ElapsedTime = stopwatch.Elapsed,
@@ -347,15 +249,28 @@ namespace AegisPC.Security.Scanning
                         EstimatedRemainingSeconds = remainingSeconds,
                         EtaConfidence = confidence,
                         FormattedEta = formattedEta,
-                        RamUsageMb = ramMb,
+                        CpuUsagePercent = metrics.CpuPercent,
+                        IsCpuTelemetryAvailable = metrics.HasCpuSample,
+                        RamUsageMb = metrics.WorkingSetMb,
+                        PeakObservedRamUsageMb = processTelemetry.PeakObservedWorkingSetMb,
+                        ResourceProfileName = ScanQueueCoordinator.ActiveResourceSummary,
+                        ActiveWorkers = _queueCoordinator.ActiveWorkers,
+                        EffectiveWorkerLimit = _queueCoordinator.EffectiveWorkerLimit,
+                        PendingFiles = _queueCoordinator.PendingFiles,
                         IsCompleted = false
                     });
                 }
+                finally
+                {
+                    Monitor.Exit(progressLock);
+                }
             }
 
-            // STAGE 1: MICROSOFT MRT (MSRT) REMEDIATION SCAN (0% - 12%)
+            // STAGE 1: read-only system persistence inspection (not Microsoft MRT).
             if (scanType == ScanType.Full || scanType == ScanType.Quick)
             {
+                currentPhase = "Başlangıç kontrolleri";
+                var phaseStartedAt = stopwatch.Elapsed;
                 int mrtStep = 0;
                 var mrtReporter = new Progress<string>(phase =>
                 {
@@ -364,24 +279,27 @@ namespace AegisPC.Security.Scanning
                     ReportProgress(phase, mrtPercent, force: true);
                 });
 
-                var mrtFindings = await MsrtRemediationEngine.RunMsrtDeepScanAsync(mrtReporter, cancellationToken);
+                var mrtFindings = await SystemPersistenceInspector.ScanAsync(mrtReporter, cancellationToken);
                 foreach (var f in mrtFindings)
                 {
+                    if (f.RiskLevel == RiskLevel.Unknown && f.RiskScore == 0)
+                    {
+                        coverage.RecordLimitation(f.Description);
+                        continue;
+                    }
                     findings.Add(f);
                     if (_findingService != null)
                     {
                         await _findingService.AddFindingAsync(f, cancellationToken);
                     }
                 }
+                _logger?.LogInformation("Initial security checks completed in {ElapsedMs} ms for {ScanType} scan.",
+                    (stopwatch.Elapsed - phaseStartedAt).TotalMilliseconds, scanType);
             }
 
             // STAGE 2: ASYNC FILE STREAMING & DETAILED CONCURRENT SCANNING
-            int finalTotal = 0;
-            int finalScanned = 0;
-            int finalSkipped = 0;
-            int finalFailed = 0;
-            int finalTimedOut = 0;
-
+            currentPhase = "Dosyalar inceleniyor";
+            var filePhaseStartedAt = stopwatch.Elapsed;
             var (queueTotal, queueScanned, queueSkipped, queueFailed, queueTimedOut) = await _queueCoordinator.ExecuteScanQueueDetailedAsync(
                 path,
                 scanType,
@@ -392,7 +310,18 @@ namespace AegisPC.Security.Scanning
                     msg => ReportProgress(msg, force: true),
                     cancellationToken,
                     _queueCoordinator.PauseEvent),
-                (file, ct) => ScanFileDetailedAsync(file, TimeSpan.FromSeconds(30), ct),
+                async (file, ct) =>
+                {
+                    var inspected = await ScanFileDetailedAsync(file, TimeSpan.FromSeconds(30), ct);
+                    if (inspected.ContentClassification is { IsComplete: false } identity)
+                    {
+                        foreach (string limitation in identity.CoverageLimitations) coverage.RecordLimitation(limitation);
+                        if (identity.RequiresZipInspection) coverage.RecordPartialArchive();
+                    }
+                    if (inspected.Outcome is FileScanOutcome.Failed or FileScanOutcome.Timeout)
+                        coverage.RecordLimitation(inspected.ErrorMessage ?? "FileInspectionIncomplete");
+                    return inspected;
+                },
                 findings,
                 (curFile, tot, scn, skp, fail, tout) =>
                 {
@@ -410,6 +339,9 @@ namespace AegisPC.Security.Scanning
             finalSkipped = queueSkipped;
             finalFailed = queueFailed;
             finalTimedOut = queueTimedOut;
+            _logger?.LogInformation("File queue completed in {ElapsedMs} ms: {Total} total, {Scanned} analyzed, {Failed} failed, {TimedOut} timed out; sampled peak process working set {PeakMb} MiB.",
+                (stopwatch.Elapsed - filePhaseStartedAt).TotalMilliseconds, finalTotal, finalScanned, finalFailed, finalTimedOut,
+                processTelemetry.PeakObservedWorkingSetMb);
 
             stopwatch.Stop();
             lock (_pauseLock)
@@ -420,24 +352,39 @@ namespace AegisPC.Security.Scanning
                 }
             }
 
+            var finalMetrics = processTelemetry.Sample();
             if (cancellationToken.IsCancellationRequested)
             {
                 progress?.Report(new ScanProgress
                 {
                     ScanType = scanType,
+                    Phase = "İptal edildi",
                     TotalFiles = Math.Max(finalTotal, finalScanned),
                     ScannedFiles = finalScanned,
+                    ScannedFromCache = _queueCoordinator.ScannedFromCache,
+                    SkippedSignedClean = _queueCoordinator.SkippedSignedClean,
+                    NewlyScanned = _queueCoordinator.NewlyScanned,
                     SkippedFiles = finalSkipped,
                     FailedFiles = finalFailed,
                     TimedOutFiles = finalTimedOut,
                     FindingsCount = findings.Count,
                     CurrentFile = "İptal edildi",
+                    ConfirmedMaliciousCount = findings.Count(f => f.RiskLevel == RiskLevel.ConfirmedMalicious),
+                    SuspiciousCount = findings.Count(f => f.RiskLevel is RiskLevel.Suspicious or RiskLevel.HighRisk),
                     ProgressPercent = maxReportedPercent,
                     ElapsedTime = stopwatch.Elapsed,
                     ElapsedSeconds = stopwatch.Elapsed.TotalSeconds,
                     EstimatedRemainingSeconds = 0,
                     FormattedEta = "İptal edildi",
                     EtaConfidence = ConfidenceLevel.High,
+                    CpuUsagePercent = finalMetrics.CpuPercent,
+                    IsCpuTelemetryAvailable = finalMetrics.HasCpuSample,
+                    RamUsageMb = finalMetrics.WorkingSetMb,
+                    PeakObservedRamUsageMb = processTelemetry.PeakObservedWorkingSetMb,
+                    ResourceProfileName = ScanQueueCoordinator.ActiveResourceSummary,
+                    ActiveWorkers = _queueCoordinator.ActiveWorkers,
+                    EffectiveWorkerLimit = _queueCoordinator.EffectiveWorkerLimit,
+                    PendingFiles = _queueCoordinator.PendingFiles,
                     IsCompleted = false
                 });
 
@@ -454,31 +401,47 @@ namespace AegisPC.Security.Scanning
                     TimedOutFiles = finalTimedOut,
                     CustomPath = path,
                     ElapsedMs = stopwatch.ElapsedMilliseconds,
-                    Findings = findings.ToList()
+                    Findings = findings.ToList(),
+                    Coverage = coverage
                 };
             }
 
             progress?.Report(new ScanProgress
             {
                 ScanType = scanType,
+                Phase = "Tamamlandı",
                 TotalFiles = Math.Max(finalTotal, finalScanned),
                 ScannedFiles = finalScanned,
+                ScannedFromCache = _queueCoordinator.ScannedFromCache,
+                SkippedSignedClean = _queueCoordinator.SkippedSignedClean,
+                NewlyScanned = _queueCoordinator.NewlyScanned,
                 SkippedFiles = finalSkipped,
                 FailedFiles = finalFailed,
                 TimedOutFiles = finalTimedOut,
                 FindingsCount = findings.Count,
                 CurrentFile = "Tamamlandı",
+                ConfirmedMaliciousCount = findings.Count(f => f.RiskLevel == RiskLevel.ConfirmedMalicious),
+                SuspiciousCount = findings.Count(f => f.RiskLevel is RiskLevel.Suspicious or RiskLevel.HighRisk),
                 ProgressPercent = 100,
                 ElapsedTime = stopwatch.Elapsed,
                 ElapsedSeconds = stopwatch.Elapsed.TotalSeconds,
                 EstimatedRemainingSeconds = 0,
                 FormattedEta = "Tamamlandı",
                 EtaConfidence = ConfidenceLevel.High,
+                CpuUsagePercent = finalMetrics.CpuPercent,
+                IsCpuTelemetryAvailable = finalMetrics.HasCpuSample,
+                RamUsageMb = finalMetrics.WorkingSetMb,
+                PeakObservedRamUsageMb = processTelemetry.PeakObservedWorkingSetMb,
+                ResourceProfileName = ScanQueueCoordinator.ActiveResourceSummary,
+                ActiveWorkers = _queueCoordinator.ActiveWorkers,
+                EffectiveWorkerLimit = _queueCoordinator.EffectiveWorkerLimit,
+                PendingFiles = _queueCoordinator.PendingFiles,
                 IsCompleted = true
             });
 
             return new ScanResult
             {
+                Measurements = _queueCoordinator.LastMeasurements,
                 ScanType = scanType,
                 StartedAt = DateTime.UtcNow.Subtract(stopwatch.Elapsed),
                 CompletedAt = DateTime.UtcNow,
@@ -490,8 +453,24 @@ namespace AegisPC.Security.Scanning
                 TimedOutFiles = finalTimedOut,
                 CustomPath = path,
                 ElapsedMs = stopwatch.ElapsedMilliseconds,
-                Findings = findings.ToList()
+                Findings = findings.ToList(),
+                Coverage = coverage
             };
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Directory scanner stopped before producing a terminal result.");
+                bool cancelled = ex is OperationCanceledException && cancellationToken.IsCancellationRequested;
+                var partial = CreateInterruptedScanResult(path, scanType, stopwatch, coverage, findings,
+                    (finalTotal, finalScanned, finalSkipped, finalFailed, finalTimedOut), cancelled);
+                if (cancelled) return partial;
+                throw new ScanExecutionFailureException(partial, ex);
+            }
+            finally
+            {
+                _hashMatcher.IsScanActive = false;
+                lock (_pauseLock) { if (_activeScanStopwatch == stopwatch) _activeScanStopwatch = null; }
+            }
         }
     }
 }

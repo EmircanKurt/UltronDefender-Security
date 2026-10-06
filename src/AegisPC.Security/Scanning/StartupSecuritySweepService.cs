@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
@@ -16,11 +17,12 @@ using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.Scanning
 {
-    public class StartupSecuritySweepService : IStartupSecuritySweepService
+    public partial class StartupSecuritySweepService : IStartupSecuritySweepService
     {
         private readonly IRealTimeProtectionEngine _realTimeEngine;
         private readonly IQuarantineService _quarantineService;
         private readonly IAuditLogService? _auditLogService;
+        private readonly ISettingsService? _settingsService;
         private readonly ILogger<StartupSecuritySweepService>? _logger;
 
         private StartupSweepStatus _status = StartupSweepStatus.NotStarted;
@@ -30,14 +32,12 @@ namespace AegisPC.Security.Scanning
         private readonly SemaphoreSlim _sweepSemaphore = new(1, 1);
 
         // Cached file inspection metadata: Path -> (Size, LastWriteTimeUtc, SHA256, Verdict, RiskScore)
-        private readonly ConcurrentDictionary<string, (long Size, DateTime LastWrite, string SHA256, string Verdict, int Score)> _fileCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, (long Size, DateTime LastWrite, string SHA256, string Verdict, int Score, long Revision)> _fileCache = new(StringComparer.OrdinalIgnoreCase);
+        private long _sweepPolicyRevision;
         private const int MaxFileCacheEntries = 100000;
 
-        private static readonly HashSet<string> RiskyExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".exe", ".dll", ".scr", ".com", ".msi", ".bat", ".cmd", ".ps1", ".vbs", ".vbe", 
-            ".js", ".jse", ".wsf", ".wsh", ".hta", ".cpl", ".sys"
-        };
+        private readonly ManualResetEventSlim _pauseEvent = new(true);
+        private CancellationTokenSource? _activeSweepCts;
 
         public StartupSweepStatus Status
         {
@@ -49,6 +49,28 @@ namespace AegisPC.Security.Scanning
         {
             get { lock (_lock) return _isRunning; }
             private set { lock (_lock) _isRunning = value; }
+        }
+
+        public bool IsPaused => !_pauseEvent.IsSet;
+
+        public void Pause()
+        {
+            _pauseEvent.Reset();
+        }
+
+        public void Resume()
+        {
+            _pauseEvent.Set();
+        }
+
+        public void Cancel()
+        {
+            try
+            {
+                _activeSweepCts?.Cancel();
+            }
+            catch { }
+            _pauseEvent.Set();
         }
 
         public StartupSweepResult? LastResult
@@ -63,18 +85,29 @@ namespace AegisPC.Security.Scanning
         public event Action<StartupSweepFinding>? OnThreatDiscovered;
         public event Action<StartupSweepResult>? OnSweepCompleted;
 
+        /// <summary>Creates a startup scanner; optional settings govern automatic hash-bound quarantine.</summary>
         public StartupSecuritySweepService(
             IRealTimeProtectionEngine realTimeEngine,
             IQuarantineService quarantineService,
             IAuditLogService? auditLogService = null,
             IScanCoordinatorService? scanCoordinator = null,
-            ILogger<StartupSecuritySweepService>? logger = null)
+            ILogger<StartupSecuritySweepService>? logger = null,
+            ISettingsService? settingsService = null,
+            TimeSpan? inspectionTimeout = null,
+            Func<IScanResourceManager>? resourceManagerFactory = null,
+            Func<string, bool>? storageClassifier = null)
         {
             _realTimeEngine = realTimeEngine;
             _quarantineService = quarantineService;
             _auditLogService = auditLogService;
+            _settingsService = settingsService;
             _scanCoordinator = scanCoordinator;
             _logger = logger;
+            _resourceManagerFactory = resourceManagerFactory;
+            _volumeStorageClassifier = storageClassifier ?? DiskHardwareHelper.IsSolidStateDrive;
+            _inspectionTimeout = inspectionTimeout ?? TimeSpan.FromSeconds(30);
+            if (_inspectionTimeout <= TimeSpan.Zero || _inspectionTimeout > TimeSpan.FromMinutes(2))
+                throw new ArgumentOutOfRangeException(nameof(inspectionTimeout));
         }
 
         public void ClearCache()
@@ -86,10 +119,24 @@ namespace AegisPC.Security.Scanning
             IEnumerable<string>? customTargetDirs = null,
             CancellationToken cancellationToken = default)
         {
-            await Task.Yield();
+            // Waiting sweeps must not replace the active cancellation token or coordinator claim.
             await _sweepSemaphore.WaitAsync(cancellationToken);
+            IExternalScanRegistration? coordSub = null;
             try
             {
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                _activeSweepCts = linkedCts;
+                _pauseEvent.Set();
+                coordSub = _scanCoordinator?.TryRegisterExternalScanner(
+                    pauseAction: () => Pause(),
+                    resumeAction: () => Resume(),
+                    cancelAction: () => Cancel());
+                if (_scanCoordinator != null && coordSub == null)
+                {
+                    _logger?.LogInformation("Startup Security Sweep deferred because another scan owns the coordinator.");
+                    return new StartupSweepResult { FinalStatus = StartupSweepStatus.Busy };
+                }
+
                 lock (_lock)
                 {
                     _isRunning = true;
@@ -97,9 +144,16 @@ namespace AegisPC.Security.Scanning
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                var result = new StartupSweepResult();
+                using var telemetry = new ScanProcessTelemetry(_logger);
+                _progressTelemetry = telemetry;
+                _progressClock = stopwatch;
+                var result = new StartupSweepResult { StartedAtUtc = DateTime.UtcNow };
+                _sweepPolicyRevision = DetectionPolicyRevision.Current;
+                _sweepMeasurements = null;
+                _discoveredFiles = 0;
+                _discoveryCoverage = new();
                 var progress = new StartupSweepProgress { Status = StartupSweepStatus.Preparing };
-                NotifyProgress(progress);
+                NotifyProgress(progress, coordSub);
 
             try
             {
@@ -120,68 +174,63 @@ namespace AegisPC.Security.Scanning
                     AddDefaultAttackSurfaceDirectories(targetDirs);
                 }
 
-                // 2. Discover Candidate Files
-                var candidateFiles = new List<FileInfo>();
-                foreach (var dir in targetDirs)
-                {
-                    if (cancellationToken.IsCancellationRequested) break;
-                    DiscoverCandidateFiles(dir, candidateFiles);
-                }
-
-                // Sort: Prioritize by Risk Location (Startup -> Downloads -> Desktop -> Temp -> AppData -> Documents)
-                // NEVER sort by file size!
-                candidateFiles = candidateFiles
-                    .OrderBy(f => GetLocationRiskPriority(f.FullName))
-                    .ThenByDescending(f => f.LastWriteTimeUtc)
-                    .ToList();
-
-                progress.TotalFiles = candidateFiles.Count;
+                _discoveryCoverage = new();
+                _discoveredFiles = 0;
+                var candidateFiles = EnumerateSweepFiles(targetDirs, linkedCts.Token);
                 progress.Status = StartupSweepStatus.Scanning;
                 Status = StartupSweepStatus.Scanning;
-                NotifyProgress(progress);
+                NotifyProgress(progress, coordSub);
 
                 // 3. Snapshot Running Processes for Correlation
                 var processMap = BuildRunningProcessMap();
 
                 // 4. Perform Progressive Scan on Candidates
-                foreach (var file in candidateFiles)
+                await foreach (var item in InspectCandidatesAsync(candidateFiles, progress, coordSub, linkedCts.Token))
                 {
-                    if (cancellationToken.IsCancellationRequested) break;
+                    var file = item.File;
+                    if (linkedCts.Token.IsCancellationRequested) break;
+                    _pauseEvent.Wait(linkedCts.Token);
 
-                    if (!File.Exists(file.FullName) || 
-                        FileScannerService.IsSelfOwnedPath(file.FullName) ||
-                        FileScannerService.SafeMediaExtensions.Contains(file.Extension))
+                    if (!File.Exists(file.FullName))
                     {
                         continue;
                     }
 
                     progress.CurrentFile = file.Name;
-                    progress.ScannedFiles++;
+                    NotifyProgress(progress, coordSub);
 
                     // Check Cache for unchanged clean files
-                    if (_fileCache.TryGetValue(file.FullName, out var cached) &&
-                        cached.Size == file.Length &&
-                        cached.LastWrite == file.LastWriteTimeUtc &&
-                        cached.Verdict == "Clean")
+                    if (item.FromCache)
                     {
+                        _sweepResources?.ReportCompletedFiles(1);
                         progress.CleanFiles++;
                         progress.SkippedUnchanged++;
                         result.CleanCount++;
                         result.SkippedCount++;
-                        NotifyProgress(progress);
+                        progress.ScannedFiles++;
+                        NotifyProgress(progress, coordSub);
                         continue;
                     }
 
                     // Inspect file with RealTime engine pipeline
-                    var verdictResult = await _realTimeEngine.InspectFileAsync(file.FullName, cancellationToken);
+                    var verdictResult = item.Verdict;
+                    _sweepResources?.ReportCompletedFiles(1);
+                    progress.ScannedFiles++;
+                    if (verdictResult.CoverageLimitations.Contains("StartupInspectionTimedOut"))
+                    {
+                        progress.TimedOutCount++;
+                        result.TimedOutCount++;
+                    }
                     var correlationId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
 
                     // Check if file matches any running process
                     bool hasProc = processMap.TryGetValue(file.FullName.ToLowerInvariant(), out var procInfo);
 
-                    if (verdictResult.RecommendedPolicy == RealTimePolicyAction.BlockAndQuarantine ||
-                        verdictResult.Verdict == RealTimeVerdict.ConfirmedMalicious ||
-                        verdictResult.RiskScore >= 70)
+                    bool exactThreat = verdictResult.Verdict == RealTimeVerdict.ConfirmedMalicious &&
+                        verdictResult.RecommendedPolicy == RealTimePolicyAction.BlockAndQuarantine &&
+                        IsSha256(verdictResult.SHA256) &&
+                        await HasExpectedContentAsync(file.FullName, verdictResult.SHA256, linkedCts.Token);
+                    if (exactThreat)
                     {
                         // THREAT FOUND!
                         progress.ThreatsFound++;
@@ -197,7 +246,7 @@ namespace AegisPC.Security.Scanning
                             ModifiedAt = file.LastWriteTimeUtc,
                             RiskScore = verdictResult.RiskScore,
                             Verdict = verdictResult.Verdict.ToString(),
-                            Action = "QUARANTINED",
+                            Action = "DETECTED",
                             Evidences = new List<string>(verdictResult.Evidences),
                             CorrelationId = correlationId,
                             DetectionTime = DateTime.UtcNow,
@@ -208,30 +257,33 @@ namespace AegisPC.Security.Scanning
                             ProcessStartTime = hasProc ? procInfo.StartTime : null
                         };
 
-                        // Terminate process if running (Guard against critical Windows processes)
-                        if (hasProc && !AegisPC.Core.Constants.CriticalProcesses.IsCriticalProcess(procInfo.ProcessName))
+                        // A path/process snapshot does not prove live process identity. Do not terminate a PID here.
+                        bool autoQuarantineEnabled = _settingsService?.GetSetting("EnableAutoQuarantine", true) ?? true;
+                        int threshold = Math.Clamp(_settingsService?.GetSetting("AutoQuarantineThreshold", 85) ?? 85, 1, 100);
+                        bool canQuarantine = autoQuarantineEnabled && verdictResult.RiskScore >= threshold &&
+                            _quarantineService is IContentBoundQuarantineService;
+                        bool quarantined = false;
+                        if (canQuarantine)
                         {
-                            try
-                            {
-                                using var p = Process.GetProcessById(procInfo.ProcessId);
-                                p.Kill(entireProcessTree: true);
-                            }
-                            catch { }
+                            var contentBound = (IContentBoundQuarantineService)_quarantineService;
+                            quarantined = await contentBound.TryQuarantineFileAsync(
+                                file.FullName,
+                                $"Startup Security Sweep: {verdictResult.ThreatTitle}",
+                                verdictResult.SHA256,
+                                linkedCts.Token);
                         }
 
-                        // Quarantine file
-                        bool quarantined = await _quarantineService.QuarantineFileAsync(
-                            file.FullName, 
-                            $"Startup Security Sweep: {verdictResult.ThreatTitle}", 
-                            cancellationToken);
-
                         finding.IsQuarantined = quarantined;
+                        if (canQuarantine)
+                            finding.Action = quarantined ? "QUARANTINED" : "QUARANTINE_FAILED";
+                        else
+                            finding.Action = "REVIEW_REQUIRED";
                         finding.ActionTime = DateTime.UtcNow;
 
                         result.Findings.Add(finding);
                         OnThreatDiscovered?.Invoke(finding);
 
-                        if (_auditLogService != null)
+                        if (_auditLogService != null && canQuarantine)
                         {
                             await _auditLogService.LogActionAsync(
                                 AuditAction.FileQuarantined,
@@ -239,11 +291,30 @@ namespace AegisPC.Security.Scanning
                                 file.Name,
                                 file.FullName,
                                 $"Startup Security Sweep tehdit tespit etti: {verdictResult.ThreatTitle} (Skor: {verdictResult.RiskScore})",
-                                AuditResult.Success,
-                                cancellationToken: cancellationToken);
+                                quarantined ? AuditResult.Success : AuditResult.Failed,
+                                cancellationToken: linkedCts.Token);
                         }
                     }
-                    else if (verdictResult.RecommendedPolicy == RealTimePolicyAction.Warn ||
+                    else if (verdictResult.Verdict == RealTimeVerdict.Unknown)
+                    {
+                        progress.IncompleteCount++;
+                        result.IncompleteCount++;
+                        result.Findings.Add(new StartupSweepFinding
+                        {
+                            FilePath = file.FullName,
+                            FileName = file.Name,
+                            SHA256 = verdictResult.SHA256,
+                            FileSize = file.Length,
+                            RiskScore = verdictResult.RiskScore,
+                            Verdict = nameof(RealTimeVerdict.Unknown),
+                            Action = "INCOMPLETE",
+                            Evidences = new List<string>(verdictResult.Evidences),
+                            CorrelationId = correlationId,
+                            DetectionTime = DateTime.UtcNow,
+                            ActionTime = DateTime.UtcNow
+                        });
+                    }
+                    else if (verdictResult.Verdict is RealTimeVerdict.Suspicious or RealTimeVerdict.ConfirmedMalicious &&
                              verdictResult.RiskScore >= 50)
                     {
                         // SUSPICIOUS FILE
@@ -259,7 +330,7 @@ namespace AegisPC.Security.Scanning
                             CreatedAt = file.CreationTimeUtc,
                             ModifiedAt = file.LastWriteTimeUtc,
                             RiskScore = verdictResult.RiskScore,
-                            Verdict = verdictResult.Verdict.ToString(),
+                            Verdict = nameof(RealTimeVerdict.Suspicious),
                             Action = "WARN",
                             Evidences = new List<string>(verdictResult.Evidences),
                             CorrelationId = correlationId,
@@ -278,7 +349,7 @@ namespace AegisPC.Security.Scanning
 
                         CacheFileVerdict(file, verdictResult.SHA256, "Suspicious", verdictResult.RiskScore);
                     }
-                    else
+                    else if (verdictResult.Verdict == RealTimeVerdict.Clean)
                     {
                         // CLEAN
                         progress.CleanFiles++;
@@ -299,34 +370,56 @@ namespace AegisPC.Security.Scanning
                         };
                         result.Findings.Add(finding);
 
-                        CacheFileVerdict(file, verdictResult.SHA256, "Clean", verdictResult.RiskScore);
+                        if (IsSha256(verdictResult.SHA256))
+                            CacheFileVerdict(file, verdictResult.SHA256, "Clean", verdictResult.RiskScore);
                     }
 
-                    NotifyProgress(progress);
+                    NotifyProgress(progress, coordSub);
+                }
+
+                if (linkedCts.Token.IsCancellationRequested)
+                {
+                    return HandleCancelledSweep(result, progress, stopwatch, coordSub);
                 }
 
                 stopwatch.Stop();
                 result.Duration = stopwatch.Elapsed;
                 result.TotalScanned = progress.ScannedFiles;
-                result.FinalStatus = result.ThreatsCount > 0 
+                // Finishing all candidates and establishing complete coverage are separate outcomes.
+                result.FinalStatus = result.ThreatsCount > 0
                     ? StartupSweepStatus.ThreatsFound 
-                    : (result.SuspiciousCount > 0 ? StartupSweepStatus.Completed : StartupSweepStatus.Clean);
+                    : (result.SuspiciousCount > 0 || result.IncompleteCount > 0 ? StartupSweepStatus.Completed : StartupSweepStatus.Clean);
 
                 progress.Status = result.FinalStatus;
                 Status = result.FinalStatus;
                 LastResult = result;
 
-                NotifyProgress(progress);
-                NotifyCompleted(result, stopwatch.Elapsed);
+                NotifyProgress(progress, coordSub);
+                NotifyCompleted(result, stopwatch.Elapsed, coordSub);
 
                 return result;
             }
+            catch (OperationCanceledException) when (linkedCts.IsCancellationRequested)
+            {
+                _logger?.LogInformation("Startup Security Sweep was cancelled.");
+                return HandleCancelledSweep(result, progress, stopwatch, coordSub);
+            }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SWEEP EXCEPTION] {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
                 _logger?.LogError(ex, "Startup Security Sweep failed unexpectedly.");
+                result.FailureInfo = new ScanFailureInfo
+                {
+                    Stage = ScanFailureStage.ExternalScanner,
+                    Reason = ex is OperationCanceledException ? ScanFailureReason.UnexpectedCancellation : ScanFailureReason.UnexpectedException,
+                    HResult = ex.HResult, CorrelationId = Guid.NewGuid(), OccurredAtUtc = DateTime.UtcNow,
+                    SafeMessage = "Başlangıç taraması tamamlanamadı; elde edilen sonuçlar korundu.", IsRetryable = true
+                };
                 Status = StartupSweepStatus.Failed;
                 result.FinalStatus = StartupSweepStatus.Failed;
+                result.Duration = stopwatch.Elapsed;
+                result.TotalScanned = progress.ScannedFiles;
+                LastResult = result;
+                NotifyCompleted(result, stopwatch.Elapsed, coordSub);
                 return result;
             }
             finally
@@ -339,9 +432,34 @@ namespace AegisPC.Security.Scanning
         }
         finally
         {
+            coordSub?.Dispose();
+            _progressTelemetry = null;
+            _progressClock = null;
+            _activeSweepCts = null;
             _sweepSemaphore.Release();
         }
     }
+
+        private StartupSweepResult HandleCancelledSweep(
+            StartupSweepResult result,
+            StartupSweepProgress progress,
+            Stopwatch stopwatch,
+            IExternalScanRegistration? registration)
+        {
+            stopwatch.Stop();
+            result.Duration = stopwatch.Elapsed;
+            result.TotalScanned = progress.ScannedFiles;
+            result.FinalStatus = StartupSweepStatus.Cancelled;
+
+            progress.Status = StartupSweepStatus.Cancelled;
+            Status = StartupSweepStatus.Cancelled;
+            LastResult = result;
+
+            NotifyProgress(progress, registration);
+            NotifyCompleted(result, stopwatch.Elapsed, registration);
+
+            return result;
+        }
 
         private void CacheFileVerdict(FileInfo file, string sha256, string verdict, int score)
         {
@@ -350,54 +468,109 @@ namespace AegisPC.Security.Scanning
                 _fileCache.Clear();
                 _logger?.LogWarning("Startup scan cache reached its {Limit} entry limit and was cleared.", MaxFileCacheEntries);
             }
-            _fileCache[file.FullName] = (file.Length, file.LastWriteTimeUtc, sha256, verdict, score);
+            if (_sweepPolicyRevision == DetectionPolicyRevision.Current)
+                _fileCache[file.FullName] = (file.Length, file.LastWriteTimeUtc, sha256, verdict, score, _sweepPolicyRevision);
         }
 
-        private void NotifyProgress(StartupSweepProgress progress)
+        private static bool IsSha256(string? value) =>
+            value is { Length: 64 } && value.All(Uri.IsHexDigit);
+
+        private static async Task<bool> HasExpectedContentAsync(string path, string expectedSha256, CancellationToken ct)
         {
-            OnProgressChanged?.Invoke(progress);
-            if (_scanCoordinator != null)
+            if (!IsSha256(expectedSha256)) return false;
+            try
             {
-                _scanCoordinator.RegisterExternalScanProgress(new ScanProgress
+                await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete, 65536,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+                var actual = await SHA256.HashDataAsync(stream, ct);
+                return Convert.ToHexString(actual).Equals(expectedSha256, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (IOException) { return false; }
+            catch (UnauthorizedAccessException) { return false; }
+        }
+
+        private void NotifyProgress(StartupSweepProgress progress, IExternalScanRegistration? registration, string? phaseOverride = null)
+        {
+            progress.TotalFiles = Volatile.Read(ref _discoveredFiles);
+            try { OnProgressChanged?.Invoke(progress); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Startup sweep progress subscriber failed."); }
+            if (registration != null)
+            {
+                var metrics = _progressTelemetry?.Sample() ?? default;
+                registration.ReportProgress(new ScanProgress
                 {
                     ScanType = ScanType.Quick,
                     CurrentFile = progress.CurrentFile,
                     ScannedFiles = progress.ScannedFiles,
                     TotalFiles = progress.TotalFiles,
                     FindingsCount = progress.ThreatsFound + progress.SuspiciousFound,
-                    ProgressPercent = progress.ProgressPercent
+                    ConfirmedMaliciousCount = progress.ThreatsFound,
+                    SuspiciousCount = progress.SuspiciousFound,
+                    ProgressPercent = progress.ProgressPercent,
+                    Phase = phaseOverride ?? (progress.Status == StartupSweepStatus.Preparing ? "Başlangıç taraması hazırlanıyor" : "Başlangıç dosya taraması"),
+                    ScannedFromCache = progress.SkippedUnchanged,
+                    NewlyScanned = Math.Max(0, progress.ScannedFiles - progress.SkippedUnchanged),
+                    FailedFiles = Math.Max(0, progress.IncompleteCount - progress.TimedOutCount),
+                    TimedOutFiles = progress.TimedOutCount,
+                    ElapsedTime = _progressClock?.Elapsed ?? TimeSpan.Zero,
+                    CpuUsagePercent = metrics.CpuPercent,
+                    IsCpuTelemetryAvailable = metrics.HasCpuSample,
+                    RamUsageMb = metrics.WorkingSetMb,
+                    PeakObservedRamUsageMb = _progressTelemetry?.PeakObservedWorkingSetMb ?? 0,
+                    ResourceProfileName = _sweepResources?.ActiveProfile.SummaryText ?? "Başlangıç denetimi hazırlanıyor",
+                    ActiveWorkers = Volatile.Read(ref _sweepWorkers),
+                    EffectiveWorkerLimit = _sweepResources?.ActiveProfile.Concurrency ?? 0,
+                    PendingFiles = Math.Max(0, progress.TotalFiles - progress.ScannedFiles - Volatile.Read(ref _sweepWorkers))
                 });
             }
         }
 
-        private void NotifyCompleted(StartupSweepResult result, TimeSpan duration)
+        private void NotifyCompleted(StartupSweepResult result, TimeSpan duration, IExternalScanRegistration? registration)
         {
-            OnSweepCompleted?.Invoke(result);
-            if (_scanCoordinator != null)
+            try { OnSweepCompleted?.Invoke(result); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Startup sweep completion subscriber failed."); }
+            if (registration != null)
             {
-                _scanCoordinator.CompleteExternalScan(new ScanResult
+                registration.Complete(new ScanResult
                 {
                     ScanType = ScanType.Quick,
                     ScannedFiles = result.TotalScanned,
-                    TotalFiles = result.TotalScanned,
+                    TotalFiles = Math.Max(result.TotalScanned, Volatile.Read(ref _discoveredFiles)),
+                    StartedAt = result.StartedAtUtc,
+                    FailureInfo = result.FailureInfo,
+                    Measurements = _sweepMeasurements,
+                    FailedFiles = Math.Max(0, result.IncompleteCount - result.TimedOutCount),
+                    TimedOutFiles = result.TimedOutCount,
+                    Coverage = CreateSweepCoverage(result),
                     ElapsedMs = (long)duration.TotalMilliseconds,
-                    Status = ScanStatus.Completed,
+                    Status = result.FinalStatus switch
+                    {
+                        StartupSweepStatus.Cancelled => ScanStatus.Cancelled,
+                        StartupSweepStatus.Failed => ScanStatus.Failed,
+                        _ => ScanStatus.Completed
+                    },
                     CompletedAt = DateTime.UtcNow,
                     Findings = result.Findings
-                        .Where(f => f.IsQuarantined || f.Action == "QUARANTINED" || f.RiskScore >= 50)
+                        .Where(f => f.Verdict == nameof(RealTimeVerdict.ConfirmedMalicious) ||
+                            f.Verdict == nameof(RealTimeVerdict.Suspicious) && f.RiskScore >= 50)
                         .Select(f => new SecurityFinding
                         {
                             ObjectName = f.FileName,
                             ObjectPath = f.FilePath,
                             RiskScore = f.RiskScore,
-                            RiskLevel = f.RiskScore switch
+                            RiskLevel = f.Verdict == nameof(RealTimeVerdict.ConfirmedMalicious)
+                                ? RiskLevel.ConfirmedMalicious
+                                : f.RiskScore switch
                             {
-                                >= 85 => RiskLevel.ConfirmedMalicious,
                                 >= 70 => RiskLevel.HighRisk,
                                 >= 50 => RiskLevel.Suspicious,
-                                _ => RiskLevel.Clean
+                                _ => RiskLevel.LowRisk
                             },
-                            Title = $"Başlangıç Tehdidi: {f.FileName}",
+                            Title = f.Verdict == nameof(RealTimeVerdict.ConfirmedMalicious)
+                                ? $"Başlangıç Tehdidi: {f.FileName}"
+                                : $"Başlangıç Uyarısı: {f.FileName}",
                             Description = string.Join("; ", f.Evidences),
                             Status = f.IsQuarantined ? FindingStatus.Resolved : FindingStatus.Active
                         }).ToList()
@@ -440,73 +613,6 @@ namespace AegisPC.Security.Scanning
             if (Directory.Exists(documents)) targetDirs.Add(documents);
         }
 
-        private void DiscoverCandidateFiles(string dirPath, List<FileInfo> candidates)
-        {
-            if (string.IsNullOrWhiteSpace(dirPath)) return;
-            string fullPath = Path.GetFullPath(dirPath);
-
-            if (FileScannerService.IsSelfOwnedPath(fullPath)) return;
-
-            if (File.Exists(fullPath))
-            {
-                try
-                {
-                    candidates.Add(new FileInfo(fullPath));
-                }
-                catch { }
-                return;
-            }
-
-            if (!Directory.Exists(fullPath)) return;
-
-            var stack = new Stack<string>();
-            stack.Push(fullPath);
-
-            while (stack.Count > 0)
-            {
-                var currentDir = stack.Pop();
-                if (!Directory.Exists(currentDir)) continue;
-
-                var dirName = Path.GetFileName(currentDir);
-                if (FileScannerService.ExcludedDirectoryNames.Contains(dirName) || FileScannerService.IsSelfOwnedPath(currentDir))
-                    continue;
-
-                try
-                {
-                    var files = Directory.GetFiles(currentDir, "*");
-                    foreach (var filePath in files)
-                    {
-                        try
-                        {
-                            if (FileScannerService.IsSelfOwnedPath(filePath)) continue;
-
-                            var ext = Path.GetExtension(filePath);
-                            if (!string.IsNullOrEmpty(ext) && FileScannerService.SafeMediaExtensions.Contains(ext))
-                                continue;
-
-                            var fileName = Path.GetFileName(filePath);
-                            bool isDoubleExtensionThreat = fileName.Count(c => c == '.') > 1 && RiskyExtensions.Contains(ext);
-                            if (RiskyExtensions.Contains(ext) || isDoubleExtensionThreat)
-                            {
-                                candidates.Add(new FileInfo(filePath));
-                            }
-                        }
-                        catch { }
-                    }
-                }
-                catch { }
-
-                try
-                {
-                    var subDirs = Directory.GetDirectories(currentDir);
-                    foreach (var sub in subDirs)
-                    {
-                        stack.Push(sub);
-                    }
-                }
-                catch { }
-            }
-        }
 
         private static int GetLocationRiskPriority(string fullPath)
         {

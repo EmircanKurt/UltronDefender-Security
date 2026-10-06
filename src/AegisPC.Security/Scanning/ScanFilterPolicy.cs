@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using AegisPC.Core.Helpers;
+using Serilog;
 
 namespace AegisPC.Security.Scanning
 {
@@ -24,8 +25,7 @@ namespace AegisPC.Security.Scanning
         };
 
         /// <summary>
-        /// Yürütülemez saf veri, medya, ses, 3D model, yazı tipi ve önbellek uzantıları.
-        /// Tarama sırasında mikro-saniyeler içinde atlanarak CPU ve disk I/O tüketimini sıfıra indirir.
+        /// Legacy file-type hints. These names do not establish trust or exclude files from scanning.
         /// </summary>
         public static readonly HashSet<string> SafeMediaExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -76,17 +76,12 @@ namespace AegisPC.Security.Scanning
             "$WinREAgent",
             "Config.Msi",
             "Recovery",
-            "Package Cache",
-            "AegisPC_BrowserStress_Tests",
-            "AegisPC_Staging",
-            "AegisPC_App",
-            "AegisPC_App_Optimized",
-            "AegisPC",
-            "UltronDefender"
+            "Package Cache"
         };
 
         /// <summary>
-        /// Uygulamanın kendi dizinlerini (ProgramData, ProgramFiles, AppData, BaseDirectory, Repo) içeren lazy yol koleksiyonu.
+        /// Product-state roots used solely to prevent destructive actions against application data.
+        /// Membership does not establish ownership, a clean verdict, or a scan exclusion.
         /// </summary>
         public static readonly Lazy<string[]> SelfExcludedPaths = new(() =>
         {
@@ -102,16 +97,15 @@ namespace AegisPC.Security.Scanning
                 if (!string.IsNullOrEmpty(baseDir))
                     paths.Add(baseDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
 
-                // 2. ProgramData / AppData / ProgramFiles sistem kurulum ve veri dizinleri
+                // Only actual state roots are self-excluded; fictional installation names and
+                // development repositories are not trusted directories.
                 string[] specialFolders = {
                     Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), // ProgramData
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),  // AppData\Local
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),       // AppData\Roaming
-                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),          // Program Files
-                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)       // Program Files (x86)
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)       // AppData\Roaming
                 };
 
-                string[] subNames = { "UltronDefender", "AegisPC", "Ultron Defender Total Security", "Ultron Defender Security" };
+                string[] subNames = { "UltronDefender", "AegisPC" };
 
                 foreach (var sf in specialFolders)
                 {
@@ -122,41 +116,11 @@ namespace AegisPC.Security.Scanning
                     }
                 }
 
-                // 3. Geliştirme, Repository ve Staging Dizinleri
-                string? searchRoot = baseDir;
-                for (int i = 0; i < 6 && !string.IsNullOrEmpty(searchRoot); i++)
-                {
-                    if (File.Exists(Path.Combine(searchRoot, "AegisPC.sln")) ||
-                        File.Exists(Path.Combine(searchRoot, "UltronDefender.sln")) ||
-                        Directory.Exists(Path.Combine(searchRoot, ".git")))
-                    {
-                        paths.Add(searchRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
-                        break;
-                    }
-                    searchRoot = Path.GetDirectoryName(searchRoot);
-                }
-
-                string? curDir = Directory.GetCurrentDirectory();
-                for (int i = 0; i < 6 && !string.IsNullOrEmpty(curDir); i++)
-                {
-                    if (File.Exists(Path.Combine(curDir, "AegisPC.sln")) ||
-                        File.Exists(Path.Combine(curDir, "UltronDefender.sln")) ||
-                        Directory.Exists(Path.Combine(curDir, ".git")))
-                    {
-                        paths.Add(curDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
-                        break;
-                    }
-                    curDir = Path.GetDirectoryName(curDir);
-                }
-
-                // Documents altındaki bilinen proje çalışma alanı
-                string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                if (!string.IsNullOrEmpty(docs))
-                {
-                    paths.Add(Path.Combine(docs, "gemini virüs program").TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
-                }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to resolve self-excluded paths in ScanFilterPolicy");
+            }
             return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         });
 
@@ -172,136 +136,45 @@ namespace AegisPC.Security.Scanning
         }
 
         /// <summary>
-        /// Verilen dosya yolunun uygulamanın kendi veri/imza/log/config dizinlerinden
-        /// veya bileşenlerinden birine ait olup olmadığını kontrol eder. True dönerse dosya asla taranmaz.
+        /// Reports whether a path lies under a product-state root for destructive-action safety.
+        /// User-writable files beneath these roots are not trusted and must still be inspected.
         /// </summary>
-        /// <param name="filePath">Kontrol edilecek dosya yolu.</param>
-        /// <returns>Uygulamanın kendi dosyası ise true; aksi halde false.</returns>
+        /// <param name="filePath">Path to evaluate without opening or trusting its content.</param>
+        /// <returns>True for a protected root member; never a clean-file verdict.</returns>
         public static bool IsSelfOwnedPath(string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath)) return false;
 
             try
             {
-                // 0. Canary Tuzak Dosyaları: Asla taranmaz
-                if (IsCanaryFile(filePath)) return true;
-
-                // 1. Dosya adı denetimi: Ultron Defender veya AegisPC'ye ait hiçbir ikili/sembol/ayar taranmaz
-                string fileName = Path.GetFileName(filePath);
-                if (fileName.StartsWith("AegisPC", StringComparison.OrdinalIgnoreCase) ||
-                    fileName.StartsWith("UltronDefender", StringComparison.OrdinalIgnoreCase) ||
-                    fileName.StartsWith("Ultron.", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-
-                // 2. Özel sistem uygulama veri ve kurulum yolları (ProgramData, AppData, Program Files altındaki meşru klasörler ve repo/staging)
-                if (filePath.Contains(@"\AppData\Local\AegisPC\", StringComparison.OrdinalIgnoreCase) ||
-                    filePath.Contains(@"\AppData\Roaming\AegisPC\", StringComparison.OrdinalIgnoreCase) ||
-                    filePath.Contains(@"\AppData\Local\UltronDefender\", StringComparison.OrdinalIgnoreCase) ||
-                    filePath.Contains(@"\AppData\Roaming\UltronDefender\", StringComparison.OrdinalIgnoreCase) ||
-                    filePath.Contains(@"\ProgramData\UltronDefender\", StringComparison.OrdinalIgnoreCase) ||
-                    filePath.Contains(@"\ProgramData\AegisPC\", StringComparison.OrdinalIgnoreCase) ||
-                    filePath.Contains(@"\Program Files\UltronDefender\", StringComparison.OrdinalIgnoreCase) ||
-                    filePath.Contains(@"\Program Files (x86)\UltronDefender\", StringComparison.OrdinalIgnoreCase) ||
-                    filePath.Contains(@"\AegisPC_Staging\", StringComparison.OrdinalIgnoreCase) ||
-                    filePath.Contains(@"\AegisPC_App\", StringComparison.OrdinalIgnoreCase) ||
-                    filePath.Contains(@"\AegisPC_App_Optimized\", StringComparison.OrdinalIgnoreCase) ||
-                    filePath.Contains(@"\gemini virüs program\", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-
-                // 3. Derleyici sembolü ve hata ayıklama dosyaları (.pdb, .idb, .ilk, .exp, .lib)
-                string ext = Path.GetExtension(filePath);
-                if (!string.IsNullOrEmpty(ext) && (ext.Equals(".pdb", StringComparison.OrdinalIgnoreCase) ||
-                    ext.Equals(".idb", StringComparison.OrdinalIgnoreCase) ||
-                    ext.Equals(".ilk", StringComparison.OrdinalIgnoreCase) ||
-                    ext.Equals(".exp", StringComparison.OrdinalIgnoreCase)))
-                {
-                    if (fileName.Contains("Aegis", StringComparison.OrdinalIgnoreCase) ||
-                        fileName.Contains("Ultron", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-
-                // 4. Hariç tutulan tam dizin yolları
+                // Root membership is only a destructive-action guard. It cannot prove that an
+                // arbitrary file beneath a writable root belongs to the product.
+                string canonicalPath = Path.GetFullPath(filePath);
                 foreach (var excludedPath in SelfExcludedPaths.Value)
                 {
-                    if (filePath.StartsWith(excludedPath, StringComparison.OrdinalIgnoreCase))
+                    if (canonicalPath.StartsWith(excludedPath, StringComparison.OrdinalIgnoreCase))
                         return true;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "Failed to check if path {FilePath} is self-owned", filePath);
+            }
 
             return false;
         }
 
         /// <summary>
-        /// Content-Over-Extension: Dosyanın uzantısına veya ilk baytlarındaki PE/Arşiv sihirli baytlarına ("MZ", "PK", vb.) bakarak incelenebilirliğini doğrular.
-        /// Güvenli medya ve belge dosyalarını atlayarak gereksiz CPU/Disk harcamasını önler.
+        /// Queues every nonempty path, including files beneath product-state roots.
+        /// A filename, extension, or directory cannot establish a clean verdict.
         /// </summary>
-        /// <param name="filePath">İncelenecek dosyanın tam yolu.</param>
-        /// <returns>Dosya taranmaya uygun bir aday ise true; aksi halde false.</returns>
+        /// <param name="filePath">Candidate path; content is inspected by a later worker.</param>
+        /// <returns>True for any nonempty candidate path.</returns>
         public static bool IsInspectableCandidate(string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath)) return false;
 
-            try
-            {
-                // 0. Öz-koruma: Uygulamanın kendi dizinleri ve ikilileri asla aday olamaz
-                if (IsSelfOwnedPath(filePath)) return false;
-
-                if (!File.Exists(filePath)) return false;
-
-                string ext = Path.GetExtension(filePath).ToLowerInvariant();
-                
-                // 1. Bilinen güvenli medya, ofis, sembol ve belge uzantılarını doğrudan atla (CPU/RAM harcamaz)
-                bool safeExtension = !string.IsNullOrEmpty(ext) && SafeMediaExtensions.Contains(ext);
-                if (safeExtension) return false;
-
-                var fileInfo = new FileInfo(filePath);
-                if (fileInfo.Length == 0) return false;
-
-                // 3. Yürütülebilir veya komut dosyası uzantısı ise doğrudan adaydır.
-                if (!safeExtension && !string.IsNullOrEmpty(ext) && KnownCandidateExtensions.Contains(ext))
-                {
-                    return true;
-                }
-
-                // 5. Sihirli Bayt (Magic Byte) Denetimi: PE ("MZ"), ZIP ("PK"), 7z, RAR, Shebang ("#!")
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 16);
-                Span<byte> header = stackalloc byte[4];
-                int read = fs.Read(header);
-
-                if (read >= 2)
-                {
-                    // MZ (Portable Executable - Windows PE32 / PE64 / DLL / SYS)
-                    if (header[0] == 0x4D && header[1] == 0x5A) return true;
-
-                    // PK (ZIP, JAR, APK, OpenXML)
-                    if (header[0] == 0x50 && header[1] == 0x4B) return true;
-
-                    // Shebang (#!) script
-                    if (header[0] == 0x23 && header[1] == 0x21) return true;
-
-                    if (read >= 4)
-                    {
-                        // 7z (37 7A BC AF)
-                        if (header[0] == 0x37 && header[1] == 0x7A && header[2] == 0xBC && header[3] == 0xAF) return true;
-
-                        // RAR (52 61 72 21)
-                        if (header[0] == 0x52 && header[1] == 0x61 && header[2] == 0x72 && header[3] == 0x21) return true;
-                    }
-                }
-            }
-            catch
-            {
-                return false;
-            }
-
-            return false;
+            return true;
         }
     }
 }

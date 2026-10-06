@@ -62,16 +62,17 @@ namespace AegisPC.Core.Helpers
         /// </summary>
         public static bool IsSolidStateDrive(string? pathOrDrive)
         {
-            if (string.IsNullOrWhiteSpace(pathOrDrive)) return true;
+            if (string.IsNullOrWhiteSpace(pathOrDrive)) return false;
 
             try
             {
-                string root = Path.GetPathRoot(pathOrDrive) ?? "C:\\";
+                string root = Path.GetPathRoot(Path.GetFullPath(pathOrDrive)) ?? string.Empty;
+                if (root.StartsWith(@"\\", StringComparison.Ordinal)) return false;
                 string driveLetter = root.TrimEnd('\\'); // e.g. "C:"
 
                 if (string.IsNullOrEmpty(driveLetter) || !driveLetter.Contains(':'))
                 {
-                    driveLetter = "C:";
+                    return false;
                 }
 
                 if (_driveSsdCache.TryGetValue(driveLetter, out bool isSsd))
@@ -91,8 +92,7 @@ namespace AegisPC.Core.Helpers
 
                 if (handle.IsInvalid)
                 {
-                    _driveSsdCache[driveLetter] = true; // Varsayılan SSD modu
-                    return true;
+                    return false; // Unknown storage: do not assume high parallelism is safe.
                 }
 
                 var query = new STORAGE_PROPERTY_QUERY
@@ -111,7 +111,7 @@ namespace AegisPC.Core.Helpers
                     out _,
                     IntPtr.Zero);
 
-                if (success)
+                if (success && result.Size >= Marshal.SizeOf<DEVICE_SEEK_PENALTY_DESCRIPTOR>())
                 {
                     bool ssd = !result.IncursSeekPenalty;
                     _driveSsdCache[driveLetter] = ssd;
@@ -120,7 +120,7 @@ namespace AegisPC.Core.Helpers
             }
             catch { }
 
-            return true; // Hata durumunda güvenli SSD varsayılanı
+            return false; // Unknown storage uses the conservative seek-penalty policy.
         }
     }
 }

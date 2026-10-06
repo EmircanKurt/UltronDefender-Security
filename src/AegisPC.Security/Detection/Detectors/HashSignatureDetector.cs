@@ -48,7 +48,7 @@ namespace AegisPC.Security.Detection.Detectors
             // 2. Exact Hash Lookup in Threat Intelligence Store
             if (!string.IsNullOrEmpty(context.SHA256))
             {
-                if (_threatStore.IsMaliciousHash(context.SHA256, out var record) && record != null)
+                if (_threatStore.IsMaliciousHash(context.SHA256, out var record) && record != null && record.IsAuthoritative)
                 {
                     list.Add(new SecurityEvidence
                     {
@@ -73,58 +73,61 @@ namespace AegisPC.Security.Detection.Detectors
                         RuleName = "Trust.KnownGoodHash",
                         Description = "Doğrulanmış Güvenilir Dosya Özeti (Known Trusted Hash)",
                         ScoreContribution = -100,
+                        TrustKind = EvidenceTrustKind.KnownTrustedHash,
                         Confidence = EvidenceConfidence.Absolute,
                         FilePath = context.FilePath,
                         SHA256 = context.SHA256
                     });
                 }
-                else if (_reputationService != null && _reputationService.IsCloudLookupEnabled)
-                {
-                    // 2b. Bulut Tehdit İstihbaratı ve Gerçek Zamanlı Hash Doğrulama (Abuse.ch MalwareBazaar)
-                    try
-                    {
-                        var cloudResult = await _reputationService.CheckReputationAsync(context.SHA256, cancellationToken);
-                        if (cloudResult.IsMalicious)
-                        {
-                            list.Add(new SecurityEvidence
-                            {
-                                Category = EvidenceCategory.StaticSignature,
-                                SourceDetector = "Bulut Tehdit İstihbarat Motoru (Cloud Reputation)",
-                                RuleName = $"Signature.Cloud.{cloudResult.MalwareFamily ?? "Malware"}",
-                                Description = $"Bulut İstihbaratı Tehdit Tespiti: {cloudResult.ThreatName ?? "Bilinmeyen Zararlı"}",
-                                ScoreContribution = cloudResult.Severity > 0 ? cloudResult.Severity : 100,
-                                Confidence = EvidenceConfidence.Absolute,
-                                FilePath = context.FilePath,
-                                SHA256 = context.SHA256,
-                                ProcessId = context.ProcessId,
-                                ParentProcessId = context.ParentProcessId
-                            });
-                        }
-                    }
-                    catch (Exception)
-                    {
-                        // Kesintisiz çalışma: Bulut sorgusu başarısız olsa bile yerel analiz devam eder
-                    }
-                }
+                // Local-only edition: no endpoint hash is sent to a reputation provider.
             }
 
             // 3. Content Pattern & YARA-like Byte Signatures
             var patternMatch = await MalwareSignatureDatabase.CheckFileContentPatternsAsync(context.FilePath, cancellationToken);
             if (patternMatch.IsMatched)
             {
-                list.Add(new SecurityEvidence
+                bool isExactTestSignature =
+                    patternMatch.DetectionMethod.Equals("Statik İçerik İmzası", StringComparison.OrdinalIgnoreCase) ||
+                    patternMatch.ThreatCategory.Equals("TestMalware", StringComparison.OrdinalIgnoreCase);
+
+                // Generic byte references are not executed scripts, irrespective of extension or publisher.
+                // Structured script rules and independently authoritative hashes still run separately.
+                if (!isExactTestSignature)
                 {
-                    Category = EvidenceCategory.StaticSignature,
-                    SourceDetector = DisplayName,
-                    RuleName = $"Pattern.{patternMatch.ThreatCategory}",
-                    Description = $"İçerik İmzası / Exploit Deseni: {patternMatch.ThreatName}",
-                    ScoreContribution = patternMatch.SeverityScore,
-                    Confidence = EvidenceConfidence.High,
-                    FilePath = context.FilePath,
-                    SHA256 = context.SHA256,
-                    ProcessId = context.ProcessId,
-                    ParentProcessId = context.ParentProcessId
-                });
+                    list.Add(new SecurityEvidence
+                    {
+                        Category = EvidenceCategory.ScriptHeuristic,
+                        SourceDetector = DisplayName,
+                        RuleName = $"Documentation.Content.{patternMatch.ThreatCategory}",
+                        FeatureIdentity = $"Content.Reference.{patternMatch.ThreatName}",
+                        Nature = EvidenceNature.Capability,
+                        Description = $"İçerikte metin referansı: {patternMatch.ThreatName}; tek başına saldırı kanıtı değildir.",
+                        ScoreContribution = Math.Min(15, patternMatch.SeverityScore),
+                        Confidence = EvidenceConfidence.Low,
+                        CorrelationGroup = "DocumentationText",
+                        FilePath = context.FilePath,
+                        SHA256 = context.SHA256,
+                        ProcessId = context.ProcessId,
+                        ParentProcessId = context.ParentProcessId
+                    });
+                }
+                else
+                {
+                    list.Add(new SecurityEvidence
+                    {
+                        Category = isExactTestSignature ? EvidenceCategory.StaticSignature : EvidenceCategory.ScriptHeuristic,
+                        SourceDetector = DisplayName,
+                        RuleName = $"Signature.Content.{patternMatch.ThreatCategory}",
+                        Description = $"İçerik İmzası: {patternMatch.ThreatName}",
+                        ScoreContribution = isExactTestSignature ? patternMatch.SeverityScore : Math.Min(65, patternMatch.SeverityScore),
+                        Confidence = isExactTestSignature ? EvidenceConfidence.Absolute : EvidenceConfidence.High,
+                        CorrelationGroup = isExactTestSignature ? "ExactContentSignature" : "HeuristicCommandText",
+                        FilePath = context.FilePath,
+                        SHA256 = context.SHA256,
+                        ProcessId = context.ProcessId,
+                        ParentProcessId = context.ParentProcessId
+                    });
+                }
             }
 
             return list;

@@ -1,126 +1,117 @@
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using AegisPC.Contracts.Detection;
 using AegisPC.Contracts.Network;
 using Microsoft.Extensions.Logging;
 
-namespace AegisPC.Security.Network
+namespace AegisPC.Security.Network;
+
+/// <summary>Bounded, lifetime-aware network review. Names and periodicity cannot prove malicious activity.</summary>
+public sealed class NetworkProcessCorrelator : INetworkProcessCorrelator, IWfpTelemetryEngine
 {
-    /// <summary>
-    /// Ağ akışlarını (WFP Telemetrisi) süreç kimliği, ikili adı ve zamansal desenlerle
-    /// korele ederek C2 Beaconing ve LOLBin ağ çıkışlarını tespit eden motor.
-    /// </summary>
-    public class NetworkProcessCorrelator : INetworkProcessCorrelator, IWfpTelemetryEngine
+    private const int Capacity = 4096;
+    private static readonly TimeSpan Retention = TimeSpan.FromMinutes(5);
+    private readonly Dictionary<string, NetworkFlowEvent> _flows = new(StringComparer.Ordinal);
+    private readonly object _gate = new();
+    private readonly ILogger<NetworkProcessCorrelator>? _logger;
+    private readonly TimeProvider _time;
+    private long _dropped;
+
+    /// <summary>Publishes frozen observations; it never executes containment.</summary>
+    public event Action<NetworkFlowEvent>? OnFlowRecorded;
+    /// <summary>Counts invalid or capacity-dropped input, not confirmed OS event loss.</summary>
+    public long DroppedObservations { get { lock (_gate) return _dropped; } }
+    /// <summary>Creates an inert bounded history with an injectable clock.</summary>
+    public NetworkProcessCorrelator(ILogger<NetworkProcessCorrelator>? logger = null, TimeProvider? time = null)
+    { _logger = logger; _time = time ?? TimeProvider.System; }
+
+    /// <summary>Deduplicates events, freezes mutable input and rejects stale/future timestamps.</summary>
+    public void IngestNetworkFlow(NetworkFlowEvent flow)
     {
-        private readonly ConcurrentBag<NetworkFlowEvent> _flows = new();
-        private readonly ILogger<NetworkProcessCorrelator>? _logger;
-
-        private static readonly HashSet<string> SuspiciousNetworkLolbins = new(StringComparer.OrdinalIgnoreCase)
+        if (flow == null) return;
+        NetworkFlowEvent frozen;
+        lock (_gate)
         {
-            "cmd.exe", "powershell.exe", "pwsh.exe", "certutil.exe", "bitsadmin.exe",
-            "rundll32.exe", "regsvr32.exe", "mshta.exe", "cscript.exe", "wscript.exe", "wmic.exe"
-        };
-
-        public event Action<NetworkFlowEvent>? OnFlowRecorded;
-
-        public NetworkProcessCorrelator(ILogger<NetworkProcessCorrelator>? logger = null)
-        {
-            _logger = logger;
+            Prune();
+            if (!ValidObservation(flow)) { _dropped++; return; }
+            if (_flows.ContainsKey(flow.EventId)) return;
+            if (_flows.Count >= Capacity) { _dropped++; return; }
+            frozen = Copy(flow);
+            _flows.Add(frozen.EventId, frozen);
         }
-
-        public void IngestNetworkFlow(NetworkFlowEvent flow)
+        if (OnFlowRecorded == null) return;
+        foreach (Action<NetworkFlowEvent> subscriber in OnFlowRecorded.GetInvocationList())
         {
-            if (flow == null) return;
-            _flows.Add(flow);
-            OnFlowRecorded?.Invoke(flow);
-        }
-
-        public NetworkConnectionVerdict CorrelateFlow(NetworkFlowEvent flow)
-        {
-            var verdict = new NetworkConnectionVerdict();
-            if (flow == null) return verdict;
-
-            var procName = System.IO.Path.GetFileName(flow.ProcessName).ToLowerInvariant();
-            if (!procName.EndsWith(".exe")) procName += ".exe";
-
-            // 1. LOLBin Dış Ağ Bağlantı Anomalisi (Komut satırı / Betik doğrudan C2'ye bağlanıyor)
-            if (SuspiciousNetworkLolbins.Contains(procName) && !IsLocalOrPrivateIp(flow.RemoteAddress))
-            {
-                verdict.IsSuspicious = true;
-                verdict.RiskScore += 45;
-                verdict.ThreatTitle = $"🚨 LOLBin Ağ Anomalisi: {procName}";
-                verdict.Evidences.Add(new SecurityEvidence
-                {
-                    Category = EvidenceCategory.BehaviorNetwork,
-                    RuleName = "NET_LOLBIN_OUTBOUND_C2",
-                    ScoreContribution = 45,
-                    Confidence = EvidenceConfidence.High,
-                    Description = $"Sistem komut/betik aracı '{procName}' (PID: {flow.ProcessId}) harici IP adresine ({flow.RemoteAddress}:{flow.RemotePort}) bağlandı."
-                });
-            }
-
-            // 2. C2 Beaconing (Düzenli Zaman Aralıklı Bağlantı Deseni)
-            var recentProcFlows = _flows
-                .Where(f => f.ProcessId == flow.ProcessId && f.RemoteAddress == flow.RemoteAddress)
-                .OrderBy(f => f.TimestampUtc)
-                .ToList();
-
-            if (recentProcFlows.Count >= 4)
-            {
-                var intervals = new List<double>();
-                for (int i = 1; i < recentProcFlows.Count; i++)
-                {
-                    intervals.Add((recentProcFlows[i].TimestampUtc - recentProcFlows[i - 1].TimestampUtc).TotalSeconds);
-                }
-
-                double avg = intervals.Average();
-                double variance = intervals.Select(v => Math.Pow(v - avg, 2)).Average();
-                double stdDev = Math.Sqrt(variance);
-
-                // Düşük standart sapma = Düzenli periyodik sinyal (Beaconing)
-                if (stdDev < 2.0 && avg > 0.5 && avg < 120.0)
-                {
-                    verdict.IsSuspicious = true;
-                    verdict.IsC2Beaconing = true;
-                    verdict.RiskScore = Math.Max(verdict.RiskScore, 85);
-                    verdict.ThreatTitle = $"🚨 C2 Beaconing Tehdidi: {flow.ProcessName}";
-                    verdict.Evidences.Add(new SecurityEvidence
-                    {
-                        Category = EvidenceCategory.BehaviorNetwork,
-                        RuleName = "NET_C2_BEACONING_PATTERN",
-                        ScoreContribution = 50,
-                        Confidence = EvidenceConfidence.High,
-                        Description = $"Süreç düzenli zaman aralıklarıyla ({avg:F1} sn ±{stdDev:F1}s) C2 sunucusuna sinyal gönderiyor (MITRE T1071)."
-                    });
-                }
-            }
-
-            verdict.RiskScore = Math.Min(100, verdict.RiskScore);
-            if (verdict.IsSuspicious)
-            {
-                verdict.Explanation = $"Ağ bağlantısı şüpheli sinyal içeriyor: {flow.ProcessName} ➔ {flow.RemoteAddress}:{flow.RemotePort}";
-            }
-
-            return verdict;
-        }
-
-        public IReadOnlyList<NetworkFlowEvent> GetProcessFlowHistory(int pid, TimeSpan window)
-        {
-            var cutoff = DateTime.UtcNow - window;
-            return _flows
-                .Where(f => f.ProcessId == pid && f.TimestampUtc >= cutoff)
-                .OrderBy(f => f.TimestampUtc)
-                .ToList();
-        }
-
-        private static bool IsLocalOrPrivateIp(string ip)
-        {
-            if (string.IsNullOrWhiteSpace(ip)) return true;
-            if (ip is "127.0.0.1" or "::1" or "localhost") return true;
-            if (ip.StartsWith("10.") || ip.StartsWith("192.168.") || ip.StartsWith("172.16.") || ip.StartsWith("169.254.")) return true;
-            return false;
+            try { subscriber(Copy(frozen)); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Network observation subscriber failed"); }
         }
     }
+
+    /// <summary>Ranks periodic traffic for review only, using the same process lifetime, endpoint, port and protocol.</summary>
+    public NetworkConnectionVerdict CorrelateFlow(NetworkFlowEvent flow)
+    {
+        var verdict = new NetworkConnectionVerdict
+        { ThreatTitle = "No confirmed network threat", Explanation = "Observational analysis is not a clean-file or containment verdict." };
+        if (flow == null || !ValidObservation(flow)) { verdict.Explanation = "Network observation unavailable or stale."; return verdict; }
+        verdict.IsActorIdentityKnown = HasLifetime(flow);
+        if (!verdict.IsActorIdentityKnown || NetworkAddressScope.IsLocalOrPrivate(flow.RemoteAddress)) return verdict;
+        NetworkFlowEvent[] history;
+        lock (_gate)
+        {
+            Prune();
+            history = _flows.Values.Where(f => SameActorAndEndpoint(f, flow))
+                .Where(f => f.TimestampUtc <= flow.TimestampUtc).OrderBy(f => f.TimestampUtc).ToArray();
+        }
+        if (history.Length < 4) return verdict;
+        double[] intervals = history.Zip(history.Skip(1), (a, b) => (b.TimestampUtc - a.TimestampUtc).TotalSeconds).ToArray();
+        double average = intervals.Average();
+        double deviation = Math.Sqrt(intervals.Select(x => Math.Pow(x - average, 2)).Average());
+        if (average <= 0.5 || average >= 120 || deviation >= 2) return verdict;
+        verdict.HasPeriodicPattern = true;
+        verdict.IsSuspicious = true;
+        verdict.RiskScore = 25;
+        verdict.ThreatTitle = "Periodic network activity: review suggested";
+        verdict.Explanation = "Updates, backups and telemetry can also be periodic. Maliciousness is not confirmed.";
+        verdict.Evidences.Add(new SecurityEvidence
+        {
+            Category = EvidenceCategory.BehaviorNetwork, RuleName = "NET_PERIODIC_ACTIVITY_REVIEW",
+            ScoreContribution = 25, Confidence = EvidenceConfidence.Low,
+            Description = $"Same-lifetime connections repeat at {average:F1}s intervals (deviation {deviation:F1}s); not C2 proof."
+        });
+        return verdict;
+    }
+
+    /// <summary>Returns diagnostic history only; mixed PID lifetimes from this view must never authorize an action.</summary>
+    public IReadOnlyList<NetworkFlowEvent> GetProcessFlowHistory(int pid, TimeSpan window)
+    {
+        if (window <= TimeSpan.Zero) return Array.Empty<NetworkFlowEvent>();
+        var cutoff = _time.GetUtcNow().UtcDateTime - (window > Retention ? Retention : window);
+        lock (_gate) { Prune(); return _flows.Values.Where(f => f.ProcessId == pid && f.TimestampUtc >= cutoff).OrderBy(f => f.TimestampUtc).Select(Copy).ToArray(); }
+    }
+
+    private bool ValidObservation(NetworkFlowEvent flow)
+    {
+        var now = _time.GetUtcNow().UtcDateTime;
+        return !string.IsNullOrWhiteSpace(flow.EventId) && flow.EventId.Length <= 128 &&
+            flow.ProcessId > 0 && flow.TimestampUtc.Kind == DateTimeKind.Utc &&
+            flow.TimestampUtc <= now && flow.TimestampUtc >= now - Retention &&
+            flow.RemotePort is >= 0 and <= 65535 && flow.LocalPort is >= 0 and <= 65535 &&
+            System.Net.IPAddress.TryParse(flow.RemoteAddress, out _) && flow.ProcessName.Length <= 512 &&
+            flow.ExecutablePath.Length <= 32768 && flow.BootId.Length <= 128;
+    }
+    private static bool HasLifetime(NetworkFlowEvent flow) => flow.ProcessStartedAtUtc is { Kind: DateTimeKind.Utc } start &&
+        start <= flow.TimestampUtc && !string.IsNullOrWhiteSpace(flow.BootId);
+    private static bool SameActorAndEndpoint(NetworkFlowEvent a, NetworkFlowEvent b) => HasLifetime(a) &&
+        a.ProcessId == b.ProcessId && a.ProcessStartedAtUtc == b.ProcessStartedAtUtc && a.BootId == b.BootId &&
+        a.RemoteAddress == b.RemoteAddress && a.RemotePort == b.RemotePort && a.Protocol == b.Protocol && a.Direction == b.Direction;
+    private void Prune()
+    {
+        var cutoff = _time.GetUtcNow().UtcDateTime - Retention;
+        foreach (string id in _flows.Where(x => x.Value.TimestampUtc < cutoff).Select(x => x.Key).ToArray()) _flows.Remove(id);
+    }
+    private static NetworkFlowEvent Copy(NetworkFlowEvent f) => new()
+    {
+        EventId = f.EventId, ProcessId = f.ProcessId, ProcessStartedAtUtc = f.ProcessStartedAtUtc, BootId = f.BootId,
+        ProcessName = f.ProcessName, ExecutablePath = f.ExecutablePath, Direction = f.Direction, Protocol = f.Protocol,
+        LocalAddress = f.LocalAddress, LocalPort = f.LocalPort, RemoteAddress = f.RemoteAddress, RemotePort = f.RemotePort,
+        DestinationDomain = f.DestinationDomain, BytesSent = f.BytesSent, BytesReceived = f.BytesReceived, TimestampUtc = f.TimestampUtc
+    };
 }

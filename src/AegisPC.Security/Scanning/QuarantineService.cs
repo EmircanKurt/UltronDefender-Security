@@ -1,47 +1,37 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using AegisPC.Contracts.Safety;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Models;
+using AegisPC.Security.Safety;
 using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.Scanning
 {
     /// <summary>
-    /// AES-256 şifreli, Windows DPAPI donanım/kullanıcı korumalı, kalıcı meta veri indeksli ve güvenli geri yükleme/silme özellikli Karantina Kasası.
+    /// AES-256 şifreli, SQLite ACID veritabanı indeksli, transactional rollback korumalı ve güvenli geri yükleme/silme özellikli Karantina Servisi.
+    /// TransactionalQuarantineEngine ile birleştirilmiş tekil üretim motorudur.
     /// </summary>
-    public class QuarantineService : IQuarantineService
+    public partial class QuarantineService : IQuarantineService, IContentBoundQuarantineService, IDisposable
     {
         private readonly IHashService _hashService;
         private readonly IAuditLogService? _auditLogService;
         private readonly ILogger<QuarantineService>? _logger;
-        private readonly string _quarantineDir;
-        private readonly string _indexFilePath;
-        private readonly string _vaultKeyFilePath;
-        private readonly List<QuarantineEntry> _quarantinedItems = new();
-        private readonly object _lock = new();
+        private readonly TransactionalQuarantineEngine _engine;
+        private readonly ISignatureVerifier _signatureVerifier;
+        private readonly IExclusionService? _exclusionService;
+        private readonly IFileHashMatcher? _fileHashMatcher;
 
         public event Action<QuarantineEntry>? OnFileQuarantined;
         public event Action<int>? OnFileRestored;
         public event Action<int>? OnFileDeleted;
 
-        private byte[]? _cachedMasterKey;
-        private byte[]? _dpapiEntropy; // Generated per-installation, no longer hardcoded
-        private byte[]? _fallbackRandomKey;
-        private static readonly byte[] LegacyMigrationKeySeed = SHA256.HashData(Encoding.UTF8.GetBytes(Environment.MachineName + "_Ultron_Quarantine_Vault_2026"));
-        private const string QuarantineMagicHeader = "ULTRON_QUAR_V2";
-
-        private readonly AegisPC.Contracts.Safety.IProtectedPathGuard _protectedPathGuard;
-        private readonly AegisPC.Contracts.Safety.IReparsePointGuard _reparsePointGuard;
-        private readonly ISignatureVerifier _signatureVerifier;
+        public string? LastError { get; private set; }
 
         public QuarantineService(
             IHashService hashService,
@@ -50,149 +40,61 @@ namespace AegisPC.Security.Scanning
             string? customVaultDir = null,
             AegisPC.Contracts.Safety.IProtectedPathGuard? protectedPathGuard = null,
             AegisPC.Contracts.Safety.IReparsePointGuard? reparsePointGuard = null,
-            ISignatureVerifier? signatureVerifier = null)
+            ISignatureVerifier? signatureVerifier = null,
+            IExclusionService? exclusionService = null,
+            IFileHashMatcher? fileHashMatcher = null)
         {
             _hashService = hashService;
             _auditLogService = auditLogService;
             _logger = logger;
-            _protectedPathGuard = protectedPathGuard ?? new AegisPC.Security.Safety.ProtectedPathGuard();
-            _reparsePointGuard = reparsePointGuard ?? new AegisPC.Security.Safety.ReparsePointGuard();
             _signatureVerifier = signatureVerifier ?? new SignatureVerifier();
+            _exclusionService = exclusionService;
+            _fileHashMatcher = fileHashMatcher;
 
-            if (!string.IsNullOrEmpty(customVaultDir))
-            {
-                _quarantineDir = customVaultDir;
-            }
-            else
-            {
-                var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                _quarantineDir = Path.Combine(appData, "AegisPC", "QuarantineVault");
-            }
-
-            Directory.CreateDirectory(_quarantineDir);
-            _indexFilePath = Path.Combine(_quarantineDir, "quarantine_index.json");
-            _vaultKeyFilePath = Path.Combine(_quarantineDir, "vault.key");
-
-            EnsureMasterKey();
-            LoadIndexFromDisk();
+            _engine = new TransactionalQuarantineEngine(
+                protectedPathGuard: protectedPathGuard,
+                reparsePointGuard: reparsePointGuard,
+                hashService: hashService,
+                customVaultDir: customVaultDir);
         }
 
-        private void EnsureMasterKey()
+        public Task<bool> QuarantineFileAsync(string path, string reason, CancellationToken cancellationToken = default)
+            => QuarantineCoreAsync(path, reason, null, cancellationToken);
+
+        /// <summary>Contains only matching detected content, without terminating processes holding the file.</summary>
+        public Task<bool> TryQuarantineFileAsync(string path, string reason, string expectedSha256, CancellationToken cancellationToken = default)
         {
-            try
+            if (string.IsNullOrWhiteSpace(expectedSha256))
             {
-                // Generate or load per-installation DPAPI entropy (not hardcoded)
-                var entropyFilePath = Path.Combine(_quarantineDir, "entropy.dat");
-                if (File.Exists(entropyFilePath))
-                {
-                    _dpapiEntropy = File.ReadAllBytes(entropyFilePath);
-                }
-                else
-                {
-                    _dpapiEntropy = new byte[32];
-                    using var rng = RandomNumberGenerator.Create();
-                    rng.GetBytes(_dpapiEntropy);
-                    File.WriteAllBytes(entropyFilePath, _dpapiEntropy);
-                    // Restrict file ACL (best effort)
-                    try { File.SetAttributes(entropyFilePath, FileAttributes.Hidden | FileAttributes.System); } catch { }
-                }
-
-                if (File.Exists(_vaultKeyFilePath))
-                {
-                    var encryptedKey = File.ReadAllBytes(_vaultKeyFilePath);
-                    _cachedMasterKey = ProtectedData.Unprotect(encryptedKey, _dpapiEntropy, DataProtectionScope.LocalMachine);
-                }
-                else
-                {
-                    // Generate fresh cryptographically random 256-bit AES master key
-                    var newKey = new byte[32];
-                    using var rng = RandomNumberGenerator.Create();
-                    rng.GetBytes(newKey);
-
-                    var encryptedKey = ProtectedData.Protect(newKey, _dpapiEntropy, DataProtectionScope.LocalMachine);
-                    File.WriteAllBytes(_vaultKeyFilePath, encryptedKey);
-                    _cachedMasterKey = newKey;
-                }
+                LastError = "Doğrulanmış içerik özeti olmadan otomatik karantina uygulanmadı.";
+                return Task.FromResult(false);
             }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "DPAPI key generation failed, falling back to isolated random master key.");
-                _cachedMasterKey = GetOrCreateFallbackRandomKey();
-            }
+            return QuarantineCoreAsync(path, reason, expectedSha256, cancellationToken);
         }
 
-        private byte[] GetOrCreateFallbackRandomKey()
+        private async Task<bool> QuarantineCoreAsync(string path, string reason, string? expectedSha256, CancellationToken cancellationToken,
+            string? authenticatedSid = null, bool isAdministrator = false)
         {
-            if (_fallbackRandomKey != null) return _fallbackRandomKey;
-
-            var fallbackPath = Path.Combine(_quarantineDir, "vault_isolated.key");
-            try
-            {
-                if (File.Exists(fallbackPath))
-                {
-                    _fallbackRandomKey = File.ReadAllBytes(fallbackPath);
-                    if (_fallbackRandomKey.Length == 32) return _fallbackRandomKey;
-                }
-
-                _fallbackRandomKey = new byte[32];
-                using (var rng = RandomNumberGenerator.Create())
-                {
-                    rng.GetBytes(_fallbackRandomKey);
-                }
-                File.WriteAllBytes(fallbackPath, _fallbackRandomKey);
-                try { File.SetAttributes(fallbackPath, FileAttributes.Hidden | FileAttributes.System); } catch { }
-                return _fallbackRandomKey;
-            }
-            catch
-            {
-                _fallbackRandomKey = new byte[32];
-                RandomNumberGenerator.Fill(_fallbackRandomKey);
-                return _fallbackRandomKey;
-            }
-        }
-
-        private byte[] GetMasterKey() => _cachedMasterKey ?? GetOrCreateFallbackRandomKey();
-
-        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
-        private static extern bool MoveFileEx(string lpExistingFileName, string? lpNewFileName, int dwFlags);
-        private const int MOVEFILE_DELAY_UNTIL_REBOOT = 0x00000004;
-
-        public async Task<bool> QuarantineFileAsync(string path, string reason, CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return false;
+            LastError = null;
+            if (string.IsNullOrWhiteSpace(path) || (!File.Exists(path) && expectedSha256 == null)) return false;
 
             try
             {
-                var eval = _protectedPathGuard.Evaluate(path);
-                if (eval.IsProtected)
-                {
-                    _logger?.LogWarning("Attempted quarantine on protected system path blocked: {Path} ({Reason})", path, eval.Reason);
-                    return false;
-                }
-
-                var reparse = _reparsePointGuard.Inspect(path);
-                if (reparse.IsReparsePoint && (reparse.IsCrossBoundaryTrap || reparse.PointsToProtectedTarget))
-                {
-                    _reparsePointGuard.SafeDeleteLinkOnly(path);
-                    _logger?.LogWarning("Symlink trap severed to protect target: {Path}", path);
-                    return false;
-                }
+                var canonicalPath = Path.GetFullPath(path);
 
                 // Authenticode & Microsoft Core Binary Guard:
-                // Valid Microsoft-signed files in system or program directories can NEVER be quarantined automatically.
-                if (AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(path))
+                // Sistem ve program dizinlerindeki geçerli Microsoft imzalı dosyalar asla otomatik karantinaya alınamaz.
+                if (AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(canonicalPath))
                 {
-                    var sig = await _signatureVerifier.VerifySignatureAsync(path, cancellationToken);
-                    if (sig.IsValid && sig.Publisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true)
+                    var sig = await _signatureVerifier.VerifySignatureAsync(canonicalPath, cancellationToken);
+                    if (sig.IsValid && TrustedSoftwarePolicy.IsTrustedOsPublisher(sig.Publisher))
                     {
-                        _logger?.LogWarning("Refusing automatic quarantine of valid Microsoft-signed binary in system path: {Path} (Publisher: '{Publisher}'). Safety Guard Active.", path, sig.Publisher);
+                        _logger?.LogWarning("Refusing automatic quarantine of valid Microsoft-signed binary in system path: {Path} (Publisher: '{Publisher}'). Safety Guard Active.", canonicalPath, sig.Publisher);
                         return false;
                     }
                 }
 
-                var canonicalPath = Path.GetFullPath(path);
-
-                // Hosts and System32 Tasks Guard: Never delete the critical Windows hosts file or system tasks
+                // Hosts and System32 Tasks Guard: Never delete critical Windows hosts file or system tasks
                 if (canonicalPath.Contains(@"\drivers\etc\hosts", StringComparison.OrdinalIgnoreCase) ||
                     canonicalPath.Contains(@"\System32\Tasks", StringComparison.OrdinalIgnoreCase))
                 {
@@ -200,146 +102,68 @@ namespace AegisPC.Security.Scanning
                     return false;
                 }
 
-                var fileInfo = new FileInfo(canonicalPath);
-                long originalFileSize = fileInfo.Length;
-                string originalFileName = fileInfo.Name;
-
-                int id;
-                lock (_lock)
+                var request = new QuarantineRequest
                 {
-                    id = _quarantinedItems.Count > 0 ? _quarantinedItems.Max(x => x.Id) + 1 : 1;
-                }
-
-                var quarantineFileName = $"vault_{id}_{Guid.NewGuid():N}.quar";
-                var quarantineFilePath = Path.Combine(_quarantineDir, quarantineFileName);
-                var tempQuarantineFilePath = quarantineFilePath + ".tmp";
-
-                // 1. Encrypt with AES-256-CBC using DPAPI protected Master Key (Streaming — no full RAM load)
-                using var aes = Aes.Create();
-                aes.Key = GetMasterKey();
-                aes.GenerateIV();
-                var sha256 = await _hashService.ComputeSha256Async(canonicalPath, cancellationToken);
-
-                // 2. Write Container (Magic + IV + SHA256 + Encrypted Data) via streaming to .tmp file first (Atomic Stage)
-                using (var fsOut = new FileStream(tempQuarantineFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
-                using (var bw = new BinaryWriter(fsOut, Encoding.UTF8, leaveOpen: true))
-                {
-                    bw.Write(QuarantineMagicHeader);
-                    bw.Write(aes.IV.Length);
-                    bw.Write(aes.IV);
-                    bw.Write(sha256);
-
-                    // Placeholder for encrypted data length — will be patched after encryption
-                    long encryptedLengthPosition = fsOut.Position;
-                    bw.Write((int)0); // placeholder
-
-                    long encryptedStartPosition = fsOut.Position;
-
-                    using (var csEncrypt = new CryptoStream(fsOut, aes.CreateEncryptor(), CryptoStreamMode.Write, leaveOpen: true))
-                    using (var fsRead = new FileStream(canonicalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-                    {
-                        await fsRead.CopyToAsync(csEncrypt, 81920, cancellationToken);
-                    }
-
-                    // Patch the encrypted data length
-                    int encryptedLength = (int)(fsOut.Position - encryptedStartPosition);
-                    fsOut.Position = encryptedLengthPosition;
-                    bw.Write(encryptedLength);
-                    fsOut.Position = fsOut.Length; // seek back to end
-                }
-
-                // 3. Atomically commit the encrypted vault file
-                File.Move(tempQuarantineFilePath, quarantineFilePath, overwrite: true);
-
-                // 4. Terminate any running process locking the target file (Disposing all Process instances)
-                try
-                {
-                    var processes = Process.GetProcesses();
-                    foreach (var proc in processes)
-                    {
-                        try
-                        {
-                            if (proc.Id <= 4) continue;
-                            if (string.Equals(proc.MainModule?.FileName, canonicalPath, StringComparison.OrdinalIgnoreCase))
-                            {
-                                proc.Kill(entireProcessTree: true);
-                            }
-                        }
-                        catch { }
-                        finally
-                        {
-                            proc.Dispose();
-                        }
-                    }
-                }
-                catch { }
-
-                // 5. Safely wipe original file attributes and delete
-                bool deleted = false;
-                for (int attempt = 0; attempt < 25; attempt++)
-                {
-                    try
-                    {
-                        File.SetAttributes(canonicalPath, FileAttributes.Normal);
-                        File.Delete(canonicalPath);
-                        deleted = true;
-                        break;
-                    }
-                    catch
-                    {
-                        await Task.Delay(40, cancellationToken);
-                    }
-                }
-
-                if (!deleted)
-                {
-                    try
-                    {
-                        MoveFileEx(canonicalPath, null, MOVEFILE_DELAY_UNTIL_REBOOT);
-                    }
-                    catch { }
-                }
-
-                var entry = new QuarantineEntry
-                {
-                    Id = id,
-                    OriginalPath = canonicalPath,
-                    QuarantinePath = quarantineFilePath,
-                    FileName = originalFileName,
-                    SHA256 = sha256,
-                    FileSize = originalFileSize,
-                    Reason = reason,
-                    RiskLevel = RiskLevel.HighRisk,
-                    QuarantinedAt = DateTime.UtcNow,
-                    Status = QuarantineStatus.Quarantined
+                    TargetFilePath = canonicalPath,
+                    ThreatReason = reason,
+                    ForceKillHoldingProcesses = false,
+                    WipeOriginalPayloadBytes = true,
+                    ExpectedSha256 = expectedSha256,
+                    // Legacy API supplies a display reason and optional content identity,
+                    // but no trusted detector verdict. A hash match alone is not maliciousness.
+                    DetectionEvidence = null
                 };
 
-                lock (_lock)
+                var txResult = authenticatedSid == null
+                    ? await _engine.ExecuteQuarantineAsync(request, cancellationToken)
+                    : await _engine.ExecuteQuarantineForCallerAsync(request, authenticatedSid, isAdministrator, cancellationToken);
+
+                if (!txResult.Success)
                 {
-                    _quarantinedItems.Add(entry);
-                    SaveIndexToDisk();
+                    LastError = txResult.Message;
+                    _logger?.LogWarning("Quarantine execution failed for {Path}: {Message}", canonicalPath, txResult.Message);
+                    return false;
                 }
+                if (txResult.WasAlreadyQuarantined) return true;
 
-                OnFileQuarantined?.Invoke(entry);
-
-                _logger?.LogInformation("Quarantined file encrypted with DPAPI AES-256 to vault: {Path} -> {QuarPath}", canonicalPath, quarantineFilePath);
+                QuarantineEntry? entry = null;
+                try { entry = await _engine.GetItemByIdAsync(txResult.QuarantineId, CancellationToken.None); }
+                catch (Exception observerReadEx)
+                { _logger?.LogWarning(observerReadEx, "Committed quarantine notification metadata could not be read for entry {Id}", txResult.QuarantineId); }
+                if (entry != null)
+                {
+                    foreach (Action<QuarantineEntry> observer in OnFileQuarantined?.GetInvocationList() ?? Array.Empty<Delegate>())
+                    {
+                        try { observer(entry); }
+                        catch (Exception eventEx)
+                        { _logger?.LogWarning(eventEx, "Quarantine notification subscriber failed for {Path}", canonicalPath); }
+                    }
+                }
 
                 if (_auditLogService != null)
                 {
-                    await _auditLogService.LogActionAsync(
-                        AuditAction.FileQuarantined,
-                        "File",
-                        fileInfo.Name,
-                        canonicalPath,
-                        reason,
-                        AuditResult.Success,
-                        cancellationToken: cancellationToken);
+                    try
+                    {
+                        await _auditLogService.LogActionAsync(
+                            AuditAction.FileQuarantined,
+                            "File",
+                            Path.GetFileName(canonicalPath),
+                            canonicalPath,
+                            reason,
+                            AuditResult.Success,
+                            cancellationToken: cancellationToken);
+                    }
+                    catch (Exception auditEx)
+                    {
+                        _logger?.LogWarning(auditEx, "Audit logging failed for quarantine of {Path}", canonicalPath);
+                    }
                 }
 
                 return true;
             }
             catch (Exception ex)
             {
+                LastError = ex.Message;
                 _logger?.LogError(ex, "Failed to quarantine file: {Path}", path);
                 return false;
             }
@@ -352,316 +176,95 @@ namespace AegisPC.Security.Scanning
 
         public async Task<bool> RestoreFileAsync(int id, string? customDestinationPath, CancellationToken cancellationToken = default)
         {
-            QuarantineEntry? entry;
-            lock (_lock)
-            {
-                entry = _quarantinedItems.FirstOrDefault(x => x.Id == id && x.Status == QuarantineStatus.Quarantined);
-            }
+            LastError = null;
 
-            if (entry == null)
+            var entry = await _engine.GetItemByIdAsync(id, cancellationToken);
+            if (entry == null || entry.Status != QuarantineStatus.Quarantined)
             {
-                _logger?.LogWarning("Quarantine restore failed: Entry {Id} not found.", id);
+                LastError = "Kasa kaydı bulunamadı veya dosya zaten geri yüklenmiş/silinmiş.";
                 return false;
             }
 
-            if (!File.Exists(entry.QuarantinePath))
-            {
-                _logger?.LogWarning("Quarantine restore failed: Vault file missing on disk: {Path}", entry.QuarantinePath);
-                return false;
-            }
+            var destination = string.IsNullOrWhiteSpace(customDestinationPath) ? entry.OriginalPath : customDestinationPath;
 
-            try
+            // Dosya kilitli mi kontrolü
+            if (File.Exists(destination))
             {
-                var destination = string.IsNullOrWhiteSpace(customDestinationPath) ? entry.OriginalPath : customDestinationPath;
-                var destDir = Path.GetDirectoryName(destination);
-                if (destDir != null && !Directory.Exists(destDir))
-                {
-                    Directory.CreateDirectory(destDir);
-                }
-
-                var tempDest = destination + ".restoring.tmp";
-                bool decrypted = false;
                 try
                 {
-                    using (var fsOut = new FileStream(tempDest, FileMode.Create, FileAccess.Write, FileShare.None))
-                    {
-                        decrypted = await DecryptVaultContainerStreamAsync(entry.QuarantinePath, fsOut, cancellationToken);
-                    }
-
-                    if (!decrypted)
-                    {
-                        try { if (File.Exists(tempDest)) File.Delete(tempDest); } catch { }
-                        _logger?.LogWarning("Quarantine restore failed: Decryption failed for {Id}.", id);
-                        return false;
-                    }
-
-                    // Verify integrity via streaming hash calculation
-                    var restoredHash = await _hashService.ComputeSha256Async(tempDest, cancellationToken);
-                    if (!restoredHash.Equals(entry.SHA256, StringComparison.OrdinalIgnoreCase))
-                    {
-                        try { if (File.Exists(tempDest)) File.Delete(tempDest); } catch { }
-                        _logger?.LogError("Quarantine integrity check failed for {Id}. Hash mismatch.", id);
-                        return false;
-                    }
-
-                    File.Move(tempDest, destination, overwrite: true);
+                    using var testStream = new FileStream(destination, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
                 }
-                catch
+                catch (IOException)
                 {
-                    try { if (File.Exists(tempDest)) File.Delete(tempDest); } catch { }
-                    throw;
+                    LastError = "Hedef dosya başka bir program tarafından kullanılıyor (dosya kullanımda / kilitli).";
+                    _logger?.LogWarning("Quarantine restore failed: Target file is locked or in use: {Destination}", destination);
+                    return false;
                 }
-
-                // Safely remove vault container
-                try { File.Delete(entry.QuarantinePath); } catch { }
-
-                lock (_lock)
+                catch (UnauthorizedAccessException uex)
                 {
-                    entry.Status = QuarantineStatus.Restored;
-                    entry.RestoredAt = DateTime.UtcNow;
-                    SaveIndexToDisk();
+                    LastError = "Yönetici yetkisi gerekli: Hedef dosyaya yazma yetkisi yok.";
+                    _logger?.LogWarning(uex, "Quarantine restore failed: Unauthorized access to target file: {Destination}", destination);
+                    return false;
                 }
-
-                OnFileRestored?.Invoke(id);
-
-                _logger?.LogInformation("Quarantined file restored: {Id} -> {Dest}", id, destination);
-
-                if (_auditLogService != null)
-                {
-                    await _auditLogService.LogActionAsync(
-                        AuditAction.FileRestored,
-                        "File",
-                        entry.FileName,
-                        destination,
-                        "Dosya kullanıcı talebiyle karantinadan geri yüklendi.",
-                        AuditResult.Success,
-                        cancellationToken: cancellationToken);
-                }
-
-                return true;
             }
-            catch (Exception ex)
+
+            var restoreResult = await _engine.ExecuteRestoreAsync(id, customDestinationPath, cancellationToken);
+
+            if (!restoreResult.Success)
             {
-                _logger?.LogError(ex, "Failed to restore quarantine file {Id}", id);
+                LastError = restoreResult.Message;
                 return false;
             }
-        }
 
-        public Task<bool> DeleteQuarantinedAsync(int id, CancellationToken cancellationToken = default)
-        {
-            QuarantineEntry? entry;
-            lock (_lock)
-            {
-                entry = _quarantinedItems.FirstOrDefault(x => x.Id == id);
-            }
-
-            if (entry == null) return Task.FromResult(false);
-
+            // Cache invalidation
             try
             {
-                if (File.Exists(entry.QuarantinePath))
-                {
-                    // Cryptographic shredding: Overwrite first 64KB (header, IV and magic) with zeroes
-                    try
-                    {
-                        var fileInfo = new FileInfo(entry.QuarantinePath);
-                        long len = fileInfo.Length;
-                        int wipeSize = (int)Math.Min(len, 65536);
-                        if (wipeSize > 0)
-                        {
-                            using (var fs = new FileStream(entry.QuarantinePath, FileMode.Open, FileAccess.Write, FileShare.None))
-                            {
-                                byte[] zeroes = new byte[wipeSize];
-                                fs.Write(zeroes, 0, wipeSize);
-                                fs.Flush();
-                            }
-                        }
-                    }
-                    catch { }
-
-                    File.Delete(entry.QuarantinePath);
-                }
-
-                lock (_lock)
-                {
-                    entry.Status = QuarantineStatus.Deleted;
-                    _quarantinedItems.Remove(entry);
-                    SaveIndexToDisk();
-                }
-
-                OnFileDeleted?.Invoke(id);
-
-                _logger?.LogInformation("Quarantined file permanently wiped: {Id} ({FileName})", id, entry.FileName);
-
-                if (_auditLogService != null)
-                {
-                    _ = _auditLogService.LogActionAsync(
-                        AuditAction.FileDeleted,
-                        "File",
-                        entry.FileName,
-                        entry.OriginalPath,
-                        "Karantinadaki dosya kalıcı olarak silindi ve diski sıfırlandı.",
-                        AuditResult.Success,
-                        cancellationToken: cancellationToken);
-                }
-
-                return Task.FromResult(true);
+                _exclusionService?.AddTemporaryContentExclusion(restoreResult.RestoredPath, entry.SHA256,
+                    TimeSpan.FromMinutes(5), "Geri yükleme: yalnız doğrulanmış dosya içeriğine geçici izin");
+                _fileHashMatcher?.InvalidateCache(restoreResult.RestoredPath);
             }
-            catch (Exception ex)
+            catch (Exception ex) { _logger?.LogWarning(ex, "Post-commit recovery cache bookkeeping failed for entry {Id}", id); }
+
+            foreach (Action<int> observer in OnFileRestored?.GetInvocationList() ?? Array.Empty<Delegate>())
             {
-                _logger?.LogError(ex, "Failed to permanently delete quarantined item {Id}", id);
-                return Task.FromResult(false);
+                try { observer(id); }
+                catch (Exception ex) { _logger?.LogWarning(ex, "OnFileRestored event handler failed for ID {Id}", id); }
             }
+
+            return true;
+        }
+
+        public async Task<bool> DeleteQuarantinedAsync(int id, CancellationToken cancellationToken = default)
+        {
+            LastError = null;
+            bool deleted = await _engine.DeleteQuarantinedAsync(id, cancellationToken);
+            if (deleted)
+            {
+                try
+                {
+                    OnFileDeleted?.Invoke(id);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "OnFileDeleted event handler failed for ID {Id}", id);
+                }
+            }
+            return deleted;
         }
 
         public Task<QuarantineEntry?> GetItemByIdAsync(int id, CancellationToken cancellationToken = default)
         {
-            lock (_lock)
-            {
-                var item = _quarantinedItems.FirstOrDefault(x => x.Id == id);
-                return Task.FromResult(item);
-            }
+            return _engine.GetItemByIdAsync(id, cancellationToken);
         }
 
         public Task<List<QuarantineEntry>> GetQuarantinedItemsAsync(CancellationToken cancellationToken = default)
         {
-            lock (_lock)
-            {
-                // Only return active quarantined items whose vault file actually exists on disk
-                var validItems = _quarantinedItems
-                    .Where(x => x.Status == QuarantineStatus.Quarantined && File.Exists(x.QuarantinePath))
-                    .ToList();
-
-                return Task.FromResult(validItems);
-            }
+            return _engine.GetQuarantinedItemsAsync(cancellationToken);
         }
 
-        private async Task<bool> DecryptVaultContainerStreamAsync(string quarantineFilePath, Stream destinationStream, CancellationToken cancellationToken)
+        public void Dispose()
         {
-            byte[][] candidateKeys = new[] { GetMasterKey(), LegacyMigrationKeySeed };
-
-            foreach (var key in candidateKeys)
-            {
-                try
-                {
-                    using var fs = new FileStream(quarantineFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                    using var br = new BinaryReader(fs, Encoding.UTF8, leaveOpen: true);
-
-                    var header = br.ReadString();
-                    if (header != QuarantineMagicHeader && header != "ULTRON_QUAR_V1" && header != "ULTRON_QUAR_V2")
-                    {
-                        continue;
-                    }
-
-                    int ivLength = br.ReadInt32();
-                    if (ivLength <= 0 || ivLength > 1024) continue;
-                    byte[] iv = br.ReadBytes(ivLength);
-                    string originalSha = br.ReadString();
-                    int encLength = br.ReadInt32(); // length prefix from writer
-
-                    using var aes = Aes.Create();
-                    aes.Key = key;
-                    aes.IV = iv;
-
-                    destinationStream.SetLength(0);
-                    using (var csDecrypt = new CryptoStream(fs, aes.CreateDecryptor(), CryptoStreamMode.Read, leaveOpen: true))
-                    {
-                        await csDecrypt.CopyToAsync(destinationStream, 81920, cancellationToken);
-                    }
-                    await destinationStream.FlushAsync(cancellationToken);
-                    return true;
-                }
-                catch
-                {
-                    // Try next candidate key
-                }
-            }
-            return false;
-        }
-
-        private byte[] DecryptVaultContainer(string quarantineFilePath)
-        {
-            using var fs = new FileStream(quarantineFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            using var br = new BinaryReader(fs);
-
-            var header = br.ReadString();
-            if (header != QuarantineMagicHeader && header != "ULTRON_QUAR_V1")
-            {
-                throw new InvalidDataException("Invalid quarantine container header");
-            }
-
-            int ivLength = br.ReadInt32();
-            byte[] iv = br.ReadBytes(ivLength);
-            string originalSha = br.ReadString();
-            int encLength = br.ReadInt32();
-            byte[] encBytes = br.ReadBytes(encLength);
-
-            // Attempt decryption with DPAPI Master Key first
-            try
-            {
-                return DecryptWithKey(encBytes, GetMasterKey(), iv);
-            }
-            catch
-            {
-                // Fallback to legacy migration key seed for backward compatibility
-                return DecryptWithKey(encBytes, LegacyMigrationKeySeed, iv);
-            }
-        }
-
-        private static byte[] DecryptWithKey(byte[] encBytes, byte[] key, byte[] iv)
-        {
-            using var aes = Aes.Create();
-            aes.Key = key;
-            aes.IV = iv;
-
-            using var msDecrypt = new MemoryStream();
-            using (var csDecrypt = new CryptoStream(new MemoryStream(encBytes), aes.CreateDecryptor(), CryptoStreamMode.Read))
-            {
-                csDecrypt.CopyTo(msDecrypt);
-            }
-            return msDecrypt.ToArray();
-        }
-
-        private void LoadIndexFromDisk()
-        {
-            lock (_lock)
-            {
-                try
-                {
-                    if (File.Exists(_indexFilePath))
-                    {
-                        var json = File.ReadAllText(_indexFilePath);
-                        var items = JsonSerializer.Deserialize<List<QuarantineEntry>>(json);
-                        if (items != null)
-                        {
-                            _quarantinedItems.Clear();
-                            _quarantinedItems.AddRange(items);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogError(ex, "Failed to load quarantine index from disk");
-                }
-            }
-        }
-
-        private void SaveIndexToDisk()
-        {
-            lock (_lock)
-            {
-                try
-                {
-                    var json = JsonSerializer.Serialize(_quarantinedItems, new JsonSerializerOptions { WriteIndented = true });
-                    var tempFile = _indexFilePath + ".tmp." + Guid.NewGuid().ToString("N")[..8];
-                    File.WriteAllText(tempFile, json);
-                    File.Move(tempFile, _indexFilePath, overwrite: true);
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogError(ex, "Failed to save quarantine index atomically to disk");
-                }
-            }
+            _engine?.Dispose();
         }
     }
 }

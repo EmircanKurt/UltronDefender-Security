@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AegisPC.Core.Enums;
+using AegisPC.Core.Models;
 
 namespace AegisPC.Security.RealTime
 {
@@ -10,6 +11,12 @@ namespace AegisPC.Security.RealTime
     /// </summary>
     public class RealTimeVerdictResult
     {
+        /// <summary>Reports structural identity and omissions from the same locked source used by detection.</summary>
+        public FileContentClassification? ContentClassification { get; set; }
+        /// <summary>Whether the configured detector inspection completed; confirmed evidence never hides a coverage gap.</summary>
+        public bool InspectionComplete { get; set; } = true;
+        /// <summary>Explicit detector and structural limitations, independent of the malware verdict.</summary>
+        public string[] CoverageLimitations { get; set; } = [];
         /// <summary>
         /// Dosyanın nihai kararı (Clean, Suspicious, ConfirmedMalicious).
         /// </summary>

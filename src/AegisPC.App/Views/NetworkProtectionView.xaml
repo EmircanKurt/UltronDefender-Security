@@ -5,18 +5,24 @@
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
       mc:Ignorable="d" 
       d:DesignHeight="950" d:DesignWidth="1050"
       Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
-      Title="{Binding PageTitle}"
-      PreviewMouseWheel="OnPagePreviewMouseWheel">
+      Title="{Binding PageTitle}">
 
     <Page.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
     </Page.Resources>
 
-    <ScrollViewer x:Name="RootScrollViewer" Margin="28,20,28,24">
+    <ScrollViewer x:Name="RootScrollViewer" 
+                  helpers:WheelScrollHelper.EnableRootRedirect="True"
+                  Margin="28,20,28,24"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  CanContentScroll="False"
+                  Focusable="False">
         <StackPanel MaxWidth="880" HorizontalAlignment="Left">
             <!-- 1. Header -->
             <StackPanel Margin="0,0,0,20">
@@ -169,7 +175,7 @@
                             <ItemsControl ItemsSource="{Binding AnalysisVerdict.DetectionReasons}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding StringFormat='• {0}'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusDangerText}" Margin="0,2"/>
+                                        <TextBlock Text="{Binding Path=., StringFormat='• \{0\}'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushStatusDangerText}" Margin="0,2"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

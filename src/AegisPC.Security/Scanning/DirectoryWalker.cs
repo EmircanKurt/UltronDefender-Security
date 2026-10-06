@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using AegisPC.Core.Constants;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Helpers;
+using Serilog;
 
 namespace AegisPC.Security.Scanning
 {
@@ -44,7 +45,7 @@ namespace AegisPC.Security.Scanning
     /// Hızlı ve Tam tarama rotalarını, Windows kök dizini kurallarını ve
     /// bellek/kayıt defteri başlangıç noktalarını gezen sınıf.
     /// </summary>
-    public class DirectoryWalker : IDirectoryWalker
+    public partial class DirectoryWalker : IDirectoryWalker, IDirectoryCoverageProvider
     {
         public static readonly HashSet<string> ExcludedDirectoryNames = ScanFilterPolicy.ExcludedDirectoryNames;
 
@@ -55,7 +56,18 @@ namespace AegisPC.Security.Scanning
             CancellationToken cancellationToken,
             ManualResetEventSlim? pauseEvent = null)
         {
-            if (string.IsNullOrWhiteSpace(dirPath) || !Directory.Exists(dirPath) || cancellationToken.IsCancellationRequested) return;
+            cancellationToken.ThrowIfCancellationRequested();
+            var enqueue = tryQueueFileAsync;
+            tryQueueFileAsync = file => DispatchInspectionFileAsync(file, enqueue, cancellationToken);
+            if (string.IsNullOrWhiteSpace(dirPath)) return;
+            if (!Directory.Exists(dirPath)) { _coverage.Value?.RecordDirectoryError(); return; }
+            try
+            {
+                if ((File.GetAttributes(dirPath) & FileAttributes.ReparsePoint) != 0)
+                { _coverage.Value?.RecordReparseSkip(); return; }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            { _coverage.Value?.RecordDirectoryError(); Log.Debug(exception, "Directory attributes are unavailable."); return; }
 
             var dirQueue = new ConcurrentQueue<string>();
             var visitedDirs = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
@@ -63,8 +75,9 @@ namespace AegisPC.Security.Scanning
             dirQueue.Enqueue(dirPath);
             visitedDirs.TryAdd(dirPath, 0);
 
-            // Paralel klasör gezeri (I/O saturasyonu ve sıfır bekleme) — Modern CPU çekirdeklerine göre 4-16 arası
-            int walkerCount = Math.Clamp(Environment.ProcessorCount, 4, 16);
+            // Keep directory enumeration bounded on small CPUs. File scanning has a separate
+            // worker pool; 4-16 walkers on a 1-2 core machine only add contention and memory use.
+            int walkerCount = Math.Clamp(Environment.ProcessorCount, 1, 4);
             int activeWalkers = 0;
 
             var walkerTasks = Enumerable.Range(0, walkerCount).Select(async _ =>
@@ -94,7 +107,6 @@ namespace AegisPC.Security.Scanning
                         foreach (var file in Directory.EnumerateFiles(currentDir))
                         {
                             if (cancellationToken.IsCancellationRequested) break;
-                            if (ScanFilterPolicy.IsSelfOwnedPath(file)) continue;
                             pauseEvent?.Wait(cancellationToken);
                             await tryQueueFileAsync(file).ConfigureAwait(false);
                         }
@@ -109,22 +121,30 @@ namespace AegisPC.Security.Scanning
                                 try
                                 {
                                     var dirInfo = new DirectoryInfo(subDir);
-                                    if ((dirInfo.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+                                    if ((dirInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+                                    { _coverage.Value?.RecordReparseSkip(); continue; }
 
                                     // TAM KAPSAM: Windows kökünde de tüm alt dizinler taranır (WinSxS, Installer,
                                     // assembly, ProgramData dahil). Yalnızca ExcludedDirectoryNames listesi dışlanır.
-                                    if (ExcludedDirectoryNames.Contains(dirInfo.Name) || ScanFilterPolicy.IsSelfOwnedPath(subDir)) continue;
-
                                     if (visitedDirs.TryAdd(subDir, 0))
                                     {
                                         dirQueue.Enqueue(subDir);
                                     }
                                 }
-                                catch { }
+                                catch (Exception ex)
+                                {
+                                    _coverage.Value?.RecordDirectoryError();
+                                    Log.Debug(ex, "Failed to inspect directory attribute or filter {SubDir}", subDir);
+                                }
                             }
                         }
                     }
-                    catch { } // Bir dizindeki erişim hatası diğer dizinleri durdurmaz
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                    {
+                        _coverage.Value?.RecordDirectoryError();
+                        Log.Debug(ex, "Failed to enumerate directory during walk");
+                    } // Bir dizindeki erişim hatası diğer dizinleri durdurmaz
                     finally
                     {
                         Interlocked.Decrement(ref activeWalkers);
@@ -138,7 +158,7 @@ namespace AegisPC.Security.Scanning
             }
             catch (OperationCanceledException)
             {
-                // Tarama iptali durumunda temiz çıkış
+                throw;
             }
         }
 
@@ -150,23 +170,28 @@ namespace AegisPC.Security.Scanning
             CancellationToken cancellationToken,
             ManualResetEventSlim? pauseEvent = null)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            var enqueue = tryQueueFileAsync;
+            tryQueueFileAsync = file => DispatchInspectionFileAsync(file, enqueue, cancellationToken);
             if (scanType == ScanType.Full)
             {
-                // TAM DİSK TARAMASI: TÜM SABİT SÜRÜCÜLER TEK SEFERDE TEMİZCE TARANIR
-                var allDrives = DriveInfo.GetDrives()
-                    .Where(d => d.IsReady && d.DriveType == DriveType.Fixed)
-                    .Select(d => d.RootDirectory.FullName)
-                    .ToList();
+                // Resolve actual volumes, not drive letters: folder mounts and GUID-only roots matter too.
+                var volumes = await _volumeTargets.ResolveAsync(cancellationToken).ConfigureAwait(false);
+                foreach (var limitation in volumes.Limitations) _coverage.Value?.RecordLimitation(limitation);
+                var allDrives = volumes.VolumeRoots.Distinct(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var driveRoot in allDrives)
                 {
-                    if (cancellationToken.IsCancellationRequested) break;
+                    cancellationToken.ThrowIfCancellationRequested();
                     reportProgress($"Disk taranıyor: {driveRoot}");
                     await EnumerateDirectorySafelyAsync(driveRoot, true, tryQueueFileAsync, cancellationToken, pauseEvent);
                 }
             }
             else if (scanType == ScanType.Quick)
             {
+                tryQueueFileAsync = file => DispatchImplicitInspectionFileAsync(file, enqueue, cancellationToken);
+                var userTargets = await _scanTargets.ResolveAsync(cancellationToken).ConfigureAwait(false);
+                foreach (var limitation in userTargets.Limitations) _coverage.Value?.RecordLimitation(limitation);
                 // HIZLI TARAMA: AKTİF BELLEK SÜREÇLERİ, BAŞLANGIÇ & KRİTİK SİSTEM DİZİNLERİ
                 reportProgress("Hızlı Tarama: Aktif Bellek Süreçleri ve Modülleri taranıyor...");
                 try
@@ -175,8 +200,9 @@ namespace AegisPC.Security.Scanning
                     foreach (var proc in activeProcesses)
                     {
                         if (cancellationToken.IsCancellationRequested) break;
+                        using (proc)
+                        {
                         if (proc.Id <= 4) continue;
-
                         try
                         {
                             string? mainModule = proc.MainModule?.FileName;
@@ -193,29 +219,48 @@ namespace AegisPC.Security.Scanning
                                 }
                             }
                         }
-                        catch { }
+                        catch (OperationCanceledException) { throw; }
+                        catch (ScanQueueDispatchException) { throw; }
+                        catch (Exception ex)
+                        {
+                            _coverage.Value?.RecordProcessError();
+                            Log.Debug(ex, "Failed to read modules for process {Pid}", proc.Id);
+                        }
+                        }
                     }
                 }
-                catch { }
+                catch (OperationCanceledException) { throw; }
+                catch (ScanQueueDispatchException) { throw; }
+                catch (Exception ex)
+                {
+                    _coverage.Value?.RecordProcessError();
+                    Log.Debug(ex, "Failed to iterate running processes during quick scan");
+                }
 
                 // Başlangıç ve Otomatik Çalıştırma Klasörleri
                 reportProgress("Başlangıç ve Otomatik Çalıştırma Dizinleri taranıyor...");
-                await EnumerateDirectorySafelyAsync(KnownPaths.UserStartup, true, tryQueueFileAsync, cancellationToken, pauseEvent);
-                await EnumerateDirectorySafelyAsync(KnownPaths.CommonStartup, true, tryQueueFileAsync, cancellationToken, pauseEvent);
+                foreach (var target in userTargets.DirectoryTargets)
+                    if (target.Kind != AegisPC.Core.Models.ScanDirectoryKind.Documents)
+                        await EnumerateImplicitDirectoryAsync(target.Path, target.Recursive, tryQueueFileAsync, cancellationToken, pauseEvent);
+                await EnumerateImplicitDirectoryAsync(KnownPaths.CommonStartup, true, tryQueueFileAsync, cancellationToken, pauseEvent);
 
                 // Windows Registry Autoruns (HKCU & HKLM Run anahtarları)
                 try
                 {
-                    using var cuKey = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-                    if (cuKey != null)
+                    foreach (var profile in userTargets.Profiles)
                     {
-                        foreach (var valName in cuKey.GetValueNames())
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (!profile.IsRegistryHiveLoaded)
+                        { _coverage.Value?.RecordLimitation("UnloadedUserAutorunsNotInspected"); continue; }
+                        using var userKey = Microsoft.Win32.Registry.Users.OpenSubKey(profile.OwnerSid + @"\Software\Microsoft\Windows\CurrentVersion\Run");
+                        if (userKey == null) continue;
+                        foreach (var valName in userKey.GetValueNames())
                         {
-                            var rawVal = cuKey.GetValue(valName)?.ToString();
+                            var rawVal = userKey.GetValue(valName)?.ToString();
                             if (!string.IsNullOrEmpty(rawVal))
                             {
                                 var cleanPath = PathHelper.ExtractExecutablePath(rawVal);
-                                if (File.Exists(cleanPath)) await tryQueueFileAsync(cleanPath);
+                                if (IsEligibleImplicitTarget(cleanPath) && File.Exists(cleanPath)) await tryQueueFileAsync(cleanPath);
                             }
                         }
                     }
@@ -229,35 +274,44 @@ namespace AegisPC.Security.Scanning
                             if (!string.IsNullOrEmpty(rawVal))
                             {
                                 var cleanPath = PathHelper.ExtractExecutablePath(rawVal);
-                                if (File.Exists(cleanPath)) await tryQueueFileAsync(cleanPath);
+                                if (IsEligibleImplicitTarget(cleanPath) && File.Exists(cleanPath)) await tryQueueFileAsync(cleanPath);
                             }
                         }
                     }
                 }
-                catch { }
+                catch (OperationCanceledException) { throw; }
+                catch (ScanQueueDispatchException) { throw; }
+                catch (Exception ex)
+                {
+                    _coverage.Value?.RecordLimitation("RegistryAutorunsUnavailable");
+                    Log.Debug(ex, "Failed to enumerate registry run keys during quick scan");
+                }
 
-                // İndirilenler & Masaüstü (En yaygın indirme bulaşma noktaları)
-                await EnumerateDirectorySafelyAsync(KnownPaths.Downloads, false, tryQueueFileAsync, cancellationToken, pauseEvent);
-                await EnumerateDirectorySafelyAsync(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), false, tryQueueFileAsync, cancellationToken, pauseEvent);
-
-                // Geçici Dizinler (%TEMP% ve Windows\Temp)
-                await EnumerateDirectorySafelyAsync(KnownPaths.Temp, false, tryQueueFileAsync, cancellationToken, pauseEvent);
-                await EnumerateDirectorySafelyAsync(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp"), false, tryQueueFileAsync, cancellationToken, pauseEvent);
+                // Per-user downloads/desktop/temp were resolved above, not from SYSTEM's profile.
+                await EnumerateImplicitDirectoryAsync(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp"), false, tryQueueFileAsync, cancellationToken, pauseEvent);
 
                 // Sistem Sürücüleri ve System32
                 reportProgress("Kritik Sistem Sürücüleri taranıyor...");
-                await EnumerateDirectorySafelyAsync(Path.Combine(KnownPaths.System32, "drivers"), true, tryQueueFileAsync, cancellationToken, pauseEvent);
-                await EnumerateDirectorySafelyAsync(KnownPaths.System32, false, tryQueueFileAsync, cancellationToken, pauseEvent);
+                await EnumerateImplicitDirectoryAsync(Path.Combine(KnownPaths.System32, "drivers"), true, tryQueueFileAsync, cancellationToken, pauseEvent);
+                await EnumerateImplicitDirectoryAsync(KnownPaths.System32, false, tryQueueFileAsync, cancellationToken, pauseEvent);
 
                 string sysWow64 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SysWOW64");
-                if (Directory.Exists(sysWow64))
+                if (IsEligibleImplicitTarget(sysWow64) && Directory.Exists(sysWow64))
                 {
-                    await EnumerateDirectorySafelyAsync(sysWow64, false, tryQueueFileAsync, cancellationToken, pauseEvent);
+                    await EnumerateImplicitDirectoryAsync(sysWow64, false, tryQueueFileAsync, cancellationToken, pauseEvent);
                 }
             }
-            else if (!string.IsNullOrEmpty(customPath) && Directory.Exists(customPath))
+            else if (!string.IsNullOrEmpty(customPath))
             {
-                await EnumerateDirectorySafelyAsync(customPath, true, tryQueueFileAsync, cancellationToken, pauseEvent);
+                cancellationToken.ThrowIfCancellationRequested();
+                pauseEvent?.Wait(cancellationToken);
+                if (File.Exists(customPath))
+                {
+                    if ((File.GetAttributes(customPath) & FileAttributes.ReparsePoint) != 0)
+                        _coverage.Value?.RecordReparseSkip();
+                    else await tryQueueFileAsync(Path.GetFullPath(customPath)).ConfigureAwait(false);
+                }
+                else await EnumerateDirectorySafelyAsync(customPath, true, tryQueueFileAsync, cancellationToken, pauseEvent);
             }
         }
     }

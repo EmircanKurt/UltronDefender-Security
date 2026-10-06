@@ -59,6 +59,7 @@ namespace AegisPC.Service.Network
                     _logger?.LogInformation("ThreatFeedManager: Tehdit istihbaratı güncellemeleri kontrol ediliyor...");
                     updatedCount = await _feedUpdater.UpdateFromMalwareBazaarAsync(force, cancellationToken: cancellationToken);
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     _logger?.LogWarning(ex, "Tehdit beslemesi çevrimiçi güncellenirken hata oluştu.");
@@ -66,6 +67,7 @@ namespace AegisPC.Service.Network
             }
 
             // Yerel kuralları tazele
+            cancellationToken.ThrowIfCancellationRequested();
             _dnsFilterService.ReloadRules();
 
             // Hosts dosyası ile senkronize et

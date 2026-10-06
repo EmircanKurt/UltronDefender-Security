@@ -13,30 +13,48 @@ using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.Detection.YaraEngine
 {
-    // [YARA-X vs libyara Karşılaştırması ve Mimari Tercih Gerekçesi]
-    // 1. Rust Bellek Güvenliği: libyara C/C++ temelli olup parser zafiyetlerine açıkken, YARA-X Rust ile bellek güvenliğini (memory-safety) garanti eder.
-    // 2. Modern Kural ve Modül Desteği: YARA-X, yeni nesil YARA-v4+ dil standartlarını, modern modül yapılarını ve genişletilmiş regex kabiliyetlerini yerel destekler.
-    // 3. Güvenli ve Temiz FFI Entegrasyonu: Karmaşık C binding kütüphaneleri ve unmanaged bellek sızıntıları yerine güvenli, yalıtılmış C-ABI/FFI arayüzü sunar.
-    // 4. Eşzamanlı (Thread-Safe) Tarama Başarımı: Derlenmiş kural havuzları kilitlenme olmadan çoklu worker iş parçacıkları tarafından paralel taranabilir.
-    // 5. ReDoS Koruması ve Yüksek Hız: Aho-Corasick ve PikeVM tabanlı regex mimarisi ile regex denial-of-service (ReDoS) saldırılarını engeller ve yüksek verim sağlar.
+    // [UltronDefender Yerleşik Mini-YARA Motoru & Desteklenen Kural Dili Alt Kümesi]
+    // DİKKAT VE DÜRÜSTLÜK BEYANI:
+    // Bu motor, harici unmanaged ikili kütüphane bağımlılığı (yara_x.dll veya libyara.dll) olmaksızın,
+    // %100 yönetilen (.NET 8 C#) kod tabanıyla çalışan hafif bir kural ve bayt-desen yorumlayıcısıdır (Mini-YARA).
+    //
+    // Desteklenen Kural Bileşenleri:
+    // - Metin Dizgileri (Text strings): Düz metin eşleme ("$a = \"...\"")
+    // - Onaltılık Bayt Dizileri (Hex strings): Boşluklu bayt dizilimleri ("$b = { 4D 5A 90 00 }")
+    // - Değiştiriciler (Modifiers): nocase, ascii, wide
+    // - Koşul İfadeleri (Conditions): "any of them", "all of them", tekil tanımlayıcılar ("$a"), basit boolean "and" / "or"
+    // - Meta Alanları: author, description, severity, date, reference
+    //
+    // Desteklenmeyen / Kapsam Dışı Özellikler:
+    // - Geriye dönüşlü karmaşık regex motoru (Backtracking Regex)
+    // - Aralıkli atlama jokerleri (Wildcard jumps: [2-4])
+    // - Harici YARA modülleri (pe, elf, math, hash)
+    // - Kümeler ve döngü nicelik belirteçleri (for all / for any in ...)
+    //
+    // * Native YARA-X FFI Durumu:
+    // Aşağıdaki YrxCompiler DllImport bildirimleri, gelecekte çalışma dizinine 'yara_x.dll'
+    // eklendiğinde devreye girebilecek FFI kancalarıdır; geçerli dağıtımda yerleşik managed motor çalışır.
 
     /// <summary>
-    /// YARA-X mimarisine dayalı kural yönetimi ve desen eşleştirme motoru.
+    /// Yerleşik Mini-YARA kural yönetimi ve bayt-desen eşleştirme motoru.
     /// Yerel C:\ProgramData\UltronDefender\yara\ kurallarını yönetir,
     /// bayt ofsetleri ve adli kanıt metaverileri ile tehditleri tespit eder.
+    /// Desteklenen alt küme: Text strings, Hex strings, nocase/ascii/wide, any of them/all of them/identifiers.
     /// </summary>
     public class YaraEngine : IYaraEngine
     {
         private readonly string _rulesDirectory;
         private readonly ILogger<YaraEngine>? _logger;
-        private readonly ConcurrentDictionary<string, ParsedYaraRule> _rules = new(StringComparer.OrdinalIgnoreCase);
+        private ConcurrentDictionary<string, ParsedYaraRule> _rules = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _syncLock = new();
 
-        public int LoadedRuleCount => _rules.Count;
+        /// <summary>Returns the count in the last fully-published rule snapshot, never an in-progress reload count.</summary>
+        public int LoadedRuleCount => Volatile.Read(ref _rules).Count;
+        public long? MaximumScanBytes => 16 * 1024 * 1024;
         public string RulesDirectory => _rulesDirectory;
 
-        #region Native YARA-X C-ABI / FFI Bindings
-        // YARA-X dinamik kütüphanesi (yara_x.dll) mevcut olduğunda doğrudan güvenli C-ABI üzerinden çağrılır.
+        #region Optional Native YARA-X C-ABI / FFI Hooks
+        // YARA-X dinamik kütüphanesi (yara_x.dll) runtime dizininde mevcut olduğunda opsiyonel kullanılabilir.
         [DllImport("yara_x", EntryPoint = "yrx_compiler_create", CallingConvention = CallingConvention.Cdecl)]
         private static extern int YrxCompilerCreate(out IntPtr compiler);
 
@@ -85,12 +103,22 @@ namespace AegisPC.Security.Detection.YaraEngine
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "UltronDefender", "yara");
 
-                if (!Directory.Exists(localAppDir))
+                try
                 {
-                    Directory.CreateDirectory(localAppDir);
-                }
+                    if (!Directory.Exists(localAppDir))
+                    {
+                        Directory.CreateDirectory(localAppDir);
+                    }
 
-                return localAppDir;
+                    return localAppDir;
+                }
+                catch
+                {
+                    // Kısıtlı servis/test hesabında ProgramData ve LocalAppData yazılamayabilir.
+                    // Kurucu hata vermesin; InitializeRulesDirectory bu son konumu da güvenli
+                    // şekilde deneyecek ve yazılamıyorsa motor boş kural kümesiyle çalışacaktır.
+                    return Path.Combine(Path.GetTempPath(), "UltronDefender", "yara");
+                }
             }
         }
 
@@ -130,14 +158,16 @@ namespace AegisPC.Security.Detection.YaraEngine
             }
         }
 
+        /// <summary>
+        /// Builds and atomically publishes a complete managed rule snapshot, then invalidates cached scan verdicts.
+        /// If no valid replacement can be loaded, the existing snapshot and its cache revision are preserved.
+        /// </summary>
         public void ReloadRules()
         {
             lock (_syncLock)
             {
                 try
                 {
-                    _rules.Clear();
-
                     if (!Directory.Exists(_rulesDirectory))
                     {
                         return;
@@ -148,6 +178,8 @@ namespace AegisPC.Security.Detection.YaraEngine
                         .Distinct(StringComparer.OrdinalIgnoreCase);
 
                     int fileCount = 0;
+                    var newRules = new ConcurrentDictionary<string, ParsedYaraRule>(StringComparer.OrdinalIgnoreCase);
+
                     foreach (var file in files)
                     {
                         try
@@ -156,7 +188,7 @@ namespace AegisPC.Security.Detection.YaraEngine
                             var parsedList = ParseYaraSource(content, file);
                             foreach (var rule in parsedList)
                             {
-                                _rules[rule.Name] = rule;
+                                newRules[rule.Name] = rule;
                             }
                             fileCount++;
                         }
@@ -166,12 +198,22 @@ namespace AegisPC.Security.Detection.YaraEngine
                         }
                     }
 
-                    _logger?.LogInformation("YARA Motoru güncellendi: {FileCount} dosyadan {RuleCount} kural yüklendi. (Dizin: {Dir})",
-                        fileCount, _rules.Count, _rulesDirectory);
+                    if (!newRules.IsEmpty || _rules.IsEmpty)
+                    {
+                        // Never expose the temporary empty/partial dictionary to concurrent scanners.
+                        Volatile.Write(ref _rules, newRules);
+                        DetectionPolicyRevision.Invalidate();
+                        _logger?.LogInformation("YARA Motoru güncellendi: {FileCount} dosyadan {RuleCount} kural yüklendi. (Dizin: {Dir})",
+                            fileCount, _rules.Count, _rulesDirectory);
+                    }
+                    else
+                    {
+                        _logger?.LogWarning("YARA kuralları yeniden yüklenirken tüm dosyalar geçersiz bulundu; mevcut son geçerli kural seti ({Count} kural) korundu.", _rules.Count);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "YARA kuralları yeniden yüklenirken hata oluştu.");
+                    _logger?.LogError(ex, "YARA kuralları yeniden yüklenirken hata oluştu. Son geçerli kural seti korundu.");
                 }
             }
         }
@@ -202,6 +244,7 @@ namespace AegisPC.Security.Detection.YaraEngine
                         if (n == 0) break;
                         read += n;
                     }
+                    if (read != toRead) throw new EndOfStreamException("YARA input was truncated while scanning.");
                 }
 
                 return await ScanBufferAsync(buffer, Path.GetFileName(filePath), ct);
@@ -213,19 +256,24 @@ namespace AegisPC.Security.Detection.YaraEngine
             catch (Exception ex)
             {
                 _logger?.LogTrace(ex, "YARA dosya tarama hatası: {FilePath}", filePath);
-                return results;
+                throw;
             }
         }
 
+        /// <summary>
+        /// Evaluates the provided buffer against one complete rule snapshot, even if a concurrent reload publishes a replacement.
+        /// Only the provided bytes and the supported managed rule subset are inspected; cancellation propagates to the caller.
+        /// </summary>
         public Task<List<YaraMatch>> ScanBufferAsync(byte[] buffer, string identifier = "", CancellationToken ct = default)
         {
+            var rules = Volatile.Read(ref _rules);
             var matches = new List<YaraMatch>();
-            if (buffer == null || buffer.Length == 0 || _rules.IsEmpty)
+            if (buffer == null || buffer.Length == 0 || rules.IsEmpty)
             {
                 return Task.FromResult(matches);
             }
 
-            foreach (var kvp in _rules)
+            foreach (var kvp in rules)
             {
                 ct.ThrowIfCancellationRequested();
                 var rule = kvp.Value;
@@ -263,26 +311,24 @@ namespace AegisPC.Security.Detection.YaraEngine
                 }
             }
 
-            // Koşul Değerlendirme
+            // Koşul Değerlendirme (AST tabanlı kesin mantıksal çözümleme)
             bool isSatisfied = false;
-            string cond = rule.Condition.Trim();
-
-            if (cond.Equals("any of them", StringComparison.OrdinalIgnoreCase))
+            if (rule.ConditionAst != null)
             {
-                isSatisfied = matchedIdentifiers.Count > 0;
-            }
-            else if (cond.Equals("all of them", StringComparison.OrdinalIgnoreCase))
-            {
-                isSatisfied = rule.Patterns.Count > 0 && matchedIdentifiers.Count == rule.Patterns.Count;
-            }
-            else if (rule.Patterns.Any(p => p.Identifier.Equals(cond, StringComparison.OrdinalIgnoreCase)))
-            {
-                isSatisfied = matchedIdentifiers.Contains(cond);
+                isSatisfied = rule.ConditionAst.Evaluate(matchedIdentifiers, rule.Patterns.Count);
             }
             else
             {
-                // Varsayılan: Herhangi bir desenin eşleşmesi yeterli
-                isSatisfied = matchedIdentifiers.Count > 0;
+                try
+                {
+                    var ast = YaraConditionParser.Parse(rule.Condition, rule.Patterns.Select(p => p.Identifier));
+                    rule.ConditionAst = ast;
+                    isSatisfied = ast.Evaluate(matchedIdentifiers, rule.Patterns.Count);
+                }
+                catch
+                {
+                    isSatisfied = false;
+                }
             }
 
             if (isSatisfied)
@@ -420,8 +466,15 @@ namespace AegisPC.Security.Detection.YaraEngine
                         }
                     }
 
-                    ParseRuleBody(body, rule);
-                    rules.Add(rule);
+                    try
+                    {
+                        ParseRuleBody(body, rule);
+                        rules.Add(rule);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Trace.TraceWarning($"[YaraEngine] Geçersiz veya desteklenmeyen kural atlandı ({rule.Name}): {ex.Message}");
+                    }
                 }
 
                 i = cur;
@@ -556,6 +609,9 @@ namespace AegisPC.Security.Detection.YaraEngine
             {
                 rule.Condition = "any of them";
             }
+
+            // Koşul ifadesini gerçek AST ayrıştırıcısı ile doğrula ve derle
+            rule.ConditionAst = YaraConditionParser.Parse(rule.Condition, rule.Patterns.Select(p => p.Identifier));
         }
 
         private static byte[] ParseHexBytes(string hex)
@@ -682,6 +738,7 @@ rule CobaltStrike_Beacon_Stager
         public string Description { get; set; } = string.Empty;
         public int Severity { get; set; } = 100;
         public string Condition { get; set; } = "any of them";
+        public IYaraConditionNode? ConditionAst { get; set; }
         public string SourceFile { get; set; } = string.Empty;
         public List<string> Tags { get; } = new();
         public Dictionary<string, string> Metadata { get; } = new(StringComparer.OrdinalIgnoreCase);

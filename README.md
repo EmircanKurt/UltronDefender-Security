@@ -33,19 +33,21 @@ The current edition has no paid activation key, subscription or expiry. The MIT 
 
 See the [current verification report](docs/STATUS.md) for actual results and outstanding gates. Regression totals do **not** measure malware detection or false-positive rates. EICAR is a workflow test, not real-world efficacy evidence.
 
+The [6 October scan/resource review](docs/reports/RESOURCE_CORRECTNESS_2026-10-06.md) documents startup-scan parallelism, adaptive resource budgets and false-positive corrections. A 2 GiB budget is an upper planning limit on suitable systems, not reserved RAM; a roughly 40% CPU target is adaptive, not guaranteed usage. The small benign-file benchmark is not a whole-PC speed claim.
+
 Windows 10/11 x64 are development targets; this .NET 8 build does not support Windows 7. Antivirus cannot repair operating-system vulnerabilities or replace supported Windows updates. Keep Defender and workplace protection enabled. School/work deployment requires administrator approval and an isolated pilot.
 
 ## Build and review
 
 Requirements: Windows and .NET 8 SDK; Inno Setup 6 only for installer generation.
 
-The reviewed development code is currently in [pull request #3](https://github.com/EmircanKurt/UltronDefender-Security/pull/3). The default branch can still contain older code until the staged changes are reviewed and merged. The commands below intentionally select the reviewed preview branch.
+The consolidated scan/resource preview is on `codex/resource-correctness-2026-10-06`. The default branch and older downloads can still contain older code until review and deployment gates are completed. The commands below intentionally select this preview, not a recommended production release.
 
 ```powershell
-git clone --branch codex/rt-ai-free-preview-2026-10-04 https://github.com/EmircanKurt/UltronDefender-Security.git
+git clone --branch codex/resource-correctness-2026-10-06 https://github.com/EmircanKurt/UltronDefender-Security.git
 cd UltronDefender-Security
 dotnet build tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release -warnaserror
-dotnet test tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --no-build --filter "FullyQualifiedName!~Golden01_&FullyQualifiedName!~SettingsViewModelRegressionTests"
+dotnet test tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --no-build --filter "FullyQualifiedName!~Golden01_&FullyQualifiedName!~SettingsViewModelProtectionRegressionTests&FullyQualifiedName!~SettingsViewModelRegressionTests&FullyQualifiedName!~FiveRuns_SameBenignCoverage_ReportBeforeAfter&FullyQualifiedName!~SharedPipeline_BenignInstallerProbe_WhenProvided&FullyQualifiedName!~LocalBenignPipeline_FiveRuns"
 dotnet publish src/AegisPC.App/AegisPC.App.csproj -c Release -o artifacts/preview/app
 ```
 

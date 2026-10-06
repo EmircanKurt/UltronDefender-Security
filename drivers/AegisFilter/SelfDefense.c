@@ -1,4 +1,4 @@
-﻿#include <ntddk.h>
+#include <ntddk.h>
 
 PVOID gRegistrationHandle = NULL;
 ULONG gProtectedPid = 0;

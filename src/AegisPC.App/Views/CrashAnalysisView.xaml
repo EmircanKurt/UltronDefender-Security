@@ -3,6 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
       Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True"
       SnapsToDevicePixels="True"
@@ -98,7 +99,10 @@
 
             <!-- Diagnostic Report & Timeline -->
             <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+                <ScrollViewer helpers:WheelScrollHelper.EnableRootRedirect="True"
+                              VerticalScrollBarVisibility="Auto" 
+                              HorizontalScrollBarVisibility="Disabled" 
+                              CanContentScroll="False">
                     <StackPanel Margin="4">
                         <TextBlock Text="Olay Teşhis Raporu" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,16"/>
 

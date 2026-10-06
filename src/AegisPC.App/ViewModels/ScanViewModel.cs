@@ -10,9 +10,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace AegisPC.App.ViewModels
 {
     /// <summary>
-    /// Tarama görünümü durumunu, ilerleme ölçümlerini, bulunan tehditleri ve
-    /// kullanıcı etkileşimlerini yöneten merkezi ViewModel sınıfı.
-    /// Mantıksal alt modülleri Sync, Intelligence ve Commands partial dosyalarında genişletilmiştir.
+    /// Presents observed scan progress, final results, and user actions; partial modules handle synchronization, reports, and controls.
     /// </summary>
     public partial class ScanViewModel : ObservableObject
     {
@@ -23,6 +21,8 @@ namespace AegisPC.App.ViewModels
         private readonly IWindowsToastNotificationService? _toastService;
         private readonly IScanResourceManager? _resourceManager;
         private readonly ISettingsService? _settingsService;
+        private readonly IExclusionService? _exclusionService;
+        private readonly AegisPC.ServiceContracts.IServiceIpcClient? _ipcClient;
 
         private DispatcherTimer? _timer;
         private Stopwatch _stopwatch = new();
@@ -67,11 +67,38 @@ namespace AegisPC.App.ViewModels
 
         private volatile bool _isCancellationRequested;
         public bool IsCancellationRequested => _isCancellationRequested;
-        public string ScanResultTitle => _isCancellationRequested ? "Tehdit Taraması İptal Edildi" : "Tehdit Taraması Sonuçları";
-        public string CleanStateTitle => _isCancellationRequested ? "Tarama İptal Edildi" : "Sisteminiz temiz";
+        /// <summary>Shows final engine status, without representing a failed scan as completed.</summary>
+        public string ScanResultTitle => _isCancellationRequested ? "Tarama İptal Edildi" : _lastScanStatus == ScanStatus.Failed ? "Tarama Başarısız" : "Tarama Sonuçları";
+        /// <summary>Describes observed coverage rather than certifying the safety of the system.</summary>
+        public string CleanStateTitle => _isCancellationRequested ? "Tarama İptal Edildi" : _lastScanStatus == ScanStatus.Failed ? "Tarama Başarısız" : "İncelenen öğelerde açık bulgu yok";
+        /// <summary>Retains coverage limitations for cancelled, failed, and partially inspected scans.</summary>
         public string CleanStateSubtitle => _isCancellationRequested 
-            ? $"Tarama kullanıcı tarafından durduruldu. İncelenen {ScannedItemsFormatted} öğede herhangi bir tehdit tespit edilmedi." 
-            : "Taranan dosyalarda herhangi bir zararlı kod veya tehdit bulunamadı.";
+            ? $"Tarama durduruldu; incelenmeyen dosyalar hakkında karar verilmedi. {ScannedItemsFormatted} öğe incelendi."
+            : _lastScanStatus == ScanStatus.Failed || FailedCount > 0 || TimedOutCount > 0 || SkippedCount > 0
+                ? "Kapsam eksik; atlanan veya incelenemeyen dosyalar için temiz kararı verilmedi."
+                : "Bu sonuç sistemin bütünüyle güvenli olduğunu garanti etmez. Kapatılmış bulgular raporda korunur.";
+
+        /// <summary>
+        /// Taramanın ne çalıştığı ne de sonuç ekranında olduğu boşta / hazır durumu (ActiveScanWindow için).
+        /// </summary>
+        public bool IsIdleView => !IsScanning && !IsScanFinishedView;
+
+        /// <summary>
+        /// Tarama durumuna göre "Tarayıcı Penceresini Aç" veya "Aktif Taramayı Görüntüle" metni.
+        /// </summary>
+        public string OpenScanWindowButtonText => IsScanning ? "Aktif Taramayı Görüntüle" : "Tarayıcı Penceresini Aç";
+
+        partial void OnIsScanningChanged(bool value)
+        {
+            OnPropertyChanged(nameof(IsIdleView));
+            OnPropertyChanged(nameof(OpenScanWindowButtonText));
+            UpdateChecklistSteps(ProgressPercentage);
+        }
+
+        partial void OnIsScanFinishedViewChanged(bool value)
+        {
+            OnPropertyChanged(nameof(IsIdleView));
+        }
 
         partial void OnIsPausedChanged(bool value)
         {
@@ -85,6 +112,11 @@ namespace AegisPC.App.ViewModels
         /// </summary>
         [ObservableProperty]
         private int progressPercentage;
+
+        partial void OnProgressPercentageChanged(int value)
+        {
+            UpdateChecklistSteps(value);
+        }
 
         /// <summary>
         /// O an incelenmekte olan dosyanın adı veya yolu.
@@ -103,6 +135,30 @@ namespace AegisPC.App.ViewModels
         /// </summary>
         [ObservableProperty]
         private string scannedItemsFormatted = "0";
+
+        /// <summary>
+        /// Önbellek isabetiyle taranan dosya sayısı.
+        /// </summary>
+        [ObservableProperty]
+        private int scannedFromCache;
+
+        /// <summary>
+        /// Güvenilir imza veya beyaz liste kontrolü ile hızlı atlanan dosya sayısı.
+        /// </summary>
+        [ObservableProperty]
+        private int skippedSignedClean;
+
+        /// <summary>
+        /// Derin analiz ve özet hesaplamasıyla yeni taranan dosya sayısı.
+        /// </summary>
+        [ObservableProperty]
+        private int newlyScanned;
+
+        /// <summary>
+        /// Taranan dosyaların detaylı kırılım metni (örn. "82.331 önbellekten • 3.900 imzalı geçti • 9.170 yeni tarandı").
+        /// </summary>
+        [ObservableProperty]
+        private string scannedBreakdownFormatted = string.Empty;
 
         /// <summary>
         /// Tarama başlangıcından bu yana geçen sürenin biçimlendirilmiş metni (ör. 1 dk 24 sn veya 1 sa 05 dk 12 sn).
@@ -169,6 +225,14 @@ namespace AegisPC.App.ViewModels
         /// </summary>
         [ObservableProperty]
         private int timedOutCount;
+        /// <summary>Counts authoritative malware separately from review items and coverage gaps.</summary>
+        [ObservableProperty] private int confirmedMaliciousCount;
+        /// <summary>Counts non-authoritative review items, never calls them viruses.</summary>
+        [ObservableProperty] private int suspiciousReviewCount;
+        /// <summary>Explains the current security counters independently of incomplete file inspection.</summary>
+        public string FindingBreakdownText => $"{ConfirmedMaliciousCount:N0} doğrulanmış • {SuspiciousReviewCount:N0} inceleme gereken";
+        partial void OnConfirmedMaliciousCountChanged(int value) => OnPropertyChanged(nameof(FindingBreakdownText));
+        partial void OnSuspiciousReviewCountChanged(int value) => OnPropertyChanged(nameof(FindingBreakdownText));
 
         /// <summary>
         /// Anlık işlemci kullanım yüzdesi.
@@ -197,7 +261,12 @@ namespace AegisPC.App.ViewModels
         /// <summary>
         /// Anlık CPU ve RAM kullanım metni (ör. CPU: %14 • RAM: 180 MB).
         /// </summary>
-        public string CpuAndRamFormatted => $"CPU: %{CpuUsagePercent:F0} • RAM: {RamUsageMb:F0} MB";
+        public string CpuAndRamFormatted => $"{(IsCpuTelemetryAvailable ? $"CPU: %{CpuUsagePercent:F1}" : "CPU: ölçülüyor")} • {(RamUsageMb > 0 ? $"RAM: {RamUsageMb:F0} MB" : "RAM: ölçülüyor")}";
+        /// <summary>Distinguishes a measured zero CPU load from telemetry that has not yet collected a valid sample.</summary>
+        [ObservableProperty] private bool isCpuTelemetryAvailable;
+        partial void OnIsCpuTelemetryAvailableChanged(bool value) => OnPropertyChanged(nameof(CpuAndRamFormatted));
+        partial void OnCpuUsagePercentChanged(double value) => OnPropertyChanged(nameof(CpuAndRamFormatted));
+        partial void OnRamUsageMbChanged(double value) => OnPropertyChanged(nameof(CpuAndRamFormatted));
         #endregion
 
         #region Donanım Kaynak Uyarlaması ve Donma Önleme
@@ -214,37 +283,6 @@ namespace AegisPC.App.ViewModels
         private string hardwareProfileDetail = "Sistem donmasını önlemek için bellek tavanı ve arka plan iş parçacığı önceliği devrededir.";
         #endregion
 
-        #region 5 Adımlı Kontrol Listesi (Checklist) Göstergeleri
-        /// <summary>
-        /// 1. Aşama: Bellek ve başlangıç nesneleri taraması tamamlandı mı?
-        /// </summary>
-        [ObservableProperty]
-        private bool isStep1Done;
-
-        /// <summary>
-        /// 2. Aşama: Sistem ve sürücü dosyaları denetimi tamamlandı mı?
-        /// </summary>
-        [ObservableProperty]
-        private bool isStep2Done;
-
-        /// <summary>
-        /// 3. Aşama: Kullanıcı profili ve indirilen dosyalar taraması tamamlandı mı?
-        /// </summary>
-        [ObservableProperty]
-        private bool isStep3Done;
-
-        /// <summary>
-        /// 4. Aşama: Heuristik ve derin PE analizi tamamlandı mı?
-        /// </summary>
-        [ObservableProperty]
-        private bool isStep4Done;
-
-        /// <summary>
-        /// 5. Aşama: Sonuç raporlama ve temizleme aşaması etkin mi?
-        /// </summary>
-        [ObservableProperty]
-        private bool isStep5Active = true;
-        #endregion
 
         #region Tehdit Koleksiyonları ve Seçim Durumları
         /// <summary>
@@ -323,7 +361,7 @@ namespace AegisPC.App.ViewModels
         #endregion
 
         /// <summary>
-        /// ScanViewModel örneğini gerekli servis bağımlılıklarıyla başlatır ve zamanlayıcıları kurar.
+        /// Initializes optional scan services and per-user report storage; missing mutation providers fail closed instead of simulating success.
         /// </summary>
         public ScanViewModel(
             IScanCoordinatorService? scanCoordinator = null, 
@@ -332,7 +370,10 @@ namespace AegisPC.App.ViewModels
             IAllowlistService? allowlistService = null,
             IWindowsToastNotificationService? toastService = null,
             IScanResourceManager? resourceManager = null,
-            ISettingsService? settingsService = null)
+            ISettingsService? settingsService = null,
+            IExclusionService? exclusionService = null,
+            AegisPC.ServiceContracts.IServiceIpcClient? ipcClient = null,
+            Services.ScanReportHistoryStore? reportHistoryStore = null)
         {
             _scanCoordinator = scanCoordinator;
             _findingService = findingService;
@@ -341,6 +382,10 @@ namespace AegisPC.App.ViewModels
             _toastService = toastService;
             _resourceManager = resourceManager;
             _settingsService = settingsService;
+            _exclusionService = exclusionService;
+            _ipcClient = ipcClient;
+            _reportHistoryStore = reportHistoryStore ?? new Services.ScanReportHistoryStore();
+            _persistReportHistory = reportHistoryStore != null || System.Windows.Application.Current != null;
 
             if (_resourceManager != null)
             {
@@ -362,7 +407,7 @@ namespace AegisPC.App.ViewModels
             }
 
             var profile = ScanHardwareProfile.Detect();
-            HardwareProfileDetail = $"{profile.TotalRamGb:F0} GB RAM için azami {profile.MaxMemoryBudgetMb} MB bellek kotası ve {profile.Concurrency} iş parçacığı tahsis edildi. Arka plan önceliği (BelowNormal) ile sistem donması önlenir.";
+            HardwareProfileDetail = $"{profile.TotalRamGb:F0} GB RAM; başlangıç tarama bütçesi {profile.MaxMemoryBudgetMb} MB, en fazla {profile.Concurrency} işçi. Canlı yük kaynak profilini değiştirebilir; bütçe tüm süreç için katı bellek sınırı değildir.";
 
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _timer.Tick += (s, e) =>
@@ -388,15 +433,26 @@ namespace AegisPC.App.ViewModels
 
         private void OnScanSessionStarted(IScanSession session)
         {
-            System.Windows.Application.Current?.Dispatcher?.Invoke(() =>
+            System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
-                ResetScanState(session.ScanType);
-                Views.ActiveScanWindow.ShowScanWindow(this);
+                if (!IsScanning || ProgressPercentage == 0)
+                {
+                    ResetScanState(session.ScanType);
+                }
+                else
+                {
+                    SyncWithScanCoordinator();
+                }
+
+                if (!App.IsStartMinimized)
+                {
+                    Views.ActiveScanWindow.ShowScanWindow(this);
+                }
             });
         }
 
         /// <summary>
-        /// Yeni bir tarama başlatılmadan önce arayüz durumunu, sayaçları ve süre izleyicilerini sıfırlar.
+        /// Clears previous result and coverage counters before a new owned scan starts; it does not itself launch a scan.
         /// </summary>
         public void ResetScanState(ScanType scanType = ScanType.Quick)
         {
@@ -407,9 +463,23 @@ namespace AegisPC.App.ViewModels
             ProgressPercentage = 0;
             ScannedCount = 0;
             ScannedItemsFormatted = "0";
+            ScannedFromCache = 0;
+            SkippedSignedClean = 0;
+            NewlyScanned = 0;
+            ScannedBreakdownFormatted = string.Empty;
             TotalCount = 0;
             FindingsCount = 0;
             DetectionsCount = 0;
+            ConfirmedMaliciousCount = 0;
+            SuspiciousReviewCount = 0;
+            SkippedCount = 0;
+            FailedCount = 0;
+            TimedOutCount = 0;
+            CpuUsagePercent = 0;
+            RamUsageMb = 0;
+            IsCpuTelemetryAvailable = false;
+            _lastScanStatus = ScanStatus.Running;
+            _confirmedActions.Clear();
             ScanFindings.Clear();
             ThreatResults.Clear();
             HasFindings = false;
@@ -428,38 +498,5 @@ namespace AegisPC.App.ViewModels
             OnPropertyChanged(nameof(PauseButtonText));
         }
 
-        public static string FormatDuration(TimeSpan elapsed)
-        {
-            if (elapsed < TimeSpan.Zero)
-            {
-                elapsed = TimeSpan.Zero;
-            }
-
-            if (elapsed.TotalHours >= 1)
-            {
-                return $"{(int)elapsed.TotalHours} sa {elapsed.Minutes:D2} dk {elapsed.Seconds:D2} sn";
-            }
-            return $"{elapsed.Minutes} dk {elapsed.Seconds:D2} sn";
-        }
-
-        public static string FormatEta(double? remainingSeconds, int scanned, int total)
-        {
-            string counts = total > 0 ? $"({scanned:N0} / {total:N0} dosya)" : $"({scanned:N0} dosya)";
-            if (!remainingSeconds.HasValue || remainingSeconds.Value <= 0)
-            {
-                return $"Kalan: tahmin ediliyor {counts}";
-            }
-
-            var ts = TimeSpan.FromSeconds(remainingSeconds.Value);
-            if (ts.TotalHours >= 1)
-            {
-                return $"Kalan: ~{(int)ts.TotalHours} sa {ts.Minutes} dk {ts.Seconds} sn {counts}";
-            }
-            if (ts.TotalMinutes >= 1)
-            {
-                return $"Kalan: ~{ts.Minutes} dk {ts.Seconds} sn {counts}";
-            }
-            return $"Kalan: ~{ts.Seconds} sn {counts}";
-        }
     }
 }

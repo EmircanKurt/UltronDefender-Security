@@ -2,436 +2,238 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
+using AegisPC.Contracts.Policy;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Models;
 using Microsoft.Extensions.Logging;
 
-namespace AegisPC.Security.Scanning
+namespace AegisPC.Security.Scanning;
+
+/// <summary>Owns one scan at a time and publishes exactly one terminal outcome for each claimed scan.</summary>
+public partial class ScanCoordinatorService : IScanCoordinatorService, IBackgroundScanCoordinator
 {
-    public class ScanCoordinatorService : IScanCoordinatorService
+    private readonly IFileScanner _fileScanner;
+    private readonly ISecurityFindingService _findingService;
+    private readonly IQuarantineService? _quarantineService;
+    private readonly IAuditLogService? _auditLogService;
+    private readonly ISettingsService? _settingsService;
+    private readonly IPolicyEngine? _policyEngine;
+    private readonly ILogger<ScanCoordinatorService>? _logger;
+    private CancellationTokenSource? _scanCts;
+    private readonly object _lock = new();
+    private readonly List<SecurityFinding> _currentFindings = new();
+    private ScanSession? _currentSession;
+    private Task<ScanResult?>? _activeScanTask;
+    private Action? _externalPauseAction;
+    private Action? _externalResumeAction;
+    private Action? _externalCancelAction;
+    private bool _isExternalScanRunning;
+    private ExternalScannerSubscription? _externalRegistration;
+    private readonly AsyncLocal<ExternalScannerSubscription?> _legacyExternalRegistration = new();
+    private volatile ScanState _state = ScanState.Idle;
+    private volatile ScanStopReason _stopReason = ScanStopReason.None;
+
+    /// <summary>Indicates that an identity-bound external scanner currently owns the coordinator.</summary>
+    public bool IsExternalScanRunning => _isExternalScanRunning;
+    /// <summary>The active or terminal lifecycle state of the most recently claimed scan.</summary>
+    public ScanState State => _state;
+    /// <summary>The lifecycle reason of the most recent stop request or terminal result.</summary>
+    public ScanStopReason StopReason => _stopReason;
+    /// <summary>True while a scan is running, paused, or awaiting cancellation cleanup.</summary>
+    public bool IsScanning => _state is ScanState.Scanning or ScanState.Paused or ScanState.Cancelling;
+    /// <summary>The mode of the scan that owns or most recently owned the coordinator.</summary>
+    public ScanType CurrentScanType { get; private set; } = ScanType.Quick;
+    /// <summary>The last observed progress; only a completed result sets it to 100.</summary>
+    public double ProgressPercent { get; private set; }
+    /// <summary>The current inspection target or terminal display label.</summary>
+    public string CurrentFile { get; private set; } = string.Empty;
+    /// <summary>The analyzed file count from the current or terminal scan result.</summary>
+    public int ScannedFiles { get; private set; }
+    /// <summary>The discovered candidate count from the current or terminal scan result.</summary>
+    public int TotalFiles { get; private set; }
+    /// <summary>The number of findings retained with the current or terminal result.</summary>
+    public int FindingsCount { get { lock (_lock) return _currentFindings.Count; } }
+    /// <summary>A localized display summary of the scan lifecycle, excluding raw exception messages.</summary>
+    public string StatusText { get; private set; } = "Taramaya hazır.";
+    /// <summary>The scan duration most recently reported by the scanner.</summary>
+    public TimeSpan ElapsedTime { get; private set; } = TimeSpan.Zero;
+    /// <summary>The identity-bound owned session; null after its terminal notification finishes.</summary>
+    public IScanSession? CurrentSession { get { lock (_lock) return _currentSession; } }
+    /// <summary>A detached list of the findings retained for the current scan outcome.</summary>
+    public IReadOnlyList<SecurityFinding> CurrentFindings { get { lock (_lock) return _currentFindings.ToList(); } }
+    /// <summary>Notifies each observer of a claimed session; observer exceptions cannot stop the scanner.</summary>
+    public event Action<IScanSession>? ScanSessionStarted;
+    /// <summary>Notifies each observer of accepted progress; observer exceptions are isolated.</summary>
+    public event Action<ScanProgress>? ProgressChanged;
+    /// <summary>Publishes a scan's single terminal result, including failed and cancelled scans.</summary>
+    public event Action<ScanResult>? ScanCompleted;
+
+    /// <summary>Configures the scanner and optional finding policy without starting any inspection.</summary>
+    public ScanCoordinatorService(IFileScanner fileScanner, ISecurityFindingService findingService,
+        IQuarantineService? quarantineService = null, IAuditLogService? auditLogService = null,
+        ISettingsService? settingsService = null, IPolicyEngine? policyEngine = null,
+        ILogger<ScanCoordinatorService>? logger = null)
     {
-        private readonly IFileScanner _fileScanner;
-        private readonly ISecurityFindingService _findingService;
-        private readonly IQuarantineService? _quarantineService;
-        private readonly IAuditLogService? _auditLogService;
-        private readonly ILogger<ScanCoordinatorService>? _logger;
+        _fileScanner = fileScanner;
+        _findingService = findingService;
+        _quarantineService = quarantineService;
+        _auditLogService = auditLogService;
+        _settingsService = settingsService;
+        _policyEngine = policyEngine;
+        _logger = logger;
+    }
 
-        private CancellationTokenSource? _scanCts;
-        private readonly object _lock = new();
-        private readonly List<SecurityFinding> _currentFindings = new();
-        private ScanSession? _currentSession;
-        private Task<ScanResult?>? _activeScanTask;
+    /// <summary>Starts a manual scan or returns the active manual task; an external owner returns null.</summary>
+    public Task<ScanResult?> StartScanAsync(ScanType scanType, string customPath = "") =>
+        StartOwnedScan(scanType, customPath, CancellationToken.None, background: false);
 
-        private bool _isExternalScanRunning = false;
-        public bool IsExternalScanRunning => _isExternalScanRunning;
-        private volatile ScanState _state = ScanState.Idle;
-        public ScanState State => _state;
-        private volatile ScanStopReason _stopReason = ScanStopReason.None;
-        public ScanStopReason StopReason => _stopReason;
-        public bool IsScanning => _state == ScanState.Scanning || _state == ScanState.Paused || _state == ScanState.Cancelling;
-        public ScanType CurrentScanType { get; private set; } = ScanType.Quick;
-        public double ProgressPercent { get; private set; }
-        public string CurrentFile { get; private set; } = string.Empty;
-        public int ScannedFiles { get; private set; }
-        public int TotalFiles { get; private set; }
-        public int FindingsCount => _currentFindings.Count;
-        public string StatusText { get; private set; } = "Taramaya hazır.";
-        public TimeSpan ElapsedTime { get; private set; } = TimeSpan.Zero;
-        public IScanSession? CurrentSession
+    /// <summary>Claims a manual scan before applying its profile; a busy owner returns null without invoking the callback.</summary>
+    public Task<ScanResult?> TryStartManualScanAsync(ScanType scanType, string customPath, Action beforeOwnedScanStarts)
+    {
+        ArgumentNullException.ThrowIfNull(beforeOwnedScanStarts);
+        return StartOwnedScan(scanType, customPath, CancellationToken.None, background: true, beforeOwnedScanStarts);
+    }
+
+    /// <summary>Atomically claims an idle coordinator and binds cancellation to that scan only.</summary>
+    public Task<ScanResult?> TryStartBackgroundScanAsync(ScanType scanType, CancellationToken cancellationToken) =>
+        StartOwnedScan(scanType, string.Empty, cancellationToken, background: true);
+
+    /// <summary>Applies an owned profile only when no manual or external scan is active.</summary>
+    public Task<ScanResult?> TryStartBackgroundScanAsync(ScanType scanType, CancellationToken cancellationToken,
+        Action beforeOwnedScanStarts) =>
+        StartOwnedScan(scanType, string.Empty, cancellationToken, background: true, beforeOwnedScanStarts);
+
+    private Task<ScanResult?> StartOwnedScan(ScanType scanType, string customPath,
+        CancellationToken cancellationToken, bool background, Action? beforeOwnedScanStarts = null)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ScanSession session;
+        TaskCompletionSource<ScanResult?> completion;
+        lock (_lock)
         {
-            get
-            {
-                lock (_lock) return _currentSession;
-            }
+            if (_activeScanTask != null && !_activeScanTask.IsCompleted)
+                return background ? Task.FromResult<ScanResult?>(null) : _activeScanTask;
+            if (_isExternalScanRunning) return Task.FromResult<ScanResult?>(null);
+            ResetScanDisplay(scanType, "Tarama başlatılıyor...", $"{scanType} taraması çalışıyor...");
+            _scanCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            session = new ScanSession(scanType, customPath, _scanCts, () => { }, () => { }, () => { });
+            _currentSession = session;
+            session.SetOwnerActions(() => ApplyToOwnedSession(session.SessionId, PauseScan),
+                () => ApplyToOwnedSession(session.SessionId, ResumeScan),
+                () => ApplyToOwnedSession(session.SessionId, CancelScan));
+            completion = new TaskCompletionSource<ScanResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _activeScanTask = completion.Task;
         }
 
-        public IReadOnlyList<SecurityFinding> CurrentFindings
+        try { beforeOwnedScanStarts?.Invoke(); }
+        catch (Exception ex)
         {
-            get
-            {
-                lock (_lock)
-                {
-                    return _currentFindings.ToList();
-                }
-            }
+            _logger?.LogError(ex, "Failed to prepare owned scan {ScanId}.", session.SessionId);
+            var result = CreateInterruptedResult(session, session.CancellationToken.IsCancellationRequested
+                ? ScanStatus.Cancelled : ScanStatus.Failed);
+            if (result.Status == ScanStatus.Failed)
+                result.FailureInfo = CreateFailure(session.SessionId, ScanFailureStage.Preparation, ex);
+            PublishOwnedOutcome(session, result);
+            completion.TrySetResult(result);
+            return completion.Task;
         }
 
-        public event Action<IScanSession>? ScanSessionStarted;
-        public event Action<ScanProgress>? ProgressChanged;
-        public event Action<ScanResult>? ScanCompleted;
+        NotifyObservers(ScanSessionStarted, (IScanSession)session, nameof(ScanSessionStarted));
+        _ = CompleteOwnedScanAsync(session, completion);
+        return completion.Task;
+    }
 
-        public ScanCoordinatorService(
-            IFileScanner fileScanner,
-            ISecurityFindingService findingService,
-            IQuarantineService? quarantineService = null,
-            IAuditLogService? auditLogService = null,
-            ILogger<ScanCoordinatorService>? logger = null)
+    private void ResetScanDisplay(ScanType scanType, string currentFile, string status)
+    {
+        _state = ScanState.Scanning;
+        _stopReason = ScanStopReason.None;
+        CurrentScanType = scanType;
+        ProgressPercent = 0;
+        CurrentFile = currentFile;
+        ScannedFiles = 0;
+        TotalFiles = 0;
+        ElapsedTime = TimeSpan.Zero;
+        _currentFindings.Clear();
+        StatusText = status;
+    }
+
+    private void ApplyToOwnedSession(Guid sessionId, Action action)
+    {
+        lock (_lock)
         {
-            _fileScanner = fileScanner;
-            _findingService = findingService;
-            _quarantineService = quarantineService;
-            _auditLogService = auditLogService;
-            _logger = logger;
+            if (_currentSession?.SessionId == sessionId && _currentSession.IsActive) action();
         }
+    }
 
-        public void RegisterExternalScanProgress(ScanProgress progress)
+    /// <summary>Indicates an owned pause without treating a stale scanner pause as a new active scan.</summary>
+    public bool IsPaused
+    {
+        get { lock (_lock) return _state == ScanState.Paused || (_state == ScanState.Scanning && _fileScanner.IsPaused); }
+    }
+
+    /// <summary>Pauses the current owner's scanner and retains its ownership until terminal cleanup.</summary>
+    public void PauseScan()
+    {
+        Action? external;
+        lock (_lock)
         {
-            lock (_lock)
-            {
-                _isExternalScanRunning = true;
-                _state = ScanState.Scanning;
-                _stopReason = ScanStopReason.None;
-                CurrentScanType = progress.ScanType;
-                ProgressPercent = progress.ProgressPercent;
-                CurrentFile = progress.CurrentFile;
-                ScannedFiles = progress.ScannedFiles;
-                TotalFiles = progress.TotalFiles;
-                ElapsedTime = progress.ElapsedTime;
-                StatusText = $"Arka plan başlangıç taraması: {progress.ScannedFiles:N0} dosya incelendi (%{(int)progress.ProgressPercent})";
-            }
-            try
-            {
-                ProgressChanged?.Invoke(progress);
-            }
-            catch { }
+            if (_state != ScanState.Scanning) return;
+            if (_externalRegistration == null) _fileScanner.PauseScan();
+            external = _externalPauseAction;
+            _state = ScanState.Paused;
+            StatusText = "Tarama duraklatıldı.";
         }
+        InvokeExternalAction(external, "pause");
+    }
 
-        public void CompleteExternalScan(ScanResult result)
+    /// <summary>Resumes only the current owned scanner or its registered external delegate.</summary>
+    public void ResumeScan()
+    {
+        Action? external;
+        lock (_lock)
         {
-            lock (_lock)
-            {
-                _isExternalScanRunning = false;
-                _state = ScanState.Completed;
-                _stopReason = ScanStopReason.CompletedNormally;
-                ProgressPercent = 100;
-                ScannedFiles = result.ScannedFiles;
-                TotalFiles = result.TotalFiles;
-                ElapsedTime = result.ElapsedMs > 0 ? TimeSpan.FromMilliseconds(result.ElapsedMs) : TimeSpan.Zero;
-                StatusText = $"Başlangıç taraması tamamlandı. {result.ScannedFiles:N0} dosya incelendi.";
-                _currentFindings.Clear();
-                if (result.Findings != null)
-                {
-                    _currentFindings.AddRange(result.Findings);
-                }
-            }
-            try
-            {
-                ScanCompleted?.Invoke(result);
-            }
-            catch { }
+            if (_state != ScanState.Paused) return;
+            if (_externalRegistration == null && _fileScanner.IsPaused) _fileScanner.ResumeScan();
+            external = _externalResumeAction;
+            _state = ScanState.Scanning;
+            StatusText = $"{CurrentScanType} taraması çalışıyor...";
         }
+        InvokeExternalAction(external, "resume");
+    }
 
-        public Task<ScanResult?> StartScanAsync(ScanType scanType, string customPath = "")
+    /// <summary>Requests cancellation of the current owner, even if resuming a paused scanner fails.</summary>
+    public void CancelScan()
+    {
+        Action? external;
+        lock (_lock)
         {
-            IScanSession? sessionToNotify = null;
-            Task<ScanResult?>? runningTask = null;
-
-            lock (_lock)
-            {
-                // Zaten çalışan bir tarama varsa mükerrer başlatma; mevcut aktif oturumu ve görevi dön
-                if (IsScanning && _activeScanTask != null && !_activeScanTask.IsCompleted)
-                {
-                    _logger?.LogInformation("Scan is already in progress ({Type}). Returning existing active session.", CurrentScanType);
-                    sessionToNotify = _currentSession;
-                    runningTask = _activeScanTask;
-                }
-            }
-
-            if (runningTask != null && sessionToNotify != null)
-            {
-                try
-                {
-                    ScanSessionStarted?.Invoke(sessionToNotify);
-                }
-                catch { }
-                return runningTask;
-            }
-
-            ScanSession session;
-            lock (_lock)
-            {
-                _isExternalScanRunning = false;
-                _state = ScanState.Scanning;
-                _stopReason = ScanStopReason.None;
-                CurrentScanType = scanType;
-                ProgressPercent = 0;
-                CurrentFile = "Tarama başlatılıyor...";
-                ScannedFiles = 0;
-                TotalFiles = 0;
-                _currentFindings.Clear();
-                StatusText = $"{scanType} taraması çalışıyor...";
-                ElapsedTime = TimeSpan.Zero;
-                _scanCts = new CancellationTokenSource();
-
-                session = new ScanSession(
-                    scanType,
-                    customPath,
-                    _scanCts,
-                    PauseScan,
-                    ResumeScan,
-                    CancelScan);
-                _currentSession = session;
-            }
-
-            try
-            {
-                ScanSessionStarted?.Invoke(session);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogTrace(ex, "Error notifying ScanSessionStarted listeners");
-            }
-
-            var scanTask = RunScanInternalAsync(session, scanType, customPath, _scanCts.Token);
-            lock (_lock)
-            {
-                _activeScanTask = scanTask;
-            }
-
-            return scanTask;
+            if (_state is not (ScanState.Scanning or ScanState.Paused)) return;
+            _state = ScanState.Cancelling;
+            _stopReason = ScanStopReason.UserCancelled;
+            StatusText = "Tarama iptal ediliyor...";
+            if (_externalRegistration == null) ResumeScannerForCleanup();
+            try { _scanCts?.Cancel(); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Owned scan cancellation callbacks failed."); }
+            external = _externalCancelAction;
         }
+        InvokeExternalAction(external, "cancel");
+    }
 
-        private async Task<ScanResult?> RunScanInternalAsync(
-            ScanSession session,
-            ScanType scanType,
-            string customPath,
-            CancellationToken cancellationToken)
+    private void InvokeExternalAction(Action? action, string operation)
+    {
+        try { action?.Invoke(); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "External scanner {Operation} callback failed.", operation); }
+    }
+
+    private void NotifyObservers<T>(Action<T>? observers, T value, string eventName)
+    {
+        if (observers == null) return;
+        foreach (Action<T> observer in observers.GetInvocationList())
         {
-            var progressHandler = new Progress<ScanProgress>(p =>
-            {
-                ProgressPercent = p.ProgressPercent;
-                CurrentFile = p.CurrentFile;
-                ScannedFiles = p.ScannedFiles;
-                TotalFiles = p.TotalFiles;
-                ElapsedTime = p.ElapsedTime;
-                StatusText = $"{CurrentScanType} taraması: {p.ScannedFiles:N0} dosya incelendi";
-                session.LatestProgress = p;
-
-                try
-                {
-                    ProgressChanged?.Invoke(p);
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogTrace(ex, "Error notifying scan progress listeners");
-                }
-            });
-
-            ScanResult? result = null;
-
-            try
-            {
-                _logger?.LogInformation("Starting {ScanType} scan (path: '{Path}')", scanType, customPath);
-                result = await _fileScanner.ScanDirectoryAsync(customPath, scanType, progressHandler, cancellationToken);
-
-                if (cancellationToken.IsCancellationRequested || result?.Status == ScanStatus.Cancelled)
-                {
-                    throw new OperationCanceledException(cancellationToken);
-                }
-
-                // GÖREV 7: Risk skoru 85 ve üzeri olan zararlılar otomatik karantinaya alınır.
-                // 60-84 arası şüpheli bulgular için kullanıcı uyarısı/olay kaydı oluşturulur.
-                if (result?.Findings != null && result.Findings.Count > 0)
-                {
-                    result.Findings.RemoveAll(f => f.Status == FindingStatus.Resolved || f.IsAllowlisted);
-
-                    foreach (var finding in result.Findings)
-                    {
-                        if (cancellationToken.IsCancellationRequested) break;
-
-                        if (finding.RiskScore >= 85)
-                        {
-                            if (_quarantineService != null && !string.IsNullOrWhiteSpace(finding.ObjectPath))
-                            {
-                                try
-                                {
-                                    var qSuccess = await _quarantineService.QuarantineFileAsync(
-                                        finding.ObjectPath,
-                                        $"Otomatik Karantina (Risk Puanı: {finding.RiskScore}): {finding.Title}",
-                                        cancellationToken);
-
-                                    if (qSuccess)
-                                    {
-                                        finding.Status = FindingStatus.Resolved;
-                                        await _findingService.UpdateFindingAsync(finding, cancellationToken);
-                                        _logger?.LogInformation("Zararlı dosya otomatik karantinaya alındı: {Path}", finding.ObjectPath);
-
-                                        if (_auditLogService != null)
-                                        {
-                                            try
-                                            {
-                                                await _auditLogService.LogActionAsync(
-                                                    AuditAction.FileQuarantined,
-                                                    "File",
-                                                    finding.Title,
-                                                    finding.ObjectPath,
-                                                    $"Otomatik karantinaya alındı. Risk Skoru: {finding.RiskScore}",
-                                                    AuditResult.Success,
-                                                    null,
-                                                    cancellationToken);
-                                            }
-                                            catch { }
-                                        }
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger?.LogError(ex, "Otomatik karantinaya alma hatası: {Path}", finding.ObjectPath);
-                                }
-                            }
-                        }
-                        else if (finding.RiskScore >= 60 && finding.RiskScore < 85)
-                        {
-                            if (_auditLogService != null)
-                            {
-                                try
-                                {
-                                    await _auditLogService.LogActionAsync(
-                                        AuditAction.ScanCompleted,
-                                        "File",
-                                        finding.Title,
-                                        finding.ObjectPath,
-                                        $"Şüpheli dosya tespit edildi (Risk: {finding.RiskScore}). Kullanıcı uyarıldı, dosya korundu.",
-                                        AuditResult.Success,
-                                        null,
-                                        cancellationToken);
-                                }
-                                catch { }
-                            }
-                        }
-                    }
-                }
-
-                lock (_lock)
-                {
-                    _currentFindings.Clear();
-                    if (result?.Findings != null)
-                    {
-                        _currentFindings.AddRange(result.Findings);
-                    }
-                    if (result != null && result.ElapsedMs > 0)
-                    {
-                        ElapsedTime = TimeSpan.FromMilliseconds(result.ElapsedMs);
-                    }
-                    StatusText = $"Tarama tamamlandı. {result?.ScannedFiles:N0} dosya incelendi, {_currentFindings.Count} riskli bulgu.";
-                    ProgressPercent = 100;
-                    CurrentFile = "Tarama tamamlandı.";
-                    _state = ScanState.Completed;
-                    _stopReason = ScanStopReason.CompletedNormally;
-                }
-            }
-            catch (Exception ex) when (cancellationToken.IsCancellationRequested || ex is OperationCanceledException || ex is ChannelClosedException)
-            {
-                lock (_lock)
-                {
-                    _state = ScanState.Cancelled;
-                    _stopReason = ScanStopReason.UserCancelled;
-                    StatusText = "Tarama kullanıcı tarafından durduruldu.";
-                    CurrentFile = "İptal edildi.";
-
-                    result = new ScanResult
-                    {
-                        ScanType = scanType,
-                        CustomPath = customPath,
-                        TotalFiles = TotalFiles,
-                        ScannedFiles = ScannedFiles,
-                        Findings = _currentFindings.ToList(),
-                        ElapsedMs = (long)ElapsedTime.TotalMilliseconds,
-                        StartedAt = session.StartedAtUtc,
-                        CompletedAt = DateTime.UtcNow,
-                        Status = ScanStatus.Cancelled
-                    };
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Scan failed with error: {Message}", ex.Message);
-                lock (_lock)
-                {
-                    _state = ScanState.Failed;
-                    _stopReason = ScanStopReason.Error;
-                    StatusText = $"Tarama hatası: {ex.Message}";
-                    CurrentFile = "Hata oluştu.";
-                }
-            }
-            finally
-            {
-                session.MarkEnded();
-
-                lock (_lock)
-                {
-                    if (_state == ScanState.Scanning)
-                    {
-                        _state = ScanState.Completed;
-                        _stopReason = ScanStopReason.CompletedNormally;
-                    }
-                    _currentSession = null;
-                    _activeScanTask = null;
-                    _scanCts?.Dispose();
-                    _scanCts = null;
-                }
-
-                if (result != null)
-                {
-                    try
-                    {
-                        ScanCompleted?.Invoke(result);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogTrace(ex, "Error invoking ScanCompleted callback");
-                    }
-                }
-            }
-
-            return result;
-        }
-
-        public bool IsPaused => _state == ScanState.Paused || _fileScanner.IsPaused;
-
-        public void PauseScan()
-        {
-            lock (_lock)
-            {
-                if (!IsScanning && _state != ScanState.Scanning) return;
-                _fileScanner.PauseScan();
-                _state = ScanState.Paused;
-                StatusText = "Tarama duraklatıldı.";
-            }
-        }
-
-        public void ResumeScan()
-        {
-            lock (_lock)
-            {
-                if (!IsScanning && _state != ScanState.Paused) return;
-                _fileScanner.ResumeScan();
-                _state = ScanState.Scanning;
-                StatusText = $"{CurrentScanType} taraması çalışıyor...";
-            }
-        }
-
-        public void CancelScan()
-        {
-            lock (_lock)
-            {
-                if (_state != ScanState.Scanning && _state != ScanState.Paused) return;
-                _state = ScanState.Cancelling;
-                _stopReason = ScanStopReason.UserCancelled;
-                try
-                {
-                    if (IsPaused)
-                    {
-                        _fileScanner.ResumeScan(); // Ensure workers unblock to process cancellation
-                    }
-                    _scanCts?.Cancel();
-                    StatusText = "Tarama iptal ediliyor...";
-                }
-                catch { }
-            }
+            try { observer(value); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Scan observer failed while handling {EventName}.", eventName); }
         }
     }
 }

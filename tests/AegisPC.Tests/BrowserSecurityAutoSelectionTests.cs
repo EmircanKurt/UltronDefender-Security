@@ -43,6 +43,7 @@ namespace AegisPC.Tests
                     BrowserType = BrowserType.Edge,
                     ProfileName = "Default",
                     ProfilePath = "C:\\Edge\\Default",
+                    MetadataCoverage = BrowserMetadataCoverage.Complete,
                     Extensions = new List<BrowserExtension>() // 0 extensions
                 },
                 new BrowserProfile
@@ -50,6 +51,7 @@ namespace AegisPC.Tests
                     BrowserType = BrowserType.Brave,
                     ProfileName = "Default",
                     ProfilePath = "C:\\Brave\\Default",
+                    MetadataCoverage = BrowserMetadataCoverage.Complete,
                     Extensions = new List<BrowserExtension>
                     {
                         new BrowserExtension { Id = "ext1", Name = "UBlock Origin", Version = "1.50", RiskLevel = RiskLevel.LowRisk },
@@ -62,6 +64,7 @@ namespace AegisPC.Tests
                     BrowserType = BrowserType.Chrome,
                     ProfileName = "Default",
                     ProfilePath = "C:\\Chrome\\Default",
+                    MetadataCoverage = BrowserMetadataCoverage.Complete,
                     Extensions = new List<BrowserExtension>
                     {
                         new BrowserExtension { Id = "ext4", Name = "AdGuard", Version = "3.0", RiskLevel = RiskLevel.LowRisk }
@@ -101,6 +104,7 @@ namespace AegisPC.Tests
                     BrowserType = BrowserType.Edge,
                     ProfileName = "Default",
                     ProfilePath = "C:\\Edge\\Default",
+                    MetadataCoverage = BrowserMetadataCoverage.Complete,
                     Extensions = new List<BrowserExtension>()
                 },
                 new BrowserProfile
@@ -108,6 +112,7 @@ namespace AegisPC.Tests
                     BrowserType = BrowserType.Chrome,
                     ProfileName = "Default",
                     ProfilePath = "C:\\Chrome\\Default",
+                    MetadataCoverage = BrowserMetadataCoverage.Complete,
                     Extensions = new List<BrowserExtension>()
                 }
             };
@@ -132,6 +137,7 @@ namespace AegisPC.Tests
             {
                 BrowserType = BrowserType.Brave,
                 ProfileName = "Default",
+                MetadataCoverage = BrowserMetadataCoverage.Complete,
                 Extensions = new List<BrowserExtension> { new BrowserExtension { Id = "1" } }
             };
 
@@ -139,11 +145,31 @@ namespace AegisPC.Tests
             {
                 BrowserType = BrowserType.Edge,
                 ProfileName = "Default",
+                MetadataCoverage = BrowserMetadataCoverage.Complete,
                 Extensions = new List<BrowserExtension>()
             };
 
             Assert.Equal("Brave (Default) — 1 Eklenti", p1.DisplayText);
             Assert.Equal("Edge (Default) — Eklenti Yok", p2.DisplayText);
+        }
+
+        [Theory]
+        [InlineData(null, System.Windows.Visibility.Collapsed)]
+        [InlineData("", System.Windows.Visibility.Collapsed)]
+        [InlineData("   ", System.Windows.Visibility.Collapsed)]
+        [InlineData("___MSG_description___", System.Windows.Visibility.Collapsed)]
+        [InlineData("__MSG_appName__", System.Windows.Visibility.Collapsed)]
+        [InlineData("MSG_ext_details", System.Windows.Visibility.Collapsed)]
+        [InlineData("Açıklama yok", System.Windows.Visibility.Collapsed)]
+        [InlineData("No description", System.Windows.Visibility.Collapsed)]
+        [InlineData("Yok", System.Windows.Visibility.Collapsed)]
+        [InlineData("@@extension_id", System.Windows.Visibility.Collapsed)]
+        [InlineData("Güçlü reklam ve izleyici engelleme aracı.", System.Windows.Visibility.Visible)]
+        public void DescriptionVisibilityConverter_FiltersPlaceholdersAndEmptyCorrectly(string? input, System.Windows.Visibility expected)
+        {
+            var converter = new AegisPC.App.Converters.DescriptionVisibilityConverter();
+            var result = converter.Convert(input, typeof(System.Windows.Visibility), null, System.Globalization.CultureInfo.InvariantCulture);
+            Assert.Equal(expected, result);
         }
     }
 }

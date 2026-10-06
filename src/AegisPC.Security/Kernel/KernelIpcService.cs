@@ -132,7 +132,7 @@ namespace AegisPC.Security.Kernel
             }
         }
 
-        public Task DisconnectAsync()
+        public void Disconnect()
         {
             _isConnected = false;
             _driverStatus = KernelDriverStatus.NotInstalled;
@@ -143,16 +143,29 @@ namespace AegisPC.Security.Kernel
 
             if (_portHandle != IntPtr.Zero && _portHandle != (IntPtr)(-1))
             {
-                try { CloseHandle(_portHandle); } catch { }
+                try 
+                { 
+                    CloseHandle(_portHandle); 
+                } 
+                catch (Exception ex) 
+                { 
+                    _logger?.LogTrace(ex, "Failed to close kernel port handle."); 
+                }
                 _portHandle = IntPtr.Zero;
             }
 
             _logger?.LogInformation("Disconnected from Kernel Minifilter Communication Port.");
+        }
+
+        public Task DisconnectAsync()
+        {
+            Disconnect();
             return Task.CompletedTask;
         }
 
         public Task<bool> SendReplyAsync(KernelReplyMessage reply, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!_isConnected || reply == null) return Task.FromResult(false);
 
             if (_pendingReplies.TryRemove(reply.MessageId, out var tcs))
@@ -168,13 +181,14 @@ namespace AegisPC.Security.Kernel
                     {
                         Header = new FilterReplyHeader
                         {
-                            Status = (int)reply.NtStatus,
+                            // Legacy path-only replies are observation acknowledgements, not native action permits.
+                            Status = 0,
                             Reserved = 0,
                             MessageId = reply.MessageId
                         },
                         Response = new KernelScanResponse
                         {
-                            BlockAccess = reply.NtStatus != 0 || reply.GatingStatus == KernelGatingStatus.BlockedAccessDenied || reply.GatingStatus == KernelGatingStatus.BlockedSharingViolation
+                            BlockAccess = false
                         }
                     };
 
@@ -183,7 +197,9 @@ namespace AegisPC.Security.Kernel
                     try
                     {
                         Marshal.StructureToPtr(packet, ptr, false);
-                        FilterReplyMessage(_portHandle, ptr, (uint)size);
+                        int status = FilterReplyMessage(_portHandle, ptr, (uint)size);
+                        // Transport success is not evidence that an intervention was applied.
+                        return Task.FromResult(status == 0);
                     }
                     finally
                     {
@@ -193,6 +209,7 @@ namespace AegisPC.Security.Kernel
                 catch (Exception ex)
                 {
                     _logger?.LogTrace(ex, "Failed to send native reply packet to kernel port.");
+                    return Task.FromResult(false);
                 }
             }
 
@@ -207,7 +224,7 @@ namespace AegisPC.Security.Kernel
 
         public void Dispose()
         {
-            DisconnectAsync().GetAwaiter().GetResult();
+            Disconnect();
         }
     }
 }

@@ -49,8 +49,8 @@ namespace AegisPC.App.Services
                     }
                 }
 
-                // Auto-detect Windows System Light/Dark Mode if no explicit preference saved
-                CurrentTheme = DetectWindowsSystemTheme();
+                // New installations use the plain light design; explicit saved preferences remain intact.
+                CurrentTheme = ThemeMode.Light;
             }
             catch
             {

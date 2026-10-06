@@ -1,22 +1,35 @@
 using System;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using AegisPC.Core.Enums;
+using AegisPC.Core.Helpers;
 
 namespace AegisPC.Core.Models
 {
     /// <summary>
-    /// Tarama öncesi otomatik sistem donanımı tespiti ve adaptif kaynak sınırları profili.
-    /// RAM miktarına orantılı bellek tavanı ve CPU çekirdeklerine göre paralel işçi tahsisi sağlar.
+    /// Presents the same measured-capacity adaptive limits used by the scan resource manager.
+    /// This snapshot is not a synthetic benchmark and does not promise a fixed CPU or RAM utilization percentage.
     /// </summary>
     public class ScanHardwareProfile
     {
+        /// <summary>Gets or sets detected physical memory capacity in binary gigabytes.</summary>
         public double TotalRamGb { get; set; }
+        /// <summary>Gets or sets the logical processors available to this process.</summary>
         public int CpuCores { get; set; }
+        /// <summary>Gets or sets the calculated scan working-set budget, not preallocated RAM or a process RSS guarantee.</summary>
         public long MaxMemoryBudgetBytes { get; set; }
+        /// <summary>Gets the actual calculated budget in binary megabytes.</summary>
         public int MaxMemoryBudgetMb => (int)(MaxMemoryBudgetBytes / (1024 * 1024));
+        /// <summary>Gets or sets the hardware- and pressure-capped worker count.</summary>
         public int Concurrency { get; set; }
+        /// <summary>Gets or sets the presentation label for this adaptive snapshot.</summary>
         public string ProfileName { get; set; } = string.Empty;
         private string _summaryText = string.Empty;
+        /// <summary>Gets or sets the active-scan summary source; when absent, the initial snapshot is displayed.</summary>
         public static Func<string>? ActiveSummaryProvider { get; set; }
 
+        /// <summary>Gets the live profile summary when available, otherwise the measured startup snapshot.</summary>
         public string SummaryText
         {
             get => ActiveSummaryProvider?.Invoke() ?? _summaryText;
@@ -24,60 +37,65 @@ namespace AegisPC.Core.Models
         }
 
         /// <summary>
-        /// Mevcut sistemin fiziksel RAM ve CPU çekirdeklerini otomatik tespit ederek
-        /// optimum kaynak profilini hesaplar. RAM'in %50'si tarama bütçesi olarak tahsis edilir.
+        /// Detects RAM and the system-volume seek penalty without writing benchmark files or guessing SSD capabilities.
+        /// Unknown storage uses the rotational policy and target scans may subsequently configure their own actual volume.
         /// </summary>
-        public static ScanHardwareProfile Detect(bool isSsd = true)
+        public static ScanHardwareProfile Detect() => Detect(
+            DiskHardwareHelper.IsSolidStateDrive(Path.GetPathRoot(Environment.SystemDirectory)));
+
+        /// <summary>Creates a measured-RAM snapshot for an explicitly known SSD or seek-limited target volume.</summary>
+        public static ScanHardwareProfile Detect(bool isSsd)
         {
-            double totalRamBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
-            if (totalRamBytes <= 0)
-            {
-                totalRamBytes = 8.0 * 1024 * 1024 * 1024; // 8GB default fallback
-            }
+            var memory = QueryMemoryCapacity();
+            long totalRamBytes = memory.TotalBytes;
             double ramGb = totalRamBytes / (1024.0 * 1024.0 * 1024.0);
-            int cores = Environment.ProcessorCount;
-
-            // RAM bütçesi: sistemin toplam RAM'inin %50'si (her zaman orantılı)
-            long budgetBytes;
-            int workers;
-            string name;
-
-            if (ramGb <= 4.5)
-            {
-                budgetBytes = (long)(totalRamBytes / 3);
-                workers = isSsd ? Math.Max(2, cores - 1) : Math.Max(1, cores / 2);
-                name = "Hafif Sistem (Orantılı Mod)";
-            }
-            else if (ramGb <= 10.0)
-            {
-                budgetBytes = (long)(totalRamBytes / 2);
-                workers = isSsd ? Math.Max(4, cores - 1) : Math.Max(2, cores / 2);
-                name = "Standart Sistem (Yüksek Performans)";
-            }
-            else
-            {
-                budgetBytes = (long)(totalRamBytes / 2);
-                workers = isSsd ? Math.Max(4, cores - 1) : Math.Max(2, cores / 2);
-                name = "Güçlü Sistem (Maksimum Performans)";
-            }
-
-            if (cores > 1)
-            {
-                workers = Math.Max(1, Math.Min(workers, cores - 1));
-            }
-
-            var defaultProfile = ScanResourceProfile.CreateDefault();
-            string summary = defaultProfile.SummaryText;
+            int cores = Math.Max(1, Environment.ProcessorCount);
+            var profile = ScanResourceProfile.Create(ScanResourceMode.Auto, !isSsd, cores,
+                totalRamBytes, memoryPressurePercent: memory.Pressure);
 
             return new ScanHardwareProfile
             {
                 TotalRamGb = ramGb,
                 CpuCores = cores,
-                MaxMemoryBudgetBytes = budgetBytes,
-                Concurrency = workers,
-                ProfileName = name,
-                SummaryText = summary
+                MaxMemoryBudgetBytes = profile.MaxMemoryBudgetBytes,
+                Concurrency = profile.Concurrency,
+                ProfileName = "Otomatik Donanım Profili",
+                SummaryText = profile.SummaryText
             };
         }
+
+        private static (long TotalBytes, double Pressure) QueryMemoryCapacity()
+        {
+            try
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    var memory = new MemoryStatus { Length = (uint)Marshal.SizeOf<MemoryStatus>() };
+                    if (GlobalMemoryStatusEx(ref memory) && memory.TotalPhysical > 0 && memory.TotalPhysical <= long.MaxValue)
+                        return ((long)memory.TotalPhysical, memory.Load);
+                }
+            }
+            catch (Exception ex) { Trace.TraceWarning("Startup physical memory query failed: {0}", ex.Message); }
+            long runtimeCapacity = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+            return (runtimeCapacity > 0 ? runtimeCapacity : 512L * 1024 * 1024, 50);
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MemoryStatus
+        {
+            public uint Length;
+            public uint Load;
+            public ulong TotalPhysical;
+            public ulong AvailablePhysical;
+            public ulong TotalPageFile;
+            public ulong AvailablePageFile;
+            public ulong TotalVirtual;
+            public ulong AvailableVirtual;
+            public ulong AvailableExtendedVirtual;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GlobalMemoryStatusEx(ref MemoryStatus memory);
     }
 }

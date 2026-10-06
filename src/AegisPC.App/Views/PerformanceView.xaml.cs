@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using AegisPC.App.ViewModels;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AegisPC.App.Views
 {
@@ -10,7 +11,9 @@ namespace AegisPC.App.Views
     {
         public PerformanceViewModel ViewModel { get; }
 
-        public PerformanceView() : this(new PerformanceViewModel())
+        public PerformanceView() : this(App.ServiceProvider != null 
+            ? (App.ServiceProvider.GetService<PerformanceViewModel>() ?? new PerformanceViewModel()) 
+            : new PerformanceViewModel())
         {
         }
 
@@ -28,35 +31,8 @@ namespace AegisPC.App.Views
             Unloaded += (s, e) =>
             {
                 ViewModel.StopLiveMonitoring();
+                ViewModel.Dispose();
             };
-        }
-
-        private void OnPagePreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            if (e.OriginalSource is DependencyObject depObj)
-            {
-                if (FindVisualParent<DataGrid>(depObj) != null || 
-                    FindVisualParent<ListBox>(depObj) != null || 
-                    FindVisualParent<ListView>(depObj) != null || 
-                    FindVisualParent<TextBox>(depObj) != null)
-                {
-                    return;
-                }
-            }
-
-            if (RootScrollViewer != null && e.Delta != 0)
-            {
-                RootScrollViewer.ScrollToVerticalOffset(RootScrollViewer.VerticalOffset - (e.Delta * 0.75));
-                e.Handled = true;
-            }
-        }
-
-        private static T? FindVisualParent<T>(DependencyObject child) where T : DependencyObject
-        {
-            var parentObj = VisualTreeHelper.GetParent(child);
-            if (parentObj == null) return null;
-            if (parentObj is T parent) return parent;
-            return FindVisualParent<T>(parentObj);
         }
     }
 }

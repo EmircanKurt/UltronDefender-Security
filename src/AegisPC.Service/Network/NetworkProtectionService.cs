@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Network;
@@ -16,6 +17,7 @@ namespace AegisPC.Service.Network
         void Start();
         void Stop();
         DnsResolutionResult EvaluateDomain(string domain);
+        Task<DnsResolutionResult> EvaluateDomainAsync(string domain, CancellationToken ct = default);
         NetworkConnectionVerdict? AnalyzeFlow(NetworkFlowEvent flow);
     }
 
@@ -85,7 +87,45 @@ namespace AegisPC.Service.Network
 
         public DnsResolutionResult EvaluateDomain(string domain)
         {
-            return _dnsFilterService.ResolveDomainAsync(domain).GetAwaiter().GetResult();
+            if (string.IsNullOrWhiteSpace(domain))
+            {
+                return new DnsResolutionResult
+                {
+                    Domain = string.Empty,
+                    IsBlocked = false,
+                    ResolutionSource = "None"
+                };
+            }
+
+            string cleanDomain = domain.Trim().ToLowerInvariant().TrimEnd('.');
+            // Senkron hızlı yol: Engelli alan adlarını Task/thread tahsisi olmadan anında döndür
+            if (_dnsFilterService.IsDomainBlocked(cleanDomain, out var cat, out var reason))
+            {
+                return new DnsResolutionResult
+                {
+                    Domain = cleanDomain,
+                    IsBlocked = true,
+                    BlockCategory = cat,
+                    Reason = reason,
+                    ResolvedAddresses = new[] { System.Net.IPAddress.Parse("127.0.0.1"), System.Net.IPAddress.Parse("0.0.0.0") },
+                    ResolutionSource = "Local-Sinkhole"
+                };
+            }
+
+            try
+            {
+                return Task.Run(() => EvaluateDomainAsync(domain)).GetAwaiter().GetResult();
+            }
+            catch (AggregateException ex) when (ex.InnerException != null)
+            {
+                ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                throw;
+            }
+        }
+
+        public async Task<DnsResolutionResult> EvaluateDomainAsync(string domain, CancellationToken ct = default)
+        {
+            return await _dnsFilterService.ResolveDomainAsync(domain, cancellationToken: ct).ConfigureAwait(false);
         }
 
         public NetworkConnectionVerdict? AnalyzeFlow(NetworkFlowEvent flow)
@@ -101,11 +141,11 @@ namespace AegisPC.Service.Network
                 verdict = new NetworkConnectionVerdict
                 {
                     IsSuspicious = true,
-                    IsC2Beaconing = (cat == UrlBlockCategory.C2Server),
-                    RiskScore = 90,
-                    ThreatTitle = $"Engellenen Zararlı Alan Adı: {flow.DestinationDomain}",
+                    IsC2Beaconing = false,
+                    RiskScore = 35,
+                    ThreatTitle = $"Alan adı inceleme kaydı: {flow.DestinationDomain}",
                     ThreatCategory = cat.ToString(),
-                    Explanation = reason
+                    Explanation = $"Local domain-list observation; source authority has not been independently verified. {reason}"
                 };
             }
             // Süreç korelatörü varsa C2 / beaconing analizi yap
@@ -119,15 +159,13 @@ namespace AegisPC.Service.Network
                 {
                     IsSuspicious = false,
                     RiskScore = 0,
-                    ThreatTitle = "Clean Flow"
+                    ThreatTitle = "Flow not inspected",
+                    Explanation = "No process correlation provider is configured. This is not a clean verdict."
                 };
             }
 
-            // Eğer akış şüpheli veya C2 olarak belirlendiyse, WFP ile IP seviyesinde giden paketi durdur
-            if ((verdict.IsSuspicious || verdict.IsC2Beaconing) && !string.IsNullOrWhiteSpace(flow.DestinationIp))
-            {
-                _wfpEnforcement?.BlockOutboundIp(flow.DestinationIp, verdict.ThreatTitle);
-            }
+            // Observations, mutable blocklists and periodicity do not authorize IP-wide containment.
+            // A verified, caller-bound action adapter must perform future enforcement separately.
 
             return verdict;
         }

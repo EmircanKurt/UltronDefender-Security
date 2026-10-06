@@ -4,6 +4,7 @@ using System.Windows;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Models;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AegisPC.App.ViewModels
 {
@@ -13,6 +14,54 @@ namespace AegisPC.App.ViewModels
     /// </summary>
     public partial class ScanViewModel
     {
+        private static string FormatActiveResourceProfile(ScanProgress progress)
+        {
+            if (progress.EffectiveWorkerLimit <= 0) return progress.ResourceProfileName;
+            return $"{progress.ResourceProfileName} • Etkin {progress.ActiveWorkers}/{progress.EffectiveWorkerLimit} • Bekleyen {progress.PendingFiles}";
+        }
+
+        #region 5 Adımlı Kontrol Listesi (Checklist) Göstergeleri
+        /// <summary>
+        /// 1. Aşama: Bellek ve başlangıç nesneleri taraması tamamlandı mı?
+        /// </summary>
+        [ObservableProperty]
+        private bool isStep1Done;
+
+        /// <summary>
+        /// 2. Aşama: Sistem ve sürücü dosyaları denetimi tamamlandı mı?
+        /// </summary>
+        [ObservableProperty]
+        private bool isStep2Done;
+
+        /// <summary>
+        /// 3. Aşama: Kullanıcı profili ve indirilen dosyalar taraması tamamlandı mı?
+        /// </summary>
+        [ObservableProperty]
+        private bool isStep3Done;
+
+        /// <summary>
+        /// 4. Aşama: Heuristik ve derin PE analizi tamamlandı mı?
+        /// </summary>
+        [ObservableProperty]
+        private bool isStep4Done;
+
+        /// <summary>
+        /// 5. Aşama: Sonuç raporlama ve temizleme aşaması etkin mi?
+        /// </summary>
+        [ObservableProperty]
+        private bool isStep5Active = true;
+
+        public bool IsStep1Active => IsScanning && !IsStep1Done;
+        public bool IsStep2Active => IsScanning && IsStep1Done && !IsStep2Done;
+        public bool IsStep3Active => IsScanning && IsStep2Done && !IsStep3Done;
+        public bool IsStep4Active => IsScanning && IsStep3Done && !IsStep4Done;
+        /// <summary>Marks only actual completed scan status, not an inferred subsystem completion.</summary>
+        public bool IsStep5Done => _lastScanStatus == ScanStatus.Completed && ProgressPercentage >= 100;
+        public bool IsStep2Pending => !IsStep2Done && !IsStep2Active;
+        public bool IsStep3Pending => !IsStep3Done && !IsStep3Active;
+        public bool IsStep4Pending => !IsStep4Done && !IsStep4Active;
+        public bool IsStep5Pending => !IsStep5Done && !IsStep5Active;
+        #endregion
         /// <summary>
         /// Arka planda veya bağımsız bir iş parçacığında çalışmakta olan tarayıcı koordinatörünün
         /// mevcut anlık durumunu UI arayüz modeli ile senkronize eder.
@@ -21,7 +70,7 @@ namespace AegisPC.App.ViewModels
         {
             if (_scanCoordinator == null) return;
 
-            Application.Current?.Dispatcher?.Invoke(() =>
+            DispatchUi(() =>
             {
                 IsScanning = _scanCoordinator.IsScanning;
                 IsNotScanning = !_scanCoordinator.IsScanning;
@@ -29,6 +78,19 @@ namespace AegisPC.App.ViewModels
                 CurrentFile = _scanCoordinator.CurrentFile;
                 ScannedCount = _scanCoordinator.ScannedFiles;
                 ScannedItemsFormatted = $"{ScannedCount:N0}";
+                if (_scanCoordinator.CurrentSession?.LatestProgress is { } lp)
+                {
+                    ScannedFromCache = lp.ScannedFromCache;
+                    SkippedSignedClean = lp.SkippedSignedClean;
+                    NewlyScanned = lp.NewlyScanned;
+                    ConfirmedMaliciousCount = lp.ConfirmedMaliciousCount;
+                    SuspiciousReviewCount = lp.SuspiciousCount;
+                    IsCpuTelemetryAvailable = lp.IsCpuTelemetryAvailable;
+                    CpuUsagePercent = lp.CpuUsagePercent;
+                    RamUsageMb = lp.RamUsageMb;
+                    ActiveResourceProfileText = FormatActiveResourceProfile(lp);
+                    ScannedBreakdownFormatted = $"{lp.ScannedFromCache:N0} önbellekten • {lp.SkippedSignedClean:N0} imzalı geçti • {lp.NewlyScanned:N0} yeni tarandı";
+                }
                 TotalCount = _scanCoordinator.TotalFiles;
                 FindingsCount = _scanCoordinator.FindingsCount;
                 DetectionsCount = FindingsCount;
@@ -47,6 +109,11 @@ namespace AegisPC.App.ViewModels
                 }
 
                 UpdateChecklistSteps(ProgressPercentage);
+
+                if (IsScanning && !App.IsStartMinimized)
+                {
+                    Views.ActiveScanWindow.ShowScanWindow(this);
+                }
             });
         }
 
@@ -56,28 +123,43 @@ namespace AegisPC.App.ViewModels
         /// <param name="p">Anlık tarama ilerleme metrikleri.</param>
         private void OnScanProgressChanged(ScanProgress p)
         {
-            if (_isCancellationRequested || !IsScanning) return;
+            if (_isCancellationRequested || _scanCoordinator?.State == ScanState.Cancelling || _scanCoordinator?.State == ScanState.Cancelled) return;
 
-            Application.Current?.Dispatcher?.InvokeAsync(() =>
+            DispatchUi(() =>
             {
-                if (_isCancellationRequested || !IsScanning) return;
+                if (_isCancellationRequested || _scanCoordinator?.State == ScanState.Cancelling || _scanCoordinator?.State == ScanState.Cancelled) return;
 
-                IsScanning = true;
-                IsNotScanning = false;
-                IsScanFinishedView = false;
+                if (!IsScanning)
+                {
+                    IsScanning = true;
+                    IsNotScanning = false;
+                    IsScanFinishedView = false;
+                    if (!App.IsStartMinimized)
+                    {
+                        Views.ActiveScanWindow.ShowScanWindow(this);
+                    }
+                }
+
                 ProgressPercentage = (int)p.ProgressPercent;
                 CurrentFile = p.CurrentFile;
                 ScannedCount = p.ScannedFiles;
                 ScannedItemsFormatted = $"{ScannedCount:N0}";
+                ScannedFromCache = p.ScannedFromCache;
+                SkippedSignedClean = p.SkippedSignedClean;
+                NewlyScanned = p.NewlyScanned;
+                ScannedBreakdownFormatted = $"{p.ScannedFromCache:N0} önbellekten • {p.SkippedSignedClean:N0} imzalı geçti • {p.NewlyScanned:N0} yeni tarandı";
                 TotalCount = p.TotalFiles;
                 FindingsCount = p.FindingsCount;
+                ConfirmedMaliciousCount = p.ConfirmedMaliciousCount;
+                SuspiciousReviewCount = p.SuspiciousCount;
                 DetectionsCount = FindingsCount;
                 SkippedCount = p.SkippedFiles;
                 FailedCount = p.FailedFiles;
                 TimedOutCount = p.TimedOutFiles;
                 CpuUsagePercent = p.CpuUsagePercent;
+                IsCpuTelemetryAvailable = p.IsCpuTelemetryAvailable;
                 RamUsageMb = p.RamUsageMb;
-                ActiveResourceProfileText = p.ResourceProfileName;
+                ActiveResourceProfileText = FormatActiveResourceProfile(p);
                 OnPropertyChanged(nameof(CpuAndRamFormatted));
                 RemainingEtaFormatted = !string.IsNullOrEmpty(p.FormattedEta) 
                     ? p.FormattedEta 
@@ -85,7 +167,9 @@ namespace AegisPC.App.ViewModels
 
                 if (!IsPaused)
                 {
-                    ScanStatusText = $"{p.ScanType} taraması işleniyor...";
+                    ScanStatusText = string.IsNullOrWhiteSpace(p.Phase)
+                        ? $"{p.ScanType} taraması işleniyor..."
+                        : p.Phase;
                 }
 
                 if (p.ElapsedTime > TimeSpan.Zero)
@@ -106,16 +190,26 @@ namespace AegisPC.App.ViewModels
         }
 
         /// <summary>
-        /// Yüzdelik ilerleme durumuna göre 5 adımlı checklist (kontrol listesi) aşama göstergelerini günceller.
+        /// Keeps legacy stage bindings unknown because percentage progress does not prove that a particular subsystem ran.
         /// </summary>
         /// <param name="pct">Geçerli tarama ilerleme yüzdesi (0-100).</param>
         private void UpdateChecklistSteps(int pct)
         {
-            IsStep1Done = pct >= 8;
-            IsStep2Done = pct >= 20;
-            IsStep3Done = pct >= 35;
-            IsStep4Done = pct >= 50;
-            IsStep5Active = pct < 100;
+            IsStep1Done = false;
+            IsStep2Done = false;
+            IsStep3Done = false;
+            IsStep4Done = false;
+            IsStep5Active = IsScanning;
+
+            OnPropertyChanged(nameof(IsStep1Active));
+            OnPropertyChanged(nameof(IsStep2Active));
+            OnPropertyChanged(nameof(IsStep3Active));
+            OnPropertyChanged(nameof(IsStep4Active));
+            OnPropertyChanged(nameof(IsStep5Done));
+            OnPropertyChanged(nameof(IsStep2Pending));
+            OnPropertyChanged(nameof(IsStep3Pending));
+            OnPropertyChanged(nameof(IsStep4Pending));
+            OnPropertyChanged(nameof(IsStep5Pending));
         }
 
         /// <summary>
@@ -125,143 +219,137 @@ namespace AegisPC.App.ViewModels
         /// <param name="result">Tarama sonucunda elde edilen dosya sayıları ve bulgu listesi.</param>
         private void OnScanCompleted(ScanResult result)
         {
-            Application.Current?.Dispatcher?.InvokeAsync(() =>
+            var findings = result.Findings ?? new System.Collections.Generic.List<SecurityFinding>();
+            Services.ScanReportRecord? capturedReport = null;
+            try
             {
-                IsScanning = false;
-                IsNotScanning = true;
-                IsPaused = false;
-                _stopwatch.Stop();
-                _timer?.Stop();
-                OnPropertyChanged(nameof(PauseButtonText));
-
-                TimeSpan elapsed;
-                if (result.ElapsedMs > 0)
+                capturedReport = new Services.ScanReportRecord
                 {
-                    elapsed = TimeSpan.FromMilliseconds(result.ElapsedMs);
-                }
-                else if (result.CompletedAt.HasValue && result.CompletedAt.Value > result.StartedAt)
-                {
-                    elapsed = result.CompletedAt.Value - result.StartedAt;
-                }
-                else if (_engineElapsedTime > TimeSpan.Zero)
-                {
-                    elapsed = _engineElapsedTime;
-                }
-                else
-                {
-                    elapsed = _stopwatch.Elapsed;
-                }
-
-                ScanDurationFormatted = FormatDuration(elapsed);
-
-                bool wasCancelled = result.Status == ScanStatus.Cancelled || _isCancellationRequested;
-
-                if (wasCancelled)
-                {
-                    _isCancellationRequested = true;
-                    if (result.TotalFiles > 0 && result.ScannedFiles > 0)
-                    {
-                        ProgressPercentage = Math.Clamp((int)(((double)result.ScannedFiles / result.TotalFiles) * 100), 0, 99);
-                    }
-                    RemainingEtaFormatted = "İptal edildi";
-                    CurrentFile = "İptal edildi";
-                }
-                else
-                {
-                    ProgressPercentage = 100;
-                    RemainingEtaFormatted = string.Empty;
-                    CurrentFile = "Tamamlandı";
-                    IsStep1Done = true;
-                    IsStep2Done = true;
-                    IsStep3Done = true;
-                    IsStep4Done = true;
-                    IsStep5Active = false;
-                }
-
-                ScannedCount = result.ScannedFiles;
-                ScannedItemsFormatted = $"{ScannedCount:N0}";
-                TotalCount = result.TotalFiles;
-                FindingsCount = result.Findings.Count;
-                DetectionsCount = FindingsCount;
-
-                ScanFindings.Clear();
-                ThreatResults.Clear();
-
-                if (result.Findings != null)
-                {
-                    foreach (var f in result.Findings)
-                    {
-                        if (f.Status == FindingStatus.Resolved || f.IsAllowlisted)
-                        {
-                            continue;
-                        }
-
-                        ScanFindings.Add(f);
-
-                        string cat = f.RiskLevel == RiskLevel.ConfirmedMalicious ? "Kötücül Yazılım" :
-                                     f.RiskLevel == RiskLevel.HighRisk ? "Truva Atı / Riskli Kod" : "RiskWare.Agent";
-
-                        bool isQuarantined = f.Status == FindingStatus.Resolved || f.RiskScore >= 85;
-
-                        ThreatResults.Add(new SelectableThreatModel
-                        {
-                            IsSelected = !isQuarantined,
-                            Name = !string.IsNullOrWhiteSpace(f.ObjectName) ? f.ObjectName : Path.GetFileName(f.ObjectPath),
-                            ThreatType = cat,
-                            ObjectType = f.ObjectPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? "Bellek / Yürütülebilir" : "Dosya",
-                            Location = f.ObjectPath,
-                            ActionTaken = isQuarantined ? "Karantinaya alındı" : "Uyarıldı",
-                            Finding = f
-                        });
-                    }
-                }
-
-                HasFindings = ScanFindings.Count > 0;
-                HasNoFindings = ScanFindings.Count == 0;
+                    Result = System.Text.Json.JsonSerializer.Deserialize<ScanResult>(System.Text.Json.JsonSerializer.Serialize(result))
+                        ?? throw new InvalidDataException("The final scan result could not be captured."),
+                    ResourceProfile = ActiveResourceProfileText,
+                    Actions = new System.Collections.Generic.Dictionary<string, string>(_confirmedActions, StringComparer.OrdinalIgnoreCase)
+                };
+                _lastReport = capturedReport;
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Could not capture final scan report");
+                _lastReport = null;
+                DispatchUi(() => ReportHistoryStatus = "Sonuç görüntülenebilir; rapor kopyası oluşturulamadı: " + ex.Message);
+            }
+            DispatchUi(() =>
+            {
+                ApplyFinalScanCounters(result, findings.Count);
+                PopulateFinalFindings(findings);
+                NotifyFinalScanStatus(result, findings.Count);
                 IsScanFinishedView = true;
-
-                if (result.Status == ScanStatus.Cancelled || _isCancellationRequested)
-                {
-                    _isCancellationRequested = true;
-                    ScanStatusText = $"Tarama kullanıcı tarafından durduruldu. {result.ScannedFiles:N0} dosya incelendi.";
-                    _toastService?.ShowToast(
-                        "Tarama İptal Edildi",
-                        $"Tehdit taraması durduruldu: {result.ScannedFiles:N0} dosya incelendi.",
-                        "Warning");
-                }
-                else if (HasNoFindings)
-                {
-                    ScanStatusText = $"Tarama tamamlandı. {result.ScannedFiles:N0} dosya incelendi, sistem tamamen temiz.";
-                    _toastService?.ShowToast(
-                        "Sistem Güvende",
-                        $"Tehdit taraması tamamlandı: {result.ScannedFiles:N0} dosya incelendi, herhangi bir virüse rastlanmadı.",
-                        "Success");
-                }
-                else
-                {
-                    int quarantinedCount = ThreatResults.Count(t => t.ActionTaken == "Karantinaya alındı");
-                    if (quarantinedCount > 0)
-                    {
-                        ScanStatusText = $"Tehdit Taraması: {quarantinedCount} tehdit karantinaya alındı, {ThreatResults.Count - quarantinedCount} uyarıldı.";
-                        _toastService?.ShowToast(
-                            "Tehdit Engellendi ve Karantinaya Alındı",
-                            $"{quarantinedCount} adet zararlı tehdit başarıyla Karantina Kasasına kilitlendi.",
-                            "Danger");
-                    }
-                    else
-                    {
-                        ScanStatusText = $"Tehdit Taraması: {ThreatResults.Count} adet şüpheli dosya uyarısı.";
-                        _toastService?.ShowToast(
-                            "Şüpheli Dosya Uyarısı",
-                            $"{ThreatResults.Count} adet şüpheli dosya algılandı. Detaylar için Olay Merkezini inceleyin.",
-                            "Warning");
-                    }
-                }
-
                 OnPropertyChanged(nameof(ScanResultTitle));
                 OnPropertyChanged(nameof(CleanStateTitle));
                 OnPropertyChanged(nameof(CleanStateSubtitle));
             });
+            if (_persistReportHistory && capturedReport != null) _ = PersistReportAsync(capturedReport);
+        }
+
+        private void ApplyFinalScanCounters(ScanResult result, int findingsCount)
+        {
+            IsScanning = false;
+            IsNotScanning = true;
+            IsPaused = false;
+            _stopwatch.Stop();
+            _timer?.Stop();
+            OnPropertyChanged(nameof(PauseButtonText));
+            TimeSpan elapsed = result.ElapsedMs > 0 ? TimeSpan.FromMilliseconds(result.ElapsedMs)
+                : result.StartedAt != default && result.CompletedAt.HasValue && result.CompletedAt.Value > result.StartedAt ? result.CompletedAt.Value - result.StartedAt
+                : _engineElapsedTime > TimeSpan.Zero ? _engineElapsedTime : _stopwatch.Elapsed;
+            ScanDurationFormatted = FormatDuration(elapsed);
+            _lastScanStatus = result.Status;
+            _isCancellationRequested = result.Status == ScanStatus.Cancelled;
+            if (_isCancellationRequested)
+            {
+                _isCancellationRequested = true;
+                if (result.TotalFiles > 0 && result.ScannedFiles > 0)
+                    ProgressPercentage = Math.Clamp((int)(((double)result.ScannedFiles / result.TotalFiles) * 100), 0, 99);
+                RemainingEtaFormatted = "İptal edildi";
+                CurrentFile = "İptal edildi";
+            }
+            else if (result.Status == ScanStatus.Completed)
+            {
+                ProgressPercentage = 100;
+                RemainingEtaFormatted = string.Empty;
+                CurrentFile = "Tamamlandı";
+                IsStep5Active = false;
+            }
+            else
+            {
+                ProgressPercentage = Math.Min(99, ProgressPercentage);
+                RemainingEtaFormatted = "Tarama başarısız";
+                CurrentFile = result.FailureInfo is { } failure
+                    ? $"Tarama başarısız: {failure.Stage} / {failure.Reason}; kayıt: {failure.CorrelationId}"
+                    : "Tarama başarısız";
+            }
+            ScannedCount = result.ScannedFiles;
+            ScannedItemsFormatted = $"{ScannedCount:N0}";
+            TotalCount = result.TotalFiles;
+            SkippedCount = result.SkippedFiles;
+            FailedCount = result.FailedFiles;
+            TimedOutCount = result.TimedOutFiles;
+            FindingsCount = findingsCount;
+            ConfirmedMaliciousCount = result.Findings.Count(f => f.RiskLevel == RiskLevel.ConfirmedMalicious);
+            SuspiciousReviewCount = result.Findings.Count(f => f.RiskLevel is RiskLevel.Suspicious or RiskLevel.HighRisk);
+            DetectionsCount = FindingsCount;
+            OnPropertyChanged(nameof(IsStep5Done));
+        }
+
+        private void PopulateFinalFindings(System.Collections.Generic.IReadOnlyList<SecurityFinding> findings)
+        {
+            ScanFindings.Clear();
+            ThreatResults.Clear();
+            foreach (var finding in findings)
+            {
+                if (finding.Status == FindingStatus.Resolved || finding.Status == FindingStatus.Ignored || finding.IsAllowlisted) continue;
+                ScanFindings.Add(finding);
+                ThreatResults.Add(new SelectableThreatModel
+                {
+                    IsSelected = true,
+                    Name = !string.IsNullOrWhiteSpace(finding.ObjectName) ? finding.ObjectName : Path.GetFileName(finding.ObjectPath),
+                    ThreatType = finding.Category.ToString(),
+                    ObjectType = "Dosya / Güvenlik nesnesi",
+                    Location = finding.ObjectPath,
+                    ActionTaken = Services.ScanReportGenerator.DetermineActionTaken(finding, _confirmedActions.TryGetValue(finding.ObjectPath, out var action) ? action : null),
+                    Finding = finding
+                });
+            }
+            HasFindings = ScanFindings.Count > 0;
+            HasNoFindings = ScanFindings.Count == 0;
+        }
+
+        private void NotifyFinalScanStatus(ScanResult result, int findingsCount)
+        {
+            if (result.Status == ScanStatus.Cancelled || _isCancellationRequested)
+            {
+                ScanStatusText = $"Tarama durduruldu. {result.ScannedFiles:N0} dosya incelendi; kapsam ve bulgular raporda korunur.";
+                _toastService?.ShowToast("Tarama İptal Edildi", ScanStatusText, "Warning");
+            }
+            else if (result.Status == ScanStatus.Failed)
+            {
+                ScanStatusText = $"Tarama başarısız; {result.ScannedFiles:N0} dosya incelendi. Hata ve bulgular raporda korunur.";
+                _toastService?.ShowToast("Tarama Başarısız", ScanStatusText, "Warning");
+            }
+            else if (findingsCount == 0)
+            {
+                bool partialCoverage = !result.Coverage.IsComplete || result.SkippedFiles > 0 || result.FailedFiles > 0 || result.TimedOutFiles > 0;
+                ScanStatusText = $"{result.ScannedFiles:N0} dosya incelendi; bulgu yok." + (partialCoverage ? " Kapsam eksik; ayrıntılar raporda." : " Bu sonuç güvenlik garantisi değildir.");
+                _toastService?.ShowToast(partialCoverage ? "Tarama Kapsamı Eksik" : "Tarama Tamamlandı", ScanStatusText, partialCoverage ? "Warning" : "Success");
+            }
+            else
+            {
+                int quarantinedCount = _confirmedActions.Count(pair => pair.Value == "Karantinaya alındı");
+                ScanStatusText = $"{findingsCount} güvenlik bulgusu; {ThreatResults.Count} açık öğe, {quarantinedCount} doğrulanmış karantina eylemi. Ayrıntılar raporda.";
+                if (!result.Coverage.IsComplete || result.FailedFiles > 0 || result.TimedOutFiles > 0)
+                    ScanStatusText += " Bazı dosyaların incelemesi eksik; güvenli kabul edilmediler.";
+                _toastService?.ShowToast(quarantinedCount > 0 ? "Karantina Eylemi Doğrulandı" : "Güvenlik Bulguları Var", ScanStatusText, "Warning");
+            }
         }
     }
 }

@@ -44,6 +44,8 @@ namespace AegisPC.Security.PE
             }
 
             // 1. TLS Callbacks (Gizli / Erken Kod Yürütme)
+            if (!peResult.IsTlsInspectionComplete)
+                context.CoverageLimitations.Add("TlsStructureInspectionIncomplete");
             if (peResult.HasTlsCallbacks)
             {
                 evidences.Add(new SecurityEvidence
@@ -51,9 +53,11 @@ namespace AegisPC.Security.PE
                     Category = EvidenceCategory.StaticPeStructure,
                     SourceDetector = DetectorId,
                     RuleName = "PE_TLS_CALLBACK_DETECTED",
-                    ScoreContribution = 20,
+                    FeatureIdentity = "PE.TlsCallbacks",
+                    Nature = EvidenceNature.Capability,
+                    ScoreContribution = 0,
                     Confidence = EvidenceConfidence.High,
-                    Description = $"PE dosyasında TLS Callback/Directory bulundu (main() öncesi erken yürütme / Anti-Debug).",
+                    Description = "Doğrulanmış TLS callback tablosu bulundu; bu normal Windows yürütülebilirlerinde de kullanılabilir.",
                     FilePath = context.FilePath,
                     Metadata = new Dictionary<string, string>
                     {
@@ -72,6 +76,8 @@ namespace AegisPC.Security.PE
                     Category = EvidenceCategory.StaticPeStructure,
                     SourceDetector = DetectorId,
                     RuleName = "PE_WX_SECTION_DETECTED",
+                    FeatureIdentity = "PE.WritableExecutableSection",
+                    Nature = EvidenceNature.StructuralAnomaly,
                     ScoreContribution = 35,
                     Confidence = EvidenceConfidence.Absolute,
                     Description = $"PE dosyasında hem yazılabilir hem çalıştırılabilir bölüm bulundu: '{string.Join(", ", wxSections)}' (Self-modifying code / Unpacker).",
@@ -91,6 +97,8 @@ namespace AegisPC.Security.PE
                     Category = EvidenceCategory.StaticPeStructure,
                     SourceDetector = DetectorId,
                     RuleName = "PE_KNOWN_PACKER_SECTION",
+                    FeatureIdentity = "PE.PackingCapability",
+                    Nature = EvidenceNature.Capability,
                     ScoreContribution = 30,
                     Confidence = EvidenceConfidence.High,
                     Description = $"PE dosyasında bilinen packer/koruyucu imzası bulundu: {string.Join(" ", peResult.PackerIndicators)}",
@@ -111,6 +119,9 @@ namespace AegisPC.Security.PE
                     Category = EvidenceCategory.EntropyAnomaly,
                     SourceDetector = DetectorId,
                     RuleName = "PE_HIGH_ENTROPY_PACKED_SECTION",
+                    FeatureIdentity = "PE.Entropy",
+                    Nature = peResult.Sections.Any(s => s.Entropy >= 7.2 && s.IsExecutable)
+                        ? EvidenceNature.StructuralAnomaly : EvidenceNature.Capability,
                     ScoreContribution = 25,
                     Confidence = EvidenceConfidence.High,
                     Description = $"PE bölümlerinde şüpheli yüksek Shannon entropisi tespit edildi: {string.Join(", ", highEntSections)}",
@@ -130,6 +141,8 @@ namespace AegisPC.Security.PE
                     Category = EvidenceCategory.StaticApi,
                     SourceDetector = DetectorId,
                     RuleName = "PE_SUSPICIOUS_IMPORTS_DETECTED",
+                    FeatureIdentity = "PE.ImportedApiCapabilities",
+                    Nature = EvidenceNature.Capability,
                     ScoreContribution = 25,
                     Confidence = EvidenceConfidence.High,
                     Description = $"PE dosyasının içe aktarım tablosunda tehlikeli Win32 API'ları bulundu: {string.Join(", ", peResult.SuspiciousImportedApis)}",
@@ -197,7 +210,7 @@ namespace AegisPC.Security.PE
                         }
                     });
                 }
-                else if (!peResult.Certificate.IsValid && !AegisPC.Core.Helpers.GameCrackClassifier.IsGameCrackOrEmulator(context.FilePath))
+                else if (!peResult.Certificate.IsValid)
                 {
                     evidences.Add(new SecurityEvidence
                     {

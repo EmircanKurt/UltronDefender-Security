@@ -50,53 +50,75 @@ namespace AegisPC.App.ViewModels
 
         public async Task InitializeDataAsync()
         {
-            await RefreshAdaptersAsync();
-            await CheckHostsStatusAsync();
-            RefreshCustomLists();
+            try
+            {
+                await RefreshAdaptersAsync();
+                await CheckHostsStatusAsync();
+                RefreshCustomLists();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Ağ koruma verileri yüklenirken hata: {ex.Message}";
+            }
         }
 
         [RelayCommand]
         public async Task RefreshAdaptersAsync()
         {
-            var list = await _dnsService.GetNetworkAdaptersDnsAsync();
-            Adapters.Clear();
-            foreach (var a in list)
+            try
             {
-                Adapters.Add(a);
+                var list = await _dnsService.GetNetworkAdaptersDnsAsync();
+                Adapters.Clear();
+                foreach (var a in list)
+                {
+                    Adapters.Add(a);
+                }
+                if (Adapters.Count > 0)
+                {
+                    if (SelectedAdapter == null || !Adapters.Any(x => x.Name == SelectedAdapter.Name))
+                    {
+                        // Auto-select active internet gateway adapter
+                        SelectedAdapter = Adapters.FirstOrDefault(x => x.HasInternetGateway) ?? Adapters.First();
+                    }
+                    else
+                    {
+                        SelectedAdapter = Adapters.First(x => x.Name == SelectedAdapter.Name);
+                    }
+                }
             }
-            if (Adapters.Count > 0)
+            catch (Exception ex)
             {
-                if (SelectedAdapter == null || !Adapters.Any(x => x.Name == SelectedAdapter.Name))
-                {
-                    // Auto-select active internet gateway adapter
-                    SelectedAdapter = Adapters.FirstOrDefault(x => x.HasInternetGateway) ?? Adapters.First();
-                }
-                else
-                {
-                    SelectedAdapter = Adapters.First(x => x.Name == SelectedAdapter.Name);
-                }
+                StatusMessage = $"Ağ bağdaştırıcıları alınamadı: {ex.Message}";
             }
         }
 
         [RelayCommand]
         public async Task CheckHostsStatusAsync()
         {
-            var status = await _dnsService.CheckHostsFileIntegrityAsync();
-            IsHostsIntact = status.IsIntact;
-            HostsTotalEntries = status.TotalEntries;
-            SinkholedCount = status.SinkholedMaliciousEntries;
+            try
+            {
+                var status = await _dnsService.CheckHostsFileIntegrityAsync();
+                IsHostsIntact = status.IsIntact;
+                HostsTotalEntries = status.TotalEntries;
+                SinkholedCount = status.SinkholedMaliciousEntries;
 
-            if (!status.IsIntact)
-            {
-                HostsStatusText = $"⚠️ DİKKAT: {status.SuspiciousHijackedEntries.Count} şüpheli yönlendirme tespit edildi!";
+                if (!status.IsIntact)
+                {
+                    HostsStatusText = $"⚠️ DİKKAT: {status.SuspiciousHijackedEntries.Count} şüpheli yönlendirme tespit edildi!";
+                }
+                else if (status.SinkholedMaliciousEntries > 0)
+                {
+                    HostsStatusText = $"🛡️ Korumada: {status.SinkholedMaliciousEntries} bilinen zararlı alan adı yerel olarak engellendi.";
+                }
+                else
+                {
+                    HostsStatusText = "✓ Windows Hosts dosyası standart ve temiz durumda.";
+                }
             }
-            else if (status.SinkholedMaliciousEntries > 0)
+            catch (Exception ex)
             {
-                HostsStatusText = $"🛡️ Korumada: {status.SinkholedMaliciousEntries} bilinen zararlı alan adı yerel olarak engellendi.";
-            }
-            else
-            {
-                HostsStatusText = "✓ Windows Hosts dosyası standart ve temiz durumda.";
+                HostsStatusText = "⚠️ Hosts dosyası kontrol edilemedi.";
+                StatusMessage = $"Hosts dosyası doğrulanırken hata: {ex.Message}";
             }
         }
 

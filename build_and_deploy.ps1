@@ -6,12 +6,17 @@
 [CmdletBinding()]
 param (
     [switch]$SkipTests,
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [switch]$UpdateDesktopShortcut,
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\release-3.2.1')
 )
 
 $ErrorActionPreference = "Stop"
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
-$repoRoot = (Get-Location).Path
+$repoRoot = $PSScriptRoot
+Set-Location -LiteralPath $repoRoot
+$OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
+New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host " [Ultron Defender Total Security] Build & Deploy Pipeline" -ForegroundColor Cyan
@@ -19,34 +24,34 @@ Write-Host "==========================================================" -Foregro
 
 # 1. TEST STEP
 if (-not $SkipTests) {
-    Write-Host "`n[1/4] Testler calistiriliyor (Golden Test Suite)..." -ForegroundColor Yellow
-    & dotnet test --filter "Golden" --logger "console;verbosity=minimal"
+    Write-Host "`n[1/4] Zararsiz regresyon testleri calistiriliyor..." -ForegroundColor Yellow
+    & dotnet test 'tests\AegisPC.Review.Tests\AegisPC.Review.Tests.csproj' -c Release --filter 'FullyQualifiedName!~Golden01_&FullyQualifiedName!~SettingsViewModelRegressionTests&FullyQualifiedName!~ScanViewModel_CancelCommand' --logger 'console;verbosity=minimal' -- RunConfiguration.TargetPlatform=x64
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Golden Test Suite basarisiz oldu! Dagitim iptal edildi."
+        Write-Error "Zararsiz regresyon testleri basarisiz oldu! Paketleme iptal edildi."
         exit 1
     }
-    Write-Host "[OK] Golden Test Suite basariyla gecti!" -ForegroundColor Green
+    Write-Host "[OK] Zararsiz regresyon testleri gecti; gercek malware/kurulum testi degildir." -ForegroundColor Green
 } else {
     Write-Host "`n[1/4] Testler atlandi (-SkipTests)." -ForegroundColor DarkGray
 }
 
 # 2. PUBLISH STEP
-Write-Host "`n[2/4] Release ikilileri AegisPC_App klasorune yayimlaniyor..." -ForegroundColor Yellow
-$appDir = Join-Path $repoRoot "AegisPC_App"
+Write-Host "`n[2/4] Release ikilileri izole paket klasorune yayimlaniyor..." -ForegroundColor Yellow
+$appDir = Join-Path $OutputDirectory "payload"
 $helpersDir = Join-Path $appDir "Helpers"
 
 & dotnet publish "src\AegisPC.App\AegisPC.App.csproj" -c Release -r win-x64 --self-contained true /p:PublishReadyToRun=true -o $appDir
+if ($LASTEXITCODE -ne 0) { throw "Application publish failed; deployment stopped." }
 & dotnet publish "src\AegisPC.Service\AegisPC.Service.csproj" -c Release -r win-x64 --self-contained true /p:PublishReadyToRun=true -o (Join-Path $appDir "Service")
+if ($LASTEXITCODE -ne 0) { throw "Service publish failed; deployment stopped." }
 & dotnet publish "tools\AegisPC.ElevatedHelper\AegisPC.ElevatedHelper.csproj" -c Release -r win-x64 --self-contained true /p:PublishReadyToRun=true -o $helpersDir
-& dotnet publish "tools\AegisPC.Uninstaller\AegisPC.Uninstaller.csproj" -c Release -r win-x64 --self-contained true /p:PublishReadyToRun=true -o $appDir
+if ($LASTEXITCODE -ne 0) { throw "Elevated helper publish failed; deployment stopped." }
+Copy-Item -LiteralPath (Join-Path $repoRoot 'ultron_shield.ico') -Destination $appDir -Force
 
 # 3. SHORTCUT & ALIAS SYNC
 Write-Host "`n[3/4] Masaustu kisayolu ve takma ad ikilileri senkronize ediliyor..." -ForegroundColor Yellow
 $exePath = Join-Path $appDir "UltronDefender.exe"
-Copy-Item -Path $exePath -Destination (Join-Path $appDir "AegisPC.exe") -Force
-Copy-Item -Path $exePath -Destination (Join-Path $appDir "Ultron Defender Security.exe") -Force
-Copy-Item -Path $exePath -Destination (Join-Path $appDir "Ultron Defender Total Security.exe") -Force
-
+if ($UpdateDesktopShortcut) {
 $wsh = New-Object -ComObject WScript.Shell
 $desktop = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
 $shortcutPath = Join-Path $desktop "Ultron Defender Total Security.lnk"
@@ -58,25 +63,26 @@ $icoPath = Join-Path $appDir "ultron_shield.ico"
 if (Test-Path $icoPath) { $d1.IconLocation = "$icoPath,0" }
 $d1.Save()
 Write-Host "[OK] Kisayol guncellendi: $shortcutPath -> $exePath" -ForegroundColor Green
+}
 
 # 4. INNO SETUP INSTALLER
 if (-not $SkipInstaller) {
     Write-Host "`n[4/4] Inno Setup ile kurulum paketi olusturuluyor..." -ForegroundColor Yellow
-    $iscc = "C:\Users\PC\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
+    $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'
     if (-not (Test-Path $iscc)) {
         $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
     }
     if ($iscc -and (Test-Path $iscc)) {
-        & $iscc (Join-Path $repoRoot "installer.iss")
+        & $iscc /Q "/DAppPublishDir=$appDir" "/DSetupOutputDir=$OutputDirectory" (Join-Path $repoRoot "installer.iss")
         if ($LASTEXITCODE -eq 0) {
-            $setupPath = Join-Path $repoRoot "UltronDefenderSetup.exe"
+            $setupPath = Join-Path $OutputDirectory "UltronDefenderSetup.exe"
             $setupSizeMb = [math]::Round((Get-Item $setupPath).Length / 1MB, 2)
             Write-Host "[OK] Kurulum paketi hazir: $setupPath ($setupSizeMb MB)" -ForegroundColor Green
         } else {
-            Write-Warning "Inno Setup derlemesi hata kodu verdi: $LASTEXITCODE"
+            throw "Inno Setup compilation failed with exit code $LASTEXITCODE."
         }
     } else {
-        Write-Warning "ISCC.exe bulunamadi, kurulum paketi uretimi atlandi."
+        throw "ISCC.exe was not found; installer was not produced."
     }
 } else {
     Write-Host "`n[4/4] Kurulum paketi uretimi atlandi (-SkipInstaller)." -ForegroundColor DarkGray

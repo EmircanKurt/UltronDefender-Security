@@ -28,6 +28,10 @@ namespace AegisPC.Contracts.PE
 
         // --- TLS (Thread Local Storage) Callback Telemetrisi ---
         public bool HasTlsCallbacks { get; set; }
+        /// <summary>Records a TLS data directory independently of callback existence; ordinary TLS data is not malicious evidence.</summary>
+        public bool HasTlsDirectory { get; set; }
+        /// <summary>False when TLS structures could not be validated within the supplied on-disk content.</summary>
+        public bool IsTlsInspectionComplete { get; set; } = true;
         public int TlsCallbackCount { get; set; }
         public List<ulong> TlsCallbackAddresses { get; set; } = new();
 

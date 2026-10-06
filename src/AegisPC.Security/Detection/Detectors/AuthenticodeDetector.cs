@@ -8,6 +8,7 @@ using AegisPC.Contracts.Services;
 
 namespace AegisPC.Security.Detection.Detectors
 {
+    /// <summary>Records verified Authenticode metadata without granting clean verdicts to locations or subtracting independent positive evidence.</summary>
     public class AuthenticodeDetector : IDetectorPlugin
     {
         private readonly ISignatureVerifier _signatureVerifier;
@@ -18,11 +19,13 @@ namespace AegisPC.Security.Detection.Detectors
         public int Priority => 8;
         public bool IsEnabled { get; set; } = true;
 
+        /// <summary>Requires a verifier that validates the signature over the actual file; caller-supplied publisher text is insufficient.</summary>
         public AuthenticodeDetector(ISignatureVerifier signatureVerifier)
         {
             _signatureVerifier = signatureVerifier ?? throw new ArgumentNullException(nameof(signatureVerifier));
         }
 
+        /// <summary>Reports verified signature facts or bounded certificate anomalies; verification failures propagate as incomplete coverage.</summary>
         public async Task<IEnumerable<SecurityEvidence>> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
         {
             var list = new List<SecurityEvidence>();
@@ -39,14 +42,13 @@ namespace AegisPC.Security.Detection.Detectors
 
             try
             {
-                var sigInfo = await _signatureVerifier.VerifySignatureAsync(context.FilePath, cancellationToken);
-                bool isSystemPath = AegisPC.Core.Helpers.PathHelper.IsSystemPath(context.FilePath);
-                bool isKnownSafe = AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(context.FilePath);
-
+                var sigInfo = context.SharedScan != null
+                    ? await context.SharedScan.GetOrVerifySignatureAsync(_signatureVerifier, cancellationToken)
+                    : await _signatureVerifier.VerifySignatureAsync(context.FilePath, cancellationToken);
                 if (sigInfo.IsSigned && sigInfo.IsValid)
                 {
-                    bool isMs = isSystemPath || (sigInfo.Publisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true);
-                    string pub = sigInfo.Publisher ?? (isSystemPath ? "Microsoft Windows" : "Geçerli Yayımcı");
+                    bool isMs = AegisPC.Security.Safety.TrustedSoftwarePolicy.IsTrustedOsPublisher(sigInfo.Publisher);
+                    string pub = sigInfo.Publisher ?? "Geçerli Yayımcı";
 
                     if (isMs)
                     {
@@ -56,7 +58,8 @@ namespace AegisPC.Security.Detection.Detectors
                             SourceDetector = DisplayName,
                             RuleName = "Signature.Valid.ValidMicrosoft",
                             Description = $"Geçerli Microsoft Windows Dijital İmzası: {pub}",
-                            ScoreContribution = -100, // Full trust discount
+                            ScoreContribution = 0,
+                            TrustKind = EvidenceTrustKind.VerifiedOsAuthenticode,
                             Confidence = EvidenceConfidence.Absolute,
                             FilePath = context.FilePath,
                             SHA256 = context.SHA256
@@ -70,41 +73,13 @@ namespace AegisPC.Security.Detection.Detectors
                             SourceDetector = DisplayName,
                             RuleName = "Signature.Valid.TrustedPublisher",
                             Description = $"Geçerli Güvenilir Üretici Sertifikası: {pub}",
-                            ScoreContribution = -50, // Trust discount
+                            ScoreContribution = 0,
+                            TrustKind = EvidenceTrustKind.VerifiedAuthenticode,
                             Confidence = EvidenceConfidence.High,
                             FilePath = context.FilePath,
                             SHA256 = context.SHA256
                         });
                     }
-                }
-                else if (isSystemPath)
-                {
-                    // Legitimate Windows OS binary / component (e.g. WinSxS catalog-verified or OS component)
-                    list.Add(new SecurityEvidence
-                    {
-                        Category = EvidenceCategory.DigitalCertificate,
-                        SourceDetector = DisplayName,
-                        RuleName = "Signature.Valid.ValidMicrosoft",
-                        Description = "Korumalı Windows Sistem Bileşeni",
-                        ScoreContribution = -100,
-                        Confidence = EvidenceConfidence.High,
-                        FilePath = context.FilePath,
-                        SHA256 = context.SHA256
-                    });
-                }
-                else if (AegisPC.Core.Helpers.GameCrackClassifier.IsGameCrackOrEmulator(context.FilePath))
-                {
-                    list.Add(new SecurityEvidence
-                    {
-                        Category = EvidenceCategory.DigitalCertificate,
-                        SourceDetector = DisplayName,
-                        RuleName = "GameCrack.SteamApiWrapper",
-                        Description = "Oyun / Steam DRM Emülatör Kütüphanesi (Zararsız Oyun Mod/Crack)",
-                        ScoreContribution = 5,
-                        Confidence = EvidenceConfidence.Medium,
-                        FilePath = context.FilePath,
-                        SHA256 = context.SHA256
-                    });
                 }
                 else if (sigInfo.IsSigned && !sigInfo.IsValid)
                 {
@@ -120,13 +95,15 @@ namespace AegisPC.Security.Detection.Detectors
                         SHA256 = context.SHA256
                     });
                 }
-                else if (!isKnownSafe)
+                else
                 {
                     list.Add(new SecurityEvidence
                     {
                         Category = EvidenceCategory.DigitalCertificate,
                         SourceDetector = DisplayName,
                         RuleName = "Cert.UnsignedExecutable",
+                        FeatureIdentity = "PE.Unsigned",
+                        Nature = EvidenceNature.Capability,
                         Description = "İmzasız Çalıştırılabilir Dosya (Unsigned Binary)",
                         ScoreContribution = 10,
                         Confidence = EvidenceConfidence.Low,
@@ -137,6 +114,7 @@ namespace AegisPC.Security.Detection.Detectors
             }
             catch
             {
+                throw; // Let the hub report incomplete coverage; failure is not a clean signature.
             }
 
             return list;

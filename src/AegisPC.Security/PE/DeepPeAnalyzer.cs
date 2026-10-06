@@ -56,7 +56,8 @@ namespace AegisPC.Security.PE
                 
                 // ArrayPool: GC baskısını azaltır — her dosya için yeni byte[] alloc edilmez
                 rentedBuffer = ArrayPool<byte>.Shared.Rent(bytesToRead);
-                int read = await fs.ReadAsync(rentedBuffer.AsMemory(0, bytesToRead), cancellationToken);
+                int read = await fs.ReadAtLeastAsync(rentedBuffer.AsMemory(0, bytesToRead), bytesToRead,
+                    throwOnEndOfStream: false, cancellationToken);
 
                 // PeNet, buffer'ın tam boyutunu beklediğinden exact-size kopyası gerekli
                 byte[] buffer;
@@ -81,6 +82,7 @@ namespace AegisPC.Security.PE
                 
                 return result;
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger?.LogTrace(ex, "Error reading PE file '{Path}' for deep analysis.", filePath);
@@ -150,7 +152,11 @@ namespace AegisPC.Security.PE
             ParseRichHeader(peBytes, peFile, result);
 
             // 5. TLS (Thread Local Storage) Callbacks
-            ParseTlsCallbacks(peFile, result);
+            var tls = TlsCallbackInspector.Inspect(peBytes);
+            result.HasTlsDirectory = tls.HasDirectory;
+            result.IsTlsInspectionComplete = tls.Complete;
+            result.HasTlsCallbacks = tls.Complete && tls.CallbackCount > 0;
+            result.TlsCallbackCount = tls.CallbackCount;
 
             // 6. PE Bölüm Analizi, Entropi ve W+X Anomalileri
             ParseSections(peBytes, peFile, result);
@@ -257,27 +263,6 @@ namespace AegisPC.Security.PE
             };
         }
 
-        private void ParseTlsCallbacks(PeFile peFile, PeDeepAnalysisResult result)
-        {
-            try
-            {
-                var dataDirs = peFile.ImageNtHeaders?.OptionalHeader?.DataDirectory;
-                if (dataDirs != null && dataDirs.Length > 9)
-                {
-                    var tlsDir = dataDirs[9]; // IMAGE_DIRECTORY_ENTRY_TLS (Index 9)
-                    if (tlsDir.VirtualAddress > 0 && tlsDir.Size > 0)
-                    {
-                        result.HasTlsCallbacks = true;
-                        result.TlsCallbackCount = 1;
-                        result.Anomalies.Add("PE dosyasında TLS Directory tespit edildi (Erken kod çalıştırma / Anti-debug).");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogTrace(ex, "TLS callbacks parsing failed.");
-            }
-        }
 
         private void ParseSections(byte[] peBytes, PeFile peFile, PeDeepAnalysisResult result)
         {

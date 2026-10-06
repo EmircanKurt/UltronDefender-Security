@@ -13,9 +13,13 @@ namespace AegisPC.Core.Models
         public SecurityFinding? Finding { get; set; }
         public string? ErrorMessage { get; set; }
         public TimeSpan Duration { get; set; } = TimeSpan.Zero;
+        public bool IsFromCache { get; set; }
+        public bool IsSignedClean { get; set; }
+        /// <summary>Reports observed content independently of the name; null means classification was not performed.</summary>
+        public FileContentClassification? ContentClassification { get; set; }
 
-        public static FileScanDetailedResult CreateSuccess(string path, SecurityFinding? finding, TimeSpan duration) =>
-            new() { FilePath = path, Outcome = FileScanOutcome.Success, Finding = finding, Duration = duration };
+        public static FileScanDetailedResult CreateSuccess(string path, SecurityFinding? finding, TimeSpan duration, bool isFromCache = false, bool isSignedClean = false) =>
+            new() { FilePath = path, Outcome = FileScanOutcome.Success, Finding = finding, Duration = duration, IsFromCache = isFromCache, IsSignedClean = isSignedClean };
 
         public static FileScanDetailedResult CreateSkipped(string path, string reason) =>
             new() { FilePath = path, Outcome = FileScanOutcome.Skipped, ErrorMessage = reason };
@@ -23,7 +27,8 @@ namespace AegisPC.Core.Models
         public static FileScanDetailedResult CreateTimeout(string path, TimeSpan duration) =>
             new() { FilePath = path, Outcome = FileScanOutcome.Timeout, Duration = duration, ErrorMessage = "Tarama zaman aşımına uğradı (Per-file timeout)" };
 
-        public static FileScanDetailedResult CreateFailed(string path, string error, TimeSpan duration) =>
-            new() { FilePath = path, Outcome = FileScanOutcome.Failed, Duration = duration, ErrorMessage = error };
+        /// <summary>Records an incomplete file inspection, preserving any finding already proven by inspected bytes.</summary>
+        public static FileScanDetailedResult CreateFailed(string path, string error, TimeSpan duration, SecurityFinding? finding = null) =>
+            new() { FilePath = path, Outcome = FileScanOutcome.Failed, Duration = duration, ErrorMessage = error, Finding = finding };
     }
 }

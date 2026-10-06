@@ -6,6 +6,7 @@
     <RootNamespace>AegisPC.Service</RootNamespace>
     <AssemblyName>AegisPC.Service</AssemblyName>
     <Product>Ultron Defender Security</Product>
+    <Version>3.2.1</Version>
     <Company>Ultron Defender Security</Company>
     <OutputType>Exe</OutputType>
   </PropertyGroup>

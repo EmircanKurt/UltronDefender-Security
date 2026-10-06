@@ -1,9 +1,8 @@
 using System;
 using System.ComponentModel;
-using System.Linq;
 using System.Windows;
-using System.Windows.Media;
 using System.Windows.Media.Animation;
+using AegisPC.App.Helpers;
 using AegisPC.App.ViewModels;
 using AegisPC.App.Views;
 using Wpf.Ui.Controls;
@@ -20,6 +19,8 @@ namespace AegisPC.App
 
     public partial class MainWindow : FluentWindow
     {
+        private FrameworkElement? _animatedPage;
+
         public static MainWindow? Instance { get; private set; }
         public static bool AllowClose { get; set; } = false;
 
@@ -29,17 +30,22 @@ namespace AegisPC.App
             DataContext = viewModel;
             InitializeComponent();
             RootNavigation.SetServiceProvider(serviceProvider);
+            SizeChanged += (_, _) => UpdatePaneLayout();
 
             UpdateThemeButtonState();
-            AegisPC.App.Services.AppThemeManager.ThemeChanged += (theme) =>
-            {
-                Dispatcher.InvokeAsync(UpdateThemeButtonState);
-            };
+            AegisPC.App.Services.AppThemeManager.ThemeChanged += OnAppThemeChanged;
+            SystemParameters.StaticPropertyChanged += OnMotionPreferenceChanged;
+            System.Windows.Media.RenderCapability.TierChanged += OnEntranceEnvironmentChanged;
+            Deactivated += OnEntranceEnvironmentChanged;
+            StateChanged += OnEntranceEnvironmentChanged;
+            IsVisibleChanged += OnWindowVisibilityChanged;
 
             RootNavigation.Navigated += (sender, args) =>
             {
                 if (args.Page is FrameworkElement fe)
                 {
+                    NavigationScrollPolicy.ConfigurePageOwnedScrolling(fe,
+                        WheelScrollHelper.FindFirstVisualChild<NavigationViewContentPresenter>(RootNavigation));
                     ApplyPageEntranceAnimation(fe);
                 }
             };
@@ -49,6 +55,12 @@ namespace AegisPC.App
             {
                 try
                 {
+                    ApplyWindowEntranceAnimation();
+                    if (Views.ActiveScanWindow.ActiveInstance != null && Views.ActiveScanWindow.ActiveInstance.IsVisible && Views.ActiveScanWindow.ActiveInstance.Owner == null)
+                    {
+                        Views.ActiveScanWindow.ActiveInstance.Owner = this;
+                    }
+
                     if (!string.IsNullOrWhiteSpace(Program.PendingStartupScanPath))
                     {
                         var target = Program.PendingStartupScanPath;
@@ -67,17 +79,34 @@ namespace AegisPC.App
             };
         }
 
+        private void UpdatePaneLayout()
+        {
+            bool compact = ActualWidth < 900;
+            RootNavigation.PaneDisplayMode = compact ? NavigationViewPaneDisplayMode.LeftMinimal : NavigationViewPaneDisplayMode.Left;
+            SidebarColumn.Width = new GridLength(compact ? 64 : 220);
+            BrandText.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+            BrandHeader.Padding = compact ? new Thickness(12, 20, 12, 20) : new Thickness(18, 22, 14, 22);
+            BrandImage.Margin = new Thickness(0, 0, compact ? 0 : 12, 0);
+        }
+
         public void NavigateToScanAndScanPath(string targetPath)
         {
             Dispatcher.InvokeAsync(async () =>
             {
-                ShowAndActivate();
-                NavigateTo(typeof(ScanView));
-                await System.Threading.Tasks.Task.Delay(300);
-                var scanVm = App.ServiceProvider?.GetService(typeof(ScanViewModel)) as ScanViewModel;
-                if (scanVm != null && !string.IsNullOrWhiteSpace(targetPath))
+                try
                 {
-                    await scanVm.StartCustomPathScanAsync(targetPath);
+                    ShowAndActivate();
+                    NavigateTo(typeof(ScanView));
+                    await System.Threading.Tasks.Task.Delay(300);
+                    var scanVm = App.ServiceProvider?.GetService(typeof(ScanViewModel)) as ScanViewModel;
+                    if (scanVm != null && !string.IsNullOrWhiteSpace(targetPath))
+                    {
+                        await scanVm.StartCustomPathScanAsync(targetPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine($"MainWindow NavigateToScanAndScanPath failed: {ex}");
                 }
             });
         }
@@ -111,6 +140,7 @@ namespace AegisPC.App
             {
                 try
                 {
+                    App.IsStartMinimized = false;
                     if (!IsVisible)
                     {
                         Show();
@@ -131,8 +161,20 @@ namespace AegisPC.App
                         ShowWindow(hwnd, SW_RESTORE);
                         SetForegroundWindow(hwnd);
                     }
+
+                    if (Views.ActiveScanWindow.ActiveInstance != null && Views.ActiveScanWindow.ActiveInstance.IsVisible)
+                    {
+                        if (Views.ActiveScanWindow.ActiveInstance.Owner == null)
+                        {
+                            Views.ActiveScanWindow.ActiveInstance.Owner = this;
+                        }
+                        Views.ActiveScanWindow.ActiveInstance.Activate();
+                    }
                 }
-                catch { }
+                catch (Exception ex) 
+                { 
+                    Serilog.Log.Warning(ex, "ShowAndActivate window activation failed."); 
+                }
             });
         }
 
@@ -144,7 +186,10 @@ namespace AegisPC.App
                 {
                     RootNavigation.Navigate(pageType);
                 }
-                catch { }
+                catch (Exception ex) 
+                { 
+                    Serilog.Log.Warning(ex, "Navigation to page {Type} failed.", pageType); 
+                }
             });
         }
 
@@ -162,8 +207,25 @@ namespace AegisPC.App
                         vm.NavigateToTab(showIncidentsTab);
                     }
                 }
-                catch { }
+                catch (Exception ex) 
+                { 
+                    Serilog.Log.Warning(ex, "NavigateToQuarantine failed."); 
+                }
             });
+        }
+
+        private void OnAppThemeChanged(AegisPC.Core.Enums.ThemeMode theme)
+        {
+            Dispatcher.InvokeAsync(UpdateThemeButtonState);
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            AegisPC.App.Services.AppThemeManager.ThemeChanged -= OnAppThemeChanged;
+            SystemParameters.StaticPropertyChanged -= OnMotionPreferenceChanged;
+            System.Windows.Media.RenderCapability.TierChanged -= OnEntranceEnvironmentChanged;
+            StopEntranceAnimations();
+            base.OnClosed(e);
         }
 
         private void OnThemeToggleClicked(object sender, RoutedEventArgs e)
@@ -189,78 +251,69 @@ namespace AegisPC.App
         }
 
         /// <summary>
-        /// Sayfa geçişlerinde 180 ms'lik opaklık 0→1 ve 12 px yukarı kayma giriş animasyonu uygular.
-        /// Windows "Animasyonları kapat" (ReduceMotion) ayarı aktifse animasyon atlanır.
+        /// Owns the optional page entrance fade without replacing a page's existing render transform.
+        /// The Windows motion preference and rendering tier select the static presentation.
         /// </summary>
         private void ApplyPageEntranceAnimation(FrameworkElement element)
         {
-            if (element == null) return;
-
-            // ReduceMotion: Windows "Animasyonları kapat" ayarı açıksa animasyonları atla
-            if (!SystemParameters.ClientAreaAnimation)
-            {
-                element.Opacity = 1.0;
-                if (element.RenderTransform is TranslateTransform ttReset)
-                {
-                    ttReset.Y = 0;
-                }
-                return;
-            }
-
             try
             {
-                var duration = TimeSpan.FromMilliseconds(180);
-                var cubicEase = new CubicEase { EasingMode = EasingMode.EaseOut };
-
-                var opacityAnim = new DoubleAnimation
-                {
-                    From = 0.0,
-                    To = 1.0,
-                    Duration = duration,
-                    EasingFunction = cubicEase,
-                    FillBehavior = FillBehavior.HoldEnd
-                };
-
-                TranslateTransform translateTransform;
-                if (element.RenderTransform is TranslateTransform tt)
-                {
-                    translateTransform = tt;
-                }
-                else if (element.RenderTransform is TransformGroup tg)
-                {
-                    var existingTt = tg.Children.OfType<TranslateTransform>().FirstOrDefault();
-                    if (existingTt != null)
-                    {
-                        translateTransform = existingTt;
-                    }
-                    else
-                    {
-                        translateTransform = new TranslateTransform(0, 12);
-                        tg.Children.Add(translateTransform);
-                    }
-                }
-                else
-                {
-                    translateTransform = new TranslateTransform(0, 12);
-                    element.RenderTransform = translateTransform;
-                }
-
-                var translateAnim = new DoubleAnimation
-                {
-                    From = 12.0,
-                    To = 0.0,
-                    Duration = duration,
-                    EasingFunction = cubicEase,
-                    FillBehavior = FillBehavior.HoldEnd
-                };
-
-                element.BeginAnimation(UIElement.OpacityProperty, opacityAnim);
-                translateTransform.BeginAnimation(TranslateTransform.YProperty, translateAnim);
+                if (_animatedPage != null) RestoreOpacity(_animatedPage);
+                _animatedPage = element;
+                RestoreOpacity(element);
+                if (CanAnimateEntrance()) ApplyEntranceFade(element, 180);
             }
             catch (Exception ex)
             {
-                Serilog.Log.Warning(ex, "Sayfa geçiş animasyonu uygulanırken hata oluştu.");
+                Serilog.Log.Warning(ex, "Page entrance animation failed.");
             }
+        }
+
+        private bool CanAnimateEntrance() => UiMotionPolicy.CanAnimate && IsVisible && IsActive && WindowState != WindowState.Minimized;
+
+        private void ApplyWindowEntranceAnimation()
+        {
+            RestoreOpacity(this);
+            if (CanAnimateEntrance()) ApplyEntranceFade(this, 250);
+        }
+
+        private static void ApplyEntranceFade(FrameworkElement element, int durationMs)
+        {
+            var animation = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(durationMs))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                FillBehavior = FillBehavior.Stop
+            };
+            animation.Completed += (_, _) => element.BeginAnimation(UIElement.OpacityProperty, null);
+            element.BeginAnimation(UIElement.OpacityProperty, animation);
+        }
+
+        private static void RestoreOpacity(FrameworkElement element)
+        {
+            element.BeginAnimation(UIElement.OpacityProperty, null);
+            element.Opacity = 1;
+        }
+
+        private void StopEntranceAnimations()
+        {
+            RestoreOpacity(this);
+            if (_animatedPage != null) RestoreOpacity(_animatedPage);
+        }
+
+        private void OnEntranceEnvironmentChanged(object? sender, EventArgs e)
+        {
+            if (!CanAnimateEntrance()) StopEntranceAnimations();
+        }
+
+        private void OnWindowVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (!CanAnimateEntrance()) StopEntranceAnimations();
+        }
+
+        private void OnMotionPreferenceChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(SystemParameters.ClientAreaAnimation))
+                Dispatcher.InvokeAsync(() => { if (!UiMotionPolicy.CanAnimate) StopEntranceAnimations(); });
         }
     }
 }
