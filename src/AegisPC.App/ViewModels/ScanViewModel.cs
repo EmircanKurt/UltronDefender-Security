@@ -23,6 +23,7 @@ namespace AegisPC.App.ViewModels
         private readonly ISettingsService? _settingsService;
         private readonly IExclusionService? _exclusionService;
         private readonly AegisPC.ServiceContracts.IServiceIpcClient? _ipcClient;
+        private readonly Action _presentScanner;
 
         private DispatcherTimer? _timer;
         private Stopwatch _stopwatch = new();
@@ -67,6 +68,8 @@ namespace AegisPC.App.ViewModels
 
         private volatile bool _isCancellationRequested;
         public bool IsCancellationRequested => _isCancellationRequested;
+        /// <summary>Allows scan controls only while work is active and cancellation has not been requested.</summary>
+        public bool CanControlScan => IsScanning && !_isCancellationRequested;
         /// <summary>Shows final engine status, without representing a failed scan as completed.</summary>
         public string ScanResultTitle => _isCancellationRequested ? "Tarama İptal Edildi" : _lastScanStatus == ScanStatus.Failed ? "Tarama Başarısız" : "Tarama Sonuçları";
         /// <summary>Describes observed coverage rather than certifying the safety of the system.</summary>
@@ -92,6 +95,7 @@ namespace AegisPC.App.ViewModels
         {
             OnPropertyChanged(nameof(IsIdleView));
             OnPropertyChanged(nameof(OpenScanWindowButtonText));
+            OnPropertyChanged(nameof(CanControlScan));
             UpdateChecklistSteps(ProgressPercentage);
         }
 
@@ -373,9 +377,11 @@ namespace AegisPC.App.ViewModels
             ISettingsService? settingsService = null,
             IExclusionService? exclusionService = null,
             AegisPC.ServiceContracts.IServiceIpcClient? ipcClient = null,
-            Services.ScanReportHistoryStore? reportHistoryStore = null)
+            Services.ScanReportHistoryStore? reportHistoryStore = null,
+            Action? presentScanner = null)
         {
             _scanCoordinator = scanCoordinator;
+            _presentScanner = presentScanner ?? AppNavigation.ShowScanner;
             _findingService = findingService;
             _quarantineService = quarantineService;
             _allowlistService = allowlistService;
@@ -433,7 +439,7 @@ namespace AegisPC.App.ViewModels
 
         private void OnScanSessionStarted(IScanSession session)
         {
-            System.Windows.Application.Current?.Dispatcher?.InvokeAsync(() =>
+            DispatchUi(() =>
             {
                 if (!IsScanning || ProgressPercentage == 0)
                 {
@@ -444,10 +450,6 @@ namespace AegisPC.App.ViewModels
                     SyncWithScanCoordinator();
                 }
 
-                if (!App.IsStartMinimized)
-                {
-                    Views.ActiveScanWindow.ShowScanWindow(this);
-                }
             });
         }
 
@@ -492,6 +494,7 @@ namespace AegisPC.App.ViewModels
             _stopwatch.Restart();
             _timer?.Start();
             _isCancellationRequested = false;
+            OnPropertyChanged(nameof(CanControlScan));
             OnPropertyChanged(nameof(ScanResultTitle));
             OnPropertyChanged(nameof(CleanStateTitle));
             OnPropertyChanged(nameof(CleanStateSubtitle));

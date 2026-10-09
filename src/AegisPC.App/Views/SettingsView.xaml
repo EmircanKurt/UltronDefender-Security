@@ -112,6 +112,7 @@
                                 </Border>
                             </StackPanel>
                             <TextBlock Text="Karantina politikası doğrulanmış zararlı kanıtı gerektirir; risk puanı tek başına engelleme yetkisi değildir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding AutomaticContainmentStatus}" Style="{StaticResource CaptionTextStyle}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                             <TextBlock Text="Eşik:" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" Margin="0,0,6,0"/>

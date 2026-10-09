@@ -88,7 +88,7 @@
     <Style x:Key="PageSubtitleStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
-        <Setter Property="FontFamily" Value="Segoe UI, Inter, Arial"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
         <Setter Property="Margin" Value="0,0,0,20"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
@@ -98,7 +98,7 @@
         <Setter Property="FontSize" Value="11"/>
         <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}"/>
-        <Setter Property="FontFamily" Value="Segoe UI, Inter, Arial"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
         <Setter Property="Margin" Value="0,0,0,8"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
@@ -108,7 +108,7 @@
         <Setter Property="FontSize" Value="15"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
-        <Setter Property="FontFamily" Value="Segoe UI, Inter, Arial"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
@@ -116,7 +116,7 @@
     <Style x:Key="CardBodyStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
-        <Setter Property="FontFamily" Value="Segoe UI, Inter, Arial"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
         <Setter Property="LineHeight" Value="18"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
@@ -127,7 +127,7 @@
         <Setter Property="FontSize" Value="28"/>
         <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
-        <Setter Property="FontFamily" Value="Segoe UI, Inter, Arial"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
@@ -145,7 +145,7 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="#FFFFFF"/>
         <Setter Property="Padding" Value="20,10"/>
-        <Setter Property="FontFamily" Value="Segoe UI, Inter, Arial"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="UseLayoutRounding" Value="True"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
@@ -187,7 +187,7 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
         <Setter Property="Padding" Value="16,8"/>
-        <Setter Property="FontFamily" Value="Segoe UI, Inter, Arial"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="UseLayoutRounding" Value="True"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
@@ -227,7 +227,7 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="#FFFFFF"/>
         <Setter Property="Padding" Value="18,9"/>
-        <Setter Property="FontFamily" Value="Segoe UI, Inter, Arial"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">

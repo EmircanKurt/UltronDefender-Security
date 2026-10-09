@@ -131,7 +131,7 @@ namespace AegisPC.Service
                         services.AddSingleton<IBackgroundProtectionService, BackgroundProtectionService>();
                         services.AddSingleton<IRansomwareProtectionEngine, RansomwareProtectionEngine>();
                         services.AddSingleton<IWebShieldService, WebShieldService>();
-                        services.AddSingleton<IAmsiScanService, AegisPC.Service.Amsi.AmsiScanService>();
+                        services.AddSingleton<IAmsiScanService, AegisPC.Security.Scanning.AmsiScanService>();
                         services.AddSingleton<AegisPC.Security.Detection.YaraEngine.IYaraEngine, AegisPC.Security.Detection.YaraEngine.YaraEngine>();
                         services.AddSingleton<AegisPC.Contracts.Detection.IDetectionHub>(sp => AegisPC.Security.Detection.DetectionHubFactory.CreateDefault(
                             sp.GetRequiredService<IHashService>(),
@@ -151,6 +151,11 @@ namespace AegisPC.Service
                         services.AddSingleton<AegisPC.Service.RealTime.EtwProcessMonitor>();
                         services.AddSingleton<AegisPC.Service.RealTime.EtwImageLoadMonitor>();
                         services.AddSingleton<AegisPC.Contracts.Protection.IUltronDecisionEngine, AegisPC.Security.UltronAI.UltronDecisionEngine>();
+                        services.AddSingleton<AegisPC.Security.UltronAI.PilotGatedActionAdapter>();
+                        services.AddSingleton<AegisPC.Contracts.Protection.IProtectionActionBroker>(sp =>
+                            new AegisPC.Security.UltronAI.ProtectionActionBroker(
+                                sp.GetRequiredService<AegisPC.Security.UltronAI.PilotGatedActionAdapter>(),
+                                sp.GetRequiredService<AegisPC.Security.UltronAI.PilotGatedActionAdapter>()));
                         services.AddSingleton<AegisPC.Contracts.Protection.IBehaviorObservationSource, AegisPC.Security.UltronAI.BoundedBehaviorObservationSource>();
                         services.AddSingleton<AegisPC.Security.UltronAI.BehaviorWindowCorrelator>();
                         services.AddSingleton<AegisPC.Service.RealTime.EtwFileIoObservationWorker>();
@@ -220,6 +225,7 @@ namespace AegisPC.Service
             catch (Exception ex)
             {
                 Log.Fatal(ex, "AegisPC Protection Service başlatılamadı.");
+                Environment.ExitCode = 1;
             }
             finally
             {

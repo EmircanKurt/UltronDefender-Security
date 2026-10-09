@@ -45,7 +45,12 @@ namespace AegisPC.Security.Detection.Detectors
                 var sigInfo = context.SharedScan != null
                     ? await context.SharedScan.GetOrVerifySignatureAsync(_signatureVerifier, cancellationToken)
                     : await _signatureVerifier.VerifySignatureAsync(context.FilePath, cancellationToken);
-                if (sigInfo.IsSigned && sigInfo.IsValid)
+                if (sigInfo.VerificationStatus == AegisPC.Core.Enums.SignatureVerificationStatus.Unknown)
+                {
+                    context.CoverageLimitations.Add("SignatureVerificationUnavailable");
+                    return list;
+                }
+                if (sigInfo.VerificationStatus == AegisPC.Core.Enums.SignatureVerificationStatus.Valid)
                 {
                     bool isMs = AegisPC.Security.Safety.TrustedSoftwarePolicy.IsTrustedOsPublisher(sigInfo.Publisher);
                     string pub = sigInfo.Publisher ?? "Geçerli Yayımcı";
@@ -81,7 +86,7 @@ namespace AegisPC.Security.Detection.Detectors
                         });
                     }
                 }
-                else if (sigInfo.IsSigned && !sigInfo.IsValid)
+                else if (sigInfo.VerificationStatus == AegisPC.Core.Enums.SignatureVerificationStatus.Invalid)
                 {
                     list.Add(new SecurityEvidence
                     {

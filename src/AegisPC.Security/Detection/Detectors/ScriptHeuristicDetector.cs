@@ -35,8 +35,8 @@ namespace AegisPC.Security.Detection.Detectors
             ("cmVnKD86XC5leGUpP1xzK2FkZFxzKy4qXFwoPzpSdW58UnVuT25jZSlcYg==", "Script.RegRunPersistence", "Kayit Defteri Baslangic Kaliciligi Enjeksiyonu (reg add Run/RunOnce)", 30, EvidenceConfidence.High),
             ("Wz1AK1wtXVxzKig/OmNtZHxwb3dlcnNoZWxsfG1zaHRhfHdzY3JpcHR8Y3NjcmlwdClcfA==", "Script.CsvDdeFormulaInjection", "CSV/Excel DDE Formül Enjeksiyonu Saldırısı (=cmd|/powershell|)", 75, EvidenceConfidence.Absolute),
             ("dGFza2tpbGwuKig/OnVsdHJvbnxhZWdpc3xtc21wZW5nfGRlZmVuZGVyKQ==", "Script.AvKillAttempt", "Antivirüs Kapatma / Sonlandırma Girişimi (taskkill /im Ultron)", 65, EvidenceConfidence.Absolute),
-            ("YW1zaUluaXRGYWlsZWR8QW1zaVV0aWxz", "Script.AmsiBypass", "AMSI Atlama ve Koruma Devre Disi Birakma (AmsiBypass)", 75, EvidenceConfidence.Absolute),
-            ("VmlydHVhbEFsbG9jfFdyaXRlUHJvY2Vzc01lbW9yeXxDcmVhdGVSZW1vdGVUaHJlYWQ=", "Script.ProcessInjection", "Bellek Enjeksiyonu API Cagrisi (Process Injection)", 60, EvidenceConfidence.High),
+            ("YW1zaUluaXRGYWlsZWR8QW1zaVV0aWxz", "Script.AmsiReference", "AMSI ile ilgili ad görüldü; atlatma veya çalıştırma kanıtlanmadı.", 10, EvidenceConfidence.Low),
+            ("VmlydHVhbEFsbG9jfFdyaXRlUHJvY2Vzc01lbW9yeXxDcmVhdGVSZW1vdGVUaHJlYWQ=", "Script.ProcessMemoryReference", "Süreç belleği API adı görüldü; çağrı veya enjeksiyon kanıtlanmadı.", 10, EvidenceConfidence.Low),
             ("cnVuZGxsMzIoXC5leGUpP1xzKy4qKD86amF2YXNjcmlwdHx2YnNjcmlwdCk6", "Script.Rundll32Script", "Rundll32 uzerinden Zararli Script Yurutme", 65, EvidenceConfidence.High),
             ("bXNodGEoXC5leGUpP1xzK2h0dHBzPzo=", "Script.MshtaRemoteExecution", "Mshta ile Uzaktan Zararli Kod Calistirma", 55, EvidenceConfidence.High),
             ("Y2VydHV0aWwoXC5leGUpP1xzKy4qLXVybGNhY2hlLipodHRwcz86", "Script.CertutilDownload", "Certutil ile Uzaktan Dosya Indirme (LOLBin)", 45, EvidenceConfidence.High),
@@ -104,6 +104,10 @@ namespace AegisPC.Security.Detection.Detectors
                             Description = desc,
                             ScoreContribution = score,
                             Confidence = conf,
+                            Nature = rule is "Script.AmsiReference" or "Script.ProcessMemoryReference"
+                                ? EvidenceNature.Capability : EvidenceNature.Heuristic,
+                            FeatureIdentity = rule is "Script.AmsiReference" ? "AMSI.Reference"
+                                : rule is "Script.ProcessMemoryReference" ? "ProcessMemory.Reference" : string.Empty,
                             FilePath = context.FilePath,
                             SHA256 = context.SHA256,
                             ProcessId = context.ProcessId,

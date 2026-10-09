@@ -114,6 +114,8 @@ namespace AegisPC.Core.Models
         }
 
         public int RootPid { get; set; }
+        /// <summary>Displays an unavailable actor without fabricating PID zero as a correlated process.</summary>
+        public string ActorPidDisplay => RootPid > 0 ? RootPid.ToString(System.Globalization.CultureInfo.InvariantCulture) : "İlişkilendirilmedi";
         public string RootProcessName { get; set; } = string.Empty;
         public string RootExecutablePath { get; set; } = string.Empty;
         public string? RootHashSha256 { get; set; }

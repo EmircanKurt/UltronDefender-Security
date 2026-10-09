@@ -155,7 +155,9 @@ namespace AegisPC.Security.PE
             }
 
             // 6. Authenticode Sertifika Durumu
-            if (peResult.Certificate.IsSigned)
+            if (peResult.Certificate.VerificationStatus == AegisPC.Core.Enums.SignatureVerificationStatus.Unknown)
+                context.CoverageLimitations.Add("SignatureVerificationUnavailable");
+            if (peResult.Certificate.IsSigned && peResult.Certificate.VerificationStatus != AegisPC.Core.Enums.SignatureVerificationStatus.Unknown)
             {
                 if (peResult.Certificate.IsValid && peResult.Certificate.IsMicrosoftTrusted)
                 {
@@ -165,7 +167,8 @@ namespace AegisPC.Security.PE
                         Category = EvidenceCategory.DigitalCertificate,
                         SourceDetector = DetectorId,
                         RuleName = "CERT_TRUSTED_MICROSOFT_CA",
-                        ScoreContribution = -50,
+                        ScoreContribution = 0,
+                        TrustKind = EvidenceTrustKind.VerifiedOsAuthenticode,
                         Confidence = EvidenceConfidence.Absolute,
                         Description = $"Dosya geçerli Microsoft Windows dijital sertifikasına veya Windows Kataloğuna sahiptir ({peResult.Certificate.Subject}).",
                         FilePath = context.FilePath,
@@ -176,7 +179,7 @@ namespace AegisPC.Security.PE
                         }
                     });
                 }
-                else if (peResult.Certificate.IsExpired)
+                else if (peResult.Certificate.VerificationStatus != AegisPC.Core.Enums.SignatureVerificationStatus.Valid && peResult.Certificate.IsExpired)
                 {
                     evidences.Add(new SecurityEvidence
                     {
@@ -193,7 +196,7 @@ namespace AegisPC.Security.PE
                         }
                     });
                 }
-                else if (peResult.Certificate.IsSelfSigned)
+                else if (peResult.Certificate.VerificationStatus != AegisPC.Core.Enums.SignatureVerificationStatus.Valid && peResult.Certificate.IsSelfSigned)
                 {
                     evidences.Add(new SecurityEvidence
                     {
@@ -210,7 +213,7 @@ namespace AegisPC.Security.PE
                         }
                     });
                 }
-                else if (!peResult.Certificate.IsValid)
+                else if (peResult.Certificate.VerificationStatus == AegisPC.Core.Enums.SignatureVerificationStatus.Invalid)
                 {
                     evidences.Add(new SecurityEvidence
                     {

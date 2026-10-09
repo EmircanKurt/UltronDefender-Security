@@ -21,7 +21,8 @@ public sealed partial class StartupSweepSafetyTests
         var file = CreateBenignFile();
         var coordinator = new RecordingCoordinator();
         var vault = new RecordingVault();
-        var engine = new RecordingEngine(_ => new RealTimeVerdictResult { Verdict = verdict, RiskScore = score });
+        var engine = new RecordingEngine(_ => new RealTimeVerdictResult { Verdict = verdict, RiskScore = score,
+            InspectionComplete = verdict != RealTimeVerdict.Unknown });
         var result = await new StartupSecuritySweepService(engine, vault, scanCoordinator: coordinator).RunSweepAsync([file]);
         Assert.Equal(0, result.ThreatsCount);
         Assert.Equal(0, result.SuspiciousCount);
@@ -49,7 +50,8 @@ public sealed partial class StartupSweepSafetyTests
                 int observed;
                 do { observed = Volatile.Read(ref peak); } while (count > observed && Interlocked.CompareExchange(ref peak, count, observed) != observed);
                 if (count == 4) entered.TrySetResult();
-                try { await release.Task.WaitAsync(token); return new RealTimeVerdictResult { Verdict = RealTimeVerdict.Clean, SHA256 = ValidHash(path) }; }
+                try { await release.Task.WaitAsync(token); return new RealTimeVerdictResult { Verdict = RealTimeVerdict.Clean,
+                    InspectionComplete = true, RecommendedPolicy = RealTimePolicyAction.Allow, SHA256 = ValidHash(path) }; }
                 finally { Interlocked.Decrement(ref active); }
             }
         };
@@ -92,7 +94,8 @@ public sealed partial class StartupSweepSafetyTests
     public async Task StartupCleanCache_DoesNotOutliveDetectionPolicy_AndFailuresRetainSafeDetails()
     {
         string file = CreateBenignFile();
-        var engine = new RecordingEngine(path => new RealTimeVerdictResult { Verdict = RealTimeVerdict.Clean, SHA256 = ValidHash(path) });
+        var engine = new RecordingEngine(path => new RealTimeVerdictResult { Verdict = RealTimeVerdict.Clean,
+            InspectionComplete = true, RecommendedPolicy = RealTimePolicyAction.Allow, SHA256 = ValidHash(path) });
         var coordinator = new RecordingCoordinator();
         var sweep = new StartupSecuritySweepService(engine, new RecordingVault(), scanCoordinator: coordinator);
         await sweep.RunSweepAsync([file]);

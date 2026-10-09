@@ -120,16 +120,20 @@ public sealed class ContentSearchStallReviewTests(ITestOutputHelper output) : ID
     {
         string? fixture = Environment.GetEnvironmentVariable("ULTRON_BENIGN_SCAN_FIXTURE");
         if (string.IsNullOrEmpty(fixture)) { output.WriteLine("Optional local fixture not provided; integration probe not run."); return; }
+        fixture = ReviewStageOneFixture.RequireLocalInput(fixture);
         Assert.True(File.Exists(fixture));
+        string originalFixture = Path.GetFullPath(fixture);
         string originalHash;
-        await using (var file = File.OpenRead(fixture)) originalHash = Convert.ToHexString(await SHA256.HashDataAsync(file));
+        await using (var file = File.OpenRead(originalFixture)) originalHash = Convert.ToHexString(await SHA256.HashDataAsync(file));
+        using var reviewFixture = ReviewStageOneFixture.Create();
+        fixture = reviewFixture.ImportReadOnlyInput(originalFixture, Path.GetFileName(originalFixture));
         var verifier = new SignatureVerifier();
         var signature = await verifier.VerifySignatureAsync(fixture);
         Assert.True(signature.IsValid);
         using var certificate = new X509Certificate2(X509Certificate.CreateFromSignedFile(fixture));
         Assert.Contains("O=Microsoft Corporation", certificate.Subject);
-        var hash = new HashService();
-        var hub = DetectionHubFactory.CreateDefault(hashService: hash, signatureVerifier: verifier);
+        var hash = reviewFixture.HashService;
+        var hub = reviewFixture.CreateHub(signatureVerifier: verifier);
         var processor = new RealTimeVerdictProcessor(hash, verifier, new RiskScoringEngine(), null, null,
             exclusionService: null, detectionHub: hub);
         var scanner = new FileScannerService(hash, verifier, new NoAllowlist(), hub);
@@ -155,6 +159,7 @@ public sealed class ContentSearchStallReviewTests(ITestOutputHelper output) : ID
             output.WriteLine($"manual_run={run + 1} elapsed_ms={watch.Elapsed.TotalMilliseconds:F2} status={manual.Status} scanned={manual.ScannedFiles} incomplete={manual.FailedFiles} timeouts={manual.TimedOutFiles}");
         }
         await using (var file = File.OpenRead(fixture)) Assert.Equal(originalHash, Convert.ToHexString(await SHA256.HashDataAsync(file)));
+        await using (var file = File.OpenRead(originalFixture)) Assert.Equal(originalHash, Convert.ToHexString(await SHA256.HashDataAsync(file)));
     }
 
     private static string FindWorkspace()

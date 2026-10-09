@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Management;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Core.Enums;
@@ -84,7 +83,9 @@ namespace AegisPC.Security.RealTime
             // The service inventory owns media watchers by volume GUID + insertion generation.
             // Drive-letter-only watchers would duplicate the same physical file events.
 
-            foreach (var path in pathsToWatch)
+            // Register parent roots first. Descendants already covered by a recursive watcher
+            // must not create a second OS buffer/event stream for the same files.
+            foreach (var path in pathsToWatch.OrderBy(p => p.Length))
             {
                 AttachWatcher(path);
             }
@@ -121,6 +122,12 @@ namespace AegisPC.Security.RealTime
                 foreach (var recovery in _activeRecoveryTokens.Where(x => x.Key.StartsWith(path, StringComparison.OrdinalIgnoreCase)).ToArray())
                     recovery.Value.Cancel();
                 _reconciliationRoots.RemoveWhere(x => x.StartsWith(path, StringComparison.OrdinalIgnoreCase));
+                foreach (var arrival in _arrivalInspections.Where(x => x.Key.StartsWith(path, StringComparison.OrdinalIgnoreCase)).ToArray())
+                {
+                    _arrivalInspections.Remove(arrival.Key);
+                    _pendingInspectionRetries.Remove(arrival.Value.Sequence);
+                }
+                _inspectionGaps.RemoveWhere(x => x.StartsWith(path, StringComparison.OrdinalIgnoreCase));
                 int previousCount = _watchers.Count;
                 for (int i = _watchers.Count - 1; i >= 0; i--)
                 {
@@ -142,7 +149,7 @@ namespace AegisPC.Security.RealTime
 
         private void NotifyWatcherCoverage()
         {
-            bool covered = !_coverageDegraded && _watchers.Count > 0;
+            bool covered = !_coverageDegraded && _inspectionGaps.Count == 0 && _watchers.Count > 0;
             OnProtectionHealthChanged?.Invoke(covered, covered
                 ? "Kullanıcı modu dosya geliş izleme etkin; yalnız listelenen dizinler kapsanıyor"
                 : "Motor etkin; izleme kapsamı eksik veya henüz dizin seçilmedi");
@@ -172,7 +179,7 @@ namespace AegisPC.Security.RealTime
                     _logger?.LogWarning("Real-time watcher root is a reparse point; explicit canonical targeting is required: {Path}", path);
                     return;
                 }
-                if (_watchedLocationsList.Contains(path, StringComparer.OrdinalIgnoreCase))
+                if (_watchedLocationsList.Any(root => path.StartsWith(root, StringComparison.OrdinalIgnoreCase)))
                 {
                     return;
                 }
@@ -234,67 +241,6 @@ namespace AegisPC.Security.RealTime
                     OnProtectionHealthChanged?.Invoke(false, "Dosya izleyicisi yeniden başlatılamadı; koruma kapsamı kısıtlı");
                 }
             }
-        }
-
-        /// <summary>
-        /// WMI Win32_VolumeChangeEvent sorgusuyla sisteme yeni takılan USB/çıkarılabilir sürücüleri
-        /// dinamik olarak algılar ve otomatik olarak gerçek zamanlı koruma kapsamına alır.
-        /// </summary>
-        private void StartUsbArrivalListener()
-        {
-            try
-            {
-                var query = new WqlEventQuery("SELECT * FROM Win32_VolumeChangeEvent WHERE EventType = 2 OR EventType = 3");
-                _usbArrivalWatcher = new ManagementEventWatcher(query);
-                _usbArrivalWatcher.EventArrived += (s, e) =>
-                {
-                    try
-                    {
-                        var eventTypeObj = e.NewEvent.Properties["EventType"]?.Value;
-                        int eventType = eventTypeObj != null ? Convert.ToInt32(eventTypeObj) : 0;
-                        string? driveName = e.NewEvent.Properties["DriveName"]?.Value?.ToString();
-
-                        if (!string.IsNullOrEmpty(driveName))
-                        {
-                            string drivePath = driveName.EndsWith('\\') ? driveName : driveName + "\\";
-                            if (eventType == 2) // Arrival
-                            {
-                                _logger?.LogInformation("Yeni çıkarılabilir USB medya algılandı: {Drive}. Gerçek zamanlı koruma başlatılıyor...", drivePath);
-                                AddWatchDirectory(drivePath);
-                                OnNotificationRaised?.Invoke("💾 Yeni Medya Algılandı", $"{drivePath} çıkarılabilir sürücüsü gerçek zamanlı koruma altına alındı.", "Info");
-                            }
-                            else if (eventType == 3) // Removal
-                            {
-                                _logger?.LogInformation("Çıkarılabilir medya çıkarıldı: {Drive}", drivePath);
-                                RemoveWatchDirectory(drivePath);
-                            }
-                        }
-                    }
-                    catch (Exception ex) { _logger?.LogWarning(ex, "Could not process removable-volume event"); }
-                };
-                _usbArrivalWatcher.Start();
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "USB dinamik WMI izleme başlatılamadı.");
-            }
-        }
-
-        /// <summary>
-        /// USB algılama WMI dinleyicisini durdurur ve nesnesini dispose eder.
-        /// </summary>
-        private void StopUsbArrivalListener()
-        {
-            try
-            {
-                if (_usbArrivalWatcher != null)
-                {
-                    _usbArrivalWatcher.Stop();
-                    _usbArrivalWatcher.Dispose();
-                    _usbArrivalWatcher = null;
-                }
-            }
-            catch (Exception ex) { _logger?.LogWarning(ex, "Could not stop removable-volume listener"); }
         }
 
         private void RequestReconciliation(string path)

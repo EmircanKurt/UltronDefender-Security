@@ -10,6 +10,22 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ReviewTestDependencies.cs" />
+    <Compile Include="GuardScanSafetyReviewTests.cs" />
+    <Compile Include="FolderAllowanceIdentityReviewTests.cs" />
+    <Compile Include="ScanDiscoveryCancellationReviewTests.cs" />
+    <Compile Include="FindingPresentationSafetyReviewTests.cs" />
+    <Compile Include="ScanScopeStorageSafetyReviewTests.cs" />
+    <Compile Include="GuardianFreshnessSafetyReviewTests.cs" />
+    <Compile Include="AntiEvasionSearchPerformanceReviewTests.cs" />
+    <Compile Include="ClaudeCriticalReviewTests.cs" />
+    <Compile Include="UiResourceTrayReviewTests.cs" />
+    <Compile Include="InspectionContractReviewTests.cs" />
+    <Compile Include="ArrivalRetryReviewTests.cs" />
+    <Compile Include="ReviewStageACoverageTests.cs" />
+    <Compile Include="ReviewStageOneFixture.cs" />
+    <Compile Include="ReviewStageOneSafetyTests.cs" />
+    <Compile Include="ReviewStageOneMeasurementTests.cs" />
+    <Compile Include="ReviewStageOnePipelineTests.cs" />
     <Compile Include="ResourceCorrectnessReviewTests.cs" />
     <Compile Include="StartupResourceReviewTests.cs" />
     <Compile Include="ResourcePipelineIntegrationReviewTests.cs" />
@@ -17,6 +33,12 @@
     <Compile Include="ContentSearchStallReviewTests.cs" />
     <Compile Include="StartupInspectionBudgetReviewTests.cs" />
     <Compile Include="PlainDashboardUiReviewTests.cs" />
+    <Compile Include="ClassicScanUiReviewTests.cs" />
+    <Compile Include="SilentScanPresentationReviewTests.cs" />
+    <Compile Include="EmbeddedScanPageReviewTests.cs" />
+    <Compile Include="ScanRouteUiReviewTests.cs" />
+    <Compile Include="FlatRouteScanReviewTests.cs" />
+    <Compile Include="FlatRouteBenignPipelineReviewTests.cs" />
     <Compile Include="PlainProtectionPresentationReviewTests.cs" />
     <Compile Include="NetworkEnforcementReviewTests.cs" />
     <Compile Include="ProtectionTargetReviewTests.cs" />

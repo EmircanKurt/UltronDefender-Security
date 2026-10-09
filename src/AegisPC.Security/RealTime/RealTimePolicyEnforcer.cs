@@ -58,7 +58,6 @@ namespace AegisPC.Security.RealTime
         private readonly IAuditLogService? _auditLogService;
         private readonly ILogger? _logger;
         private readonly Func<bool> _enableAutoQuarantine;
-        private readonly Func<int> _autoQuarantineThreshold;
 
         public event Action<SecurityFinding>? OnThreatDetected;
         public event Action<SecurityIncident>? OnIncidentCreated;
@@ -77,7 +76,6 @@ namespace AegisPC.Security.RealTime
             _auditLogService = auditLogService;
             _logger = logger;
             _enableAutoQuarantine = enableAutoQuarantine ?? (() => true);
-            _autoQuarantineThreshold = autoQuarantineThreshold ?? (() => 85);
         }
 
         public async Task EnforceWarningAsync(NormalizedFileEvent evt, RealTimeVerdictResult verdict, CancellationToken ct)
@@ -140,7 +138,8 @@ namespace AegisPC.Security.RealTime
         public async Task<bool> EnforceQuarantineWithOutcomeAsync(NormalizedFileEvent evt, RealTimeVerdictResult verdict, CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
-            if (!_enableAutoQuarantine() || verdict.RiskScore < Math.Clamp(_autoQuarantineThreshold(), 1, 100))
+            // A numeric preference cannot downgrade an independently confirmed exact verdict.
+            if (!_enableAutoQuarantine())
             {
                 await EnforceWarningAsync(evt, verdict, ct);
                 return false;
@@ -180,10 +179,15 @@ namespace AegisPC.Security.RealTime
                     Status = FindingStatus.Active
                 };
 
+                // Write the observation and action intent before moving any source bytes.
+                await _findingService.AddFindingAsync(finding, ct);
+                if (_auditLogService != null)
+                    await _auditLogService.LogActionAsync(AuditAction.FileQuarantined, "RealTimeShield.Intent",
+                        fileInfo.Name, evt.NormalizedPath, $"Action intent for finding {finding.Id}; outcome pending.",
+                        AuditResult.Pending, cancellationToken: ct);
+
                 // File arrivals do not carry verified process identity. Never terminate a process by
                 // a recycled PID or path alone; the ETW observer verifies its captured identity separately.
-                int terminatedPid = 0;
-                string terminatedProcName = string.Empty;
 
                 // 2. Perform Secure AES-256 Quarantine with resilient retry
                 for (int retry = 0; retry < 5; retry++)
@@ -202,7 +206,7 @@ namespace AegisPC.Security.RealTime
                 }
 
                 // 3. Persist Finding to Database
-                await _findingService.AddFindingAsync(finding, ct);
+                await _findingService.UpdateFindingAsync(finding, ct);
 
                 // 4. Create Security Incident
                 var incident = new SecurityIncident
@@ -210,34 +214,24 @@ namespace AegisPC.Security.RealTime
                     IncidentId = $"INC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}",
                     Title = verdict.ThreatTitle,
                     ThreatName = verdict.ThreatTitle,
-                    RootPid = terminatedPid,
-                    RootProcessName = !string.IsNullOrEmpty(terminatedProcName) ? terminatedProcName : fileInfo.Name,
+                    RootPid = 0,
+                    RootProcessName = string.Empty,
                     RootExecutablePath = evt.NormalizedPath,
                     RootHashSha256 = verdict.SHA256,
                     RiskScore = verdict.RiskScore,
                     RiskLevel = verdict.RiskLevel.ToString().ToUpperInvariant(),
                     CreatedAt = DateTime.UtcNow,
                     Status = quarantined ? "Quarantined" : "Active",
-                    ActionTaken = quarantined
-                        ? (terminatedPid > 0
-                            ? $"Aktif zararlı süreç (PID: {terminatedPid}) sonlandırıldı ve dosya AES-256 Karantina Kasasına kilitlendi."
-                            : "Dosya engellendi ve AES-256 Karantina Kasasına kilitlendi.")
-                        : (terminatedPid > 0
-                            ? $"Aktif süreç (PID: {terminatedPid}) sonlandırıldı; dosya karantinası başarısız oldu."
-                            : "Tehdit tespit edildi; karantina başarısız oldu."),
-                    HumanExplanation = $"Gerçek zamanlı koruma kalkanı '{fileInfo.Name}' dosyasında kritik tehdit tespit etti." + 
-                        (terminatedPid > 0 ? $" Çalışan süreç (PID: {terminatedPid}) derhal durduruldu." : "") +
+                    ActionTaken = quarantined ? "Dosya karantinaya alındı; süreç veya kalıcılık temizliği yapılmadı."
+                        : "Tehdit tespit edildi; dosya karantinası gerçekleşmedi.",
+                    HumanExplanation = $"Gerçek zamanlı koruma kalkanı '{fileInfo.Name}' dosyasında doğrulanmış dosya kanıtı tespit etti." +
                         (quarantined ? " Dosya güvenli şekilde karantinaya alındı." : " Dosya karantinaya alınamadı ve yeniden incelenmelidir."),
                     RecommendedUserAction = quarantined
-                        ? "Tehdit başarıyla etkisiz hale getirilmiştir. Gerekirse Karantina Kasası sayfasından inceleyebilirsiniz."
+                        ? "Dosya karantinaya alındı. Çalışan süreçler ve başlangıç kalıcılığı bu işlemle temizlenmiş sayılmaz; olay ayrıntılarını inceleyin."
                         : "Dosya kullanımda veya erişim engelli olabilir. Yönetici yetkisiyle yeniden tarayın ve dosyayı çalıştırmayın."
                 };
                 incident.Timeline.Add($"[{DateTime.UtcNow:HH:mm:ss}] Gerçek Zamanlı Koruma: '{fileInfo.Name}' tehdit deseni algılandı.");
                 incident.Timeline.Add($"[{DateTime.UtcNow:HH:mm:ss}] Analiz Sonucu: Risk Skoru {verdict.RiskScore}/100 ({verdict.Verdict}).");
-                if (terminatedPid > 0)
-                {
-                    incident.Timeline.Add($"[{DateTime.UtcNow:HH:mm:ss}] Müdahale: Aktif çalışan '{terminatedProcName}' (PID: {terminatedPid}) süreci zorla durduruldu.");
-                }
                 if (quarantined)
                 {
                     incident.Timeline.Add($"[{DateTime.UtcNow:HH:mm:ss}] Karantina: Dosya diskten temizlendi ve AES-256 Kasaya kilitlendi.");
@@ -247,13 +241,9 @@ namespace AegisPC.Security.RealTime
                 OnThreatDetected?.Invoke(finding);
                 OnIncidentCreated?.Invoke(incident);
 
-                string toastTitle = quarantined
-                    ? (terminatedPid > 0 ? "🛑 Aktif Zararlı Süreç Durduruldu ve Kilitlendi!" : "🛡️ Tehdit Engellendi ve Karantinaya Alındı!")
-                    : "🚨 Tehdit Tespit Edildi — Karantina Başarısız!";
+                string toastTitle = quarantined ? "Dosya Karantinaya Alındı" : "Tehdit Tespit Edildi — Karantina Gerçekleşmedi";
                 string toastMsg = quarantined
-                    ? (terminatedPid > 0
-                        ? $"'{terminatedProcName}' (PID: {terminatedPid}) süreci durduruldu ve '{fileInfo.Name}' dosyası karantinaya kilitlendi."
-                        : $"'{fileInfo.Name}' dosyası karantinaya alındı.")
+                    ? $"'{fileInfo.Name}' dosyası karantinaya alındı; çalışan süreçlerin temizlendiği doğrulanmadı."
                     : $"'{fileInfo.Name}' dosyası karantinaya alınamadı; dosyayı çalıştırmayın ve yeniden tarayın.";
 
                 OnNotificationRaised?.Invoke(toastTitle, toastMsg, "Danger");
@@ -265,7 +255,7 @@ namespace AegisPC.Security.RealTime
                         "RealTimeShield",
                         fileInfo.Name,
                         evt.NormalizedPath,
-                        $"{verdict.ThreatTitle} - Skor: {verdict.RiskScore}" + (terminatedPid > 0 ? $" - Süreç PID: {terminatedPid} sonlandırıldı." : ""),
+                        $"{verdict.ThreatTitle} - Skor: {verdict.RiskScore} - Finding: {finding.Id}",
                         quarantined ? AuditResult.Success : AuditResult.Failed,
                         cancellationToken: ct);
                 }

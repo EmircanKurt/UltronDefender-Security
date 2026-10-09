@@ -93,7 +93,17 @@ namespace AegisPC.App.Startup
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.NetworkBehaviorDetector>();
             services.AddSingleton<AegisPC.Security.Detection.YaraEngine.IYaraEngine, AegisPC.Security.Detection.YaraEngine.YaraEngine>();
             services.AddSingleton<AegisPC.Contracts.Detection.IDetectorPlugin, AegisPC.Security.Detection.Detectors.YaraDetector>();
-            services.AddSingleton<AegisPC.Contracts.Detection.IDetectionHub, AegisPC.Security.Detection.DetectionHub>();
+            services.AddSingleton<AegisPC.Contracts.Detection.IDetectionHub>(sp => AegisPC.Security.Detection.DetectionHubFactory.CreateDefault(
+                sp.GetRequiredService<IHashService>(), sp.GetRequiredService<ISignatureVerifier>(),
+                yaraEngine: sp.GetRequiredService<AegisPC.Security.Detection.YaraEngine.IYaraEngine>(),
+                reputationService: sp.GetService<IReputationService>(), exclusionService: sp.GetRequiredService<IExclusionService>(),
+                amsiScanService: sp.GetRequiredService<IAmsiScanService>(),
+                isUltronAiEnabled: () => sp.GetRequiredService<ISettingsService>().GetSetting("IsUltronAiEnabled", true)));
+            services.AddSingleton<AegisPC.Security.UltronAI.PilotGatedActionAdapter>();
+            services.AddSingleton<AegisPC.Contracts.Protection.IProtectionActionBroker>(sp =>
+                new AegisPC.Security.UltronAI.ProtectionActionBroker(
+                    sp.GetRequiredService<AegisPC.Security.UltronAI.PilotGatedActionAdapter>(),
+                    sp.GetRequiredService<AegisPC.Security.UltronAI.PilotGatedActionAdapter>()));
             services.AddSingleton<AegisPC.Core.Localization.ILocalizationService>(AegisPC.Core.Localization.LocalizationService.Instance);
             services.AddSingleton<IExclusionService, AegisPC.Security.Safety.ExclusionService>();
             services.AddSingleton<IAllowlistService, AllowlistService>();
@@ -129,7 +139,9 @@ namespace AegisPC.App.Startup
                 sp.GetService<Microsoft.Extensions.Logging.ILogger<AegisPC.Security.RealTime.RealTimeProtectionEngine>>(), sp.GetRequiredService<IExclusionService>(),
                 () => sp.GetRequiredService<ISettingsService>().GetSetting("EnableAutoQuarantine", true),
                 () => sp.GetRequiredService<ISettingsService>().GetSetting("AutoQuarantineThreshold", 85),
-                detectionHub: sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>()));
+                detectionHub: sp.GetRequiredService<AegisPC.Contracts.Detection.IDetectionHub>(),
+                backgroundResources: sp.GetRequiredService<IScanResourceManager>(),
+                scanTargets: sp.GetRequiredService<IScanTargetResolver>()));
             services.AddSingleton<AegisPC.Security.RealTime.IBackgroundProtectionService, AegisPC.Security.RealTime.BackgroundProtectionService>();
             services.AddSingleton<AegisPC.Security.RealTime.IRansomwareProtectionEngine, AegisPC.App.Services.ServiceRansomwareClient>();
             services.AddSingleton<IAmsiScanService, AegisPC.Security.Scanning.AmsiScanService>();

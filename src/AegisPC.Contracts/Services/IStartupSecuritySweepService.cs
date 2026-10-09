@@ -28,6 +28,8 @@ namespace AegisPC.Contracts.Services
         public int SuspiciousFound { get; set; }
         /// <summary>Files whose inspection could not establish a clean or malicious verdict.</summary>
         public int IncompleteCount { get; set; }
+        /// <summary>Explicit user exclusions, included in incomplete coverage rather than clean files.</summary>
+        public int PolicyBypassCount { get; set; }
         /// <summary>Inspections cancelled by their own time budget, never counted as clean files.</summary>
         public int TimedOutCount { get; set; }
         public int CleanFiles { get; set; }
@@ -52,6 +54,9 @@ namespace AegisPC.Contracts.Services
         public DateTime DetectionTime { get; set; } = DateTime.UtcNow;
         public DateTime ActionTime { get; set; } = DateTime.UtcNow;
         public bool IsQuarantined { get; set; }
+        public bool InspectionComplete { get; set; }
+        public bool PolicyBypassed { get; set; }
+        public List<string> CoverageLimitations { get; set; } = new();
 
         // Process Correlation
         public bool IsRunningProcess { get; set; }
@@ -74,6 +79,7 @@ namespace AegisPC.Contracts.Services
         public int SuspiciousCount { get; set; }
         /// <summary>Files whose inspection could not establish a verdict.</summary>
         public int IncompleteCount { get; set; }
+        public int PolicyBypassCount { get; set; }
         /// <summary>Files left unverified after their cooperative inspection time budget expired.</summary>
         public int TimedOutCount { get; set; }
         public int SkippedCount { get; set; }

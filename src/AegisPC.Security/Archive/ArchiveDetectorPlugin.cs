@@ -100,6 +100,8 @@ public class ArchiveDetectorPlugin : IDetectorPlugin
             evidence.Metadata["ArchiveMember"] = finding.ObjectPath.StartsWith(marker, StringComparison.Ordinal)
                 ? finding.ObjectPath[marker.Length..] : finding.ObjectName;
             evidence.Metadata["ArchiveMemberSHA256"] = finding.SHA256 ?? string.Empty;
+            // Retain distinct member identities when the hub deduplicates evidence on the outer path.
+            evidence.FeatureIdentity = $"ArchiveMember:{evidence.Metadata["ArchiveMember"]}:{finding.SHA256}:{evidence.RuleName}";
             evidences.Add(evidence);
         }
         return evidences;

@@ -22,7 +22,7 @@ namespace AegisPC.App.ViewModels
         [RelayCommand]
         public Task OpenActiveScanWindowAsync()
         {
-            Views.ActiveScanWindow.ShowScanWindow(this);
+            _presentScanner();
             return Task.CompletedTask;
         }
 
@@ -43,7 +43,7 @@ namespace AegisPC.App.ViewModels
         {
             if (_scanCoordinator != null && _scanCoordinator.IsScanning && _scanCoordinator.CurrentScanType == ScanType.Quick)
             {
-                Views.ActiveScanWindow.ShowScanWindow(this);
+                _presentScanner();
                 return;
             }
             await RunScanAsync(ScanType.Quick, string.Empty);
@@ -58,7 +58,7 @@ namespace AegisPC.App.ViewModels
         {
             if (_scanCoordinator != null && _scanCoordinator.IsScanning && _scanCoordinator.CurrentScanType == ScanType.Full)
             {
-                Views.ActiveScanWindow.ShowScanWindow(this);
+                _presentScanner();
                 return;
             }
             await RunScanAsync(ScanType.Full, string.Empty);
@@ -125,7 +125,7 @@ namespace AegisPC.App.ViewModels
         [RelayCommand]
         public void TogglePauseResume()
         {
-            if (_scanCoordinator == null || !IsScanning) return;
+            if (_scanCoordinator == null || !CanControlScan) return;
 
             if (IsPaused)
             {
@@ -148,23 +148,21 @@ namespace AegisPC.App.ViewModels
         }
 
         /// <summary>
-        /// Devam eden tarama işlemini derhal iptal eder ve sayaçları durdurur.
+        /// Requests cancellation without claiming the owned worker has already stopped.
         /// </summary>
         [RelayCommand]
         public void CancelScan()
         {
-            if (_scanCoordinator != null)
+            if (_scanCoordinator != null && CanControlScan)
             {
                 _isCancellationRequested = true;
-                _stopwatch.Stop();
-                _timer?.Stop();
-                IsScanning = false;
-                IsNotScanning = true;
                 IsPaused = false;
-                IsScanFinishedView = true;
-                ScanStatusText = "Tarama kullanıcı tarafından durduruldu.";
-                RemainingEtaFormatted = "İptal edildi";
-                CurrentFile = "İptal edildi.";
+                IsScanFinishedView = false;
+                ScanStatusText = "İptal isteniyor; çalışan işler durduruluyor.";
+                RemainingEtaFormatted = "İptal bekleniyor";
+                _stopwatch.Start();
+                _timer?.Start();
+                OnPropertyChanged(nameof(CanControlScan));
                 OnPropertyChanged(nameof(PauseButtonText));
                 OnPropertyChanged(nameof(ScanResultTitle));
                 OnPropertyChanged(nameof(CleanStateTitle));
@@ -376,7 +374,7 @@ namespace AegisPC.App.ViewModels
 
             if (IsScanning || _scanCoordinator.IsScanning)
             {
-                Views.ActiveScanWindow.ShowScanWindow(this);
+                _presentScanner();
                 return;
             }
 
@@ -401,13 +399,13 @@ namespace AegisPC.App.ViewModels
                     // A different scan claimed the coordinator while the modal was open.
                     await scanTask;
                     if (_scanCoordinator.IsScanning)
-                        Views.ActiveScanWindow.ShowScanWindow(this);
+                        _presentScanner();
                     else
                         ScanStatusText = "Tarama başlatılamadı; başka bir tarama oturumu aktif olabilir.";
                     return;
                 }
 
-                Views.ActiveScanWindow.ShowScanWindow(this);
+                _presentScanner();
                 if (rememberChoice is { } remember && _settingsService != null)
                 {
                     _settingsService.SetSetting<ScanResourceMode?>("LastManualScanResourceMode",

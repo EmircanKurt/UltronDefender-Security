@@ -178,7 +178,8 @@ public sealed class RealtimeMediaInspectionTests : IDisposable
         Assert.Equal(0, inspections);
         Assert.True(engine.CaptureCoverage().HasPersistentGap);
     }
-    private static RealTimeVerdictResult Clean() => new() { Verdict = RealTimeVerdict.Clean, RecommendedPolicy = RealTimePolicyAction.Allow };
+    private static RealTimeVerdictResult Clean() => new() { Verdict = RealTimeVerdict.Clean,
+        InspectionComplete = true, RecommendedPolicy = RealTimePolicyAction.Allow };
     private static RealTimeProtectionEngine CreateEngine(FixtureVerdict verdict, NoAction? policy = null) =>
         new(new RealTimeEventIngestor(32), new Stable(), verdict, policy ?? new NoAction());
 

@@ -26,16 +26,42 @@ namespace AegisPC.Security.AntiEvasion
             _detector = detector ?? new AntiEvasionDetector();
         }
 
-        public Task<IEnumerable<SecurityEvidence>> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
+        /// <summary>Inspects the caller's retained content where available; sampled references cannot prove executed tampering.</summary>
+        public async Task<IEnumerable<SecurityEvidence>> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
         {
             var evidences = new List<SecurityEvidence>();
-
-            if (string.IsNullOrWhiteSpace(context.FilePath) || !File.Exists(context.FilePath))
+            cancellationToken.ThrowIfCancellationRequested();
+            var borrowed = context.SharedScan?.LockedContent;
+            if (borrowed == null && (string.IsNullOrWhiteSpace(context.FilePath) || !File.Exists(context.FilePath)))
             {
-                return Task.FromResult<IEnumerable<SecurityEvidence>>(evidences);
+                context.CoverageLimitations.Add("AntiEvasionSourceUnavailable");
+                return evidences;
             }
-
-            var eval = _detector.AnalyzeBinary(context.FilePath);
+            byte[] bytes;
+            if (borrowed != null)
+            {
+                long position = borrowed.Position;
+                try
+                {
+                    borrowed.Position = 0;
+                    bytes = new byte[(int)System.Math.Min(512 * 1024, borrowed.Length)];
+                    int read = await borrowed.ReadAtLeastAsync(bytes, bytes.Length, false, cancellationToken);
+                    if (read != bytes.Length) throw new EndOfStreamException("Retained analysis source changed length.");
+                }
+                finally { borrowed.Position = position; }
+            }
+            else
+            {
+                await using var file = new FileStream(context.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 8192, true);
+                bytes = new byte[(int)System.Math.Min(512 * 1024, file.Length)];
+                int read = await file.ReadAtLeastAsync(bytes, bytes.Length, false, cancellationToken);
+                if (read != bytes.Length) throw new EndOfStreamException("Analysis source changed length.");
+            }
+            if (context.FileSize > bytes.Length) context.CoverageLimitations.Add("AntiEvasionSampleLimit:512KiB");
+            var eval = _detector is AntiEvasionDetector native
+                ? native.AnalyzeBinary(context.FilePath, bytes, cancellationToken)
+                : _detector.AnalyzeBinary(context.FilePath, bytes);
+            cancellationToken.ThrowIfCancellationRequested();
             if (eval.HasEvasionTechniques)
             {
                 foreach (var ev in eval.Evidences)
@@ -46,7 +72,7 @@ namespace AegisPC.Security.AntiEvasion
                 }
             }
 
-            return Task.FromResult<IEnumerable<SecurityEvidence>>(evidences);
+            return evidences;
         }
     }
 }

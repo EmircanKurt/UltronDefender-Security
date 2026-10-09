@@ -27,13 +27,15 @@ public partial class AdaptiveScanResourceManager
         {
             _logger?.LogWarning(ex, "Scanner pressure telemetry unavailable; automatic expansion is deferred.");
             return ScanResourceProfile.Create(requested.Mode, requested.IsHddRestricted, _logicalCores,
-                _totalRamBytes, double.NaN, double.NaN);
+                _totalRamBytes, double.NaN, double.NaN, scanType: _scanType);
         }
         var sample = _workloadSampler?.Invoke() ??
             (_scanPressure.HasCpuSample ? (double?)_scanPressure.CpuPercent : null, _mixedVolumes ? null : _scanPressure.LatencyMs);
         double? scannerCpu = sample.Item1 is double cpu && double.IsFinite(cpu) ? Math.Clamp(cpu, 0, 100) : null;
         double? diskLatency = sample.Item2 is double ms && double.IsFinite(ms) && ms >= 0 ? ms : null;
-        double target = double.IsFinite(systemCpu) && scannerCpu.HasValue ? Math.Clamp(70 - Math.Max(0, systemCpu - scannerCpu.Value), 5, 40) : 40;
+        double target = double.IsFinite(systemCpu) && scannerCpu.HasValue
+            ? Math.Clamp(80 - Math.Max(0, systemCpu - scannerCpu.Value), 5, requested.CpuTargetPercent)
+            : requested.CpuTargetPercent;
         int current = _activeProfile.Concurrency;
         int workers = Math.Min(current, requested.MaximumConcurrency);
         string reason = requested.LimitingReason;
@@ -62,6 +64,9 @@ public partial class AdaptiveScanResourceManager
             {
                 int completed = Volatile.Read(ref _completedFiles);
                 double throughput = (completed - _lastCompletedFiles) / elapsed;
+                // No completion during a long file is not evidence that the trial is unproductive.
+                // Retain the interval and trial until measurable work completes; raw pressure still contracts above.
+                if (completed == _lastCompletedFiles) return CreateMeasuredProfile(requested, workers, target, reason, diskLatency);
                 bool improved = _previousThroughput <= 0 || throughput >= _previousThroughput * 1.10;
                 if (_trialIncrease && !improved)
                 {
@@ -82,7 +87,12 @@ public partial class AdaptiveScanResourceManager
             }
         }
         workers = Math.Clamp(workers, 1, Math.Max(1, requested.MaximumConcurrency));
-        string summary = $"Sistem Gereksinimleri • {requested.Mode} • {workers} işçi • RAM bütçesi {requested.MaxMemoryBudgetBytes / 1048576:N0} MiB • CPU hedefi ~%{target:0}";
+        return CreateMeasuredProfile(requested, workers, target, reason, diskLatency);
+    }
+
+    private static ScanResourceProfile CreateMeasuredProfile(ScanResourceProfile requested, int workers, double target, string reason, double? diskLatency)
+    {
+        string summary = $"Sistem Gereksinimleri • {requested.Mode} • {workers} işçi • RAM üst bütçesi {requested.MaxMemoryBudgetBytes / 1048576:N0} MiB • CPU hedefi ~%{target:0}";
         if (requested.IsHddRestricted) summary += " • HDD/Belirsiz disk";
         if (!diskLatency.HasValue) summary += " • Disk ölçümü alınamadı";
         if (reason.Length > 0) summary += " • " + reason;

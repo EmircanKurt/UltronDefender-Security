@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Threading;
@@ -54,7 +55,7 @@ namespace AegisPC.Security.Scanning
         void ResetCounters();
 
         /// <summary>
-        /// Tarama ve imza önbelleklerini eşzamanlı ve kilitli olmayan (lock-free) yöntemle temizler.
+        /// Clears cached verdicts and FIFO bookkeeping together under their mutation lock.
         /// Aktif tarama varsa işlem reddedilir ve loglanır.
         /// </summary>
         void ClearCache();
@@ -115,8 +116,9 @@ namespace AegisPC.Security.Scanning
         // RAM'e göre dinamik cache limitleri (constructor'da hesaplanır)
         private readonly int _maxCacheEntries;
         private readonly ConcurrentDictionary<string, (long FileSize, DateTime LastWriteTimeUtc, SecurityFinding? Finding, string? Sha256, bool IsAllowlisted, bool IsBypassed, long PolicyRevision)> _scanCache = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentQueue<string> _cacheKeyQueue = new();
-        private readonly ConcurrentDictionary<string, byte> _queuedCacheKeys = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _cacheMutationLock = new();
+        private readonly LinkedList<string> _cacheKeyQueue = new();
+        private readonly Dictionary<string, LinkedListNode<string>> _queuedCacheKeys = new(StringComparer.OrdinalIgnoreCase);
 
         // Kırılım sayaçları (Lock-free thread safe)
         private int _scannedFromCache;
@@ -146,19 +148,26 @@ namespace AegisPC.Security.Scanning
                 return;
             }
 
-            int count = _scanCache.Count;
-            _scanCache.Clear();
-            _cacheKeyQueue.Clear();
-            _queuedCacheKeys.Clear();
+            int count;
+            lock (_cacheMutationLock)
+            {
+                count = _scanCache.Count;
+                _scanCache.Clear();
+                _cacheKeyQueue.Clear();
+                _queuedCacheKeys.Clear();
+            }
             Log.Information("Tarama önbelleği temizlendi. {Count} önbellek kaydı temizlendi.", count);
         }
 
         public void InvalidateCache(string path)
         {
             if (string.IsNullOrWhiteSpace(path)) return;
-            _scanCache.TryRemove(path, out _);
-            _queuedCacheKeys.TryRemove(path, out _);
-            Log.Information("Tarama ve imza önbelleği geçersiz kılındı (InvalidateCache): {Path}", path);
+            lock (_cacheMutationLock)
+            {
+                _scanCache.TryRemove(path, out _);
+                if (_queuedCacheKeys.Remove(path, out var node)) _cacheKeyQueue.Remove(node);
+            }
+            Log.Debug("Scan cache invalidated for {Path}", path);
         }
 
         public FileHashMatcher(
@@ -201,7 +210,9 @@ namespace AegisPC.Security.Scanning
                     string.IsNullOrEmpty(cached.Sha256) || cached.PolicyRevision != DetectionPolicyRevision.Current)
                     return (false, null, null);
                 await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
-                var hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct));
+                string hash;
+                using (ScanStageMeasurements.Measure(ScanStageTiming.Hash))
+                    hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct));
                 if (!string.Equals(hash, cached.Sha256, StringComparison.OrdinalIgnoreCase)) return (false, null, hash);
                 // Re-query mutable threat databases; previous clean results cannot override new intelligence.
                 if (MalwareSignatureDatabase.CheckHash(hash).IsMatched || ThreatSignatureDatabase.CheckHash(hash).IsMatched)
@@ -258,7 +269,8 @@ namespace AegisPC.Security.Scanning
                 try
                 {
                     using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-                    sha256 = Convert.ToHexString(SHA256.HashData(stream));
+                    using (ScanStageMeasurements.Measure(ScanStageTiming.Hash))
+                        sha256 = Convert.ToHexString(SHA256.HashData(stream));
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -267,20 +279,18 @@ namespace AegisPC.Security.Scanning
                 }
             }
             if (policyRevision != DetectionPolicyRevision.Current) return;
-            if (_scanCache.Count >= _maxCacheEntries)
+            lock (_cacheMutationLock)
             {
-                // Sıfır tahsisli FIFO tahliye (Snapshot almadan mikrosaniyede temizlik)
-                int evictCount = _maxCacheEntries / 10;
-                while (_scanCache.Count >= (_maxCacheEntries - evictCount) && _cacheKeyQueue.TryDequeue(out var oldKey))
+                if (policyRevision != DetectionPolicyRevision.Current) return;
+                bool existing = _queuedCacheKeys.ContainsKey(path);
+                while (!existing && _scanCache.Count >= _maxCacheEntries && _cacheKeyQueue.First is { } oldest)
                 {
-                    _scanCache.TryRemove(oldKey, out _);
-                    _queuedCacheKeys.TryRemove(oldKey, out _);
+                    _scanCache.TryRemove(oldest.Value, out _);
+                    _queuedCacheKeys.Remove(oldest.Value);
+                    _cacheKeyQueue.RemoveFirst();
                 }
-            }
-            _scanCache[path] = (fileSize, lastWriteTimeUtc, finding, sha256, isAllowlisted, isBypassed, policyRevision);
-            if (_queuedCacheKeys.TryAdd(path, 0))
-            {
-                _cacheKeyQueue.Enqueue(path);
+                _scanCache[path] = (fileSize, lastWriteTimeUtc, finding, sha256, isAllowlisted, isBypassed, policyRevision);
+                if (!existing) _queuedCacheKeys.Add(path, _cacheKeyQueue.AddLast(path));
             }
         }
 
@@ -301,8 +311,7 @@ namespace AegisPC.Security.Scanning
 
             if (sha256 == "VIRUS_INFECTED_OS_BLOCKED")
             {
-                Interlocked.Increment(ref _newlyScanned);
-                return (sha256, false, false);
+                throw new AegisPC.Core.Exceptions.OperatingSystemFileBlockException(AegisPC.Core.Exceptions.OperatingSystemFileBlockKind.ThreatBlocked);
             }
 
             // 4. Tehdit Veritabanı Kontrolü (MalwareSignatureDatabase + ThreatSignatureDatabase)

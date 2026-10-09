@@ -23,16 +23,21 @@ public sealed partial class StartupSweepSafetyTests
     {
         string fixture = Environment.GetEnvironmentVariable("ULTRON_BENIGN_SCAN_FIXTURE")
             ?? throw new InvalidOperationException("Run this opted-in integration only with an explicitly provided benign fixture.");
+        fixture = ReviewStageOneFixture.RequireLocalInput(fixture);
         Assert.True(File.Exists(fixture));
         var workspace = new DirectoryInfo(AppContext.BaseDirectory);
         while (workspace != null && !File.Exists(Path.Combine(workspace.FullName, "AegisPC.sln"))) workspace = workspace.Parent;
         Assert.NotNull(workspace);
         var root = workspace!.FullName;
-        string[] paths = [Path.GetFullPath(fixture),
+        string[] originalPaths = [Path.GetFullPath(fixture),
             Path.Combine(root, "AegisPC_App", "UltronDefender.exe"),
             Path.Combine(root, "src", "AegisPC.App", "bin", "Release", "net8.0-windows", "UltronDefender.dll"),
             Path.Combine(root, "src", "AegisPC.Security", "bin", "Release", "net8.0-windows", "AegisPC.Security.dll")];
-        var hashes = paths.ToDictionary(p => p, p => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(p))));
+        originalPaths = originalPaths.Select(ReviewStageOneFixture.RequireLocalInput).ToArray();
+        var originalHashes = originalPaths.ToDictionary(p => p, p => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(p))));
+        using var reviewFixture = ReviewStageOneFixture.Create();
+        string[] paths = originalPaths.Select((path, index) => reviewFixture.ImportReadOnlyInput(path, $"{index:D2}-{Path.GetFileName(path)}")).ToArray();
+        var hashes = paths.Select((path, index) => (path, hash: originalHashes[originalPaths[index]])).ToDictionary(item => item.path, item => item.hash);
         var serial = new List<double>();
         var parallel = new List<double>();
         var before = new Dictionary<string, (RealTimeVerdict Verdict, int Score, bool Complete)>();
@@ -42,9 +47,9 @@ public sealed partial class StartupSweepSafetyTests
             // Alternate order to expose warm-cache/order bias. This is not a cold-cache hardware certification.
             foreach (int workers in run % 2 == 0 ? new[] { 1, 4 } : new[] { 4, 1 })
             {
-                var hash = new HashService();
+                var hash = reviewFixture.HashService;
                 var verifier = new SignatureVerifier();
-                var hub = DetectionHubFactory.CreateDefault(hashService: hash, signatureVerifier: verifier);
+                var hub = reviewFixture.CreateHub(signatureVerifier: verifier);
                 var processor = new RealTimeVerdictProcessor(hash, verifier, new RiskScoringEngine(), null, null,
                     exclusionService: null, detectionHub: hub);
                 var engine = new RecordingEngine(_ => throw new InvalidOperationException("Only actual common inspection is permitted."))
@@ -90,5 +95,6 @@ public sealed partial class StartupSweepSafetyTests
         double first = serial.Order().ElementAt(2), second = parallel.Order().ElementAt(2);
         _resourceOutput.WriteLine($"single_median_ms={first:F2} parallel_median_ms={second:F2} gain_percent={(first - second) * 100 / first:F2}");
         foreach (string path in paths) Assert.Equal(hashes[path], Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))));
+        foreach (string path in originalPaths) Assert.Equal(originalHashes[path], Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))));
     }
 }

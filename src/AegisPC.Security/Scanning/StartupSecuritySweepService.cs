@@ -196,7 +196,7 @@ namespace AegisPC.Security.Scanning
                         continue;
                     }
 
-                    progress.CurrentFile = file.Name;
+                    progress.CurrentFile = file.FullName;
                     NotifyProgress(progress, coordSub);
 
                     // Check Cache for unchanged clean files
@@ -214,6 +214,20 @@ namespace AegisPC.Security.Scanning
 
                     // Inspect file with RealTime engine pipeline
                     var verdictResult = item.Verdict;
+                    foreach (string reason in verdictResult.CoverageLimitations)
+                        _discoveryCoverage.RecordLimitation(reason);
+                    bool inspectionComplete = verdictResult.InspectionComplete && !verdictResult.PolicyBypassed &&
+                        verdictResult.ContentClassification?.IsComplete != false && verdictResult.Verdict != RealTimeVerdict.Unknown;
+                    if (!inspectionComplete)
+                    {
+                        progress.IncompleteCount++;
+                        result.IncompleteCount++;
+                    }
+                    if (verdictResult.PolicyBypassed)
+                    {
+                        progress.PolicyBypassCount++;
+                        result.PolicyBypassCount++;
+                    }
                     _sweepResources?.ReportCompletedFiles(1);
                     progress.ScannedFiles++;
                     if (verdictResult.CoverageLimitations.Contains("StartupInspectionTimedOut"))
@@ -295,10 +309,9 @@ namespace AegisPC.Security.Scanning
                                 cancellationToken: linkedCts.Token);
                         }
                     }
-                    else if (verdictResult.Verdict == RealTimeVerdict.Unknown)
+                    else if (verdictResult.Verdict == RealTimeVerdict.Unknown ||
+                             verdictResult.Verdict == RealTimeVerdict.Clean && !inspectionComplete)
                     {
-                        progress.IncompleteCount++;
-                        result.IncompleteCount++;
                         result.Findings.Add(new StartupSweepFinding
                         {
                             FilePath = file.FullName,
@@ -307,7 +320,7 @@ namespace AegisPC.Security.Scanning
                             FileSize = file.Length,
                             RiskScore = verdictResult.RiskScore,
                             Verdict = nameof(RealTimeVerdict.Unknown),
-                            Action = "INCOMPLETE",
+                            Action = verdictResult.PolicyBypassed ? "POLICY_BYPASSED" : "INCOMPLETE",
                             Evidences = new List<string>(verdictResult.Evidences),
                             CorrelationId = correlationId,
                             DetectionTime = DateTime.UtcNow,
@@ -349,7 +362,7 @@ namespace AegisPC.Security.Scanning
 
                         CacheFileVerdict(file, verdictResult.SHA256, "Suspicious", verdictResult.RiskScore);
                     }
-                    else if (verdictResult.Verdict == RealTimeVerdict.Clean)
+                    else if (verdictResult.Verdict == RealTimeVerdict.Clean && inspectionComplete)
                     {
                         // CLEAN
                         progress.CleanFiles++;
@@ -374,6 +387,14 @@ namespace AegisPC.Security.Scanning
                             CacheFileVerdict(file, verdictResult.SHA256, "Clean", verdictResult.RiskScore);
                     }
 
+                    // Attach coverage to every finding, including independent positive evidence.
+                    if (result.Findings.Count > 0 && result.Findings[^1].FilePath == file.FullName)
+                    {
+                        var currentFinding = result.Findings[^1];
+                        currentFinding.InspectionComplete = inspectionComplete;
+                        currentFinding.PolicyBypassed = verdictResult.PolicyBypassed;
+                        currentFinding.CoverageLimitations = new List<string>(verdictResult.CoverageLimitations);
+                    }
                     NotifyProgress(progress, coordSub);
                 }
 
@@ -483,7 +504,9 @@ namespace AegisPC.Security.Scanning
                 await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
                     FileShare.ReadWrite | FileShare.Delete, 65536,
                     FileOptions.Asynchronous | FileOptions.SequentialScan);
-                var actual = await SHA256.HashDataAsync(stream, ct);
+                byte[] actual;
+                using (ScanStageMeasurements.Measure(ScanStageTiming.Hash))
+                    actual = await SHA256.HashDataAsync(stream, ct);
                 return Convert.ToHexString(actual).Equals(expectedSha256, StringComparison.OrdinalIgnoreCase);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
@@ -512,7 +535,8 @@ namespace AegisPC.Security.Scanning
                     Phase = phaseOverride ?? (progress.Status == StartupSweepStatus.Preparing ? "Başlangıç taraması hazırlanıyor" : "Başlangıç dosya taraması"),
                     ScannedFromCache = progress.SkippedUnchanged,
                     NewlyScanned = Math.Max(0, progress.ScannedFiles - progress.SkippedUnchanged),
-                    FailedFiles = Math.Max(0, progress.IncompleteCount - progress.TimedOutCount),
+                    FailedFiles = Math.Max(0, progress.IncompleteCount - progress.TimedOutCount - progress.PolicyBypassCount),
+                    SkippedFiles = progress.PolicyBypassCount,
                     TimedOutFiles = progress.TimedOutCount,
                     ElapsedTime = _progressClock?.Elapsed ?? TimeSpan.Zero,
                     CpuUsagePercent = metrics.CpuPercent,
@@ -541,7 +565,8 @@ namespace AegisPC.Security.Scanning
                     StartedAt = result.StartedAtUtc,
                     FailureInfo = result.FailureInfo,
                     Measurements = _sweepMeasurements,
-                    FailedFiles = Math.Max(0, result.IncompleteCount - result.TimedOutCount),
+                    FailedFiles = Math.Max(0, result.IncompleteCount - result.TimedOutCount - result.PolicyBypassCount),
+                    SkippedFiles = result.PolicyBypassCount,
                     TimedOutFiles = result.TimedOutCount,
                     Coverage = CreateSweepCoverage(result),
                     ElapsedMs = (long)duration.TotalMilliseconds,

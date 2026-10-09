@@ -7,17 +7,19 @@
          ══════════════════════════════════════════════════════════════════════════════════ -->
 
     <!-- ── 1. BACKGROUND & SURFACE TOKENS (Sakin nötr siyah — Ultron neutral surfaces) ── -->
-    <Color x:Key="ColorAppBg">#12151B</Color>
-    <Color x:Key="ColorCardBg">#1B2028</Color>
-    <Color x:Key="ColorCardBgAlt">#222832</Color>
-    <Color x:Key="ColorCardBorder">#343C48</Color>
-    <Color x:Key="ColorCardBorderHover">#535F71</Color>
+    <Visibility x:Key="ClassicRowsVisibility">Visible</Visibility>
+    <Visibility x:Key="ClassicSelectionVisibility">Collapsed</Visibility>
+    <Color x:Key="ColorAppBg">#17181B</Color>
+    <Color x:Key="ColorCardBg">#1C1E22</Color>
+    <Color x:Key="ColorCardBgAlt">#25272B</Color>
+    <Color x:Key="ColorCardBorder">#3A3C42</Color>
+    <Color x:Key="ColorCardBorderHover">#606268</Color>
 
-    <Color x:Key="ColorSidebarBg">#181C23</Color>
-    <Color x:Key="ColorSidebarHeader">#181C23</Color>
-    <Color x:Key="ColorSidebarBorder">#343C48</Color>
-    <Color x:Key="ColorSidebarHover">#252C36</Color>
-    <Color x:Key="ColorSidebarActive">#332229</Color>
+    <Color x:Key="ColorSidebarBg">#2B2D31</Color>
+    <Color x:Key="ColorSidebarHeader">#2B2D31</Color>
+    <Color x:Key="ColorSidebarBorder">#45474D</Color>
+    <Color x:Key="ColorSidebarHover">#383A40</Color>
+    <Color x:Key="ColorSidebarActive">#3C3D43</Color>
 
     <!-- ── 2. PRIMARY BRAND ACCENT TOKENS (ULTRON BRAND RED) ── -->
     <Color x:Key="ColorBrandPrimary">#C62D35</Color>
@@ -54,9 +56,9 @@
     <Color x:Key="ColorAccentLight">#1FC41E1E</Color>
 
     <!-- ── 3. TYPOGRAPHY TOKENS (NÖTR GRİLER — MAVİ TON YOK) ── -->
-    <Color x:Key="ColorTextPrimary">#F1F3F7</Color>
-    <Color x:Key="ColorTextSecondary">#BEC7D4</Color>
-    <Color x:Key="ColorTextMuted">#A2AEBE</Color>
+    <Color x:Key="ColorTextPrimary">#F3F3F3</Color>
+    <Color x:Key="ColorTextSecondary">#C7C8CC</Color>
+    <Color x:Key="ColorTextMuted">#B4B5BA</Color>
     <Color x:Key="ColorTextOnAccent">#FFFFFF</Color>
     <Color x:Key="ColorTextOnDark">#FFFFFF</Color>
 
@@ -117,9 +119,14 @@
     <SolidColorBrush x:Key="BrushCardBorder" Color="{StaticResource ColorCardBorder}"/>
     <SolidColorBrush x:Key="BrushCardBorderHover" Color="{StaticResource ColorCardBorderHover}"/>
     <SolidColorBrush x:Key="BrushSidebarBg" Color="{StaticResource ColorSidebarBg}"/>
+    <SolidColorBrush x:Key="BrushSidebarTextPrimary" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="BrushSidebarTextSecondary" Color="#DDE0E4"/>
+    <SolidColorBrush x:Key="BrushShellSidebarActive" Color="#3B3F45"/>
+    <SolidColorBrush x:Key="BrushShellSidebarHover" Color="#34383D"/>
     <SolidColorBrush x:Key="BrushSidebarHeader" Color="{StaticResource ColorSidebarHeader}"/>
     <SolidColorBrush x:Key="BrushSidebarBorder" Color="{StaticResource ColorSidebarBorder}"/>
     <SolidColorBrush x:Key="BrushSidebarHover" Color="{StaticResource ColorSidebarHover}"/>
+    <SolidColorBrush x:Key="BrushSidebarActive" Color="{StaticResource ColorSidebarActive}"/>
 
     <!-- Action Card Pastel Brushes (Dark Theme) -->
     <SolidColorBrush x:Key="BrushPastelBlueBg" Color="{StaticResource ColorPastelBlueBg}"/>

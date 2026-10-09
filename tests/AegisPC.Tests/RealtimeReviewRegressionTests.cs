@@ -161,7 +161,7 @@ public sealed class RealtimeReviewRegressionTests : IDisposable
     [Fact]
     public async Task EtwHeuristicScoreDoesNotSuspendOrBlockUnknownPid()
     {
-        var hub = new FixedHub(new DetectionResult { RiskScore = 100, Verdict = DetectionVerdict.HighRisk });
+        var hub = new FixedHub(new DetectionResult { RiskScore = 100, Verdict = DetectionVerdict.HighRisk, IsComplete = true });
         using var service = new EtwPreExecProtectionService(hub, new FixedRisk(100), new Unsigned());
         var result = await service.EvaluateProcessAsync(int.MaxValue, Fixture("untrusted.exe"));
         Assert.False(result.WasSuspended);

@@ -80,7 +80,7 @@ namespace AegisPC.App.ViewModels
             var scanVm = App.ServiceProvider?.GetService<ScanViewModel>();
             if (scanVm != null)
             {
-                Views.ActiveScanWindow.ShowScanWindow(scanVm);
+                AppNavigation.ShowScanner();
             }
         }
 
@@ -324,7 +324,7 @@ namespace AegisPC.App.ViewModels
 
             if (hasScanFindings && scanVm != null)
             {
-                Views.ActiveScanWindow.ShowScanWindow(scanVm);
+                AppNavigation.ShowScanner();
                 return;
             }
 

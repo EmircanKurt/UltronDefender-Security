@@ -51,6 +51,10 @@ public partial class NamedPipeServer
                     MediaInspections = (_realTimeProtectionEngine as AegisPC.Security.RealTime.IRemovableMediaProtection)?.GetMediaInspections() }) };
         }
         if (_vault == null) return new() { Code = "VaultServiceUnavailable" };
+        // SID ownership alone does not prove an interactive, trusted application request.
+        // Keep mutations closed even if a future client requests a stronger impersonation token.
+        if (VaultMutationPilotPolicy.RequiresAuthenticatedApproval(command.CommandType))
+            return new() { Code = "InteractiveApprovalAndAuthenticatedApplicationRequired" };
         var request = JsonSerializer.Deserialize<AuthorizedVaultRequest>(command.Payload ?? "{}") ?? throw new InvalidDataException();
         if (command.CommandType == ServiceCommandType.GetQuarantine)
         {

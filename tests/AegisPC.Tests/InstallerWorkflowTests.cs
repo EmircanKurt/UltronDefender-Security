@@ -14,7 +14,12 @@ public sealed class InstallerWorkflowTests
         Assert.Contains("https://github.com/EmircanKurt/UltronDefender-Security", source);
         Assert.Contains("MinVersion=10.0.17763", source);
         Assert.Contains("ArchitecturesAllowed=x64compatible", source);
-        Assert.Contains("#define MyAppVersion \"3.2.1\"", source);
+        Assert.Contains("#define MyAppVersion \"3.2.2-preview.20261009\"", source);
+        Assert.Contains("PrivilegesRequired=lowest", source);
+        Assert.DoesNotContain("Filename: \"{sys}\\sc.exe\"", source);
+        Assert.DoesNotContain("Root: HKLM", source);
+        Assert.Contains("CloseApplications=no", source);
+        Assert.DoesNotContain("postinstall", source);
     }
 
     [Fact]
@@ -37,8 +42,8 @@ public sealed class InstallerWorkflowTests
     public void Build_DefaultUsesBenignTestsAndDoesNotModifyDesktop()
     {
         string source = Read("build_and_deploy.ps1");
-        Assert.Contains("AegisPC.Review.Tests", source);
-        Assert.Contains("FullyQualifiedName!~Golden01_", source);
+        Assert.Contains("AegisPC.Review.Tests", Read("scripts/Test-BenignPreview.ps1"));
+        Assert.Contains("scripts/Test-BenignPreview.ps1", source);
         Assert.Contains("if ($UpdateDesktopShortcut)", source);
         Assert.Contains("throw \"Inno Setup compilation failed", source);
         Assert.Contains("$PSScriptRoot", source);

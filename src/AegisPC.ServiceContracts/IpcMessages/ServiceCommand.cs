@@ -11,7 +11,9 @@ namespace AegisPC.ServiceContracts.IpcMessages
         /// <summary>Enables optional local static review; requires an authenticated administrator.</summary>
         EnableUltronAi,
         /// <summary>Disables optional local static review without disabling mandatory security validation; requires an authenticated administrator.</summary>
-        DisableUltronAi
+        DisableUltronAi,
+        /// <summary>Administrator-only timed file-shield pause; other layers remain unchanged.</summary>
+        PauseFileProtection
     }
 
     public class ServiceCommand

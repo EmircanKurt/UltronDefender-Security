@@ -31,9 +31,21 @@ The current edition has no paid activation key, subscription or expiry. The MIT 
 
 ## Testing and limits
 
+### Changes since the 6 October preview
+
+- Plain scan chooser with a scope panel, embedded scan route, silent startup/AFK presentation and clearer partial-coverage reporting.
+- Light-theme sidebar selection/hover contrast corrected; off-screen WPF layout/contrast regressions cover both palettes.
+- Ordinary API/syscall references are capabilities, not proof of evasion. Unknown signature verification is not an invalid signature. Findings retain rule version and coverage, without invented process attribution or quarantine success.
+- Quick scope uses active program/module files, autorun/startup targets and recent (seven-day) Downloads/Desktop/Temp content. Full scans run the quick preflight before fixed volumes; failed/cancelled discovery is not successful completion.
+- Protected-folder application allowances now require the recorded SHA-256; replacement content and legacy path-only entries do not inherit permission.
+- Guardian health expires stale/future core leases. Native recovery, independent vault ownership and kernel enforcement still await isolated VM verification.
+- Preview setup has a separate per-user installation identity, bundles its runtime, and does not install/start services, drivers or autostart entries. It does not replace the existing installation or launch Ultron automatically.
+
+See the [9 October evidence and remaining gates](docs/reports/GUARD_SCAN_SAFETY_2026-10-09.md). The current selected benign regression run passed **537 tests, 0 failed, 0 skipped**; these are unit/infrastructure/UI and inert disk-fixture tests, not a malware-detection rate or a deployed-protection certification.
+
 See the [current verification report](docs/STATUS.md) for actual results and outstanding gates. Regression totals do **not** measure malware detection or false-positive rates. EICAR is a workflow test, not real-world efficacy evidence.
 
-The [6 October scan/resource review](docs/reports/RESOURCE_CORRECTNESS_2026-10-06.md) documents startup-scan parallelism, adaptive resource budgets and false-positive corrections. A 2 GiB budget is an upper planning limit on suitable systems, not reserved RAM; a roughly 40% CPU target is adaptive, not guaranteed usage. The small benign-file benchmark is not a whole-PC speed claim.
+The [6 October scan/resource review](docs/reports/RESOURCE_CORRECTNESS_2026-10-06.md) preserves earlier resource evidence. Current resource policies use adaptive upper budgets rather than filling RAM or burning CPU to hit a percentage. Disk latency, real throughput and competing load limit concurrency; unknown telemetry must not be presented as measured spare capacity. Small benign benchmarks are not whole-PC speed claims.
 
 Windows 10/11 x64 are development targets; this .NET 8 build does not support Windows 7. Antivirus cannot repair operating-system vulnerabilities or replace supported Windows updates. Keep Defender and workplace protection enabled. School/work deployment requires administrator approval and an isolated pilot.
 
@@ -41,13 +53,13 @@ Windows 10/11 x64 are development targets; this .NET 8 build does not support Wi
 
 Requirements: Windows and .NET 8 SDK; Inno Setup 6 only for installer generation.
 
-The consolidated scan/resource preview is on `codex/resource-correctness-2026-10-06`. The default branch and older downloads can still contain older code until review and deployment gates are completed. The commands below intentionally select this preview, not a recommended production release.
+The consolidated safety preview is on `codex/guard-scan-safety-2026-10-09`, based on the earlier scan/resource preview. The default branch and older downloads can still contain older code until review and deployment gates are completed. The commands below select this preview, not a recommended production release.
 
 ```powershell
-git clone --branch codex/resource-correctness-2026-10-06 https://github.com/EmircanKurt/UltronDefender-Security.git
+git clone --branch codex/guard-scan-safety-2026-10-09 https://github.com/EmircanKurt/UltronDefender-Security.git
 cd UltronDefender-Security
 dotnet build tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release -warnaserror
-dotnet test tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --no-build --filter "FullyQualifiedName!~Golden01_&FullyQualifiedName!~SettingsViewModelProtectionRegressionTests&FullyQualifiedName!~SettingsViewModelRegressionTests&FullyQualifiedName!~FiveRuns_SameBenignCoverage_ReportBeforeAfter&FullyQualifiedName!~SharedPipeline_BenignInstallerProbe_WhenProvided&FullyQualifiedName!~LocalBenignPipeline_FiveRuns"
+./scripts/Test-BenignPreview.ps1 -NoBuild
 dotnet publish src/AegisPC.App/AegisPC.App.csproj -c Release -o artifacts/preview/app
 ```
 

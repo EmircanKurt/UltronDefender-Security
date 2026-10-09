@@ -35,6 +35,7 @@ namespace AegisPC.Security.Scanning
         private bool _slotGateDisposed;
 
         private ScanResourceMode _currentMode = ScanResourceMode.Auto;
+        private ScanType _scanType = ScanType.Quick;
         private ScanResourceProfile _activeProfile;
         private SemaphoreSlim _slotGate;
         private int _currentAllocatedSlots;
@@ -275,6 +276,18 @@ namespace AegisPC.Security.Scanning
             }
         }
 
+        /// <inheritdoc />
+        public void ConfigureScanType(ScanType scanType)
+        {
+            lock (_lock)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (!Enum.IsDefined(scanType)) throw new ArgumentOutOfRangeException(nameof(scanType));
+                _scanType = scanType;
+                RebuildProfileInternal();
+            }
+        }
+
         private static string ResolveStorageTarget(string? targetPath) => string.IsNullOrWhiteSpace(targetPath)
             ? Path.GetPathRoot(Environment.SystemDirectory) ?? Environment.SystemDirectory
             : targetPath;
@@ -299,7 +312,7 @@ namespace AegisPC.Security.Scanning
                 _totalRamBytes,
                 cpuPressure,
                 memPressure,
-                isOnBattery);
+                isOnBattery, _scanType);
 
             int oldConcurrency = _activeProfile.Concurrency;
             if (_pressureSampler == null || _workloadSampler != null)

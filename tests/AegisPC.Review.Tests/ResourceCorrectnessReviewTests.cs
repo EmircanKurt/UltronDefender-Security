@@ -26,7 +26,7 @@ public sealed class ResourceCorrectnessReviewTests
         var profile = ScanResourceProfile.Create(ScanResourceMode.Auto, false, 12, ramMb * 1048576L, 15, 50);
         Assert.Equal(expectedMb * 1048576L, profile.MaxMemoryBudgetBytes);
         Assert.Equal(4, profile.Concurrency);
-        Assert.Equal(40, profile.CpuTargetPercent);
+        Assert.Equal(ramMb >= 15360 ? 60 : 40, profile.CpuTargetPercent);
     }
 
     [Theory]
@@ -242,7 +242,7 @@ public sealed class ResourceCorrectnessReviewTests
         double cpu = 5, latency = 1;
         using var resources = new AdaptiveScanResourceManager(storageClassifier: _ => true,
             pressureSampler: () => (50, 20, false), enableTelemetryTimer: false, workloadSampler: () => (cpu, latency));
-        cpu = 60;
+        cpu = 75; // Exceeds both the capable-machine target and the conservative target.
         resources.RefreshProfile();
         Assert.Equal(2, resources.ActiveProfile.Concurrency);
         Assert.Equal(ScanResourceMode.Auto, resources.CurrentMode);
@@ -258,6 +258,22 @@ public sealed class ResourceCorrectnessReviewTests
         typeof(AdaptiveScanResourceManager).GetField("_throughputSampleAt", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(resources, Stopwatch.GetTimestamp() - Stopwatch.Frequency * 3);
         resources.RefreshProfile();
+    }
+
+    /// <summary>A long file without completed work cannot disprove an admission trial; actual CPU pressure still wins.</summary>
+    [Fact]
+    public void ZeroCompletionDuringLargeFile_HoldsTrialButDoesNotIgnorePressure()
+    {
+        double cpu = 5;
+        using var resources = new AdaptiveScanResourceManager(storageClassifier: _ => true,
+            pressureSampler: () => (50, 20, false), enableTelemetryTimer: false, workloadSampler: () => (cpu, 1));
+        for (int i = 0; i < 3; i++) SampleWork(resources, 100);
+        Assert.Equal(5, resources.ActiveProfile.Concurrency);
+        for (int i = 0; i < 4; i++) SampleWork(resources, 0);
+        Assert.Equal(5, resources.ActiveProfile.Concurrency);
+        Assert.DoesNotContain("verim", resources.ActiveProfile.LimitingReason);
+        cpu = 90; resources.RefreshProfile();
+        Assert.Equal(2, resources.ActiveProfile.Concurrency);
     }
 
     [Fact]

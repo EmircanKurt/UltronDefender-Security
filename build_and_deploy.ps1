@@ -8,7 +8,8 @@ param (
     [switch]$SkipTests,
     [switch]$SkipInstaller,
     [switch]$UpdateDesktopShortcut,
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\release-3.2.1')
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\preview-3.2.2'),
+    [string]$InnoCompilerPath = ''
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,7 +26,8 @@ Write-Host "==========================================================" -Foregro
 # 1. TEST STEP
 if (-not $SkipTests) {
     Write-Host "`n[1/4] Zararsiz regresyon testleri calistiriliyor..." -ForegroundColor Yellow
-    & dotnet test 'tests\AegisPC.Review.Tests\AegisPC.Review.Tests.csproj' -c Release --filter 'FullyQualifiedName!~Golden01_&FullyQualifiedName!~SettingsViewModelRegressionTests&FullyQualifiedName!~ScanViewModel_CancelCommand' --logger 'console;verbosity=minimal' -- RunConfiguration.TargetPlatform=x64
+    # No broad negative filter: only the reviewed positive allowlist is eligible.
+    & (Join-Path $repoRoot 'scripts/Test-BenignPreview.ps1') -ResultsDirectory (Join-Path $OutputDirectory 'tests')
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Zararsiz regresyon testleri basarisiz oldu! Paketleme iptal edildi."
         exit 1
@@ -68,14 +70,15 @@ Write-Host "[OK] Kisayol guncellendi: $shortcutPath -> $exePath" -ForegroundColo
 # 4. INNO SETUP INSTALLER
 if (-not $SkipInstaller) {
     Write-Host "`n[4/4] Inno Setup ile kurulum paketi olusturuluyor..." -ForegroundColor Yellow
-    $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'
+    $iscc = $InnoCompilerPath
+    if ([string]::IsNullOrWhiteSpace($iscc)) { $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe' }
     if (-not (Test-Path $iscc)) {
         $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
     }
     if ($iscc -and (Test-Path $iscc)) {
         & $iscc /Q "/DAppPublishDir=$appDir" "/DSetupOutputDir=$OutputDirectory" (Join-Path $repoRoot "installer.iss")
         if ($LASTEXITCODE -eq 0) {
-            $setupPath = Join-Path $OutputDirectory "UltronDefenderSetup.exe"
+            $setupPath = Join-Path $OutputDirectory "UltronDefenderSetup-3.2.2-preview.20261009.exe"
             $setupSizeMb = [math]::Round((Get-Item $setupPath).Length / 1MB, 2)
             Write-Host "[OK] Kurulum paketi hazir: $setupPath ($setupSizeMb MB)" -ForegroundColor Green
         } else {

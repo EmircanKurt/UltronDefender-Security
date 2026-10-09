@@ -16,6 +16,24 @@ namespace AegisPC.Tests;
 /// <summary>Startup inspection timing fixtures share inert test collaborators without enlarging the existing safety fixture.</summary>
 public sealed partial class StartupSweepSafetyTests
 {
+    /// <summary>Specific inspection gaps survive the sweep's aggregate report instead of being collapsed into a generic counter.</summary>
+    [Fact]
+    public async Task InspectionReasonCodes_SurviveFinalReport()
+    {
+        string file = CreateBenignFile();
+        var coordinator = new RecordingCoordinator();
+        var vault = new RecordingVault();
+        var engine = new RecordingEngine(_ => new RealTimeVerdictResult
+        {
+            Verdict = RealTimeVerdict.Unknown, InspectionComplete = false,
+            CoverageLimitations = ["InertFixtureInspectionGap"]
+        });
+        var result = await new StartupSecuritySweepService(engine, vault, scanCoordinator: coordinator).RunSweepAsync([file]);
+        Assert.Equal(1, result.IncompleteCount);
+        Assert.Contains("InertFixtureInspectionGap", coordinator.LastResult!.Coverage.Limitations);
+        Assert.Equal(0, vault.BoundCalls + vault.UnboundCalls);
+    }
+
     /// <summary>Incomplete module coverage is visible even with zero file-error counters and never reported as a failed job or complete clean scan.</summary>
     [Theory]
     [InlineData(0)]
@@ -83,7 +101,8 @@ public sealed partial class StartupSweepSafetyTests
             AsyncInspect = async (path, token) =>
             {
                 if (path == first) await Task.Delay(Timeout.InfiniteTimeSpan, token);
-                return new RealTimeVerdictResult { Verdict = RealTimeVerdict.Clean, SHA256 = ValidHash(path) };
+                return new RealTimeVerdictResult { Verdict = RealTimeVerdict.Clean,
+                    InspectionComplete = true, RecommendedPolicy = RealTimePolicyAction.Allow, SHA256 = ValidHash(path) };
             }
         };
         var vault = new RecordingVault();
@@ -100,6 +119,7 @@ public sealed partial class StartupSweepSafetyTests
         Assert.Equal(1, coordinator.LastResult!.TimedOutFiles);
         Assert.Equal(0, coordinator.LastResult.FailedFiles);
         Assert.False(coordinator.LastResult.Coverage.IsComplete);
+        Assert.Contains("StartupInspectionTimedOut", coordinator.LastResult.Coverage.Limitations);
         Assert.Equal(0, vault.BoundCalls + vault.UnboundCalls);
         Assert.True(File.Exists(first) && File.Exists(second));
     }
@@ -124,7 +144,7 @@ public sealed partial class StartupSweepSafetyTests
         var coordinator = new ScanCoordinatorService(new FinalReviewScanRegressionTests.ControlledScanner(), new SecurityFindingService());
         coordinator.ProgressChanged += p =>
         {
-            if (p.IsCpuTelemetryAvailable && p.CurrentFile == Path.GetFileName(file)) heartbeat.TrySetResult(p);
+            if (p.IsCpuTelemetryAvailable && p.CurrentFile == file) heartbeat.TrySetResult(p);
         };
         var sweep = new StartupSecuritySweepService(engine, new RecordingVault(), scanCoordinator: coordinator);
         var task = sweep.RunSweepAsync(new[] { file });

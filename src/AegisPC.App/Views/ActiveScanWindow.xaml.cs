@@ -6,15 +6,15 @@ using AegisPC.App.ViewModels;
 
 namespace AegisPC.App.Views
 {
+    /// <summary>Hosts the shared chooser, active presentation and real results; closing preserves existing scan cancellation semantics.</summary>
     public partial class ActiveScanWindow : Window
     {
         private static ActiveScanWindow? _activeInstance;
-        private DispatcherTimer? _animTimer;
-        private double _laserPos = 10;
-        private double _laserDir = 2.5;
 
+        /// <summary>Provides the existing scan/session/report commands; the window owns no security engine.</summary>
         public ScanViewModel ViewModel { get; }
 
+        /// <summary>Constructs presentation and subscribes window lifetime events without starting a scan or motion timer.</summary>
         public ActiveScanWindow(ScanViewModel viewModel)
         {
             ViewModel = viewModel;
@@ -23,64 +23,12 @@ namespace AegisPC.App.Views
 
             Loaded += OnWindowLoaded;
             Closed += OnWindowClosed;
-            ViewModel.PropertyChanged += OnViewModelPropertyChanged;
         }
 
-        private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        private async void OnWindowLoaded(object sender, RoutedEventArgs e)
         {
-            if (e.PropertyName == nameof(ScanViewModel.IsPaused))
-            {
-                Dispatcher.InvokeAsync(() =>
-                {
-                    if (ViewModel.IsPaused)
-                    {
-                        _animTimer?.Stop();
-                    }
-                    else if (ViewModel.IsScanning)
-                    {
-                        _animTimer?.Start();
-                    }
-                });
-            }
-            else if (e.PropertyName == nameof(ScanViewModel.IsScanning))
-            {
-                Dispatcher.InvokeAsync(() =>
-                {
-                    if (ViewModel.IsScanning && !ViewModel.IsPaused) _animTimer?.Start();
-                    else _animTimer?.Stop();
-                });
-            }
-        }
-
-        private void OnWindowLoaded(object sender, RoutedEventArgs e)
-        {
-            // Smooth, robust laser sweep animation using code-behind DispatcherTimer (Zero freeze issues)
-            _animTimer = new DispatcherTimer(DispatcherPriority.Render)
-            {
-                Interval = TimeSpan.FromMilliseconds(25)
-            };
-            _animTimer.Tick += (s, ev) =>
-            {
-                if (LaserLine != null && LaserCanvas != null)
-                {
-                    _laserPos += _laserDir;
-                    if (_laserPos > 140)
-                    {
-                        _laserPos = 140;
-                        _laserDir = -2.5;
-                    }
-                    else if (_laserPos < 10)
-                    {
-                        _laserPos = 10;
-                        _laserDir = 2.5;
-                    }
-                    Canvas.SetLeft(LaserLine, _laserPos);
-                }
-            };
-            if (ViewModel.IsScanning && !ViewModel.IsPaused)
-            {
-                _animTimer.Start();
-            }
+            ViewModel.SyncWithScanCoordinator();
+            await ViewModel.RefreshReportsAsync();
         }
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
@@ -109,8 +57,6 @@ namespace AegisPC.App.Views
 
         private void OnWindowClosed(object? sender, EventArgs e)
         {
-            _animTimer?.Stop();
-            ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
             if (_activeInstance == this) _activeInstance = null;
         }
 

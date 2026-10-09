@@ -28,12 +28,16 @@ public sealed class GuardianHealthMonitor : IGuardianHealthMonitor
         {
             var now = _time.GetUtcNow();
             var limits = new List<string>();
-            if (_observers == 0) limits.Add("NoCriticalObserversVerified");
-            if (!_vault) limits.Add("ExclusiveVaultOwnershipNotVerified");
             int missed = _heartbeat == null ? 0 : (int)Math.Min(int.MaxValue, Math.Max(0, (now - _heartbeat.Value).TotalSeconds / 5));
-            var state = _maintenanceUntil > now ? GuardianHealthState.Maintenance : _heartbeat == null ? GuardianHealthState.Unverified :
+            bool fresh = _heartbeat.HasValue && _heartbeat <= now && missed < 3;
+            int observers = fresh ? _observers : 0;
+            bool vault = fresh && _vault;
+            if (!fresh) limits.Add("CoreHealthLeaseUnavailableOrExpired");
+            if (observers == 0) limits.Add("NoCriticalObserversVerified");
+            if (!vault) limits.Add("ExclusiveVaultOwnershipNotVerified");
+            var state = _maintenanceUntil > now ? GuardianHealthState.Maintenance : _heartbeat == null || _heartbeat > now ? GuardianHealthState.Unverified :
                 missed >= 3 ? GuardianHealthState.MissingHeartbeat : missed > 0 || limits.Count != 0 ? GuardianHealthState.Degraded : GuardianHealthState.Healthy;
-            return new(state, _heartbeat, missed, _observers, _vault, limits.AsReadOnly());
+            return new(state, _heartbeat, missed, observers, vault, limits.AsReadOnly());
         }
     }
     /// <summary>Recommends at most three attempts per ten minutes, with 5/15/60-second cooldowns. No restart is executed here.</summary>

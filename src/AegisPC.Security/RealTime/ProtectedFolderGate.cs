@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Security.Cryptography;
 using AegisPC.Core.Models;
 using AegisPC.Core.Helpers;
 using Microsoft.Extensions.Logging;
@@ -78,19 +79,21 @@ namespace AegisPC.Security.RealTime
             get { lock (_lock) return _allowedApps.ToList(); }
         }
 
-        public ProtectedFolderGate(ILogger? logger = null)
+        /// <summary>Loads metadata in the default user store, or an isolated explicit store.
+        /// An explicit store starts empty instead of seeding real personal folders; construction installs no enforcement.</summary>
+        public ProtectedFolderGate(ILogger? logger = null, string? storageDirectory = null)
         {
             _logger = logger;
-            var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AegisPC");
+            var dataDir = storageDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AegisPC");
             Directory.CreateDirectory(dataDir);
             _storageFilePath = Path.Combine(dataDir, "protected_folders.json");
             _allowedAppsFilePath = Path.Combine(dataDir, "allowed_ransomware_apps.json");
 
-            LoadProtectedDirsFromDisk();
+            LoadProtectedDirsFromDisk(seedDefaults: storageDirectory == null);
             LoadAllowedAppsFromDisk();
         }
 
-        private void LoadProtectedDirsFromDisk()
+        private void LoadProtectedDirsFromDisk(bool seedDefaults)
         {
             lock (_lock)
             {
@@ -119,6 +122,7 @@ namespace AegisPC.Security.RealTime
                     _logger?.LogWarning(ex, "Failed to load protected folders from disk.");
                 }
 
+                if (!seedDefaults) return;
                 // Initialize default user folders (Controlled Folder Access)
                 var user = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 var candidateFolders = new List<string>
@@ -229,8 +233,8 @@ namespace AegisPC.Security.RealTime
         }
 
         /// <summary>
-        /// Adds an explicit, fully qualified executable path to the protected-folder allowlist.
-        /// Relative names are rejected because any program can copy a trusted display name.
+        /// Records an explicit local executable path and its current SHA-256 identity.
+        /// Unreadable/reparse targets are rejected; replacing a file invalidates this observation allowance.
         /// </summary>
         public void AddAllowedApplication(string executablePath, string? appName = null)
         {
@@ -244,6 +248,8 @@ namespace AegisPC.Security.RealTime
             try
             {
                 string canonicalPath = Path.GetFullPath(executablePath);
+                string? contentHash = ReadApplicationHash(canonicalPath);
+                if (contentHash == null) return;
                 lock (_lock)
                 {
                     if (!_allowedApps.Any(a =>
@@ -254,6 +260,7 @@ namespace AegisPC.Security.RealTime
                         _allowedApps.Add(new AllowedRansomwareApplication
                         {
                             ExecutablePath = canonicalPath,
+                            SHA256 = contentHash,
                             ApplicationName = appName ?? Path.GetFileNameWithoutExtension(canonicalPath),
                             IsSigned = false,
                             IsSystemWhitelisted = false,
@@ -325,8 +332,9 @@ namespace AegisPC.Security.RealTime
         }
 
         /// <summary>
-        /// Allows only this process's exact executable or a user-listed canonical absolute path.
-        /// Product-directory membership, display names, and relative entries confer no trust.
+        /// Matches a user-listed canonical path AND its recorded content hash.
+        /// Legacy path-only entries, changed content and product paths confer no trust.
+        /// This observation check is not an identity-bound native write authorization.
         /// </summary>
         public bool IsApplicationAllowed(string executablePath)
         {
@@ -339,26 +347,39 @@ namespace AegisPC.Security.RealTime
             try
             {
                 string candidate = Path.GetFullPath(executablePath);
-                string? currentExecutable = Environment.ProcessPath;
-                if (!string.IsNullOrWhiteSpace(currentExecutable) &&
-                    candidate.Equals(Path.GetFullPath(currentExecutable), StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-
+                string? expectedHash;
                 lock (_lock)
                 {
-                    return _allowedApps.Any(application =>
+                    expectedHash = _allowedApps.FirstOrDefault(application =>
                         !string.IsNullOrWhiteSpace(application.ExecutablePath) &&
                         Path.IsPathFullyQualified(application.ExecutablePath) &&
                         candidate.Equals(Path.GetFullPath(application.ExecutablePath),
-                            StringComparison.OrdinalIgnoreCase));
+                            StringComparison.OrdinalIgnoreCase))?.SHA256;
                 }
+                if (expectedHash == null || expectedHash.Length != 64 || !expectedHash.All(Uri.IsHexDigit)) return false;
+                string? actualHash = ReadApplicationHash(candidate);
+                return actualHash != null && actualHash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase);
             }
             catch (Exception ex)
             {
                 _logger?.LogDebug(ex, "Invalid allowed-application path {Path}.", executablePath);
                 return false;
+            }
+        }
+
+        private string? ReadApplicationHash(string path)
+        {
+            try
+            {
+                if (!ImplicitLocalPathPolicy.IsEligible(path)) return null;
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+                    64 * 1024, FileOptions.SequentialScan);
+                return Convert.ToHexString(SHA256.HashData(stream));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                _logger?.LogWarning(ex, "Allowed application content identity could not be verified.");
+                return null;
             }
         }
     }

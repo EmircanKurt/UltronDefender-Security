@@ -6,8 +6,8 @@ public partial class RealTimeProtectionEngine : IRealTimeCoverageProvider
     public RealTimeCoverageSnapshot CaptureCoverage()
     {
         lock (_lock)
-            return new RealTimeCoverageSnapshot(_watchers.Count, _coverageDegraded || _mediaInspections.Values.Any(x => x.State == "Partial"),
-                _reconciliationRunning || _reconciliationRoots.Count > 0 || _mediaInspections.Values.Any(x => x.State is "Pending" or "Scanning"),
+            return new RealTimeCoverageSnapshot(_watchers.Count, _coverageDegraded || _inspectionGaps.Count > 0 || _mediaInspections.Values.Any(x => x.State == "Partial"),
+                _reconciliationRunning || _reconciliationRoots.Count > 0 || _pendingInspectionRetries.Count > 0 || _mediaInspections.Values.Any(x => x.State is "Pending" or "Scanning"),
                 _eventIngestor.PendingEventsCount, _eventIngestor.DroppedEventsCount, _watcherErrorCount);
     }
 }

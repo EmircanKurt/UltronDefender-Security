@@ -25,6 +25,8 @@ namespace AegisPC.Infrastructure.Configuration
         public bool OnboardingCompleted { get; set; } = false;
         public DateTime? LastHealthCheck { get; set; }
         public bool IsFileProtectionEnabled { get; set; } = true;
+        /// <summary>Service-owned temporary file-shield pause; UI shutdown must not cancel restoration.</summary>
+        public AegisPC.Core.Models.ProtectionPauseState? FileProtectionPause { get; set; }
         public bool IsRansomwareShieldEnabled { get; set; } = true;
         public bool IsNetworkProtectionEnabled { get; set; } = false;
         public bool EnableAutoQuarantine { get; set; } = true;

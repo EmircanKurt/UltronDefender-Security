@@ -18,6 +18,7 @@ namespace AegisPC.Security.Scanning
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(filePath)) return string.Empty;
 
+            using var hashMeasurement = ScanStageMeasurements.Measure(ScanStageTiming.Hash);
             try
             {
                 using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
@@ -26,14 +27,15 @@ namespace AegisPC.Security.Scanning
                 var hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
                 return Convert.ToHexString(hashBytes).ToLowerInvariant();
             }
-            catch (IOException ex) when (ex.HResult == unchecked((int)0x800700E1) || ex.Message.Contains("virüs", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("virus", StringComparison.OrdinalIgnoreCase))
+            catch (IOException ex) when (AegisPC.Core.Exceptions.OperatingSystemFileBlockException.TryGetKind(ex, out _))
             {
-                // Windows Win32 ERROR_VIRUS_INFECTED (0x800700E1): Dosya işletim sistemi/Defender tarafından virüs içerdiği gerekçesiyle kilitlendi
-                return "VIRUS_INFECTED_OS_BLOCKED";
+                AegisPC.Core.Exceptions.OperatingSystemFileBlockException.TryGetKind(ex, out var kind);
+                throw new AegisPC.Core.Exceptions.OperatingSystemFileBlockException(kind, ex);
             }
             catch (OperationCanceledException) { throw; }
-            catch (Exception)
+            catch (Exception ex)
             {
+                System.Diagnostics.Trace.TraceWarning("SHA-256 unavailable ({0}); no content identity was produced.", ex.GetType().Name);
                 return string.Empty;
             }
         }
@@ -43,6 +45,7 @@ namespace AegisPC.Security.Scanning
             cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(filePath)) return string.Empty;
 
+            using var hashMeasurement = ScanStageMeasurements.Measure(ScanStageTiming.Hash);
             try
             {
                 using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,

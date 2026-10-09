@@ -28,9 +28,12 @@ public partial class FileScannerService
         {
             var sw = Stopwatch.StartNew();
             FileContentClassification? classification = null;
-            FileScanDetailedResult Classified(FileScanDetailedResult detailed)
+            FileScanDetailedResult Classified(FileScanDetailedResult detailed, bool? inspectionComplete = null)
             {
                 detailed.ContentClassification = classification;
+                detailed.InspectionComplete = inspectionComplete ??
+                    (detailed.Outcome == FileScanOutcome.Success ? true :
+                     detailed.Outcome == FileScanOutcome.Timeout || classification?.IsComplete == false ? false : null);
                 return detailed;
             }
             long policyRevision = DetectionPolicyRevision.Current;
@@ -56,7 +59,8 @@ public partial class FileScannerService
                 }
 
                 var ext = fileInfo.Extension.ToLowerInvariant();
-                classification = await _contentClassifier.ClassifyAsync(scanLock, ext, linkedCts.Token);
+                using (ScanStageMeasurements.Measure(ScanStageTiming.Content))
+                    classification = await _contentClassifier.ClassifyAsync(scanLock, ext, linkedCts.Token);
                 ArchiveScanResult? completedArchiveInspection = null;
 
                 // Multi-Tier Caching: Değişmemiş temiz dosyalar için derin dedektör taramasını atla
@@ -76,20 +80,14 @@ public partial class FileScannerService
 
                 // 1. SHA256 Hesaplama & Güvenli Beyaz Liste / Çözüldü & Fast-Path WHQL İmza
                 var (sha256, isAllowlisted, isMicrosoftBypassed) = await _hashMatcher.EvaluateHashAndAllowlistAsync(path, linkedCts.Token, cache.VerifiedHash);
-                if (isAllowlisted || isMicrosoftBypassed)
-                {
-                    fileInfo.Refresh();
-                    if (classification.IsComplete)
-                        _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, null, sha256, isAllowlisted, isMicrosoftBypassed, policyRevision);
-                    return Classified(classification.IsComplete
-                        ? FileScanDetailedResult.CreateSuccess(path, null, sw.Elapsed, isSignedClean: true)
-                        : FileScanDetailedResult.CreateFailed(path, string.Join("; ", classification.CoverageLimitations), sw.Elapsed));
-                }
+                if (sha256 == "VIRUS_INFECTED_OS_BLOCKED")
+                    throw new AegisPC.Core.Exceptions.OperatingSystemFileBlockException(AegisPC.Core.Exceptions.OperatingSystemFileBlockKind.ThreatBlocked);
 
                 cancellationToken.ThrowIfCancellationRequested();
 
                 // A positive whole-file hash must not be lost behind a container parser limit.
-                if (MalwareSignatureDatabase.CheckHash(sha256).IsMatched || ThreatSignatureDatabase.CheckHash(sha256).IsMatched)
+                bool knownThreat = MalwareSignatureDatabase.CheckHash(sha256).IsMatched || ThreatSignatureDatabase.CheckHash(sha256).IsMatched;
+                if (knownThreat)
                 {
                     var knownInspection = await _pupCoordinator.AnalyzeLockedContentDetailedAsync(path, fileInfo, sha256, classification, null, scanLock, linkedCts.Token);
                     var knownFinding = knownInspection.Finding;
@@ -99,77 +97,24 @@ public partial class FileScannerService
                             _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, knownFinding, sha256, false, false, policyRevision);
                         return Classified(knownInspection.IsComplete
                             ? FileScanDetailedResult.CreateSuccess(path, knownFinding, sw.Elapsed)
-                            : FileScanDetailedResult.CreateFailed(path, string.Join("; ", knownInspection.CoverageLimitations), sw.Elapsed, knownFinding));
+                            : FileScanDetailedResult.CreateFailed(path, string.Join("; ", knownInspection.CoverageLimitations), sw.Elapsed, knownFinding), knownInspection.IsComplete);
                     }
                 }
 
-                // 2. Arşiv Dosyası Güvenlik Taraması (Zip bomb, path traversal, nested payload)
-                // Kural 27 gereğince: Yol güveni tamamen kaldırıldı (isGameDir = false)
-                byte[] containerHeader = new byte[6];
-                int headerBytes = await scanLock.ReadAtLeastAsync(containerHeader,
-                    (int)Math.Min(fileInfo.Length, containerHeader.Length), false, linkedCts.Token);
-                bool zipHeader = headerBytes >= 2 && containerHeader[0] == 0x50 && containerHeader[1] == 0x4b;
-                if (classification.RequiresZipInspection || zipHeader || ext is ".zip" or ".jar" or ".nupkg" or ".apk" or ".docx" or ".xlsx" or ".pptx" or ".docm" or ".xlsm" or ".pptm" or ".odt" or ".ods" or ".whl")
+                if (!knownThreat && (isAllowlisted || isMicrosoftBypassed))
                 {
-                    var archiveResult = await _archiveScanner.ScanArchiveAsync(path, linkedCts.Token, classification.RequiresZipInspection);
-                    completedArchiveInspection = archiveResult;
-                    if (archiveResult.Findings.Count > 0)
-                    {
-                        var topFinding = archiveResult.Findings.OrderByDescending(f => f.RiskScore).First();
-                        if (topFinding.Status != FindingStatus.Resolved && !topFinding.IsAllowlisted)
-                        {
-                            // Containment targets the outer, locked container, not a synthetic "zip -> member" path.
-                            topFinding.RiskReasons.Add($"Archive member: {topFinding.ObjectPath}; member SHA-256: {topFinding.SHA256}");
-                            topFinding.ObjectPath = path;
-                            topFinding.ObjectName = fileInfo.Name;
-                            topFinding.SHA256 = sha256;
-                            if (_findingService != null)
-                            {
-                                await _findingService.AddFindingAsync(topFinding, linkedCts.Token);
-                            }
-                            fileInfo.Refresh();
-                            if (archiveResult.IsComplete && classification.IsComplete)
-                                _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, topFinding, sha256, false, false, policyRevision);
-                            else
-                                return Classified(FileScanDetailedResult.CreateFailed(path,
-                                    archiveResult.CoverageLimitation ?? string.Join("; ", classification.CoverageLimitations.DefaultIfEmpty("Arşiv incelemesi kısmi kaldı.")), sw.Elapsed, topFinding));
-                            return Classified(FileScanDetailedResult.CreateSuccess(path, topFinding, sw.Elapsed, isFromCache: false, isSignedClean: false));
-                        }
-                    }
-                    if (!archiveResult.IsComplete)
-                        return Classified(FileScanDetailedResult.CreateFailed(path, archiveResult.CoverageLimitation ?? "Arşiv incelemesi kısmi kaldı.", sw.Elapsed));
-                }
-                else if (ArchiveEntryInspector.HasContainerHeader(containerHeader.AsSpan(0, headerBytes)) ||
-                    ext is ".7z" or ".rar" or ".iso" or ".img" or ".tar" or ".gz" or ".cab" or ".bz2" or ".xz")
-                {
-                    // Whole-file hash remains checked; unsupported unpacking must never be cached as full coverage.
-                    return Classified(FileScanDetailedResult.CreateFailed(path, "Bu kapsayıcının içeriğini açma desteği yok; tam tarama sonucu verilemedi.", sw.Elapsed));
+                    // Permission to skip is not inspected clean content and must not be cached as such.
+                    return Classified(FileScanDetailedResult.CreateSuccess(path, null, sw.Elapsed, isSignedClean: true), inspectionComplete: false);
                 }
 
-                if (sha256 == "VIRUS_INFECTED_OS_BLOCKED")
+                // Route by observed structure, not extension. The common hub combines all
+                // member evidence with outer-file evidence, even when archive coverage is partial.
+                if (classification.RequiresZipInspection)
                 {
-                    var osFinding = new SecurityFinding
-                    {
-                        ObjectPath = path,
-                        ObjectName = fileInfo.Name,
-                        RiskLevel = RiskLevel.ConfirmedMalicious,
-                        RiskScore = 100,
-                        Category = FindingCategory.KnownMalwareHash,
-                        Title = $"🚨 Zararlı Yazılım / EICAR: {fileInfo.Name}",
-                        Description = "Dosya işletim sistemi çekirdeği tarafından virüslü olduğu gerekçesiyle kilitlendi (ERROR_VIRUS_INFECTED).",
-                        ConfidenceLevel = ConfidenceLevel.High,
-                        FirstObserved = DateTime.UtcNow,
-                        LastObserved = DateTime.UtcNow,
-                        Status = FindingStatus.Active
-                    };
-                    if (_findingService != null)
-                    {
-                        await _findingService.AddFindingAsync(osFinding, linkedCts.Token);
-                    }
-                    fileInfo.Refresh();
-                    _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, osFinding, null, false, false, policyRevision);
-                    return Classified(FileScanDetailedResult.CreateSuccess(path, osFinding, sw.Elapsed, isFromCache: false, isSignedClean: false));
+                    using (ScanStageMeasurements.Measure(ScanStageTiming.Content))
+                        completedArchiveInspection = await _archiveScanner.ScanArchiveAsync(path, linkedCts.Token, contentIdentifiedZip: true);
                 }
+
 
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -186,7 +131,7 @@ public partial class FileScannerService
                     _hashMatcher.SetCache(path, fileInfo.Length, fileInfo.LastWriteTimeUtc, finding, sha256, false, false, policyRevision);
                 return Classified(inspection.IsComplete
                     ? FileScanDetailedResult.CreateSuccess(path, finding, sw.Elapsed, isFromCache: false, isSignedClean: false)
-                    : FileScanDetailedResult.CreateFailed(path, string.Join("; ", inspection.CoverageLimitations), sw.Elapsed, finding));
+                    : FileScanDetailedResult.CreateFailed(path, string.Join("; ", inspection.CoverageLimitations), sw.Elapsed, finding), inspection.IsComplete);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -202,6 +147,13 @@ public partial class FileScannerService
             catch (Exception ex)
             {
                 _logger?.LogTrace(ex, "Error scanning file {Path}", path);
+                if (AegisPC.Core.Exceptions.OperatingSystemFileBlockException.TryGetKind(ex, out var block))
+                {
+                    var unavailable = FileScanDetailedResult.CreateFailed(path,
+                        "Windows güvenlik sağlayıcısı erişimi engelledi; Ultron içerik incelemesi tamamlanamadı.", sw.Elapsed);
+                    unavailable.OperatingSystemBlock = block;
+                    return Classified(unavailable, inspectionComplete: false);
+                }
                 return Classified(FileScanDetailedResult.CreateFailed(path, ex.Message, sw.Elapsed));
             }
         }

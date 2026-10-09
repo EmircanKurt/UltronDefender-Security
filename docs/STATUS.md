@@ -1,5 +1,9 @@
 # Development verification
 
+## Current safety / light-theme preview — 9 October 2026
+
+The [9 October report](reports/GUARD_SCAN_SAFETY_2026-10-09.md) supersedes older current-preview labels below. Selected positive-allowlist regressions: **537 passed, 0 failed, 0 skipped**. No service/driver/firewall deployment or live malware test was performed. Native Guardian actions and independent vault ownership remain gated. Preview source and setup must be treated as development artifacts, not production protection.
+
 ## Current scan/resource preview — 6 October 2026
 
 See [the scan/resource evidence report](reports/RESOURCE_CORRECTNESS_2026-10-06.md) for the current implementation, selected tests, measured limits and remaining gates. The consolidated preview includes the earlier dependencies described below. It remains supplemental experimental protection; native minifilter enforcement, deployed multi-user integration and independent malware efficacy are not validated.

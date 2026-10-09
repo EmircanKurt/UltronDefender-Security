@@ -78,6 +78,9 @@ namespace AegisPC.App.ViewModels
         private bool enableAutoQuarantine = true;
 
         [ObservableProperty]
+        private string automaticContainmentStatus = "Otomatik müdahale bu pilotta kapalı; tespit ve uyarılar devam eder.";
+
+        [ObservableProperty]
         private int autoQuarantineThreshold = 85;
 
         [ObservableProperty]
@@ -623,6 +626,9 @@ namespace AegisPC.App.ViewModels
                 };
                 SelectedResourceModeItem = ResourceModes.FirstOrDefault(m => m.Mode == status.ScanResourceMode) ?? ResourceModes[0];
                 EnableAutoQuarantine = status.EnableAutoQuarantine;
+                AutomaticContainmentStatus = status.AutomaticContainmentAvailable
+                    ? "Otomatik müdahale uygulanabilir; anahtar kayıtlı tercihinizi belirler."
+                    : "Otomatik müdahale bu pilotta kapalı; tespit ve uyarılar devam eder.";
                 AutoQuarantineThreshold = Math.Clamp(status.AutoQuarantineThreshold, 0, 100);
                 if (_settingsService != null)
                 {

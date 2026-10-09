@@ -137,6 +137,7 @@ public sealed class SelfPathTrustBoundaryTests : IDisposable
             Verdict = DetectionVerdict.ConfirmedMalicious,
             RiskScore = 100,
             SHA256 = hash,
+            IsComplete = true,
             ThreatTitle = "Synthetic absolute signature",
             Evidences = new List<SecurityEvidence>
             {

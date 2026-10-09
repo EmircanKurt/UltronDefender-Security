@@ -30,6 +30,30 @@ public partial class DirectoryWalker
             ? EnumerateDirectorySafelyAsync(path, recursive, enqueue, ct, pauseEvent) : Task.CompletedTask;
     }
 
+    private Task EnumerateRecentDirectoryAsync(string path, Func<string, Task> enqueue,
+        CancellationToken ct, ManualResetEventSlim? pauseEvent)
+    {
+        DateTime now = DateTime.UtcNow;
+        return EnumerateImplicitDirectoryAsync(path, true, async file =>
+        {
+            ct.ThrowIfCancellationRequested();
+            bool inspect = true;
+            try
+            {
+                var info = new FileInfo(file);
+                info.Refresh();
+                if (!info.Exists) _coverage.Value?.RecordLimitation("QuickRecencyMetadataUnavailable");
+                else inspect = QuickScanRecencyPolicy.ShouldInspect(info.CreationTimeUtc, info.LastWriteTimeUtc, now);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                _coverage.Value?.RecordLimitation("QuickRecencyMetadataUnavailable");
+                Log.Debug(ex, "Quick recency is unavailable; file remains in scope.");
+            }
+            if (inspect) await enqueue(file).ConfigureAwait(false);
+        }, ct, pauseEvent);
+    }
+
     private async Task DispatchInspectionFileAsync(string file, Func<string, Task> enqueue, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();

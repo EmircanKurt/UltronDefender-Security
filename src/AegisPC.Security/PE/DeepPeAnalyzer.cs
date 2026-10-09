@@ -77,7 +77,7 @@ namespace AegisPC.Security.PE
                 if (result.IsPeFile)
                 {
                     var peFile = new PeFile(buffer);
-                    await ParseAuthenticodeAsync(filePath, peFile, result).ConfigureAwait(false);
+                    await ParseAuthenticodeAsync(filePath, peFile, result, cancellationToken).ConfigureAwait(false);
                 }
                 
                 return result;
@@ -376,13 +376,14 @@ namespace AegisPC.Security.PE
             }
         }
 
-        private async Task ParseAuthenticodeAsync(string filePath, PeFile peFile, PeDeepAnalysisResult result)
+        private async Task ParseAuthenticodeAsync(string filePath, PeFile peFile, PeDeepAnalysisResult result, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return;
 
             try
             {
-                var sigInfo = await _signatureVerifier.VerifySignatureAsync(filePath).ConfigureAwait(false);
+                var sigInfo = await _signatureVerifier.VerifySignatureAsync(filePath, cancellationToken).ConfigureAwait(false);
+                result.Certificate.VerificationStatus = sigInfo.VerificationStatus;
                 if (sigInfo != null && sigInfo.IsSigned)
                 {
                     result.Certificate.IsSigned = true;
@@ -402,6 +403,7 @@ namespace AegisPC.Security.PE
                     }
                 }
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
                 _logger?.LogTrace(ex, "Authenticode chain verification error on {Path}", filePath);

@@ -12,12 +12,24 @@ public interface IProtectionActionValidator
     /// <summary>Revalidates current evidence, target identity and authorization, including actor creation identity.</summary>
     Task<ProtectionActionValidation> ValidateAsync(ProtectionEvidenceSnapshot snapshot, ProtectionActionKind kind,
         ProtectionCaller caller, CancellationToken cancellationToken);
+    /// <summary>
+    /// Acquires live proof and retains its native target through execution. Missing implementations
+    /// return no lease: a detached validation record cannot authorize a later native operation.
+    /// </summary>
+    Task<IValidatedProtectionTarget?> AcquireAsync(ProtectionEvidenceSnapshot snapshot, ProtectionActionKind kind,
+        ProtectionCaller caller, CancellationToken cancellationToken) => Task.FromResult<IValidatedProtectionTarget?>(null);
+}
+/// <summary>Owns the live verified target; its implementation must keep the native handle until disposal.</summary>
+public interface IValidatedProtectionTarget : IAsyncDisposable
+{
+    /// <summary>Proof belonging to this retained target, not to a separately reopened path or PID.</summary>
+    ProtectionActionValidation Validation { get; }
 }
 /// <summary>Executes only against independently locked and reverified objects; never infers success from an attempted call.</summary>
 public interface IProtectionActionExecutor
 {
     /// <summary>Produces an observed receipt; restore/disable adapters must durably save original state first.</summary>
-    Task<ActionReceipt> ExecuteAsync(ActionPermit permit, CancellationToken cancellationToken);
+    Task<ActionReceipt> ExecuteAsync(ActionPermit permit, IValidatedProtectionTarget target, CancellationToken cancellationToken);
 }
 /// <summary>Fail-closed adapter until authenticated Guardian ownership, native identity and VM gates are connected.</summary>
 public sealed class PilotGatedActionAdapter : IProtectionActionValidator, IProtectionActionExecutor
@@ -31,7 +43,7 @@ public sealed class PilotGatedActionAdapter : IProtectionActionValidator, IProte
             null, null, "GuardianNativeIdentityAndVmGatePending"));
     }
     /// <summary>Never touches a real process, registry, file or quarantine vault in the unapproved pilot.</summary>
-    public Task<ActionReceipt> ExecuteAsync(ActionPermit permit, CancellationToken cancellationToken)
+    public Task<ActionReceipt> ExecuteAsync(ActionPermit permit, IValidatedProtectionTarget target, CancellationToken cancellationToken)
         => Task.FromResult(new ActionReceipt(Guid.NewGuid(), permit.Id, permit.Kind,
             ProtectionActionOutcome.PendingValidation, "GuardianNativeIdentityAndVmGatePending", DateTimeOffset.UtcNow));
 }

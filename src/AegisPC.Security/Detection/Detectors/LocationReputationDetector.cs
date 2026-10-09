@@ -69,6 +69,11 @@ namespace AegisPC.Security.Detection.Detectors
                 isSigned = sigInfo.IsSigned;
                 isSignatureValid = sigInfo.IsValid;
                 publisher = sigInfo.Publisher;
+                if (sigInfo.VerificationStatus == AegisPC.Core.Enums.SignatureVerificationStatus.Unknown)
+                {
+                    context.CoverageLimitations.Add("SignatureVerificationUnavailable");
+                    return list;
+                }
 
                 if (isSigned && isSignatureValid)
                 {

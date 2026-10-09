@@ -16,6 +16,12 @@ public class SecurityFinding
     public FindingCategory Category { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    /// <summary>Identifies the stable scanner rule set; an absent value denotes a legacy observation, not current proof.</summary>
+    public string RuleSetVersion { get; set; } = string.Empty;
+    /// <summary>Records whether the content inspection completed; legacy observations default to incomplete.</summary>
+    public bool InspectionComplete { get; set; }
+    /// <summary>Preserves bounded inspection gaps separately from risk evidence.</summary>
+    public List<string> CoverageLimitations { get; set; } = new();
     public List<string> RiskReasons { get; set; } = new();
     public ConfidenceLevel ConfidenceLevel { get; set; }
     public bool IsAllowlisted { get; set; }

@@ -2,24 +2,16 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:helpers="clr-namespace:AegisPC.App.Helpers">
 
-    <!-- ══════════════════════════════════════════════════════════════════════════════════
-         ULTRON DEFENDER TOTAL SECURITY — BITDEFENDER-INSPIRED ENTERPRISE TYPOGRAPHY SYSTEM
-         Hierarchy:
-         • FontHeading: Segoe UI Variable Display / Inter Bold / Semibold for crisp authority
-         • FontSans: Segoe UI Variable Text / Inter Regular for readable, airy interface text
-         • FontMono: Cascadia Code / Consolas for tabular hashes, PIDs, paths, and technical data
-         • All handwriting/script/italic styles strictly eliminated across the entire design system.
-         ══════════════════════════════════════════════════════════════════════════════════ -->
-
-    <!-- ── 1. FONT FAMILY DEFINITIONS (CODEX GÖRÜNÜMÜ: Segoe UI Variable önde, Inter fallback) ── -->
-    <FontFamily x:Key="FontBrand">Segoe UI Variable Display, Segoe UI, pack://application:,,,/UltronDefender;component/Resources/Fonts/#Inter Display Medium, pack://application:,,,/UltronDefender;component/Resources/Fonts/#Inter, sans-serif</FontFamily>
-    <FontFamily x:Key="FontHeading">Segoe UI Variable Display, Segoe UI, pack://application:,,,/UltronDefender;component/Resources/Fonts/#Inter, Aptos, sans-serif</FontFamily>
+    <!-- One Windows UI typeface for branding, headings and body text.
+         Technical identities retain a monospace face; font choices are not security signals. -->
+    <FontFamily x:Key="FontBrand">Segoe UI</FontFamily>
+    <FontFamily x:Key="FontHeading">Segoe UI</FontFamily>
 
     <!-- UI Standard Sans-Serif Body & Interface Font -->
-    <FontFamily x:Key="FontSans">Segoe UI Variable Text, Segoe UI, pack://application:,,,/UltronDefender;component/Resources/Fonts/#Inter, Aptos, sans-serif</FontFamily>
+    <FontFamily x:Key="FontSans">Segoe UI</FontFamily>
 
-    <!-- Monospace & Tabular Data Font Stack (Hashes, PIDs, Paths, Hex) -->
-    <FontFamily x:Key="FontMono">Cascadia Code, Consolas, Segoe UI Mono, Courier New, monospace</FontFamily>
+    <!-- Monospace technical data: hashes, PIDs, paths and hexadecimal values. -->
+    <FontFamily x:Key="FontMono">Consolas</FontFamily>
 
     <!-- ── 2. TYPOGRAPHY STYLES ── -->
 

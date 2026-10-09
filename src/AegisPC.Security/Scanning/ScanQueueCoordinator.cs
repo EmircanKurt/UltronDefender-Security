@@ -204,6 +204,7 @@ namespace AegisPC.Security.Scanning
             Volatile.Write(ref _activeResourceManager, resourceManager);
             try
             {
+            resourceManager.ConfigureScanType(scanType);
             resourceManager.ConfigureTarget(targetPath);
             if (scanType == ScanType.Full || string.IsNullOrWhiteSpace(targetPath)) resourceManager.ConfigureMultipleVolumes();
             resourceManager.RefreshProfile();
@@ -278,6 +279,7 @@ namespace AegisPC.Security.Scanning
             // Üretici Görevi (Directory Walker)
             var producerTask = Task.Run(async () =>
             {
+                using var producerStages = measurements.BeginPipelineStages();
                 try
                 {
                     await producerAction(TryQueueFileAsync);
@@ -345,13 +347,15 @@ namespace AegisPC.Security.Scanning
                             Interlocked.Increment(ref _activeWorkers);
 
                             FileScanDetailedResult? detailedResult = null;
-                            using var fileMeasurement = measurements.Begin(filePath, volumeLease.QueuedAt);
+                            ScanMeasurementRecorder.Attempt? fileMeasurement = null;
                             try
                             {
                                 await WaitPauseAsync(cancellationToken);
                                 await RealtimeScanPriority.WaitAsync(cancellationToken);
 
+                                fileMeasurement = measurements.Begin(filePath, volumeLease.QueuedAt);
                                 detailedResult = await scanFileFunc(filePath, cancellationToken);
+                                fileMeasurement.Complete(detailedResult);
                                 switch (detailedResult.Outcome)
                                 {
                                     case FileScanOutcome.Success:
@@ -387,10 +391,12 @@ namespace AegisPC.Security.Scanning
                             catch (OperationCanceledException)
                             {
                                 // Tekil dosya zaman aşımı
+                                fileMeasurement?.Complete(FileScanOutcome.Timeout, inspectionComplete: false);
                                 Interlocked.Increment(ref timedOutFiles);
                             }
                             catch (Exception ex)
                             {
+                                fileMeasurement?.Complete(FileScanOutcome.Failed);
                                 Interlocked.Increment(ref failedFiles);
                                 Abort(ex);
                                 _logger?.LogWarning(ex, "File-analysis worker failed: {Path}", filePath);
@@ -398,6 +404,7 @@ namespace AegisPC.Security.Scanning
                             }
                             finally
                             {
+                                fileMeasurement?.Dispose();
                                 Interlocked.Decrement(ref _activeWorkers);
                                 resourceManager.ExitWorkerSlot();
 

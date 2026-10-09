@@ -45,7 +45,8 @@ namespace AegisPC.Core.Models
         /// </summary>
         public static ScanResourceProfile Create(
             ScanResourceMode mode, bool isHdd, int logicalCores, long totalRamBytes,
-            double cpuPressurePercent = 0, double memoryPressurePercent = 0, bool isOnBattery = false)
+            double cpuPressurePercent = 0, double memoryPressurePercent = 0, bool isOnBattery = false,
+            ScanType scanType = ScanType.Quick)
         {
             if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
             int cores = Math.Max(1, logicalCores);
@@ -54,6 +55,8 @@ namespace AegisPC.Core.Models
             double memory = available ? Math.Clamp(memoryPressurePercent, 0, 100) : 88;
             double cpu = available ? Math.Clamp(cpuPressurePercent, 0, 100) : 78;
             long tierMb = ramMb <= 4096 ? 256 : ramMb <= 8192 ? 512 : ramMb < 15360 ? 1024 : 2048;
+            bool capable = ramMb >= 15360 && cores >= 4;
+            if (capable && scanType == ScanType.Full && available && cpu < 70 && memory < 70 && !isOnBattery) tierMb = 4096;
             long reserveMb = Math.Max(512, ramMb / 10);
             long freeMb = (long)(ramMb * (100 - memory) / 100);
             long budgetMb = Math.Max(1, Math.Min(tierMb, freeMb - reserveMb));
@@ -85,7 +88,8 @@ namespace AegisPC.Core.Models
             maximum = Math.Min(maximum, Math.Max(1, (int)(budgetMb / 64)));
             workers = Math.Clamp(workers, 1, Math.Max(1, maximum));
             int delay = mode == ScanResourceMode.VeryLow || memory >= 92 ? 10 : mode == ScanResourceMode.Low ? 2 : 0;
-            string summary = $"Sistem Gereksinimleri • {mode} • {workers} işçi • RAM bütçesi {budgetMb:N0} MiB • CPU hedefi ~%40";
+            double cpuTarget = capable && available && !isOnBattery && cpu < 70 && memory < 85 ? 60 : 40;
+            string summary = $"Sistem Gereksinimleri • {mode} • {workers} işçi • RAM üst bütçesi {budgetMb:N0} MiB • CPU hedefi ~%{cpuTarget:0}";
             if (isHdd) summary += " • HDD/Belirsiz disk";
             if (reason.Length > 0) summary += " • " + reason;
             return new ScanResourceProfile
@@ -94,7 +98,7 @@ namespace AegisPC.Core.Models
                 ChannelCapacity = mode == ScanResourceMode.VeryLow ? 256 : 1024,
                 BatchSize = 64, DelayBetweenFilesMs = delay, YieldFrequency = delay > 0 ? 10 : 0,
                 MaxMemoryBudgetBytes = budgetMb * 1048576, IsHddRestricted = isHdd,
-                CpuTargetPercent = 40, LimitingReason = reason, SummaryText = summary,
+                CpuTargetPercent = cpuTarget, LimitingReason = reason, SummaryText = summary,
                 IsAdmissionPaused = available && memory >= 92
             };
         }

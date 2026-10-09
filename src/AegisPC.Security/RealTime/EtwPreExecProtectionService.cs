@@ -31,7 +31,6 @@ public sealed class EtwPreExecProtectionService : IEtwPreExecProtectionService
     private readonly IExclusionService? _exclusionService;
     private readonly ILogger<EtwPreExecProtectionService>? _logger;
     private readonly Func<bool> _enableAutoQuarantine;
-    private readonly Func<int> _autoQuarantineThreshold;
     private readonly object _lock = new();
     private readonly string _sessionName = $"UltronDefender_PostStart_{Environment.ProcessId}_{Guid.NewGuid():N}";
     private TraceEventSession? _session;
@@ -76,7 +75,6 @@ public sealed class EtwPreExecProtectionService : IEtwPreExecProtectionService
         _logger = logger;
         _exclusionService = exclusionService;
         _enableAutoQuarantine = enableAutoQuarantine ?? (() => true);
-        _autoQuarantineThreshold = autoQuarantineThreshold ?? (() => 85);
     }
 
     /// <summary>Starts this instance's own trace and two bounded consumers; never stops another trace.</summary>
@@ -258,12 +256,7 @@ public sealed class EtwPreExecProtectionService : IEtwPreExecProtectionService
             {
                 sha256 = Convert.ToHexString(await SHA256.HashDataAsync(source, linked.Token));
                 var info = new FileInfo(imagePath);
-                if (_exclusionService?.IsExcluded(imagePath, sha256) == true)
-                {
-                    decision.Whitelisted = true;
-                    decision.Reason = "Explicit user exclusion matched verified image content";
-                    return decision;
-                }
+                decision.Whitelisted = _exclusionService?.IsExcluded(imagePath, sha256) == true;
                 if (_scanCacheService != null)
                 {
                     var cached = await _scanCacheService.TryGetVerdictAsync(imagePath, sha256, source.Length, info.LastWriteTimeUtc, linked.Token);
@@ -279,13 +272,15 @@ public sealed class EtwPreExecProtectionService : IEtwPreExecProtectionService
                 {
                     FilePath = imagePath, SHA256 = sha256, FileSize = source.Length,
                     LastWriteTimeUtc = info.LastWriteTimeUtc, ProcessId = processId,
-                    IsRunningProcess = identity != null, CorrelationId = Guid.NewGuid().ToString("N")
+                    IsRunningProcess = identity != null, CorrelationId = Guid.NewGuid().ToString("N"),
+                    IsUserExcluded = decision.Whitelisted,
+                    SharedScan = new ScanContext(imagePath, sha256, source.Length) { LockedContent = source }
                 }, linked.Token);
                 linked.Token.ThrowIfCancellationRequested();
             }
             decision.RiskScore = detection.RiskScore;
             bool confirmed = detection.Verdict == DetectionVerdict.ConfirmedMalicious && detection.Evidences.Any(e =>
-                e.Category == EvidenceCategory.StaticSignature && e.Confidence == EvidenceConfidence.Absolute && e.ScoreContribution >= 80);
+                e.Category is EvidenceCategory.StaticSignature or EvidenceCategory.AmsiProvider && e.Confidence == EvidenceConfidence.Absolute && e.ScoreContribution >= 80);
             if (!confirmed)
             {
                 decision.Reason = !detection.IsComplete || detection.Verdict == DetectionVerdict.Unknown
@@ -294,7 +289,8 @@ public sealed class EtwPreExecProtectionService : IEtwPreExecProtectionService
                     : "Clean execution permitted";
                 return decision;
             }
-            if (!_enableAutoQuarantine() || decision.RiskScore < Math.Clamp(_autoQuarantineThreshold(), 1, 100))
+            decision.Whitelisted = false; // An exclusion is not permission to erase confirmed evidence.
+            if (!_enableAutoQuarantine())
             {
                 decision.Reason = "Confirmed threat observed; automatic quarantine disabled by user policy";
                 return decision;
@@ -306,6 +302,10 @@ public sealed class EtwPreExecProtectionService : IEtwPreExecProtectionService
                 string.Equals(Path.GetFullPath(processImage), Path.GetFullPath(imagePath), StringComparison.OrdinalIgnoreCase) &&
                 !CriticalProcesses.IsCriticalProcess(identity.ProcessName);
             bool quarantined = false;
+            var attemptId = Guid.NewGuid();
+            if (_auditLogService != null)
+                await _auditLogService.LogActionAsync(AuditAction.FileQuarantined, "EtwPostStartProtection.Intent",
+                    Path.GetFileName(imagePath), imagePath, $"Attempt={attemptId:N}; outcome pending", AuditResult.Pending, cancellationToken: ct);
             if (_quarantineService is IContentBoundQuarantineService contentBound)
                 quarantined = await contentBound.TryQuarantineFileAsync(imagePath, "ETW post-start: " + detection.ThreatTitle, sha256, ct);
             // Keep one captured process identity; never kill a newly reused PID or an unrelated DLL host.
@@ -316,13 +316,14 @@ public sealed class EtwPreExecProtectionService : IEtwPreExecProtectionService
             }
             decision.WasBlocked = quarantined;
             decision.Reason = quarantined ? "Confirmed threat quarantined after process start" : "Confirmed threat observed; content-bound quarantine unavailable or unsuccessful";
+            if (_auditLogService != null)
+                await _auditLogService.LogActionAsync(AuditAction.FileQuarantined, "EtwPostStartProtection.Outcome",
+                    Path.GetFileName(imagePath), imagePath, $"Attempt={attemptId:N}; {decision.Reason}",
+                    quarantined ? AuditResult.Success : AuditResult.Failed, cancellationToken: ct);
             if (quarantined)
             {
                 OnThreatBlocked?.Invoke(new PreExecThreatAlert { ProcessId = processId, ImagePath = imagePath,
                     CommandLine = commandLine, ThreatTitle = detection.ThreatTitle, RiskScore = detection.RiskScore });
-                if (_auditLogService != null)
-                    await _auditLogService.LogActionAsync(AuditAction.FileQuarantined, "EtwPostStartProtection",
-                        Path.GetFileName(imagePath), imagePath, decision.Reason, AuditResult.Success, cancellationToken: ct);
             }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested && timeout.IsCancellationRequested)

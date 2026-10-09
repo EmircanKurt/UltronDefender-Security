@@ -3,7 +3,6 @@ using AegisPC.Security.Scanning;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Management;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
@@ -30,7 +29,6 @@ namespace AegisPC.Security.RealTime
         private readonly List<FileSystemWatcher> _watchers = new();
         private readonly List<string> _watchedLocationsList = new();
         private CancellationTokenSource? _engineCts;
-        private ManagementEventWatcher? _usbArrivalWatcher;
         private volatile bool _isRunning;
         private readonly object _lock = new();
         private Timer? _cacheCleanupTimer;
@@ -104,6 +102,9 @@ namespace AegisPC.Security.RealTime
                 if (_isRunning) return;
                 _isRunning = true;
                 _coverageDegraded = false;
+                _arrivalInspections.Clear();
+                _inspectionGaps.Clear();
+                _pendingInspectionRetries.Clear();
                 _engineGeneration++;
                 _engineCts = new CancellationTokenSource();
 
@@ -162,12 +163,13 @@ namespace AegisPC.Security.RealTime
                 _isRunning = false;
                 _engineGeneration++;
                 _reconciliationRoots.Clear();
+                _arrivalInspections.Clear();
+                _inspectionGaps.Clear();
+                _pendingInspectionRetries.Clear();
                 _activeRecoveryTokens.Clear();
                 _mediaRoots.Clear();
                 _mediaInspections.Clear();
                 _reconciliationRunning = false;
-
-                StopUsbArrivalListener();
 
                 foreach (var w in _watchers)
                 {
@@ -211,6 +213,7 @@ namespace AegisPC.Security.RealTime
         {
             long generation;
             lock (_lock) generation = _engineGeneration;
+            ArrivalIdentity? arrivalIdentity = null;
             try
             {
                 ct.ThrowIfCancellationRequested();
@@ -227,6 +230,8 @@ namespace AegisPC.Security.RealTime
                     return false;
                 }
                 var fileName = Path.GetFileName(evt.NormalizedPath);
+                arrivalIdentity = BeginArrivalInspection(evt.NormalizedPath, generation, ct);
+                if (arrivalIdentity == null) return false;
 
                 // Stage 1: Event Captured Telemetry
                 OnActivityLogged?.Invoke(new RealTimeActivityEvent
@@ -252,9 +257,6 @@ namespace AegisPC.Security.RealTime
                     Timestamp = DateTime.Now
                 });
 
-                bool isStable = await _stabilityChecker.WaitForFileStabilityAsync(evt.NormalizedPath, ct);
-                if (!isStable || !File.Exists(evt.NormalizedPath)) return false;
-
                 // Stage 3: Progressive Instant Arrival Inspection
                 OnActivityLogged?.Invoke(new RealTimeActivityEvent
                 {
@@ -267,14 +269,13 @@ namespace AegisPC.Security.RealTime
                     Timestamp = DateTime.Now
                 });
 
-                RealTimeVerdictResult verdict;
-                using (RealtimeScanPriority.Enter())
-                    verdict = await _verdictProcessor.InspectFileAsync(evt.NormalizedPath, ct);
+                var verdict = await InspectArrivalWithRetryAsync(evt, arrivalIdentity, generation, ct);
                 ct.ThrowIfCancellationRequested();
+                if (verdict == null || !IsCurrentArrival(evt.NormalizedPath, arrivalIdentity, generation, ct)) return false;
                 verdict.EventTime = evt.Timestamp;
-                bool inspectionComplete = verdict.Verdict != RealTimeVerdict.Unknown && verdict.InspectionComplete &&
+                bool inspectionComplete = !verdict.PolicyBypassed && verdict.Verdict != RealTimeVerdict.Unknown && verdict.InspectionComplete &&
                     verdict.ContentClassification?.IsComplete != false;
-                if (!inspectionComplete) RecordInspectionGap(generation, ct);
+                RecordArrivalCoverage(evt.NormalizedPath, arrivalIdentity, generation, inspectionComplete, ct);
 
                 // Stage 4: Verdict Telemetry
                 OnActivityLogged?.Invoke(new RealTimeActivityEvent
@@ -300,6 +301,7 @@ namespace AegisPC.Security.RealTime
                         quarantined = await outcomes.EnforceQuarantineWithOutcomeAsync(evt, verdict, ct);
                     else
                         await _policyEnforcer.EnforceQuarantineAsync(evt, verdict, ct);
+                    if (!IsCurrentArrival(evt.NormalizedPath, arrivalIdentity, generation, ct)) return false;
                     verdict.ActionTime = DateTime.UtcNow;
 
                     OnActivityLogged?.Invoke(new RealTimeActivityEvent
@@ -322,6 +324,7 @@ namespace AegisPC.Security.RealTime
                 else if (verdict.RecommendedPolicy == RealTimePolicyAction.Warn)
                 {
                     await _policyEnforcer.EnforceWarningAsync(evt, verdict, ct);
+                    if (!IsCurrentArrival(evt.NormalizedPath, arrivalIdentity, generation, ct)) return false;
                     verdict.ActionTime = DateTime.UtcNow;
 
                     OnActivityLogged?.Invoke(new RealTimeActivityEvent
@@ -352,11 +355,12 @@ namespace AegisPC.Security.RealTime
                         FileName = fileName,
                         FilePath = evt.NormalizedPath,
                         Stage = "ACTION_APPLIED",
-                        Action = inspected ? "ALLOWED" : "OBSERVED_UNVERIFIED",
+                        Action = verdict.PolicyBypassed ? "POLICY_BYPASSED" : inspected ? "ALLOWED" : "OBSERVED_UNVERIFIED",
                         RiskScore = verdict.RiskScore,
                         Verdict = verdict.Verdict.ToString(),
                         TimeToActionMs = verdict.TimeToActionMs,
-                        Message = inspected ? "İnceleme tamamlandı; tehdit bulunmadı" : "İnceleme tamamlanamadı; dosya temiz ilan edilmedi",
+                        Message = verdict.PolicyBypassed ? "Kullanıcı istisnası uygulandı; dosyanın temiz olduğu doğrulanmadı" :
+                            inspected ? "İnceleme tamamlandı; tehdit bulunmadı" : "İnceleme tamamlanamadı; dosya temiz ilan edilmedi",
                         Severity = inspected ? "Success" : "Warning",
                         Timestamp = DateTime.Now
                     });
@@ -372,6 +376,7 @@ namespace AegisPC.Security.RealTime
                 _logger?.LogTrace(ex, "Error processing normalized real-time event for {Path}", evt.NormalizedPath);
                 throw;
             }
+            finally { EndArrivalInspection(evt.NormalizedPath, arrivalIdentity); }
         }
 
         private void RecordInspectionGap(long generation, CancellationToken ct)

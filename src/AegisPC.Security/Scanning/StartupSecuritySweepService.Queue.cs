@@ -56,11 +56,19 @@ public partial class StartupSecuritySweepService
         }
         tasks.Add(Task.Run(async () =>
         {
+            using var producerStages = measurements.BeginPipelineStages();
             try
             {
                 var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var file in candidates)
+                using var candidateEnumerator = candidates.GetEnumerator();
+                while (true)
                 {
+                    bool hasNext;
+                    // Measure lazy discovery only; bounded input writes/admission delays are recorded separately.
+                    using (ScanStageMeasurements.Measure(ScanStageTiming.Discovery))
+                        hasNext = candidateEnumerator.MoveNext();
+                    if (!hasNext) break;
+                    var file = candidateEnumerator.Current;
                     if (roots.Add(Path.GetPathRoot(file.FullName) ?? "unknown"))
                     {
                         if (roots.Count == 1) resources.ConfigureTarget(file.FullName);
@@ -89,13 +97,36 @@ public partial class StartupSecuritySweepService
                         await RealtimeScanPriority.WaitAsync(token);
                         await resources.EnterWorkerSlotAsync(token);
                         Interlocked.Increment(ref _sweepWorkers);
-                        Volatile.Write(ref _workerFile, file.Name);
+                        Volatile.Write(ref _workerFile, file.FullName);
                         try
                         {
                             await RealtimeScanPriority.WaitAsync(token);
                             using var fileMeasurement = measurements.Begin(file.FullName, volumeLease.QueuedAt);
-                            var item = await InspectCandidateAsync(file, progress, registration, token);
-                            await output.Writer.WriteAsync(item, token);
+                            try
+                            {
+                                var item = await InspectCandidateAsync(file, progress, registration, token);
+                                var outcome = item.Verdict.CoverageLimitations.Contains("StartupInspectionTimedOut", StringComparer.Ordinal)
+                                    ? FileScanOutcome.Timeout
+                                    : item.Verdict.PolicyBypassed ? FileScanOutcome.Skipped
+                                    : item.Verdict.Verdict == RealTimeVerdict.Unknown ? FileScanOutcome.Failed : FileScanOutcome.Success;
+                                fileMeasurement.Complete(outcome, item.Verdict.InspectionComplete && !item.Verdict.PolicyBypassed &&
+                                    item.Verdict.ContentClassification?.IsComplete != false && item.Verdict.Verdict != RealTimeVerdict.Unknown,
+                                    item.FromCache, item.Verdict.PolicyBypassed);
+                                using (fileMeasurement.MeasureOutputQueueWait())
+                                    await output.Writer.WriteAsync(item, token);
+                            }
+                            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                            catch (OperationCanceledException)
+                            {
+                                fileMeasurement.Complete(FileScanOutcome.Timeout, inspectionComplete: false);
+                                throw;
+                            }
+                            catch
+                            {
+                                // A result-channel failure does not overwrite an analysis outcome already recorded.
+                                fileMeasurement.Complete(FileScanOutcome.Failed);
+                                throw;
+                            }
                         }
                         finally
                         {
@@ -153,7 +184,8 @@ public partial class StartupSecuritySweepService
         if (_fileCache.TryGetValue(file.FullName, out var cached) && cached.Verdict == "Clean" &&
             cached.Revision == DetectionPolicyRevision.Current &&
             await HasExpectedContentAsync(file.FullName, cached.SHA256, token) && cached.Revision == DetectionPolicyRevision.Current)
-            return new(file, new RealTimeVerdictResult { Verdict = RealTimeVerdict.Clean, SHA256 = cached.SHA256 }, true);
+            return new(file, new RealTimeVerdictResult { Verdict = RealTimeVerdict.Clean, RecommendedPolicy = RealTimePolicyAction.Allow,
+                InspectionComplete = true, SHA256 = cached.SHA256 }, true);
         return new(file, await InspectWithBudgetAsync(file.FullName, progress, registration, token), false);
     }
 }

@@ -7,17 +7,19 @@
          ══════════════════════════════════════════════════════════════════════════════════ -->
 
     <!-- ── 1. BACKGROUND & SURFACE TOKENS (NEUTRAL SURFACES) ── -->
-    <Color x:Key="ColorAppBg">#F4F5F7</Color>
+    <Visibility x:Key="ClassicRowsVisibility">Collapsed</Visibility>
+    <Visibility x:Key="ClassicSelectionVisibility">Visible</Visibility>
+    <Color x:Key="ColorAppBg">#F6F7F8</Color>
     <Color x:Key="ColorCardBg">#FFFFFF</Color>
-    <Color x:Key="ColorCardBgAlt">#F6F7F9</Color>
-    <Color x:Key="ColorCardBorder">#E1E5EB</Color>
+    <Color x:Key="ColorCardBgAlt">#F3F4F5</Color>
+    <Color x:Key="ColorCardBorder">#CCD0D5</Color>
     <Color x:Key="ColorCardBorderHover">#C8CED8</Color>
 
-    <Color x:Key="ColorSidebarBg">#FFFFFF</Color>
-    <Color x:Key="ColorSidebarHeader">#FFFFFF</Color>
-    <Color x:Key="ColorSidebarBorder">#E1E5EB</Color>
-    <Color x:Key="ColorSidebarHover">#F6F7F9</Color>
-    <Color x:Key="ColorSidebarActive">#FCEEEF</Color>
+    <Color x:Key="ColorSidebarBg">#25282C</Color>
+    <Color x:Key="ColorSidebarHeader">#25282C</Color>
+    <Color x:Key="ColorSidebarBorder">#BCC2C8</Color>
+    <Color x:Key="ColorSidebarHover">#D3D7DC</Color>
+    <Color x:Key="ColorSidebarActive">#E8D8DA</Color>
 
     <!-- ── 2. PRIMARY BRAND ACCENT TOKENS (ULTRON BRAND RED) ── -->
     <Color x:Key="ColorBrandPrimary">#C62D35</Color>
@@ -54,9 +56,9 @@
     <Color x:Key="ColorAccentLight">#FFF2F2</Color>
 
     <!-- ── 3. TYPOGRAPHY TOKENS (CALM HIGH-CONTRAST NEUTRALS) ── -->
-    <Color x:Key="ColorTextPrimary">#18202B</Color>
-    <Color x:Key="ColorTextSecondary">#475365</Color>
-    <Color x:Key="ColorTextMuted">#637083</Color>
+    <Color x:Key="ColorTextPrimary">#202124</Color>
+    <Color x:Key="ColorTextSecondary">#4D5156</Color>
+    <Color x:Key="ColorTextMuted">#60646B</Color>
     <Color x:Key="ColorTextOnAccent">#FFFFFF</Color>
     <Color x:Key="ColorTextOnDark">#FFFFFF</Color>
 
@@ -117,9 +119,14 @@
     <SolidColorBrush x:Key="BrushCardBorder" Color="{StaticResource ColorCardBorder}"/>
     <SolidColorBrush x:Key="BrushCardBorderHover" Color="{StaticResource ColorCardBorderHover}"/>
     <SolidColorBrush x:Key="BrushSidebarBg" Color="{StaticResource ColorSidebarBg}"/>
+    <SolidColorBrush x:Key="BrushSidebarTextPrimary" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="BrushSidebarTextSecondary" Color="#DDE0E4"/>
+    <SolidColorBrush x:Key="BrushShellSidebarActive" Color="#3B3F45"/>
+    <SolidColorBrush x:Key="BrushShellSidebarHover" Color="#34383D"/>
     <SolidColorBrush x:Key="BrushSidebarHeader" Color="{StaticResource ColorSidebarHeader}"/>
     <SolidColorBrush x:Key="BrushSidebarBorder" Color="{StaticResource ColorSidebarBorder}"/>
     <SolidColorBrush x:Key="BrushSidebarHover" Color="{StaticResource ColorSidebarHover}"/>
+    <SolidColorBrush x:Key="BrushSidebarActive" Color="{StaticResource ColorSidebarActive}"/>
 
     <!-- Action Card Pastel Brushes -->
     <SolidColorBrush x:Key="BrushPastelBlueBg" Color="{StaticResource ColorPastelBlueBg}"/>
@@ -224,15 +231,17 @@
     <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="{StaticResource ColorSidebarBg}"/>
     <SolidColorBrush x:Key="NavigationViewContentBackground" Color="{StaticResource ColorAppBg}"/>
     <SolidColorBrush x:Key="NavigationViewContentGridBackground" Color="{StaticResource ColorAppBg}"/>
-    <SolidColorBrush x:Key="NavigationViewItemForeground" Color="#6B7684"/>
-    <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOver" Color="#1B2532"/>
-    <SolidColorBrush x:Key="NavigationViewItemForegroundPressed" Color="#1B2532"/>
-    <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="#C41E1E"/>
-    <SolidColorBrush x:Key="NavigationViewItemHeaderForeground" Color="#9AA5B4"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="#F0F3F7"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#E5E9EE"/>
-    <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="{StaticResource ColorBrandSubtle}"/>
-    <SolidColorBrush x:Key="NavigationViewItemSelectedBackground" Color="{StaticResource ColorBrandSubtle}"/>
+    <!-- The shell keeps a dark sidebar in both themes. Native selected/hover
+         states must use that palette too, not pale main-content selection colors. -->
+    <SolidColorBrush x:Key="NavigationViewItemForeground" Color="#DDE0E4"/>
+    <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOver" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="NavigationViewItemForegroundPressed" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="NavigationViewItemHeaderForeground" Color="#DDE0E4"/>
+    <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="#34383D"/>
+    <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#3B3F45"/>
+    <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="#3B3F45"/>
+    <SolidColorBrush x:Key="NavigationViewItemSelectedBackground" Color="#3B3F45"/>
 
     <!-- ── 7. CODEX CLOUD TERMINAL LOGO TOKENS (LIGHT - SIMSİYAH) ── -->
     <BitmapImage x:Key="ImageCloudLogoBase" UriSource="pack://application:,,,/UltronDefender;component/Resources/Images/codex_cloud_base_black.png"/>

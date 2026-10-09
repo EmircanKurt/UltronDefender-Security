@@ -11,7 +11,7 @@
         Background="Transparent"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        FontFamily="Segoe UI Variable, Segoe UI, Inter, sans-serif">
+        FontFamily="{StaticResource FontSans}">
 
     <Border Background="{DynamicResource BrushCardBg}"
             BorderBrush="{DynamicResource BrushCardBorder}"

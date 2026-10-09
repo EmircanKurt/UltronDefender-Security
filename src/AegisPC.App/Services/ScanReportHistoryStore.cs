@@ -111,6 +111,18 @@ public sealed class ScanReportRecord
     /// <summary>Shows an actual recorded start time; legacy missing timestamps are not displayed as year one or invented.</summary>
     [JsonIgnore] public string DateText => Result.StartedAt == default
         ? "Başlangıç zamanı kaydedilmedi" : Result.StartedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss");
+    /// <summary>Localizes the recorded scan kind; unsupported legacy values stay unknown rather than implying full coverage.</summary>
+    [JsonIgnore] public string ScanTypeText => Result.ScanType switch
+    {
+        ScanType.Quick => "Hızlı tarama", ScanType.Full => "Tam tarama", ScanType.Custom => "Özel tarama",
+        ScanType.SingleFile => "Tek dosya", ScanType.RunningProcess => "Süreç", ScanType.StartupPersistence => "Başlangıç",
+        _ => "Bilinmeyen"
+    };
+    /// <summary>Shows the recorded custom target, or explicitly reports its absence; it never invents inspected locations.</summary>
+    [JsonIgnore] public string TargetText => string.IsNullOrWhiteSpace(Result.CustomPath) ? "Konum kaydedilmedi" : Result.CustomPath;
+    /// <summary>Formats actual elapsed duration; invalid or absent legacy duration remains explicitly unknown.</summary>
+    [JsonIgnore] public string DurationText => Result.ElapsedMs <= 0 ? "Kaydedilmedi"
+        : $"{Math.Floor(TimeSpan.FromMilliseconds(Result.ElapsedMs).TotalMinutes):0} dk {TimeSpan.FromMilliseconds(Result.ElapsedMs).Seconds:00} sn";
     /// <summary>Distinguishes completed, cancelled, and failed scan reports.</summary>
     [JsonIgnore] public string StatusText => Result.Status switch { ScanStatus.Completed => "Tamamlandı", ScanStatus.Cancelled => "İptal edildi", ScanStatus.Failed => "Başarısız", _ => "Bilinmeyen" };
     /// <summary>Separates per-file errors from terminal engine failure; older missing diagnostics remain explicitly unknown.</summary>

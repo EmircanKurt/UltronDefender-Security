@@ -28,9 +28,11 @@ namespace AegisPC.Security.RealTime
         /// </summary>
         public async Task<bool> WaitForFileStabilityAsync(string filePath, CancellationToken ct)
         {
+            using var stabilityMeasurement = Scanning.ScanStageMeasurements.Measure(Scanning.ScanStageTiming.Stability);
             if (!File.Exists(filePath)) return false;
 
             long lastSize = -1;
+            DateTime lastWrite = DateTime.MinValue;
             int stableReadCount = 0;
             const int maxTotalWaitMs = 6000;
             var sw = Stopwatch.StartNew();
@@ -45,9 +47,9 @@ namespace AegisPC.Security.RealTime
                     long currentSize = fi.Length;
 
                     // Dosyaya paylaşımlı okuma erişimi dene
-                    using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                    using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
                     {
-                        if (currentSize > 0 && currentSize == lastSize)
+                        if (currentSize > 0 && currentSize == lastSize && fi.LastWriteTimeUtc == lastWrite)
                         {
                             stableReadCount++;
                             if (stableReadCount >= 2) // Art arda 2 kontrolde dosya boyutu değişmediyse yazım tamamdır
@@ -59,6 +61,7 @@ namespace AegisPC.Security.RealTime
                         {
                             stableReadCount = 0;
                             lastSize = currentSize;
+                            lastWrite = fi.LastWriteTimeUtc;
                         }
                     }
                 }
@@ -70,7 +73,8 @@ namespace AegisPC.Security.RealTime
                 await Task.Delay(40, ct);
             }
 
-            return File.Exists(filePath);
+            ct.ThrowIfCancellationRequested();
+            return false;
         }
     }
 }

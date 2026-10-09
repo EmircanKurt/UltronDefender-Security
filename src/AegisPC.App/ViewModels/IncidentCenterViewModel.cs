@@ -267,49 +267,7 @@ namespace AegisPC.App.ViewModels
             }
         }
 
-        private SecurityIncident ConvertFindingToIncident(SecurityFinding f)
-        {
-            var fileName = System.IO.Path.GetFileName(f.ObjectPath);
-            if (string.IsNullOrEmpty(fileName)) fileName = f.Title;
-
-            bool isResolved = f.Status == FindingStatus.Resolved || f.IsAllowlisted;
-            bool isIgnored = f.Status == FindingStatus.Ignored;
-
-            return new SecurityIncident
-            {
-                IncidentId = $"FIND-{(f.Id != Guid.Empty ? f.Id.ToString("N") : Guid.NewGuid().ToString("N"))}".ToUpperInvariant(),
-                CreatedAt = f.CreatedAt,
-                Title = f.Title,
-                ThreatName = f.Title,
-                RootProcessName = fileName,
-                RootExecutablePath = f.ObjectPath,
-                RootHashSha256 = f.SHA256,
-                RiskScore = f.RiskScore,
-                RiskLevel = f.RiskLevel.ToString().ToUpperInvariant(),
-                Status = isResolved ? "Remediated" : (isIgnored ? "Ignored" : "Active"),
-                ActionTaken = isResolved ? "Çözüldü / İzin Verildi" : "İnceleme Bekleniyor",
-                HumanExplanation = $"Bu dosya '{f.Title}' olarak tespit edildi. {f.Description} Dosya konumu: {f.ObjectPath}",
-                RecommendedUserAction = "Dosyayı Karantina Kasasına kilitleyin veya inceleyip temizleyin.",
-                Timeline = new List<string>
-                {
-                    $"{f.CreatedAt:HH:mm:ss} | [Tespit] Antivirüs tarama motoru şüpheli nesneyi yakaladı (Kategori: {f.Category}).",
-                    $"{f.CreatedAt:HH:mm:ss} | [Risk Değerlendirmesi] Tehdit skoru hesaplandı: {f.RiskScore}/100 ({f.RiskLevel}).",
-                    $"{f.CreatedAt:HH:mm:ss} | [Dosya Yolu] {f.ObjectPath}"
-                },
-                Evidences = new List<BehaviorEvidence>
-                {
-                    new BehaviorEvidence
-                    {
-                        Type = "StaticScannerHeuristic",
-                        Source = f.ObjectPath,
-                        Target = f.Title,
-                        Explanation = f.Description,
-                        Severity = f.RiskScore,
-                        Confidence = 0.95
-                    }
-                }
-            };
-        }
+        private SecurityIncident ConvertFindingToIncident(SecurityFinding f) => FindingIncidentProjection.Create(f);
 
         private SecurityIncident ConvertQuarantineToIncident(QuarantineEntry q)
         {
@@ -319,19 +277,18 @@ namespace AegisPC.App.ViewModels
                 CreatedAt = q.QuarantinedAt,
                 Title = !string.IsNullOrWhiteSpace(q.Reason) ? q.Reason : "Karantinaya Alınan Tehdit",
                 ThreatName = !string.IsNullOrWhiteSpace(q.Reason) ? q.Reason : "Zararlı / Şüpheli Dosya",
-                RootProcessName = q.FileName,
+                RootProcessName = "İlişkilendirilmedi",
                 RootExecutablePath = q.OriginalPath,
                 RootHashSha256 = q.SHA256,
                 RiskScore = q.RiskLevel == RiskLevel.ConfirmedMalicious ? 95 : (q.RiskLevel == RiskLevel.HighRisk ? 85 : 70),
                 RiskLevel = q.RiskLevel.ToString().ToUpperInvariant(),
                 Status = "Quarantined",
-                ActionTaken = "Karantina Kasasına Kilitlendi (AES-256)",
-                HumanExplanation = $"Bu dosya '{q.Reason}' tespiti nedeniyle AES-256 şifreli karantina kasasına kilitlenmiştir. Sistem güvenliğiniz için dosyanın çalışması durdurulmuştur. Orijinal yol: {q.OriginalPath}",
-                RecommendedUserAction = "Dosya karantinada güvendedir. Yanlış tespit olduğunu düşünüyorsanız Karantina sekmesinden geri yükleyebilirsiniz.",
+                ActionTaken = "Karantina kaydı mevcut; süreç müdahalesi doğrulanmadı",
+                HumanExplanation = $"Kasa kaydı: {q.Reason}. Kayıt tek başına süreç sonlandırma veya mevcut dosyanın zararlılık kanıtı değildir. Orijinal yol: {q.OriginalPath}",
+                RecommendedUserAction = "Kaydı inceleyin. Geri yükleme, hizmetin yetkilendirme ve bütünlük kontrolünü gerektirir.",
                 Timeline = new List<string>
                 {
-                    $"{q.QuarantinedAt:HH:mm:ss} | [Tespit & Müdahale] Dosya tespit edildi ve karantinaya alındı.",
-                    $"{q.QuarantinedAt:HH:mm:ss} | [Şifreleme] AES-256 ile kasaya kilitlendi: {q.FileName}",
+                    $"{q.QuarantinedAt:HH:mm:ss} | [Kasa kaydı] {q.FileName}",
                     $"{q.QuarantinedAt:HH:mm:ss} | [Konum] {q.OriginalPath}",
                     $"{q.QuarantinedAt:HH:mm:ss} | [SHA-256] {q.SHA256}"
                 }

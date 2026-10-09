@@ -1,124 +1,36 @@
 <Page x:Class="AegisPC.App.Views.ScanView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-      xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      xmlns:controls="clr-namespace:AegisPC.App.Controls"
       xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
-      Title="{Binding PageTitle}"
-      Background="{DynamicResource BrushAppBg}"
-      UseLayoutRounding="True"
-      SnapsToDevicePixels="True"
-      TextOptions.TextFormattingMode="Display"
-      TextOptions.TextRenderingMode="ClearType">
-
-    <Page.Resources>
-        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
-    </Page.Resources>
-
-    <ScrollViewer x:Name="RootScrollViewer" 
-                  helpers:WheelScrollHelper.EnableRootRedirect="True"
-                  Margin="28,20,28,24" 
-                  Focusable="False" 
-                  CanContentScroll="False"
-                  VerticalScrollBarVisibility="Auto" 
-                  HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Margin="0,0,0,20">
-
-            <!-- 1. Header -->
-            <StackPanel Margin="0,0,0,20">
-                <TextBlock Style="{StaticResource PageHeadingStyle}" Text="Tarama" Margin="0,0,0,4"/>
-                <TextBlock Text="Sisteminizi hızlı, tam veya özel klasör seçenekleriyle derinlemesine analiz edin." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}"/>
+      xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      Title="{Binding PageTitle}" Background="{DynamicResource BrushAppBg}">
+    <Page.Resources><conv:BoolToVisibilityConverter x:Key="BoolToVis"/></Page.Resources>
+    <Grid Margin="28,18,28,20">
+        <controls:ClassicScanSurface Visibility="{Binding IsIdleView, Converter={StaticResource BoolToVis}}"/>
+        <controls:ActiveScanSurface Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}"/>
+        <Grid Visibility="{Binding IsScanFinishedView, Converter={StaticResource BoolToVis}}">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <StackPanel Margin="0,12,0,20">
+                <TextBlock Text="{Binding ScanResultTitle}" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
+                <TextBlock Text="{Binding CleanStateSubtitle}" TextWrapping="Wrap" FontSize="14" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,10,0,0"/>
+                <TextBlock Text="{Binding FindingBreakdownText}" TextWrapping="Wrap" FontSize="14" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,10,0,0"/>
             </StackPanel>
-
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
-                <Button Content="Zamanlayıcı" Command="{Binding OpenSchedulerCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,10,0"/>
-                <Button Content="Tarama Raporları" Command="{Binding OpenReportsCommand}" Style="{StaticResource SecondaryButtonStyle}"/>
-            </StackPanel>
-
-            <!-- ══════════════════════════════════════════════════════
-                 2. SCAN MODE SELECTION CARDS
-            ══════════════════════════════════════════════════════ -->
-            <UniformGrid x:Name="ScanOptionsGrid" Columns="3" Margin="0,0,0,20">
-                <!-- Quick Scan -->
-                <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,12,0" Padding="20">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                            <ui:SymbolIcon Symbol="Flash24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="20" Margin="0,0,8,0"/>
-                            <TextBlock Text="Hızlı Tarama" Style="{StaticResource SectionHeadingStyle}" FontSize="15"/>
-                        </StackPanel>
-                        <TextBlock Grid.Row="1" Text="İndirilenler, Temp, Masaüstü ve başlangıç noktaları gibi en yaygın tehdit konumlarını hızlıca analiz eder." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,14"/>
-                        <Button Grid.Row="2" Content="Hızlı Taramayı Başlat" Style="{StaticResource PrimaryButtonStyle}" 
-                                Command="{Binding StartQuickScanCommand}" HorizontalAlignment="Stretch"/>
-                    </Grid>
-                </Border>
-
-                <!-- Full Scan -->
-                <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,12,0" Padding="20">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                            <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="20" Margin="0,0,8,0"/>
-                            <TextBlock Text="Tam Sistem Taraması" Style="{StaticResource SectionHeadingStyle}" FontSize="15"/>
-                        </StackPanel>
-                        <TextBlock Grid.Row="1" Text="Sabit disklerde erişilebilir dosyaları ve etkin sistem denetimlerini inceler. Kilitli, desteklenmeyen veya atlanan öğeler raporda belirtilir." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,14"/>
-                        <Button Grid.Row="2" Content="Tam Taramayı Başlat" Style="{StaticResource PrimaryButtonStyle}" 
-                                Command="{Binding StartFullScanCommand}" HorizontalAlignment="Stretch"/>
-                    </Grid>
-                </Border>
-
-                <!-- Custom Scan -->
-                <Border Style="{StaticResource MetricCardStyle}" Margin="0" Padding="20">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                            <ui:SymbolIcon Symbol="Folder24" Foreground="{DynamicResource BrushStatusWarning}" FontSize="20" Margin="0,0,8,0"/>
-                            <TextBlock Text="Özel Dizin Taraması" Style="{StaticResource SectionHeadingStyle}" FontSize="15"/>
-                        </StackPanel>
-                        <TextBlock Grid.Row="1" Text="Seçeceğiniz klasörü, oyun veya mod dizinini ya da USB depolama birimini içerik ve etkin kurallarla analiz eder." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,14"/>
-                        <Button Grid.Row="2" Content="Klasör Seç ve Tara" Style="{StaticResource SecondaryButtonStyle}" 
-                                Command="{Binding StartCustomScanCommand}" HorizontalAlignment="Stretch"/>
-                    </Grid>
-                </Border>
-            </UniformGrid>
-
-            <!-- ══════════════════════════════════════════════════════
-                 3. SCAN STATUS & ACTIVE SCAN WINDOW LAUNCHER
-            ══════════════════════════════════════════════════════ -->
-            <Border Style="{StaticResource MetricCardStyle}" Margin="0,0,0,16" Padding="20">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <Border Grid.Column="0" Width="40" Height="40" CornerRadius="4" Background="{DynamicResource BrushStatusInfoBg}" BorderBrush="{DynamicResource BrushStatusInfoBorder}" BorderThickness="1" Margin="0,0,14,0" VerticalAlignment="Center">
-                        <ui:SymbolIcon Symbol="Shield24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="Tarama Durumu" Style="{StaticResource SectionHeadingStyle}"/>
-                        <TextBlock Text="{Binding ScanStatusText}" Style="{StaticResource CaptionTextStyle}"/>
-                        <TextBlock Text="{Binding RemainingEtaFormatted}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"/>
-                    </StackPanel>
-
-                    <Button Grid.Column="2" Content="{Binding OpenScanWindowButtonText, FallbackValue='Tarayıcı Penceresini Aç'}" Style="{StaticResource SecondaryButtonStyle}"
-                            Command="{Binding OpenActiveScanWindowCommand}" VerticalAlignment="Center"/>
-                </Grid>
-            </Border>
-        </StackPanel>
-    </ScrollViewer>
+            <DataGrid Grid.Row="1" ItemsSource="{Binding ThreatResults}" AutoGenerateColumns="False" IsReadOnly="False" CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column" RowHeaderWidth="0" Background="{DynamicResource BrushCardBg}" Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <DataGrid.Columns>
+                    <DataGridCheckBoxColumn Header="Seç" Binding="{Binding IsSelected, Mode=TwoWay}" Width="45"/>
+                    <DataGridTextColumn Header="Dosya" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Tür" Binding="{Binding ThreatType}" Width="*" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Konum" Binding="{Binding Location}" Width="2*" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="İşlem" Binding="{Binding ActionTaken}" Width="*" IsReadOnly="True"/>
+                </DataGrid.Columns>
+            </DataGrid>
+            <WrapPanel Grid.Row="2" Margin="0,16,0,0">
+                <Button Content="Tarayıcıya dön" Command="{Binding CloseResultsCommand}" Style="{DynamicResource SecondaryButtonStyle}" Margin="0,0,10,8"/>
+                <Button Content="Raporla" Command="{Binding ExportScanReportCommand}" Style="{DynamicResource SecondaryButtonStyle}" Margin="0,0,10,8"/>
+                <Button Content="Olayı kapat" Command="{Binding ResolveSelectedCommand}" Visibility="{Binding HasFindings, Converter={StaticResource BoolToVis}}" Style="{DynamicResource SecondaryButtonStyle}" Margin="0,0,10,8"/>
+                <Button Content="Karantinaya al" Command="{Binding QuarantineSelectedCommand}" Visibility="{Binding HasFindings, Converter={StaticResource BoolToVis}}" Style="{DynamicResource PrimaryButtonStyle}" Margin="0,0,0,8"/>
+            </WrapPanel>
+        </Grid>
+    </Grid>
 </Page>

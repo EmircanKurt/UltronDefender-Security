@@ -15,8 +15,12 @@ namespace AegisPC.Core.Models
         public TimeSpan Duration { get; set; } = TimeSpan.Zero;
         public bool IsFromCache { get; set; }
         public bool IsSignedClean { get; set; }
+        /// <summary>Explicit configured-inspection coverage, independent of operational outcome; null means the producer did not report it.</summary>
+        public bool? InspectionComplete { get; set; }
         /// <summary>Reports observed content independently of the name; null means classification was not performed.</summary>
         public FileContentClassification? ContentClassification { get; set; }
+        /// <summary>OS-reported blocking is unavailable Ultron inspection, not a fabricated malware identity.</summary>
+        public AegisPC.Core.Exceptions.OperatingSystemFileBlockKind? OperatingSystemBlock { get; set; }
 
         public static FileScanDetailedResult CreateSuccess(string path, SecurityFinding? finding, TimeSpan duration, bool isFromCache = false, bool isSignedClean = false) =>
             new() { FilePath = path, Outcome = FileScanOutcome.Success, Finding = finding, Duration = duration, IsFromCache = isFromCache, IsSignedClean = isSignedClean };

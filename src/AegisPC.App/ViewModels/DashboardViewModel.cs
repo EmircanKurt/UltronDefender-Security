@@ -129,10 +129,10 @@ namespace AegisPC.App.ViewModels
 
         // Startup Security Sweep Live State
         public System.Collections.ObjectModel.ObservableCollection<AegisPC.Contracts.Services.StartupSweepFinding> StartupSweepFindings { get; } = new();
-        [ObservableProperty] private string startupSweepStatusText = "Tamamlandı";
-        [ObservableProperty] private string startupSweepBadgeColor = "#35D07F";
+        [ObservableProperty] private string startupSweepStatusText = "Açılış taraması kapalı";
+        [ObservableProperty] private string startupSweepBadgeColor = "#8C9198";
         [ObservableProperty] private string startupSweepFilesRatio = "0 / 0";
-        [ObservableProperty] private double startupSweepProgressPercent = 100.0;
+        [ObservableProperty] private double startupSweepProgressPercent = 0.0;
         [ObservableProperty] private string startupSweepCurrentFile = "";
         [ObservableProperty] private int startupSweepThreatsCount = 0;
         [ObservableProperty] private int startupSweepSuspiciousCount = 0;
@@ -281,29 +281,7 @@ namespace AegisPC.App.ViewModels
                     });
                 };
 
-                // Startup maintenance is not a manual quick scan and must not open its resource dialog.
-                Task.Run(async () =>
-                {
-                    try
-                    {
-                        await Task.Delay(2500);
-                        if (_startupSweepService != null && (_scanCoordinator == null || !_scanCoordinator.IsScanning))
-                        {
-                            var result = await _startupSweepService.RunSweepAsync();
-                            if (result.FinalStatus == StartupSweepStatus.Busy)
-                            {
-                                Application.Current?.Dispatcher?.InvokeAsync(() =>
-                                {
-                                    (StartupSweepStatusText, StartupSweepBadgeColor) = GetStartupSweepSummary(result);
-                                });
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Trace.WriteLine($"Initial startup scan error: {ex}");
-                    }
-                });
+                // Opening the UI never schedules a sweep. RT and service-owned idle work are independent.
             }
 
             if (_realTimeEngine != null)

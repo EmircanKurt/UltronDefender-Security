@@ -6,6 +6,8 @@ using System.Windows.Forms;
 using AegisPC.App.ViewModels;
 using AegisPC.Contracts.Services;
 using AegisPC.Security.RealTime;
+using AegisPC.ServiceContracts;
+using AegisPC.ServiceContracts.IpcMessages;
 using Microsoft.Extensions.DependencyInjection;
 using Application = System.Windows.Application;
 
@@ -24,12 +26,19 @@ namespace AegisPC.App.Services
         private readonly IBackgroundProtectionService? _protectionService;
         private ToolStripMenuItem? _statusMenuItem;
         private bool _isDisposed;
+        private readonly IServiceIpcClient? _ipc;
+        private readonly TrayProtectionActions? _trayActions;
+        private ProtectionStatus? _lastStatus;
 
         public SystemTrayService(
             IScanCoordinatorService? scanCoordinator = null,
-            IBackgroundProtectionService? protectionService = null)
+            IBackgroundProtectionService? protectionService = null,
+            IServiceIpcClient? ipc = null,
+            IProtectionDisableConfirmation? confirmation = null)
         {
             _protectionService = protectionService;
+            _ipc = ipc;
+            if (ipc != null && confirmation != null) _trayActions = new TrayProtectionActions(ipc, confirmation);
         }
 
         public void Initialize()
@@ -82,7 +91,7 @@ namespace AegisPC.App.Services
                 _notifyIcon.Icon = SystemIcons.Shield;
             }
 
-            _notifyIcon.Text = "Ultron Defender Total Security - Sistem Korumada";
+            _notifyIcon.Text = "Ultron Defender - Koruma durumu bekleniyor";
             _notifyIcon.Visible = true;
 
             // Context Menu
@@ -94,9 +103,38 @@ namespace AegisPC.App.Services
 
             contextMenu.Items.Add(new ToolStripSeparator());
 
-            _statusMenuItem = new ToolStripMenuItem("🛡️ Koruma Durumu: Aktif", null, (s, e) => { });
+            _statusMenuItem = new ToolStripMenuItem("Koruma durumu bekleniyor", null, (s, e) => { });
             _statusMenuItem.Enabled = false;
             contextMenu.Items.Add(_statusMenuItem);
+            var manage = new ToolStripMenuItem("Korumaları yönet");
+            manage.DropDownItems.Add(new ToolStripMenuItem("Kalkan ayarlarını aç", null, (s, e) =>
+            {
+                RestoreMainWindow();
+                MainWindow.Instance?.NavigateTo(typeof(AegisPC.App.Views.UltronProtectionCentreView));
+            }));
+            manage.DropDownItems.Add(new ToolStripSeparator());
+            manage.DropDownItems.Add(new ToolStripMenuItem("Dosya kalkanını yeniden aç", null,
+                async (s, e) => await ExecuteTrayControlAsync(() => _trayActions!.ResumeAsync(), "Dosya kalkanı hizmette yeniden açıldı.")) { Enabled = _trayActions != null });
+            var pauseMenu = new ToolStripMenuItem("Dosya kalkanını duraklat") { Enabled = _trayActions != null };
+            foreach (var option in new[] { (10, "10 dakika"), (60, "1 saat"), (300, "5 saat") })
+            {
+                int minutes = option.Item1;
+                pauseMenu.DropDownItems.Add(new ToolStripMenuItem(option.Item2, null, async (s, e) =>
+                    await ExecuteTrayControlAsync(async () =>
+                    {
+                        if (await _trayActions!.PauseAsync(minutes)) ShowNotification("Dosya kalkanı duraklatıldı", "Süreli geri açma isteği koruma hizmetine kaydedildi.", ToolTipIcon.Warning);
+                    })));
+            }
+            pauseMenu.DropDownItems.Add(new ToolStripMenuItem("Koruma hizmeti yeniden başlayana kadar", null, async (s, e) =>
+                await ExecuteTrayControlAsync(async () =>
+                {
+                    if (await _trayActions!.PauseAsync(0, true)) ShowNotification("Dosya kalkanı duraklatıldı", "Koruma hizmetinin sonraki başlangıcında geri açılacak.", ToolTipIcon.Warning);
+                })));
+            manage.DropDownItems.Add(pauseMenu);
+            manage.DropDownItems.Add(new ToolStripMenuItem("Diğer kalkanlar değişmez") { Enabled = false });
+            contextMenu.Items.Add(manage);
+            contextMenu.Opening += (s, e) => UpdateProtectionStatus(false);
+            if (_ipc != null) _ipc.StatusChanged += OnServiceStatusChanged;
 
             var scanItem = new ToolStripMenuItem("🔍 Hızlı Tarama Başlat", null, async (s, e) =>
             {
@@ -160,6 +198,33 @@ namespace AegisPC.App.Services
             }
         }
 
+        private void OnServiceStatusChanged(ProtectionStatus status)
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.HasShutdownStarted || _isDisposed) return;
+            dispatcher.BeginInvoke(() =>
+            {
+                if (_isDisposed) return;
+                _lastStatus = status;
+                UpdateProtectionStatus(status.IsRealTimeEnabled);
+            });
+        }
+
+        private async System.Threading.Tasks.Task ExecuteTrayControlAsync(Func<System.Threading.Tasks.Task> action, string? success = null)
+        {
+            try
+            {
+                if (_trayActions == null) throw new InvalidOperationException("Koruma hizmeti hazır değil.");
+                await action();
+                if (success != null) ShowNotification("Ultron Defender", success);
+            }
+            catch (Exception exception)
+            {
+                Serilog.Log.Warning(exception, "Tray protection control was not confirmed");
+                ShowNotification("Koruma işlemi doğrulanmadı", exception.Message, ToolTipIcon.Warning);
+            }
+        }
+
         public void ShowNotification(string title, string message, ToolTipIcon icon = ToolTipIcon.Info)
         {
             _notifyIcon?.ShowBalloonTip(4000, title, message, icon);
@@ -169,15 +234,17 @@ namespace AegisPC.App.Services
         {
             if (_notifyIcon != null)
             {
-                _notifyIcon.Text = isProtected 
-                    ? "Ultron Defender - Sistem Korumada" 
-                    : "Ultron Defender - UYARI: Koruma Devre Dışı";
+                bool observed = ServiceProtectionStatusPolicy.IsVerified(_ipc, _lastStatus);
+                string text = !observed ? "Dosya kalkanı: Durum alınamadı"
+                    : _lastStatus!.IsRealTimeEnabled ? "Dosya kalkanı: Gözlem etkin"
+                    : _lastStatus.FileProtectionPause?.ResumeAtUtc is DateTime until ? $"Dosya kalkanı: {until.ToLocalTime():HH:mm} için geri açma planlı"
+                    : _lastStatus.FileProtectionPause?.ResumeOnServiceStart == true ? "Dosya kalkanı: Hizmet başlangıcında geri açma planlı"
+                    : "Dosya kalkanı: Kapalı";
+                _notifyIcon.Text = "Ultron Defender - " + (observed && _lastStatus!.IsRealTimeEnabled ? "Dosya gözlemi etkin" : "Kalkan durumunu kontrol et");
 
                 if (_statusMenuItem != null)
                 {
-                    _statusMenuItem.Text = isProtected 
-                        ? "🛡️ Koruma Durumu: Aktif" 
-                        : "⚠️ Koruma Durumu: Devre Dışı";
+                    _statusMenuItem.Text = text;
                 }
             }
         }
@@ -185,6 +252,7 @@ namespace AegisPC.App.Services
         public void Dispose()
         {
             if (_isDisposed) return;
+            if (_ipc != null) _ipc.StatusChanged -= OnServiceStatusChanged;
             if (_notifyIcon != null)
             {
                 _notifyIcon.Visible = false;

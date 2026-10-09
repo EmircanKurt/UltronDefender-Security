@@ -78,7 +78,7 @@
                         <ui:SymbolIcon Symbol="FolderZip24" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
                         <TextBlock Text="Karantina Kasası" VerticalAlignment="Center"/>
                         <Border Background="{DynamicResource BrushCardBorder}" CornerRadius="10" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding QuarantinedItems.Count}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
+                            <TextBlock Text="{Binding VaultCountText}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
                         </Border>
                     </StackPanel>
                 </Button>
@@ -355,7 +355,7 @@
                                     <TextBlock Text="{Binding IncidentId, StringFormat='Olay Kimliği: {0}'}" Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <Border HorizontalAlignment="Right" Background="{DynamicResource BrushStatusDanger}" CornerRadius="4" Padding="12,4" VerticalAlignment="Top">
-                                    <TextBlock Text="{Binding RiskScore, StringFormat='Risk Skoru: {0}/100'}" Style="{StaticResource ButtonTextStyle}" Foreground="{DynamicResource BrushTextOnAccent}"/>
+                                    <TextBlock Text="{Binding RiskScore, StringFormat='İnceleme puanı: {0}/100'}" Style="{StaticResource ButtonTextStyle}" Foreground="{DynamicResource BrushTextOnAccent}"/>
                                 </Border>
                             </Grid>
 
@@ -367,14 +367,14 @@
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Kök Süreç:" Style="{StaticResource CaptionTextStyle}"/>
+                                        <TextBlock Text="İlişkili süreç:" Style="{StaticResource CaptionTextStyle}"/>
                                         <TextBlock Text="{Binding RootProcessName}" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
                                         <TextBlock Text="Müdahale:" Style="{StaticResource CaptionTextStyle}" Margin="0,8,0,0"/>
                                         <TextBlock Text="{Binding ActionTaken}" Style="{StaticResource DataTableStyle}" FontWeight="SemiBold" Foreground="{DynamicResource BrushStatusSafeDark}"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1">
                                         <TextBlock Text="PID / Süreç No:" Style="{StaticResource CaptionTextStyle}"/>
-                                        <TextBlock Text="{Binding RootPid}" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                                        <TextBlock Text="{Binding ActorPidDisplay}" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
                                         <TextBlock Text="Durum:" Style="{StaticResource CaptionTextStyle}" Margin="0,8,0,0"/>
                                         <TextBlock Text="{Binding Status}" Style="{StaticResource DataTableStyle}" FontWeight="Bold" Foreground="{DynamicResource BrushBrandPrimary}"/>
                                     </StackPanel>
@@ -382,13 +382,13 @@
                             </Border>
 
                             <!-- File Path -->
-                            <TextBlock Text="Zararlı Kaynak Dosya Yolu:" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,4"/>
+                            <TextBlock Text="İncelenen dosya yolu:" Style="{StaticResource SectionHeadingStyle}" FontSize="12" Margin="0,0,0,4"/>
                             <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="4" Padding="10,6" Margin="0,0,0,16">
                                 <TextBlock Text="{Binding RootExecutablePath}" Style="{StaticResource DataMonospaceStyle}" TextWrapping="Wrap"/>
                             </Border>
 
                             <!-- Timeline -->
-                            <TextBlock Text="Kronolojik Saldırı Zaman Çizelgesi:" Style="{StaticResource SectionHeadingStyle}" FontSize="13" Margin="0,0,0,8"/>
+                            <TextBlock Text="Gözlem zaman çizelgesi:" Style="{StaticResource SectionHeadingStyle}" FontSize="13" Margin="0,0,0,8"/>
                             <ItemsControl ItemsSource="{Binding Timeline}" Margin="0,0,0,16">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>

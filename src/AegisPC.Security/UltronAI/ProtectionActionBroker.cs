@@ -68,12 +68,15 @@ public sealed class ProtectionActionBroker : IProtectionActionBroker
         if (permit.ExpiresAtUtc <= _time.GetUtcNow()) return Receipt(permit, ProtectionActionOutcome.Rejected, "PermitExpired");
         try
         {
-            var proof = await _validator.ValidateAsync(entry.Snapshot, permit.Kind, caller, cancellationToken).ConfigureAwait(false);
+            await using var target = await _validator.AcquireAsync(entry.Snapshot, permit.Kind, caller, cancellationToken).ConfigureAwait(false);
+            if (target == null) return Receipt(permit, ProtectionActionOutcome.Rejected, "ValidatedTargetLeaseUnavailable");
+            var proof = target.Validation;
             if (!CanPermit(proof, entry.Snapshot, entry.UserApproved) || proof.File != permit.File || proof.Process != permit.Process ||
                 proof.EvidenceRevision != permit.EvidenceRevision)
                 return Receipt(permit, ProtectionActionOutcome.Rejected, "TargetOrEvidenceChanged");
+            if (permit.ExpiresAtUtc <= _time.GetUtcNow()) return Receipt(permit, ProtectionActionOutcome.Rejected, "PermitExpiredDuringValidation");
             cancellationToken.ThrowIfCancellationRequested();
-            var receipt = await _executor.ExecuteAsync(permit, cancellationToken).ConfigureAwait(false);
+            var receipt = await _executor.ExecuteAsync(permit, target, cancellationToken).ConfigureAwait(false);
             if (receipt.PermitId != permit.Id || receipt.Kind != permit.Kind)
                 return Receipt(permit, ProtectionActionOutcome.Unknown, "InvalidExecutorReceipt");
             return receipt;

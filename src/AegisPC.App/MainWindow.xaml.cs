@@ -11,6 +11,15 @@ namespace AegisPC.App
 {
     public static class AppNavigation
     {
+        /// <summary>Reveals the main scanner only for an explicit user command, never for background telemetry.</summary>
+        public static void ShowScanner()
+        {
+            var window = MainWindow.Instance;
+            if (window == null) return;
+            window.ShowAndActivate();
+            window.NavigateTo(typeof(ScanView));
+        }
+
         public static void NavigateTo(Type pageType)
         {
             MainWindow.Instance?.NavigateTo(pageType);
@@ -69,7 +78,7 @@ namespace AegisPC.App
                     }
                     else
                     {
-                        RootNavigation.Navigate(typeof(DashboardView));
+                        RootNavigation.Navigate(typeof(ScanView));
                     }
                 }
                 catch (Exception ex)
@@ -83,9 +92,9 @@ namespace AegisPC.App
         {
             bool compact = ActualWidth < 900;
             RootNavigation.PaneDisplayMode = compact ? NavigationViewPaneDisplayMode.LeftMinimal : NavigationViewPaneDisplayMode.Left;
-            SidebarColumn.Width = new GridLength(compact ? 64 : 220);
+            SidebarColumn.Width = new GridLength(compact ? 64 : 240);
             BrandText.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-            BrandHeader.Padding = compact ? new Thickness(12, 20, 12, 20) : new Thickness(18, 22, 14, 22);
+            BrandHeader.Padding = compact ? new Thickness(10, 20, 10, 20) : new Thickness(20, 26, 16, 26);
             BrandImage.Margin = new Thickness(0, 0, compact ? 0 : 12, 0);
         }
 

@@ -10,6 +10,9 @@ public partial class StartupSecuritySweepService
     private int _discoveredFiles;
 
     private IEnumerable<FileInfo> EnumerateSweepFiles(IEnumerable<string> targets, CancellationToken token)
+        => StartupCandidateScheduling.Order(EnumerateUnorderedSweepFiles(targets, token), token);
+
+    private IEnumerable<FileInfo> EnumerateUnorderedSweepFiles(IEnumerable<string> targets, CancellationToken token)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (string target in targets.OrderBy(GetLocationRiskPriority))

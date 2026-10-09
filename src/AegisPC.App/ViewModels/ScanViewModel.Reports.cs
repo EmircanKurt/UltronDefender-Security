@@ -26,11 +26,14 @@ public partial class ScanViewModel
 
     /// <summary>Explains loading or persistence failures without claiming that an unreadable history is empty.</summary>
     [ObservableProperty] private string reportHistoryStatus = "Rapor geçmişi henüz yüklenmedi.";
+    /// <summary>Shows the empty state only after a successful history read, never on loading or failure.</summary>
+    [ObservableProperty] private bool isReportHistoryEmpty;
 
     /// <summary>Loads actual final results persisted for this user without starting a scan.</summary>
     [RelayCommand]
     public async Task RefreshReportsAsync()
     {
+        DispatchUi(() => IsReportHistoryEmpty = false);
         try
         {
             var records = await _reportHistoryStore.LoadAsync();
@@ -40,6 +43,7 @@ public partial class ScanViewModel
                 ReportHistory.Clear();
                 foreach (var record in records) ReportHistory.Add(record);
                 SelectedReport = ReportHistory.FirstOrDefault(r => r.Id == selectedId) ?? ReportHistory.FirstOrDefault();
+                IsReportHistoryEmpty = records.Count == 0;
                 ReportHistoryStatus = records.Count == 0
                     ? "Bu kullanıcı için henüz kaydedilmiş tarama yok. Yeni tamamlanan, iptal edilen veya başarısız taramalar burada görünür."
                     : $"{records.Count} kayıt. Bu cihazda bu uygulamanın gözlemlediği taramalar; servis geçmişinin tamamı değildir.";

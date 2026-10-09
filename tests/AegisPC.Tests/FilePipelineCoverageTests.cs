@@ -16,6 +16,15 @@ namespace AegisPC.Tests;
 /// <summary>Uses only synthetic detector observations and temporary report files; no native provider or malware is invoked.</summary>
 public sealed class FilePipelineCoverageTests
 {
+    private sealed class InertQuickPreflight : IDirectoryWalker
+    {
+        internal int Calls;
+        public Task EnumerateDirectorySafelyAsync(string path, bool recursive, Func<string, Task> enqueue,
+            CancellationToken ct, ManualResetEventSlim? pauseEvent = null) => throw new InvalidOperationException("Only quick preflight is injected.");
+        public Task WalkDirectoriesForScanTypeAsync(ScanType type, string? path, Func<string, Task> enqueue,
+            Action<string> report, CancellationToken ct, ManualResetEventSlim? pauseEvent = null)
+        { Assert.Equal(ScanType.Quick, type); ct.ThrowIfCancellationRequested(); Calls++; return Task.CompletedTask; }
+    }
     /// <summary>Confirmed evidence remains actionable while another detector's missing coverage remains visible.</summary>
     [Fact]
     public async Task ConfirmedFinding_DoesNotHideDetectorFailure()
@@ -30,6 +39,9 @@ public sealed class FilePipelineCoverageTests
         string file = typeof(FilePipelineCoverageTests).Assembly.Location;
         var result = await coordinator.AnalyzeContentDetailedAsync(file, new FileInfo(file), new string('A', 64), new(), null, default);
         Assert.Equal(RiskLevel.ConfirmedMalicious, result.Finding?.RiskLevel);
+        Assert.Equal(DetectionRuleSet.Version, result.Finding!.RuleSetVersion);
+        Assert.False(result.Finding.InspectionComplete);
+        Assert.Contains("ScriptProviderUnavailable", result.Finding.CoverageLimitations);
         Assert.False(result.IsComplete);
         Assert.Contains("ScriptProviderUnavailable", result.CoverageLimitations);
         Assert.Contains("DetectorExecutionFailed", result.CoverageLimitations);
@@ -58,11 +70,13 @@ public sealed class FilePipelineCoverageTests
         {
             string file = Path.Combine(root, "readme.txt"); await File.WriteAllTextAsync(file, "Inert volume fixture.");
             var coverage = new ScanCoverageSummary();
-            var walker = new DirectoryWalker(volumeTargets: new FakeVolumes(root));
+            var preflight = new InertQuickPreflight();
+            var walker = new DirectoryWalker(volumeTargets: new FakeVolumes(root), quickPreflight: preflight);
             using var scope = walker.BeginCoverage(coverage);
             var queued = new List<string>();
             await walker.WalkDirectoriesForScanTypeAsync(ScanType.Full, null, p => { queued.Add(p); return Task.CompletedTask; }, _ => { }, default);
             Assert.Equal(file, Assert.Single(queued)); Assert.False(coverage.IsComplete);
+            Assert.Equal(1, preflight.Calls);
             Assert.Contains("LocalVolumeNotReadyOrAccessible", coverage.Limitations);
         }
         finally { Directory.Delete(root, true); }

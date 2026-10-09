@@ -106,19 +106,9 @@ namespace AegisPC.Security.Detection
             // Kontrol Noktası (b): İstisna (Exclusion) Kontrolü (Dedektörler çalıştırılmadan ÖNCE)
             // User exclusions never suppress a verified exact signature already in the local feed.
             bool knownHash = Scanning.MalwareSignatureDatabase.HasLoadedHash(context.SHA256);
-            if (!knownHash && _exclusionService != null && _exclusionService.IsExcluded(context.FilePath, context.SHA256))
-            {
-                return new DetectionResult
-                {
-                    CorrelationId = context.CorrelationId,
-                    FilePath = context.FilePath,
-                    SHA256 = context.SHA256,
-                    Verdict = DetectionVerdict.Clean,
-                    RiskScore = 0,
-                    Evidences = new List<SecurityEvidence>(),
-                    LatencyMs = 0
-                };
-            }
+            bool policyBypass = !knownHash && (context.IsUserExcluded ||
+                _exclusionService?.IsExcluded(context.FilePath, context.SHA256) == true);
+            if (policyBypass) context.CoverageLimitations.Add("UserExclusion: deep analysis was skipped, not certified clean.");
 
             var stopwatch = Stopwatch.StartNew();
             var rawEvidences = new List<SecurityEvidence>();
@@ -128,7 +118,8 @@ namespace AegisPC.Security.Detection
             List<IDetectorPlugin> activeDetectors;
             lock (_lock)
             {
-                activeDetectors = _detectors.Where(d => d.IsEnabled).OrderBy(d => d.Priority).ToList();
+                activeDetectors = _detectors.Where(d => d.IsEnabled && (!policyBypass ||
+                    d.PrimaryCategory is EvidenceCategory.StaticSignature or EvidenceCategory.AmsiProvider)).OrderBy(d => d.Priority).ToList();
             }
             if (activeDetectors.Count == 0) context.CoverageLimitations.Add("Etkin dedektör yok.");
 
@@ -139,6 +130,7 @@ namespace AegisPC.Security.Detection
 
                 try
                 {
+                    using var detectorMeasurement = Scanning.ScanStageMeasurements.Measure(Scanning.ScanStageTiming.Detector);
                     var detectorEvidences = await detector.EvaluateAsync(context, cancellationToken);
                     if (detectorEvidences != null)
                     {
@@ -169,7 +161,8 @@ namespace AegisPC.Security.Detection
                     FilePath = context.FilePath,
                     SHA256 = context.SHA256,
                     Verdict = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0 ? DetectionVerdict.Clean : DetectionVerdict.Unknown,
-                    RecommendedPolicy = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0 ? DetectionPolicy.Allow : DetectionPolicy.Observe,
+                    RecommendedPolicy = policyBypass || (failedDetectorCount == 0 && context.CoverageLimitations.Count == 0) ? DetectionPolicy.Allow : DetectionPolicy.Observe,
+                    PolicyBypassed = policyBypass,
                     IsComplete = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0,
                     FailedDetectorCount = failedDetectorCount,
                     CoverageLimitations = new List<string>(context.CoverageLimitations),
@@ -178,9 +171,10 @@ namespace AegisPC.Security.Detection
                     DeduplicatedScore = 0,
                     CategoryAdjustedScore = 0,
                     ContextModifier = 1.0,
-                    ScoreTrace = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0 ? "Clean (0 evidence)" : "Incomplete detector coverage",
-                    OverallConfidence = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0 ? EvidenceConfidence.High : EvidenceConfidence.Low,
-                    ThreatTitle = string.Empty,
+                    ScoreTrace = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0 ? "No findings in inspected scope" : "Incomplete detector coverage",
+                    OverallConfidence = EvidenceConfidence.Low,
+                    ThreatTitle = policyBypass ? "Kapsam dışı; kullanıcı istisnası" :
+                        failedDetectorCount == 0 && context.CoverageLimitations.Count == 0 ? "İncelenen kapsamda bulgu yok" : "İnceleme tamamlanamadı",
                     Evidences = new List<SecurityEvidence>(),
                     LatencyMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 2),
                     ScanTimeUtc = DateTime.UtcNow
@@ -314,10 +308,11 @@ namespace AegisPC.Security.Detection
                 FilePath = context.FilePath,
                 SHA256 = context.SHA256,
                 Verdict = verdict,
+                PolicyBypassed = policyBypass && verdict != DetectionVerdict.ConfirmedMalicious,
                 IsComplete = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0,
                 FailedDetectorCount = failedDetectorCount,
                 CoverageLimitations = new List<string>(context.CoverageLimitations),
-                RecommendedPolicy = policy,
+                RecommendedPolicy = policyBypass && verdict != DetectionVerdict.ConfirmedMalicious ? DetectionPolicy.Allow : policy,
                 RiskScore = finalScore,
                 RawScore = rawScore,
                 DeduplicatedScore = deduplicatedSum,
@@ -377,7 +372,7 @@ namespace AegisPC.Security.Detection
                 return (DetectionVerdict.LowRisk, DetectionPolicy.Observe, "Düşük Risk / Bilgilendirme (Low Risk)");
             }
 
-            return (DetectionVerdict.Clean, DetectionPolicy.Allow, "Güvenli / Temiz");
+            return (DetectionVerdict.Clean, DetectionPolicy.Allow, "İncelenen kapsamda bulgu yok");
         }
     }
 }

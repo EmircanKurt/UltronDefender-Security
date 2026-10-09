@@ -16,8 +16,18 @@ internal static class RealtimeScanPriority
         return new Lease();
     }
 
-    internal static Task WaitAsync(CancellationToken token)
-    { lock (Sync) return _idle.Task.WaitAsync(token); }
+    internal static async Task WaitAsync(CancellationToken token)
+    {
+        Task idle;
+        lock (Sync) idle = _idle.Task;
+        // Age bulk admission so an uninterrupted RT storm cannot starve every scan.
+        // This only grants permission to compete for the shared resource slot, not extra workers.
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(token);
+        wait.CancelAfter(TimeSpan.FromMilliseconds(250));
+        try { await idle.WaitAsync(wait.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested) { }
+        token.ThrowIfCancellationRequested();
+    }
 
     private static TaskCompletionSource Completed()
     { var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); signal.SetResult(); return signal; }

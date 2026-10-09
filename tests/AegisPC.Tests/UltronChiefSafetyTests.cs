@@ -143,7 +143,14 @@ public sealed class UltronChiefSafetyTests
         internal ProtectionActionValidation Proof = new(true, true, false, false, "verified-test-only", FileIdentity, null, "Fixture");
         internal int Executions;
         public Task<ProtectionActionValidation> ValidateAsync(ProtectionEvidenceSnapshot snapshot, ProtectionActionKind kind, ProtectionCaller caller, CancellationToken token) => Task.FromResult(Proof);
-        public Task<ActionReceipt> ExecuteAsync(ActionPermit permit, CancellationToken token)
+        public Task<IValidatedProtectionTarget?> AcquireAsync(ProtectionEvidenceSnapshot snapshot, ProtectionActionKind kind, ProtectionCaller caller, CancellationToken token)
+            => Task.FromResult<IValidatedProtectionTarget?>(new FixtureTarget(Proof));
+        public Task<ActionReceipt> ExecuteAsync(ActionPermit permit, IValidatedProtectionTarget target, CancellationToken token)
         { Interlocked.Increment(ref Executions); return Task.FromResult(new ActionReceipt(Guid.NewGuid(), permit.Id, permit.Kind, ProtectionActionOutcome.Failed, "SyntheticQuarantineFailure", DateTimeOffset.UtcNow)); }
+        private sealed class FixtureTarget(ProtectionActionValidation proof) : IValidatedProtectionTarget
+        {
+            public ProtectionActionValidation Validation => proof;
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
     }
 }

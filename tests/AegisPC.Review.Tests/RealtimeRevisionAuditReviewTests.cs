@@ -113,6 +113,20 @@ public sealed class RealtimeRevisionAuditReviewTests : IDisposable
         return path;
     }
 
+    /// <summary>Parent and descendant roots share one recursive OS watcher; only the owned benign fixture directory is observed.</summary>
+    [Fact]
+    public void NestedRoots_DoNotAllocateDuplicateWatchers()
+    {
+        string child = Path.Combine(_root, "nested"); Directory.CreateDirectory(child);
+        using var engine = new RealTimeProtectionEngine(new InertArrivals(), new Stable(),
+            new FixtureVerdict((_, _) => Task.FromResult(new RealTimeVerdictResult { InspectionComplete = true })), new NoAction());
+        engine.Start(watchDefaultLocations: false);
+        engine.AddWatchDirectory(_root);
+        engine.AddWatchDirectory(child);
+        Assert.Single(engine.WatchedLocations);
+        Assert.Equal(Path.GetFullPath(_root) + Path.DirectorySeparatorChar, engine.WatchedLocations[0]);
+    }
+
     /// <summary>Removes only this test instance's unique temporary fixture root after inert dependencies are disposed.</summary>
     public void Dispose() => Directory.Delete(_root, recursive: true);
 

@@ -196,7 +196,7 @@ public sealed class UltronFilterReviewTests
             Calls++;
             return Task.FromResult(new DetectionResult
             {
-                Verdict = DetectionVerdict.ConfirmedMalicious, RiskScore = 100,
+                Verdict = DetectionVerdict.ConfirmedMalicious, RiskScore = 100, IsComplete = true,
                 SHA256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))), ThreatTitle = "Synthetic review evidence, not malware",
                 Evidences = new List<SecurityEvidence> { new()
                     { Category = EvidenceCategory.StaticSignature, Confidence = EvidenceConfidence.Absolute, ScoreContribution = 100 } }

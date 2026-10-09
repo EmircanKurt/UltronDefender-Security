@@ -27,6 +27,7 @@ public sealed class FileContentClassifier : IFileContentClassifier
         ArgumentNullException.ThrowIfNull(source);
         if (!source.CanRead || !source.CanSeek) throw new ArgumentException("Content classification requires a readable seekable source.", nameof(source));
         cancellationToken.ThrowIfCancellationRequested();
+        using var contentMeasurement = ScanStageMeasurements.Measure(ScanStageTiming.Content);
         var result = new FileContentClassification { DeclaredExtension = (declaredExtension ?? string.Empty).ToLowerInvariant() };
         long original = source.Position;
         try

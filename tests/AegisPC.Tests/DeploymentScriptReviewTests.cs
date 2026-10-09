@@ -20,27 +20,14 @@ public sealed class DeploymentScriptReviewTests
     }
 
     [Fact]
-    public void InnoServiceImagePath_RemainsQuotedAfterWindowsArgumentDecoding()
+    public void PreviewInno_DoesNotInstallOrStartNativeServices()
     {
-        var script = File.ReadAllLines(Path.Combine(RepositoryRoot(), "installer.iss"));
-        var line = Assert.Single(script.Where(value => value.Contains("Parameters: \"create ", StringComparison.Ordinal)));
-        const string start = "Parameters: \"";
-        var begin = line.IndexOf(start, StringComparison.Ordinal) + start.Length;
-        var end = line.IndexOf("\"; Flags:", begin, StringComparison.Ordinal);
-        var parameters = line[begin..end].Replace("\"\"", "\"", StringComparison.Ordinal)
-            .Replace("{app}", @"C:\Program Files\Review Fixture", StringComparison.Ordinal);
-        var argumentPointer = CommandLineToArgvW("sc.exe " + parameters, out var count);
-        Assert.NotEqual(IntPtr.Zero, argumentPointer);
-        try
-        {
-            var arguments = Enumerable.Range(0, count).Select(index => Marshal.PtrToStringUni(
-                Marshal.ReadIntPtr(argumentPointer, index * IntPtr.Size))).ToArray();
-            Assert.Equal("AegisPC Protection Service", arguments[2]);
-            var binIndex = Array.IndexOf(arguments, "binPath=");
-            Assert.True(binIndex >= 0);
-            Assert.Equal("\"C:\\Program Files\\Review Fixture\\Service\\AegisPC.Service.exe\"", arguments[binIndex + 1]);
-        }
-        finally { LocalFree(argumentPointer); }
+        var script = File.ReadAllText(Path.Combine(RepositoryRoot(), "installer.iss"));
+        Assert.Contains("PrivilegesRequired=lowest", script);
+        Assert.DoesNotContain("Filename: \"{sys}\\sc.exe\"", script);
+        Assert.DoesNotContain("Tasks: installservice", script);
+        Assert.DoesNotContain("Root: HKLM", script);
+        Assert.DoesNotContain("postinstall", script);
     }
 
     private static string RepositoryRoot()

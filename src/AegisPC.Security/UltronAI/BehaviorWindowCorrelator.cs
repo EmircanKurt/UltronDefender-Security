@@ -15,52 +15,102 @@ public sealed class BehaviorWindowCorrelator(IUltronDecisionEngine decisions)
     private const int MaxActors = 512;
     private const int MaxEventsPerActor = 64;
     private readonly object _gate = new();
-    private readonly Dictionary<BehaviorProcessIdentity, List<BehaviorObservation>> _actors = new();
+    private sealed class ActorWindow
+    {
+        internal readonly List<BehaviorObservation> Events = [];
+        internal DateTimeOffset LastObserved;
+        internal DateTimeOffset LossExpires;
+    }
+    private readonly Dictionary<BehaviorProcessIdentity, ActorWindow> _actors = new();
+    private readonly Dictionary<BehaviorProcessIdentity, DateTimeOffset> _evictedActors = new();
+    private DateTimeOffset _untrackedLossUntil;
+    private DateTimeOffset _nextCleanup;
     private long _evictions;
     private readonly BehaviorReviewStatistics _statistics = new();
     /// <summary>Bounded review statistics; none are calibrated malware probabilities.</summary>
     public (int Count, double? Ewma, double? Median, double? Mad) Statistics => _statistics.Snapshot();
     /// <summary>Discards retained actor events when AI review is disabled; historical loss stays recorded.</summary>
-    public void Clear() { lock (_gate) _actors.Clear(); }
+    public void Clear()
+    {
+        lock (_gate)
+        { _actors.Clear(); _evictedActors.Clear(); _untrackedLossUntil = default; }
+    }
 
     /// <summary>Rejects missing, future or stale identity, and never infers a writer from a pathname/lock owner.</summary>
     public BehaviorWindowReview Observe(BehaviorObservation observation, DateTimeOffset? nowUtc = null)
     {
         ArgumentNullException.ThrowIfNull(observation);
         DateTimeOffset now = nowUtc ?? DateTimeOffset.UtcNow;
+        var actor = observation.Actor;
+        bool valid = actor is { Pid: > 4 } && actor.StartedAtUtc > DateTimeOffset.UnixEpoch &&
+            !string.IsNullOrWhiteSpace(actor.BootId) && actor.BootId.Length <= 128 &&
+            !string.IsNullOrWhiteSpace(observation.EventId) && !string.IsNullOrWhiteSpace(observation.FeatureId) &&
+            observation.ObservedAtUtc >= actor.StartedAtUtc && observation.ObservedAtUtc <= now.AddSeconds(5) &&
+            observation.ObservedAtUtc >= now.AddMinutes(-5) && Enum.IsDefined(observation.Kind) &&
+            observation.Kind != BehaviorObservationKind.CoverageGap &&
+            (observation.Kind != BehaviorObservationKind.FileWritten || observation.Attribution == BehaviorAttribution.EtwThreadGeneration);
+        BehaviorObservation[] retained;
+        bool complete;
+        int actors;
+        long evictions;
         lock (_gate)
         {
-            foreach (var key in _actors.Where(x => x.Value.All(e => e.ObservedAtUtc < now.AddMinutes(-5))).Select(x => x.Key).ToArray())
-                _actors.Remove(key);
-            var actor = observation.Actor;
-            bool valid = actor is { Pid: > 4 } && actor.StartedAtUtc > DateTimeOffset.UnixEpoch &&
-                !string.IsNullOrWhiteSpace(actor.BootId) && actor.BootId.Length <= 128 &&
-                observation.ObservedAtUtc >= actor.StartedAtUtc && observation.ObservedAtUtc <= now.AddSeconds(5) &&
-                observation.ObservedAtUtc >= now.AddMinutes(-5) &&
-                observation.Kind != BehaviorObservationKind.CoverageGap &&
-                (observation.Kind != BehaviorObservationKind.FileWritten || observation.Attribution == BehaviorAttribution.EtwThreadGeneration);
-            if (!valid) return Review(null, [], now, false);
-            if (!_actors.TryGetValue(actor!, out var events))
+            if (valid && now >= _nextCleanup)
             {
-                if (_actors.Count >= MaxActors)
+                foreach (var key in _actors.Where(x => x.Value.LastObserved < now.AddMinutes(-5)).Select(x => x.Key).ToArray())
+                    _actors.Remove(key);
+                foreach (var key in _evictedActors.Where(x => x.Value <= now).Select(x => x.Key).ToArray())
+                    _evictedActors.Remove(key);
+                _nextCleanup = now.AddSeconds(1);
+            }
+            retained = [];
+            complete = false;
+            if (valid)
+            {
+                if (!_actors.TryGetValue(actor!, out var window))
                 {
-                    var oldest = _actors.MinBy(x => x.Value.Max(e => e.ObservedAtUtc)).Key;
-                    _actors.Remove(oldest); _evictions++;
+                    if (_actors.Count >= MaxActors)
+                    {
+                        var oldest = _actors.MinBy(x => x.Value.LastObserved).Key;
+                        if (_evictedActors.Count >= MaxActors && !_evictedActors.ContainsKey(oldest))
+                        {
+                            // Even loss markers are bounded. If attribution history itself is lost,
+                            // temporarily report a global gap rather than invent complete coverage.
+                            _untrackedLossUntil = now.AddMinutes(5);
+                            _evictedActors.Remove(_evictedActors.MinBy(x => x.Value).Key);
+                        }
+                        _evictedActors[oldest] = _actors[oldest].LastObserved.AddMinutes(5);
+                        _actors.Remove(oldest); _evictions++;
+                    }
+                    window = new() { LossExpires = _evictedActors.GetValueOrDefault(actor!) };
+                    _evictedActors.Remove(actor!);
+                    _actors.Add(actor!, window);
                 }
-                events = []; _actors.Add(actor!, events);
+                var events = window.Events;
+                events.RemoveAll(e => e.ObservedAtUtc < now.AddMinutes(-5));
+                if (!events.Any(e => e.EventId == observation.EventId && e.FeatureId == observation.FeatureId))
+                {
+                    if (events.Count == MaxEventsPerActor)
+                    {
+                        var oldest = events.MinBy(e => e.ObservedAtUtc)!;
+                        events.Remove(oldest); _evictions++;
+                        var expires = oldest.ObservedAtUtc.AddMinutes(5);
+                        if (expires > window.LossExpires) window.LossExpires = expires;
+                    }
+                    events.Add(observation);
+                }
+                if (observation.ObservedAtUtc > window.LastObserved) window.LastObserved = observation.ObservedAtUtc;
+                retained = events.ToArray();
+                complete = window.LossExpires <= now && _untrackedLossUntil <= now;
             }
-            events.RemoveAll(e => e.ObservedAtUtc < now.AddMinutes(-5));
-            if (!events.Any(e => e.EventId == observation.EventId && e.FeatureId == observation.FeatureId))
-            {
-                if (events.Count == MaxEventsPerActor) { events.RemoveAt(0); _evictions++; }
-                events.Add(observation);
-            }
-            return Review(actor, events, now, _evictions == 0);
+            actors = _actors.Count; evictions = _evictions;
         }
+        // Scoring/sorting does not hold the inventory lock; invalid observations do not poison baselines.
+        return Review(valid ? actor : null, retained, now, complete, actors, evictions, valid);
     }
 
     private BehaviorWindowReview Review(BehaviorProcessIdentity? actor, IEnumerable<BehaviorObservation> events,
-        DateTimeOffset now, bool complete)
+        DateTimeOffset now, bool complete, int actors, long evictions, bool addStatistics)
     {
         UltronDecision Window(TimeSpan span)
         {
@@ -74,7 +124,7 @@ public sealed class BehaviorWindowCorrelator(IUltronDecisionEngine decisions)
         }
         var shortWindow = Window(TimeSpan.FromSeconds(30));
         var longWindow = Window(TimeSpan.FromMinutes(5));
-        _statistics.Add(longWindow.ReviewPriority);
-        return new(actor, shortWindow, longWindow, complete, _actors.Count, _evictions);
+        if (addStatistics) _statistics.Add(longWindow.ReviewPriority);
+        return new(actor, shortWindow, longWindow, complete, actors, evictions);
     }
 }

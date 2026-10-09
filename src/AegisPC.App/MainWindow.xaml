@@ -30,12 +30,14 @@
                      FontSize="14"
                      FontWeight="SemiBold"
                      Height="44"
-                     Padding="14,0,0,0" />
+                     Padding="14,0,0,0">
+            <ui:TitleBar.Header><TextBlock Text="Ultron Defender" FontSize="14" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/></ui:TitleBar.Header>
+        </ui:TitleBar>
 
         <!-- Main Body: 2 Columns with Dynamic Theme-Adaptive Left Sidebar -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="SidebarColumn" Width="220"/>
+                <ColumnDefinition x:Name="SidebarColumn" Width="240"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
@@ -45,7 +47,7 @@
             <!-- Main Shell Navigation -->
             <ui:NavigationView Grid.ColumnSpan="2" x:Name="RootNavigation" 
                                PaneDisplayMode="Left" 
-                               OpenPaneLength="220"
+                               OpenPaneLength="240"
                                CompactPaneLength="64"
                                IsBackButtonVisible="Collapsed"
                                IsPaneToggleVisible="False"
@@ -59,14 +61,34 @@
                     <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="{DynamicResource ColorSidebarBg}"/>
                     <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="{DynamicResource ColorSidebarBg}"/>
                     
-                    <Style TargetType="{x:Type ui:NavigationViewItem}">
+                    <Style x:Key="UltronSidebarItemStyle" TargetType="{x:Type ui:NavigationViewItem}">
                         <Setter Property="FontFamily" Value="{StaticResource FontSans}"/>
-                        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource BrushSidebarTextSecondary}"/>
                         <Setter Property="FontWeight" Value="Medium"/>
-                        <Setter Property="FontSize" Value="13"/>
+                        <Setter Property="FontSize" Value="15"/>
                         <Setter Property="Margin" Value="10,2,10,2"/>
-                        <Setter Property="Height" Value="38"/>
+                        <Setter Property="Height" Value="48"/>
                         <Setter Property="ToolTip" Value="{Binding Content, RelativeSource={RelativeSource Self}}"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="{x:Type ui:NavigationViewItem}">
+                                    <Border x:Name="ItemSurface" CornerRadius="4" Background="Transparent">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="4"/><ColumnDefinition Width="42"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                            <Border x:Name="SelectionMark" Background="{DynamicResource BrushBrandPrimary}" Visibility="Collapsed" CornerRadius="2"/>
+                                            <ContentPresenter Grid.Column="1" Content="{TemplateBinding Icon}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            <ContentPresenter x:Name="ItemLabel" Grid.Column="2" Content="{TemplateBinding Content}" TextElement.Foreground="{TemplateBinding Foreground}" TextElement.FontSize="{TemplateBinding FontSize}" TextElement.FontWeight="{TemplateBinding FontWeight}" VerticalAlignment="Center" Margin="4,0,8,0"/>
+                                        </Grid>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="{DynamicResource BrushShellSidebarHover}"/></Trigger>
+                                        <Trigger Property="IsActive" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="{DynamicResource BrushShellSidebarActive}"/><Setter TargetName="SelectionMark" Property="Visibility" Value="Visible"/><Setter Property="Foreground" Value="{DynamicResource BrushSidebarTextPrimary}"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger>
+                                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ItemSurface" Property="BorderBrush" Value="{DynamicResource BrushSidebarTextPrimary}"/><Setter TargetName="ItemSurface" Property="BorderThickness" Value="1"/></Trigger>
+                                        <DataTrigger Binding="{Binding PaneDisplayMode, RelativeSource={RelativeSource AncestorType={x:Type ui:NavigationView}}}" Value="LeftMinimal"><Setter TargetName="ItemLabel" Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
                     </Style>
 
                     <Style TargetType="{x:Type ui:NavigationViewItemHeader}">
@@ -80,7 +102,7 @@
                 
                 <!-- Sidebar Pane Header with Modern Brand Identity -->
                 <ui:NavigationView.PaneHeader>
-                    <Border x:Name="BrandHeader" Padding="18,22,14,22" Margin="0,0,0,12" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource BrushSidebarBorder}" Background="{DynamicResource BrushSidebarHeader}">
+                    <Border x:Name="BrandHeader" Padding="20,26,16,26" Margin="0,0,0,16" Background="{DynamicResource BrushSidebarHeader}">
                         <Grid VerticalAlignment="Center">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -88,67 +110,67 @@
                             </Grid.ColumnDefinitions>
                             <!-- 62px Large High-Res Shield Icon -->
                             <Image x:Name="BrandImage" Grid.Column="0" Source="pack://application:,,,/UltronDefender;component/Resources/Images/ultron_logo.png"
-                                   Width="40" Height="44" Margin="0,0,12,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                   Width="44" Height="52" Margin="0,0,12,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
                             <StackPanel x:Name="BrandText" Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="ULTRON" FontFamily="{StaticResource FontBrand}" FontSize="23" FontWeight="Bold" Foreground="{DynamicResource BrushBrandPrimary}" LineHeight="28" TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType"/>
-                                <TextBlock Text="Defender" FontFamily="{StaticResource FontHeading}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushTextSecondary}" Margin="1,4,0,0" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"/>
+                                <TextBlock Text="ULTRON" FontFamily="{StaticResource FontBrand}" FontSize="25" FontWeight="Bold" Foreground="{DynamicResource BrushSidebarTextPrimary}" LineHeight="28" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"/>
+                                <TextBlock Text="Defender" FontFamily="{StaticResource FontHeading}" FontSize="17" Foreground="{DynamicResource BrushSidebarTextSecondary}" Margin="1,2,0,0" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"/>
                             </StackPanel>
                         </Grid>
                     </Border>
                 </ui:NavigationView.PaneHeader>
                 
                 <ui:NavigationView.MenuItems>
-                    <ui:NavigationViewItem Content="Genel bakış" TargetPageType="{x:Type views:DashboardView}">
+                    <ui:NavigationViewItem Style="{StaticResource UltronSidebarItemStyle}" Content="Genel bakış" TargetPageType="{x:Type views:DashboardView}">
                         <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="Home24" FontSize="16"/>
+                            <ui:SymbolIcon Foreground="{DynamicResource BrushSidebarTextSecondary}" Symbol="Home24" FontSize="23"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 
-                    <ui:NavigationViewItem Content="Tarama" TargetPageType="{x:Type views:ScanView}">
+                    <ui:NavigationViewItem Style="{StaticResource UltronSidebarItemStyle}" Content="Tarayıcı" TargetPageType="{x:Type views:ScanView}">
                         <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="Shield24" FontSize="16"/>
+                            <ui:SymbolIcon Foreground="{DynamicResource BrushSidebarTextSecondary}" Symbol="Search24" FontSize="23"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 
-                    <ui:NavigationViewItem Content="Korumalar" TargetPageType="{x:Type views:UltronProtectionCentreView}">
-                        <ui:NavigationViewItem.Icon><ui:SymbolIcon Symbol="Shield24" FontSize="16"/></ui:NavigationViewItem.Icon>
+                    <ui:NavigationViewItem Style="{StaticResource UltronSidebarItemStyle}" Content="Korumalar" TargetPageType="{x:Type views:UltronProtectionCentreView}">
+                        <ui:NavigationViewItem.Icon><ui:SymbolIcon Foreground="{DynamicResource BrushSidebarTextSecondary}" Symbol="Shield24" FontSize="23"/></ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 
-                    <ui:NavigationViewItem Content="Karantina ve olaylar" TargetPageType="{x:Type views:QuarantineView}">
+                    <ui:NavigationViewItem Style="{StaticResource UltronSidebarItemStyle}" Content="Karantina ve olaylar" TargetPageType="{x:Type views:QuarantineView}">
                         <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="FolderZip24" FontSize="16"/>
+                            <ui:SymbolIcon Foreground="{DynamicResource BrushSidebarTextSecondary}" Symbol="FolderZip24" FontSize="23"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 
-                    <ui:NavigationViewItem Content="Browser Defender" TargetPageType="{x:Type views:BrowserSecurityView}">
+                    <ui:NavigationViewItem Style="{StaticResource UltronSidebarItemStyle}" Content="Browser Defender" TargetPageType="{x:Type views:BrowserSecurityView}">
                         <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="WindowShield24" FontSize="16"/>
+                            <ui:SymbolIcon Foreground="{DynamicResource BrushSidebarTextSecondary}" Symbol="WindowShield24" FontSize="23"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 
-                    <ui:NavigationViewItem Content="Süreç Yöneticisi" TargetPageType="{x:Type views:ProcessListView}">
+                    <ui:NavigationViewItem Style="{StaticResource UltronSidebarItemStyle}" Content="Süreç Yöneticisi" TargetPageType="{x:Type views:ProcessListView}">
                         <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="TasksApp24" FontSize="16"/>
+                            <ui:SymbolIcon Foreground="{DynamicResource BrushSidebarTextSecondary}" Symbol="TasksApp24" FontSize="23"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 
-                    <ui:NavigationViewItem Content="Sistem tanılama" TargetPageType="{x:Type views:CrashAnalysisView}">
+                    <ui:NavigationViewItem Style="{StaticResource UltronSidebarItemStyle}" Content="Sistem tanılama" TargetPageType="{x:Type views:CrashAnalysisView}">
                         <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="Warning24" FontSize="16"/>
+                            <ui:SymbolIcon Foreground="{DynamicResource BrushSidebarTextSecondary}" Symbol="Warning24" FontSize="23"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
                 </ui:NavigationView.MenuItems>
 
                 <ui:NavigationView.FooterMenuItems>
-                    <ui:NavigationViewItem x:Name="NavThemeToggle" Content="Gece Modu" Click="OnThemeToggleClicked">
+                    <ui:NavigationViewItem Style="{StaticResource UltronSidebarItemStyle}" x:Name="NavThemeToggle" Content="Gece Modu" Click="OnThemeToggleClicked">
                         <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon x:Name="NavThemeIcon" Symbol="DarkTheme24" FontSize="16"/>
+                            <ui:SymbolIcon Foreground="{DynamicResource BrushSidebarTextSecondary}" x:Name="NavThemeIcon" Symbol="DarkTheme24" FontSize="23"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
 
-                    <ui:NavigationViewItem Content="Ayarlar" TargetPageType="{x:Type views:SettingsView}">
+                    <ui:NavigationViewItem Style="{StaticResource UltronSidebarItemStyle}" Content="Ayarlar" TargetPageType="{x:Type views:SettingsView}">
                         <ui:NavigationViewItem.Icon>
-                            <ui:SymbolIcon Symbol="Settings24" FontSize="16"/>
+                            <ui:SymbolIcon Foreground="{DynamicResource BrushSidebarTextSecondary}" Symbol="Settings24" FontSize="23"/>
                         </ui:NavigationViewItem.Icon>
                     </ui:NavigationViewItem>
                 </ui:NavigationView.FooterMenuItems>

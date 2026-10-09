@@ -255,7 +255,10 @@ public sealed class FinalReviewScanRegressionTests : IDisposable
         var first = await scanner.ScanFileDetailedAsync(path, TimeSpan.FromSeconds(5));
         var repeated = await scanner.ScanFileDetailedAsync(path, TimeSpan.FromSeconds(5));
         Assert.Equal(FileScanOutcome.Failed, first.Outcome);
-        Assert.Contains("kapsayıcının", first.ErrorMessage);
+        Assert.False(first.InspectionComplete);
+        Assert.NotNull(first.ContentClassification);
+        Assert.Contains(FileContentFormat.UnsupportedContainer, first.ContentClassification.Formats);
+        Assert.NotEmpty(first.ContentClassification.CoverageLimitations);
         Assert.Null(first.Finding);
         Assert.Equal(FileScanOutcome.Failed, repeated.Outcome);
         Assert.False(repeated.IsFromCache);

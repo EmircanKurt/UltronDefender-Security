@@ -74,6 +74,13 @@ namespace AegisPC.App.ViewModels
             {
                 IsScanning = _scanCoordinator.IsScanning;
                 IsNotScanning = !_scanCoordinator.IsScanning;
+                IsPaused = IsScanning && _scanCoordinator.IsPaused;
+                if (IsScanning)
+                {
+                    _isCancellationRequested = _scanCoordinator.State == ScanState.Cancelling;
+                    IsScanFinishedView = false;
+                    OnPropertyChanged(nameof(CanControlScan));
+                }
                 ProgressPercentage = (int)_scanCoordinator.ProgressPercent;
                 CurrentFile = _scanCoordinator.CurrentFile;
                 ScannedCount = _scanCoordinator.ScannedFiles;
@@ -83,6 +90,9 @@ namespace AegisPC.App.ViewModels
                     ScannedFromCache = lp.ScannedFromCache;
                     SkippedSignedClean = lp.SkippedSignedClean;
                     NewlyScanned = lp.NewlyScanned;
+                    FailedCount = lp.FailedFiles;
+                    TimedOutCount = lp.TimedOutFiles;
+                    SkippedCount = lp.SkippedFiles;
                     ConfirmedMaliciousCount = lp.ConfirmedMaliciousCount;
                     SuspiciousReviewCount = lp.SuspiciousCount;
                     IsCpuTelemetryAvailable = lp.IsCpuTelemetryAvailable;
@@ -95,6 +105,11 @@ namespace AegisPC.App.ViewModels
                 FindingsCount = _scanCoordinator.FindingsCount;
                 DetectionsCount = FindingsCount;
                 ScanStatusText = _scanCoordinator.StatusText;
+                if (IsScanning && _isCancellationRequested)
+                {
+                    ScanStatusText = "İptal isteniyor; çalışan işler durduruluyor.";
+                    RemainingEtaFormatted = "İptal bekleniyor";
+                }
 
                 if (IsScanning)
                 {
@@ -104,16 +119,12 @@ namespace AegisPC.App.ViewModels
                         _lastEngineUpdateUtc = DateTime.UtcNow;
                         ScanDurationFormatted = FormatDuration(_scanCoordinator.ElapsedTime);
                     }
-                    if (!_stopwatch.IsRunning) _stopwatch.Start();
-                    _timer?.Start();
+                    if (IsPaused) { _stopwatch.Stop(); _timer?.Stop(); }
+                    else { if (!_stopwatch.IsRunning) _stopwatch.Start(); _timer?.Start(); }
                 }
 
                 UpdateChecklistSteps(ProgressPercentage);
 
-                if (IsScanning && !App.IsStartMinimized)
-                {
-                    Views.ActiveScanWindow.ShowScanWindow(this);
-                }
             });
         }
 
@@ -134,10 +145,6 @@ namespace AegisPC.App.ViewModels
                     IsScanning = true;
                     IsNotScanning = false;
                     IsScanFinishedView = false;
-                    if (!App.IsStartMinimized)
-                    {
-                        Views.ActiveScanWindow.ShowScanWindow(this);
-                    }
                 }
 
                 ProgressPercentage = (int)p.ProgressPercent;

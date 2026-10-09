@@ -123,6 +123,10 @@ namespace AegisPC.Service.IPC
             _fileProtectionLifecycle = ProtectionCommandLifecycle.Create(realTimeProtectionEngine, protectionService,
                 logger, etwPreExecService, settingsService.GetSetting("EnableExperimentalKernelBridge", false) ? kernelBridge : null,
                 processMonitor, imageLoadMonitor, devices);
+            _fileProtectionPause = new TimedFileProtectionPause(
+                () => _settingsService.Current.FileProtectionPause, SavePauseIntentAsync,
+                enabled => _fileProtectionLifecycle.SetEnabledAsync(_settingsService, enabled),
+                () => _protectionService.IsProtectionActive && _realTimeProtectionEngine.IsRunning);
 
             // Wire up real-time events to broadcast to IPC clients
             _protectionService.OnThreatDetected += OnThreatDetected;
@@ -201,6 +205,8 @@ namespace AegisPC.Service.IPC
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("AegisPC IPC Server starting on pipe: {PipeName}", PipeName);
+            using var pauseLifetime = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            var pauseRecovery = _fileProtectionPause.RunRecoveryAsync(_logger, pauseLifetime.Token);
             using var heartbeat = new Timer(_ =>
             {
                 if (stoppingToken.IsCancellationRequested) return;
@@ -208,6 +214,8 @@ namespace AegisPC.Service.IPC
                 catch (Exception exception) { _logger.LogWarning(exception, "Protection status heartbeat failed."); }
             }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
 
+            try
+            {
             while (!stoppingToken.IsCancellationRequested)
             {
                 NamedPipeServerStream? pendingPipe = null;
@@ -247,6 +255,12 @@ namespace AegisPC.Service.IPC
                 }
             }
 
+            }
+            finally
+            {
+                pauseLifetime.Cancel();
+                await pauseRecovery.ConfigureAwait(false);
+            }
             _logger.LogInformation("AegisPC IPC Server stopped.");
         }
 
@@ -342,13 +356,17 @@ namespace AegisPC.Service.IPC
                     break;
 
                 case ServiceCommandType.EnableProtection:
-                    await _fileProtectionLifecycle.SetEnabledAsync(_settingsService, enabled: true);
+                    await _fileProtectionPause.SetManualEnabledAsync(enabled: true);
                     await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
                     break;
 
                 case ServiceCommandType.DisableProtection:
-                    await _fileProtectionLifecycle.SetEnabledAsync(_settingsService, enabled: false);
+                    await _fileProtectionPause.SetManualEnabledAsync(enabled: false);
                     await SendResponseAsync(client, $"Status:{JsonSerializer.Serialize(BuildCurrentStatus())}");
+                    break;
+
+                case ServiceCommandType.PauseFileProtection:
+                    await ProcessPauseAsync(command, client);
                     break;
 
                 case ServiceCommandType.EnableRansomwareShield:
@@ -551,6 +569,8 @@ namespace AegisPC.Service.IPC
                 Health = health,
                 IsServiceRunning = true,
                 IsRealTimeEnabled = _protectionService.IsProtectionActive && _realTimeProtectionEngine.IsRunning,
+                SupportsTimedFileProtectionPause = true,
+                FileProtectionPause = _settingsService.Current.FileProtectionPause,
                 IsUltronAiEnabled = _detectionHub?.RegisteredDetectors
                     .OfType<AegisPC.Security.Detection.Detectors.UltronAiDetectorPlugin>()
                     .FirstOrDefault()?.IsReviewEnabled,
@@ -569,6 +589,8 @@ namespace AegisPC.Service.IPC
                 SkipIdleScanOnBattery = _settingsService.Current.SkipIdleScanOnBattery,
                 ScanResourceMode = _settingsService.Current.ScanResourceMode,
                 EnableAutoQuarantine = _settingsService.Current.EnableAutoQuarantine,
+                AutomaticContainmentAvailable = AegisPC.Security.UltronAI.ProtectionNativePilotPolicy.AutomaticContainmentAvailable,
+                AutomaticContainmentReason = AegisPC.Security.UltronAI.ProtectionNativePilotPolicy.ReasonCode,
                 AutoQuarantineThreshold = _settingsService.Current.AutoQuarantineThreshold,
                 LastThreatTime = _lastThreatTime,
                 TotalThreatsBlocked24h = _totalThreatsBlocked24h,

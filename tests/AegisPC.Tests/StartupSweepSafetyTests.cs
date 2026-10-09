@@ -56,6 +56,7 @@ public sealed partial class StartupSweepSafetyTests : IDisposable
         var engine = new RecordingEngine(_ => new RealTimeVerdictResult
         {
             Verdict = RealTimeVerdict.Clean,
+            InspectionComplete = true,
             RecommendedPolicy = RealTimePolicyAction.Allow,
             SHA256 = sha
         });
@@ -277,6 +278,7 @@ public sealed partial class StartupSweepSafetyTests : IDisposable
         var engine = new RecordingEngine(_ => new RealTimeVerdictResult
         {
             Verdict = RealTimeVerdict.Clean,
+            InspectionComplete = true,
             RecommendedPolicy = RealTimePolicyAction.Allow,
             RiskScore = 0
         });

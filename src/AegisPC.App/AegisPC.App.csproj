@@ -10,7 +10,7 @@
     <Title>Ultron Defender Security</Title>
     <Company>Ultron Defender Security</Company>
     <Description>Ultron Defender Security - Experimental Windows security application</Description>
-    <Version>3.2.1</Version>
+    <Version>3.2.2-preview.20261009</Version>
     <AssemblyTitle>Ultron Defender Security</AssemblyTitle>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>

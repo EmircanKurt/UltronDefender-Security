@@ -64,6 +64,7 @@ namespace AegisPC.Security.Scanning
         /// <summary>Contains only matching detected content, without terminating processes holding the file.</summary>
         public Task<bool> TryQuarantineFileAsync(string path, string reason, string expectedSha256, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(expectedSha256))
             {
                 LastError = "Doğrulanmış içerik özeti olmadan otomatik karantina uygulanmadı.";
@@ -76,6 +77,13 @@ namespace AegisPC.Security.Scanning
             string? authenticatedSid = null, bool isAdministrator = false)
         {
             LastError = null;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (expectedSha256 != null && !AegisPC.Security.UltronAI.ProtectionNativePilotPolicy.AutomaticContainmentAvailable)
+            {
+                LastError = AegisPC.Security.UltronAI.ProtectionNativePilotPolicy.ReasonCode;
+                _logger?.LogWarning("Unbrokered automatic quarantine was rejected; native target ownership and VM gates are pending.");
+                return false;
+            }
             if (string.IsNullOrWhiteSpace(path) || (!File.Exists(path) && expectedSha256 == null)) return false;
 
             try

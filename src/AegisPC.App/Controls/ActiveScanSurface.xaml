@@ -1,0 +1,49 @@
+<UserControl x:Class="AegisPC.App.Controls.ActiveScanSurface" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:AegisPC.App.Controls"
+             xmlns:helpers="clr-namespace:AegisPC.App.Helpers" FontFamily="Segoe UI" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}">
+    <UserControl.Resources>
+        <Style x:Key="Detail" TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/><Setter Property="LineHeight" Value="20"/></Style>
+        <Style x:Key="Value" TargetType="TextBlock"><Setter Property="FontSize" Value="23"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,3,0,4"/></Style>
+    </UserControl.Resources>
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <TextBlock Text="Tarama sürüyor" FontSize="23" FontWeight="SemiBold" Margin="0,8,0,20"/>
+        <ScrollViewer x:Name="ScanScroll" Grid.Row="1" helpers:WheelScrollHelper.EnableRootRedirect="True" CanContentScroll="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Grid x:Name="ScanGrid" Margin="0,0,8,8" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions><ColumnDefinition x:Name="VisualColumn" Width="320"/><ColumnDefinition Width="*"/><ColumnDefinition x:Name="MetricsColumn" Width="210"/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <local:ScanRouteVisual x:Name="RouteVisual" VerticalAlignment="Center" Margin="0,0,20,0" IsRunning="{Binding IsScanning}" IsPaused="{Binding IsPaused}" IsMotionEnabled="{Binding CanControlScan, FallbackValue=True}" CurrentFile="{Binding CurrentFile}" ActivityStamp="{Binding ScannedItemsFormatted}"/>
+                <StackPanel x:Name="DetailPanel" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,20,0">
+                    <TextBlock Text="{Binding ScanStatusText}" FontSize="19" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,14"/>
+                    <TextBlock Text="{Binding CurrentFile}" Style="{StaticResource Detail}" MaxHeight="44" TextTrimming="CharacterEllipsis" ToolTip="{Binding CurrentFile}" Margin="0,0,0,14"/>
+                    <TextBlock Text="Dosya içeriği, imza ve etkin tespit kuralları incelenir. İncelenemeyen öğeler raporda belirtilir." Style="{StaticResource Detail}" Margin="0,0,0,14"/>
+                    <TextBlock Text="{Binding FailedCount, StringFormat='İncelenemeyen: {0}'}" Style="{StaticResource Detail}" FontSize="12"/>
+                    <TextBlock Text="{Binding TimedOutCount, StringFormat='Zaman aşımı: {0}'}" Style="{StaticResource Detail}" FontSize="12"/>
+                </StackPanel>
+                <Border x:Name="MetricsPanel" Grid.Column="2" Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="14" VerticalAlignment="Center">
+                    <StackPanel>
+                        <TextBlock Text="Süre" Style="{StaticResource Detail}"/><TextBlock Text="{Binding ScanDurationFormatted}" Style="{StaticResource Value}"/>
+                        <TextBlock Text="Taranan dosyalar" Style="{StaticResource Detail}"/><TextBlock Text="{Binding ScannedItemsFormatted}" Style="{StaticResource Value}" ToolTip="{Binding ScannedBreakdownFormatted}"/>
+                        <Border Height="1" Background="{DynamicResource BrushCardBorder}" Margin="0,0,0,12"/>
+                        <TextBlock Text="İnceleme bulguları (virüs sayısı değil)" Style="{StaticResource Detail}"/><TextBlock Text="{Binding DetectionsCount}" Style="{StaticResource Value}" ToolTip="{Binding FindingBreakdownText}"/>
+                        <Border Height="1" Background="{DynamicResource BrushCardBorder}" Margin="0,0,0,12"/>
+                        <TextBlock Text="Tarama süreci CPU / RAM" Style="{StaticResource Detail}" FontSize="11"/><TextBlock Text="{Binding CpuAndRamFormatted}" Style="{StaticResource Detail}" FontWeight="SemiBold" FontSize="11" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </ScrollViewer>
+        <!-- Controls and actual progress never scroll out of reach. -->
+        <StackPanel x:Name="ScanFooter" Grid.Row="2" Margin="0,8,0,0">
+            <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Sistem Gereksinimleri" Style="{StaticResource Detail}" FontSize="12" ToolTip="{Binding ActiveResourceProfileText}" VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" Grid.Column="1">
+                    <Button x:Name="PauseButton" Content="{Binding PauseButtonText}" Command="{Binding TogglePauseResumeCommand}" IsEnabled="{Binding CanControlScan, FallbackValue=True}" Style="{DynamicResource SecondaryButtonStyle}" MinWidth="104" Margin="0,0,10,0"/>
+                    <Button x:Name="CancelButton" Content="İptal" Command="{Binding CancelScanCommand}" IsEnabled="{Binding CanControlScan, FallbackValue=True}" Style="{DynamicResource SecondaryButtonStyle}" MinWidth="104"/>
+                </StackPanel>
+            </Grid>
+            <ProgressBar x:Name="ScanProgress" Value="{Binding ProgressPercentage, Mode=OneWay}" Height="5" Background="{DynamicResource BrushCardBorder}" Foreground="#23C568"/>
+            <TextBlock Text="{Binding CurrentFile, StringFormat='İncelenen: {0}'}" Style="{StaticResource Detail}" FontSize="12" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding CurrentFile}" Margin="0,8,0,0"/>
+            <TextBlock Text="{Binding RemainingEtaFormatted}" Style="{StaticResource Detail}" FontSize="11" HorizontalAlignment="Right"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

@@ -26,10 +26,10 @@ internal sealed class VolumeScanQueue<T>(int capacity, Func<T, string> volumeKey
     internal async Task WriteAsync(T item, CancellationToken token)
     {
         long queuedAt = Stopwatch.GetTimestamp();
+        string key = volumeKey(item);
         Volume volume;
         lock (_sync)
         {
-            string key = volumeKey(item);
             if (!_volumes.TryGetValue(key, out volume!))
             {
                 if (_volumes.Count >= 128) throw new InvalidOperationException("Scan volume identity budget exceeded.");
@@ -67,6 +67,10 @@ internal sealed class VolumeScanQueue<T>(int capacity, Func<T, string> volumeKey
         while (true)
         {
             token.ThrowIfCancellationRequested();
+            Volume[] snapshot;
+            lock (_sync) snapshot = _order.ToArray();
+            // The callback may query storage or refresh policy. Never run it under the queue lock.
+            var limits = snapshot.ToDictionary(v => v.Key, v => Math.Max(1, volumeLimit(v.Key)), StringComparer.OrdinalIgnoreCase);
             Task changed;
             lock (_sync)
             {
@@ -74,7 +78,8 @@ internal sealed class VolumeScanQueue<T>(int capacity, Func<T, string> volumeKey
                 {
                     int index = (_cursor + i) % _order.Count;
                     var volume = _order[index];
-                    if (volume.Active >= Math.Max(1, volumeLimit(volume.Key)) || !volume.Items.TryDequeue(out var item)) continue;
+                    int limit = limits.GetValueOrDefault(volume.Key, 1);
+                    if (volume.Active >= limit || !volume.Items.TryDequeue(out var item)) continue;
                     _cursor = (index + 1) % _order.Count;
                     volume.Active++;
                     volume.Space.Release();

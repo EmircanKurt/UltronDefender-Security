@@ -131,7 +131,9 @@ namespace AegisPC.Security.Scanning
                     : detectionResult.RiskScore >= 70 ? RiskLevel.HighRisk : RiskLevel.Suspicious;
 
                 var reasons = detectionResult.Evidences
-                    .Select(e => $"[{e.Category}] {e.Description} (+{e.ScoreContribution})")
+                    .Select(e => $"[{e.Category}] {e.Description} (+{e.ScoreContribution})" +
+                        (e.Metadata.TryGetValue("ArchiveMember", out var member)
+                            ? $"; Archive member: {member}; member SHA-256: {e.Metadata.GetValueOrDefault("ArchiveMemberSHA256")}" : string.Empty))
                     .ToList();
 
                 if (reasons.Count == 0 && !string.IsNullOrEmpty(detectionResult.ThreatTitle))
@@ -168,6 +170,12 @@ namespace AegisPC.Security.Scanning
                     Category = findingCat,
                     Title = threatTitle,
                     Description = string.Join(" | ", detectionResult.Evidences.Take(2).Select(e => e.Description)),
+                    RuleSetVersion = DetectionRuleSet.Version,
+                    InspectionComplete = detectionResult.IsComplete && classification?.IsComplete != false && archiveResult?.IsComplete != false,
+                    CoverageLimitations = detectionResult.CoverageLimitations
+                        .Concat(classification?.CoverageLimitations ?? new())
+                        .Concat(archiveResult?.IsComplete == false ? new[] { archiveResult.CoverageLimitation ?? "ArchiveInspectionIncomplete" } : Array.Empty<string>())
+                        .Distinct(StringComparer.Ordinal).Take(32).ToList(),
                     RiskReasons = reasons,
                     ConfidenceLevel = detectionResult.OverallConfidence == EvidenceConfidence.Absolute || detectionResult.OverallConfidence == EvidenceConfidence.High
                         ? ConfidenceLevel.High

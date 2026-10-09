@@ -120,6 +120,7 @@ namespace AegisPC.Security.RealTime
                 result.Verdict = RealTimeVerdict.Unknown;
                 result.RecommendedPolicy = RealTimePolicyAction.Observe;
                 result.ThreatDescription = "The file is unavailable; inspection has not completed.";
+                result.CoverageLimitations = ["FileUnavailable"];
                 result.ScanEndTime = DateTime.UtcNow;
                 result.VerdictTime = DateTime.UtcNow;
                 return result;
@@ -131,13 +132,17 @@ namespace AegisPC.Security.RealTime
                 var fileInfo = new FileInfo(filePath);
                 if (fileInfo.Length == 0)
                 {
+                    result.Verdict = RealTimeVerdict.Unknown;
+                    result.RecommendedPolicy = RealTimePolicyAction.Observe;
+                    result.CoverageLimitations = ["EmptyFileInspectionSkipped"];
+                    result.ThreatDescription = "Empty content; the configured inspection pipeline was not run.";
                     result.ScanEndTime = DateTime.UtcNow;
                     result.VerdictTime = DateTime.UtcNow;
                     return result;
                 }
 
-                result.ContentClassification = await _contentClassifier.ClassifyAsync(scanLock, fileInfo.Extension, ct);
-                result.InspectionComplete = result.ContentClassification.IsComplete;
+                using (ScanStageMeasurements.Measure(ScanStageTiming.Content))
+                    result.ContentClassification = await _contentClassifier.ClassifyAsync(scanLock, fileInfo.Extension, ct);
                 result.CoverageLimitations = result.ContentClassification.CoverageLimitations.ToArray();
 
                 // STAGE 0: Fast Shared Scan-Cache Lookup (FileHashMatcher)
@@ -147,10 +152,13 @@ namespace AegisPC.Security.RealTime
                     var cached = await _fileHashMatcher.TryGetCachedAsync(filePath, fileInfo, ct);
                     verifiedHash = cached.VerifiedHash;
                     if (cached.Hit && cached.Finding == null && _detectionHub == null && result.ContentClassification.IsComplete &&
+                        !result.ContentClassification.RequiresZipInspection &&
+                        _exclusionService?.IsExcluded(filePath, verifiedHash) != true &&
                         AegisPC.Contracts.ThreatIntelligence.Sha256Identity.IsValid(verifiedHash) &&
                         !MalwareSignatureDatabase.HasLoadedHash(verifiedHash))
                     {
                         result.Verdict = RealTimeVerdict.Clean;
+                        result.InspectionComplete = true;
                         result.RecommendedPolicy = RealTimePolicyAction.Allow;
                         result.RiskScore = 0;
                         result.RiskLevel = RiskLevel.Clean;
@@ -165,24 +173,13 @@ namespace AegisPC.Security.RealTime
                 // STAGE 1: Fast Hash & Signature Database Check
                 var sha256 = verifiedHash ?? await _hashService.ComputeSha256Async(filePath, ct);
                 ct.ThrowIfCancellationRequested();
+                // Compatibility at the old provider boundary; never let a sentinel become a hash/verdict.
+                if (sha256 == "VIRUS_INFECTED_OS_BLOCKED")
+                    throw new AegisPC.Core.Exceptions.OperatingSystemFileBlockException(AegisPC.Core.Exceptions.OperatingSystemFileBlockKind.ThreatBlocked);
                 if (!AegisPC.Contracts.ThreatIntelligence.Sha256Identity.IsValid(sha256))
                     throw new IOException("Content identity is unavailable; no clean or confirmed-malware verdict can be issued.");
                 result.SHA256 = sha256;
 
-                if (sha256 == "VIRUS_INFECTED_OS_BLOCKED")
-                {
-                    result.Verdict = RealTimeVerdict.ConfirmedMalicious;
-                    result.RecommendedPolicy = RealTimePolicyAction.BlockAndQuarantine;
-                    result.Confidence = 1.0;
-                    result.RiskScore = 100;
-                    result.RiskLevel = RiskLevel.ConfirmedMalicious;
-                    result.ThreatTitle = "🚨 Zararlı Yazılım: EICAR / Virüslü Tehdit (İşletim Sistemi Engelledi)";
-                    result.ThreatDescription = "Dosya işletim sistemi çekirdeği tarafından virüslü olduğu gerekçesiyle kilitlendi (ERROR_VIRUS_INFECTED).";
-                    result.Evidences.Add("İşletim Sistemi Seviyesinde Virüs Tespiti (ERROR_VIRUS_INFECTED - 0x800700E1)");
-                    result.ScanEndTime = DateTime.UtcNow;
-                    result.VerdictTime = DateTime.UtcNow;
-                    return result;
-                }
 
 
                 // Check Known Malware Signatures (EICAR, Ransomware, Droppers, Keyloggers)
@@ -209,6 +206,7 @@ namespace AegisPC.Security.RealTime
                     result.ThreatDescription = $"Dosya bilinen tehdit veritabanındaki '{hashMatch.ThreatName}' imzasıyla eşleşti.";
                     result.Evidences.Add($"İmza: {hashMatch.ThreatName} ({hashMatch.ThreatCategory})");
                     result.Evidences.Add($"Tespit Metodu: {hashMatch.DetectionMethod}");
+                    result.CoverageLimitations = result.CoverageLimitations.Append("ExactSignatureOnly").Distinct().ToArray();
 
                     result.ScanEndTime = DateTime.UtcNow;
                     result.VerdictTime = DateTime.UtcNow;
@@ -216,9 +214,9 @@ namespace AegisPC.Security.RealTime
                 }
 
                 // Hash-bound and explicit path exclusions apply only after the exact local signature check.
-                if (_exclusionService?.IsExcluded(filePath, sha256) == true)
+                if (_detectionHub == null && _exclusionService?.IsExcluded(filePath, sha256) == true)
                 {
-                    result.ThreatDescription = "Explicit user exclusion; deep inspection was not performed.";
+                    ApplyUserExclusion(result);
                     result.ScanEndTime = DateTime.UtcNow;
                     result.VerdictTime = DateTime.UtcNow;
                     return result;
@@ -248,6 +246,7 @@ namespace AegisPC.Security.RealTime
                     result.ThreatDescription = $"Dosya içeriğinde tehlikeli dropper, exploit veya keylogger kodu tespit edildi.";
                     result.Evidences.Add($"Desen: {patternMatch.ThreatName}");
                     result.Evidences.Add($"Metod: {patternMatch.DetectionMethod}");
+                    result.CoverageLimitations = result.CoverageLimitations.Append("ExactSignatureOnly").Distinct().ToArray();
 
                     result.ScanEndTime = DateTime.UtcNow;
                     result.VerdictTime = DateTime.UtcNow;
@@ -304,22 +303,16 @@ namespace AegisPC.Security.RealTime
                 result.RiskLevel = riskLevel;
                 result.Evidences.AddRange(reasons);
 
-                // Kontrol Noktası (c) - Tespit Sonrası Aksiyon Öncesi:
-                // Herhangi bir dedektör veya sezgisel tespit üretmiş olsa dahi,
-                // dosya yolu veya hash istisna listesinde ise engelleme yapılmaz, Clean/Allow döner.
+                // A newly added exclusion changes permission, never erases existing evidence or caches clean content.
                 if (_exclusionService != null && _exclusionService.IsExcluded(filePath, sha256))
                 {
-                    result.Verdict = RealTimeVerdict.Clean;
-                    result.RecommendedPolicy = RealTimePolicyAction.Allow;
-                    result.RiskScore = 0;
-                    result.RiskLevel = RiskLevel.Clean;
-                    result.ThreatTitle = string.Empty;
-                    result.ThreatDescription = "Kullanıcı istisna listesinde (Exclusion) yer alıyor.";
-                    result.Evidences.Clear();
-                    fileInfo.Refresh();
-                    _fileHashMatcher?.SetCache(filePath, fileInfo.Length, fileInfo.LastWriteTimeUtc, null, sha256, false, false, policyRevision);
+                    ApplyUserExclusion(result);
                     return result;
                 }
+
+                result.InspectionComplete = result.ContentClassification.IsComplete && !result.ContentClassification.RequiresZipInspection;
+                if (result.ContentClassification.RequiresZipInspection)
+                    result.CoverageLimitations = result.CoverageLimitations.Append("ArchiveInspectionUnavailable").Distinct().ToArray();
 
                 // Confirmed actions were already returned by exact hash/content signatures.
                 // A heuristic sum, even 100, is not proof of maliciousness.
@@ -364,7 +357,17 @@ namespace AegisPC.Security.RealTime
             {
                 result.Verdict = RealTimeVerdict.Unknown;
                 result.RecommendedPolicy = RealTimePolicyAction.Observe;
+                result.InspectionComplete = false;
+                result.Retryable = ex is IOException && (ex.HResult & 0xffff) is 32 or 33;
+                result.CoverageLimitations = result.CoverageLimitations.Append("InspectionFailed:" + ex.GetType().Name).Distinct().ToArray();
                 result.ThreatTitle = "Inspection unavailable";
+                if (AegisPC.Core.Exceptions.OperatingSystemFileBlockException.TryGetKind(ex, out var block))
+                {
+                    result.OperatingSystemBlock = block;
+                    result.ThreatTitle = "Windows güvenlik sağlayıcısı erişimi engelledi";
+                    result.ThreatDescription = "Dosya Ultron tarafından incelenemedi; sağlayıcı veya zararlı ailesi doğrulanmadı.";
+                    result.CoverageLimitations = result.CoverageLimitations.Append("OperatingSystemSecurityBlock").ToArray();
+                }
                 result.Evidences.Add(ex.GetType().Name);
                 _logger?.LogTrace(ex, "Inspection failed for {Path}", filePath);
             }
@@ -377,16 +380,28 @@ namespace AegisPC.Security.RealTime
             return result;
         }
 
+        private static void ApplyUserExclusion(RealTimeVerdictResult result)
+        {
+            result.PolicyBypassed = true;
+            result.InspectionComplete = false;
+            result.Verdict = result.RiskScore >= 50 ? RealTimeVerdict.Suspicious : RealTimeVerdict.Unknown;
+            result.RecommendedPolicy = RealTimePolicyAction.Allow;
+            result.CoverageLimitations = result.CoverageLimitations.Append("UserExclusion").Distinct().ToArray();
+            result.ThreatDescription = "Kullanıcı istisnası nedeniyle inceleme atlandı; temiz olduğu doğrulanmadı.";
+        }
+
         private async Task InspectWithDetectionHubAsync(RealTimeVerdictResult result, FileInfo file, string sha256, Stream source,
             long policyRevision, CancellationToken ct)
         {
             var shared = new ScanContext(file.FullName, sha256, file.Length)
                 { LastWriteTimeUtc = file.LastWriteTimeUtc, ContentClassification = result.ContentClassification, LockedContent = source };
             var context = shared.ToDetectionContext();
+            context.IsUserExcluded = _exclusionService?.IsExcluded(file.FullName, sha256) == true;
             if (result.ContentClassification != null) context.CoverageLimitations.AddRange(result.ContentClassification.CoverageLimitations);
             var detection = await _detectionHub!.EvaluateAsync(context, ct);
             ct.ThrowIfCancellationRequested();
-            result.InspectionComplete = detection.IsComplete && detection.FailedDetectorCount == 0 && result.ContentClassification?.IsComplete != false;
+            result.PolicyBypassed = detection.PolicyBypassed;
+            result.InspectionComplete = !detection.PolicyBypassed && detection.IsComplete && detection.FailedDetectorCount == 0 && result.ContentClassification?.IsComplete != false;
             result.CoverageLimitations = detection.CoverageLimitations
                 .Concat(result.ContentClassification?.CoverageLimitations ?? new())
                 .Concat(detection.FailedDetectorCount > 0 ? ["DetectorExecutionFailed"] : Array.Empty<string>()).Distinct().Take(128).ToArray();
@@ -404,18 +419,20 @@ namespace AegisPC.Security.RealTime
                 result.RiskLevel = RiskLevel.ConfirmedMalicious;
                 result.RecommendedPolicy = RealTimePolicyAction.BlockAndQuarantine;
             }
-            else if (!detection.IsComplete || detection.FailedDetectorCount > 0 || detection.Verdict == DetectionVerdict.Unknown)
-            {
-                result.Verdict = RealTimeVerdict.Unknown;
-                result.RecommendedPolicy = RealTimePolicyAction.Observe;
-                result.ThreatDescription = "Inspection incomplete: " + string.Join("; ", detection.CoverageLimitations);
-                result.Evidences.Add($"Failed detectors: {detection.FailedDetectorCount}");
-            }
             else if (detection.RiskScore >= 50)
             {
                 result.Verdict = RealTimeVerdict.Suspicious;
                 result.RiskLevel = detection.RiskScore >= 70 ? RiskLevel.HighRisk : RiskLevel.Suspicious;
-                result.RecommendedPolicy = RealTimePolicyAction.Warn;
+                result.RecommendedPolicy = detection.PolicyBypassed ? RealTimePolicyAction.Allow : RealTimePolicyAction.Warn;
+                if (!result.InspectionComplete)
+                    result.ThreatDescription += " | Inspection incomplete: " + string.Join("; ", result.CoverageLimitations);
+            }
+            else if (!result.InspectionComplete || detection.Verdict == DetectionVerdict.Unknown)
+            {
+                result.Verdict = RealTimeVerdict.Unknown;
+                result.RecommendedPolicy = detection.PolicyBypassed ? RealTimePolicyAction.Allow : RealTimePolicyAction.Observe;
+                result.ThreatDescription += " | Inspection incomplete: " + string.Join("; ", result.CoverageLimitations);
+                result.Evidences.Add($"Failed detectors: {detection.FailedDetectorCount}");
             }
             else if (detection.Verdict != DetectionVerdict.Clean)
             {
@@ -428,6 +445,7 @@ namespace AegisPC.Security.RealTime
                 result.Verdict = RealTimeVerdict.Clean;
                 result.RiskLevel = RiskLevel.Clean;
                 result.RecommendedPolicy = RealTimePolicyAction.Allow;
+                result.ThreatTitle = "İncelenen kapsamda bulgu yok";
                 _fileHashMatcher?.SetCache(file.FullName, file.Length, file.LastWriteTimeUtc, null, sha256, false, false, policyRevision);
             }
         }
