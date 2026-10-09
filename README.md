@@ -67,9 +67,41 @@ These commands do not install/start a service. The main test project includes li
 
 ## Downloads and screenshots
 
-Older setup files may not contain the latest source fixes. There is no newly validated, signed production installer. Signing, installation/uninstallation, rollback and isolated VM checks are required before a new setup is presented as a recommended download.
+### Downloads
 
-Historical images remain in [docs/screenshots](docs/screenshots). They can show older layouts and protection labels; they are **not evidence of current protection**. New screenshots will follow a manually verified current-build run; generated previews will be labeled as previews.
+- [Releases and available downloads](https://github.com/EmircanKurt/UltronDefender-Security/releases) — older installers may contain older code. No newly validated, signed production installer is available.
+- [Latest development preview — 9 October 2026](https://github.com/EmircanKurt/UltronDefender-Security/pull/9) — current interface and scan-safety source changes. The unsigned 3.2.2 preview installer is a maintainer-only draft, not a public recommended release.
+
+Signing, installation/uninstallation, rollback and isolated Windows VM checks remain required before recommending a new setup. Keep Microsoft Defender enabled.
+
+### Current interface previews
+
+The images below were rendered from the actual WPF controls in the [9 October preview source](https://github.com/EmircanKurt/UltronDefender-Security/tree/118e7cd38760ced1060c9b95505e4c0d04fb12bc). They are **off-screen UI previews with synthetic test data**, not screenshots of a deployed protection service. The sidebar is a test shell using the real item style. History, file paths, scan counts, elapsed time and CPU/RAM readings are fixture values, not protection or performance evidence.
+
+**Light theme — scan selection, scope and history**
+
+![Ultron Defender light-theme WPF preview with scan selection, scope and sample history](docs/screenshots/current/scan-light-preview.png)
+
+**Dark theme — the same scan controls**
+
+![Ultron Defender dark-theme WPF preview with scan selection, scope and sample history](docs/screenshots/current/scan-dark-preview.png)
+
+<details>
+<summary>Scanning view — file route, controls and sample counters</summary>
+
+The file-route animation is shown as a still frame. Both views use a harmless synthetic path; they do not show a real malware scan.
+
+**Dark theme**
+
+![Ultron Defender dark scanning-view preview with the file route and synthetic counters](docs/screenshots/current/scan-route-dark-preview.png)
+
+**Light theme**
+
+![Ultron Defender light scanning-view preview with the file route and synthetic counters](docs/screenshots/current/scan-route-light-preview.png)
+
+</details>
+
+[Preview gallery and provenance](docs/screenshots/README.md). Legacy images are no longer used here; they do not represent the current preview.
 
 ## Help improve Ultron
 
