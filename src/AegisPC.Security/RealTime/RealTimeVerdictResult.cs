@@ -11,6 +11,14 @@ namespace AegisPC.Security.RealTime
     /// </summary>
     public class RealTimeVerdictResult
     {
+        /// <summary>Software classification independent of risk and actions.</summary>
+        public SoftwareFindingClass SoftwareClass { get; set; }
+        /// <summary>Authenticated source details; absent legacy metadata remains visible.</summary>
+        public SoftwareClassificationMetadata? SoftwareClassification { get; set; }
+        /// <summary>Mixed malware evidence cannot be hidden.</summary>
+        public bool HasIndependentMalwareEvidence { get; set; }
+        /// <summary>Stable producer rule identity.</summary>
+        public string RuleSetVersion { get; set; } = string.Empty;
         /// <summary>Reports structural identity and omissions from the same locked source used by detection.</summary>
         public FileContentClassification? ContentClassification { get; set; }
         /// <summary>Whether the configured detector inspection completed; confirmed evidence never hides a coverage gap.</summary>

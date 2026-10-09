@@ -25,6 +25,17 @@ namespace AegisPC.Security.Scanning
         public bool IsComplete { get; set; } = true;
         /// <summary>Explains why a no-match result must not be published as complete clean coverage.</summary>
         public string? CoverageLimitation { get; set; }
+        /// <summary>Bounded cumulative gaps; later omissions cannot erase earlier budget/ratio failures.</summary>
+        public List<string> CoverageLimitations { get; set; } = new();
+        /// <summary>Adds an explicit omission without overwriting existing coverage explanations.</summary>
+        public void RecordCoverageGap(string gap)
+        {
+            IsComplete = false;
+            if (CoverageLimitation != null && CoverageLimitations.Count == 0)
+                CoverageLimitations.Add(CoverageLimitation);
+            if (!CoverageLimitations.Contains(gap) && CoverageLimitations.Count < 64) CoverageLimitations.Add(gap);
+            CoverageLimitation = string.Join("; ", CoverageLimitations);
+        }
         /// <summary>Counts encountered archive entries up to the configured inspection limits.</summary>
         public int TotalEntries { get; set; }
         /// <summary>Reports declared expanded sizes observed before a limit was reached.</summary>
@@ -35,6 +46,10 @@ namespace AegisPC.Security.Scanning
         public long HashedExpandedBytes { get; set; }
         /// <summary>Contains up to 256 member hash summaries; output truncation does not imply those other members were clean.</summary>
         public List<ArchiveMemberHashSummary> MemberHashes { get; set; } = new();
+        /// <summary>Original member script evidence, with member identity separate from outer container identity.</summary>
+        public List<AegisPC.Contracts.Detection.SecurityEvidence> MemberEvidences { get; set; } = new();
+        // Raw rule records remain available; their already-mapped evidence is not scored a second time.
+        internal HashSet<Guid> SharedRuleFindingIds { get; } = new();
         /// <summary>Contains structural anomalies requiring investigation, without extracting their paths.</summary>
         public List<string> SuspiciousEntries { get; set; } = new();
         /// <summary>Contains member-level content or structural evidence; quarantine must target the outer source container.</summary>
@@ -202,7 +217,9 @@ namespace AegisPC.Security.Scanning
                                 result.CoverageLimitation = "Gömülü dosyanın yapılandırılmış YARA incelemesi kullanılamıyor veya boyut sınırını aşıyor.";
                                 rules = null;
                             }
-                            var (sha256, patternMatch, nestedContainer, yaraMatches) = await ArchiveEntryInspector.InspectAsync(entry, cancellationToken, rules);
+                            var (sha256, patternMatch, nestedContainer, yaraMatches, isText, textEvidence, memberGap) = await ArchiveEntryInspector.InspectAsync(entry, cancellationToken, rules);
+                            AppendMemberEvidence(result, textEvidence, entry.FullName, sha256);
+                            if (memberGap != null) result.RecordCoverageGap(memberGap);
                             result.HashedMembers++;
                             result.HashedExpandedBytes = checked(result.HashedExpandedBytes + entry.Length);
                             if (result.MemberHashes.Count < 256)
@@ -223,18 +240,20 @@ namespace AegisPC.Security.Scanning
                                     : (patternMatch.IsMatched ? patternMatch.ThreatName : "EICAR-Standard-AV-Test");
 
                                 int severity = match.IsMatched ? match.SeverityScore : patternMatch.SeverityScore;
-                                int score = confirmed ? severity : Math.Min(65, severity);
+                                bool capability = !confirmed && !match.IsMatched;
+                                int score = confirmed ? severity : capability ? Math.Min(15, severity) : Math.Min(65, severity);
 
                                 result.Findings.Add(new SecurityFinding
                                 {
                                     ObjectPath = $"{filePath} -> {entry.FullName}",
                                     ObjectName = entry.Name,
                                     SHA256 = sha256,
+                                    IsOrdinaryCapability = capability,
                                     Category = confirmed ? FindingCategory.KnownMalwareHash : FindingCategory.SuspiciousScript,
-                                    RiskLevel = confirmed ? RiskLevel.ConfirmedMalicious : RiskLevel.Suspicious,
+                                    RiskLevel = confirmed ? RiskLevel.ConfirmedMalicious : capability ? RiskLevel.LowRisk : RiskLevel.Suspicious,
                                     RiskScore = score,
                                     Title = $"Arşiv İçinde Tehdit: {threatName}",
-                                    Description = $"Arşivin içindeki '{entry.FullName}' dosyası zararlı imza/kod deseni içeriyor.",
+                                    Description = capability ? $"'{entry.FullName}' içinde genel metin/API referansı; tek başına saldırı kanıtı değildir." : $"'{entry.FullName}' içinde imza adayı; kapsam ayrı raporlanır.",
                                     ConfidenceLevel = ConfidenceLevel.High
                                 });
                             }
@@ -245,13 +264,15 @@ namespace AegisPC.Security.Scanning
                                 result.Findings.Add(new SecurityFinding
                                 {
                                     ObjectPath = $"{filePath} -> {entry.FullName}", ObjectName = entry.Name, SHA256 = sha256,
-                                    Category = FindingCategory.MalwareSuspicion, RiskLevel = RiskLevel.Suspicious,
-                                    RiskScore = Math.Clamp(rule.Severity > 0 ? rule.Severity : 65, 1, 75),
+                                    Category = isText ? FindingCategory.SuspiciousScript : FindingCategory.MalwareSuspicion, RiskLevel = isText ? RiskLevel.LowRisk : RiskLevel.Suspicious,
+                                    IsOrdinaryCapability = isText,
+                                    RiskScore = isText ? Math.Clamp(rule.Severity, 1, 15) : Math.Clamp(rule.Severity > 0 ? rule.Severity : 80, 1, 84),
                                     Title = $"Arşiv Üyesinde YARA Kuralı: {rule.RuleName}",
                                     Description = $"'{entry.FullName}' içinde '{rule.RuleName}' kuralı eşleşti. Bu tek başına doğrulanmış zararlı kanıtı değildir. {rule.Description}",
                                     ConfidenceLevel = ConfidenceLevel.Medium,
                                     RiskReasons = new List<string> { $"Archive member: {entry.FullName}", $"YARA rule: {rule.RuleName}", $"Member SHA-256: {sha256}" }
                                 });
+                                result.SharedRuleFindingIds.Add(result.Findings[^1].Id);
                             }
                             if (yaraMatches.Count > ruleBudget)
                             {
@@ -275,7 +296,7 @@ namespace AegisPC.Security.Scanning
                 {
                     result.IsZipBomb = true;
                     result.IsComplete = false;
-                    result.CoverageLimitation ??= "Arşivin toplam sıkıştırma oranı kaynak tüketimi incelemesi gerektiriyor; tam kapsam sonucu verilmedi.";
+                    result.RecordCoverageGap("Arşivin toplam sıkıştırma oranı kaynak tüketimi incelemesi gerektiriyor; tam kapsam sonucu verilmedi.");
                     result.SuspiciousEntries.Add($"Anormal sıkıştırma oranı: {ratio:F1}:1.");
                 }
 

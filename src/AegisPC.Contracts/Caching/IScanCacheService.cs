@@ -11,6 +11,22 @@ namespace AegisPC.Contracts.Caching
     /// </summary>
     public class CachedScanVerdict
     {
+        /// <summary>Absent/old rules require reanalysis.</summary>
+        public string RuleSetVersion { get; set; } = string.Empty;
+        /// <summary>Catalog identity; visibility preferences never affect it.</summary>
+        public string IntelIdentity { get; set; } = string.Empty;
+        /// <summary>Coverage is independent of the verdict enum.</summary>
+        public bool InspectionComplete { get; set; }
+        /// <summary>Explicit policy exemptions are re-evaluated, never frozen as clean cache decisions.</summary>
+        public bool PolicyBypassed { get; set; }
+        /// <summary>Explicit inspection omissions.</summary>
+        public string[] CoverageLimitations { get; set; } = [];
+        /// <summary>Typed classification, legacy safe.</summary>
+        public SoftwareFindingClass SoftwareClass { get; set; }
+        /// <summary>Authenticated source details.</summary>
+        public AegisPC.Core.Models.SoftwareClassificationMetadata? SoftwareClassification { get; set; }
+        /// <summary>Mixed records must never be hidden.</summary>
+        public bool HasIndependentMalwareEvidence { get; set; }
         public string SHA256 { get; set; } = string.Empty;
         public string FilePath { get; set; } = string.Empty;
         public long FileSize { get; set; }

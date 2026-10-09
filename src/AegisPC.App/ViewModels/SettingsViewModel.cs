@@ -58,6 +58,30 @@ namespace AegisPC.App.ViewModels
 
         [ObservableProperty]
         private bool notificationsEnabled = true;
+        [ObservableProperty]
+        private bool showPotentiallyUnwantedToolFindings;
+
+        partial void OnShowPotentiallyUnwantedToolFindingsChanged(bool value)
+        {
+            if (_isLoadingSettings || _settingsService == null) return;
+            _settingsService.Current.ShowPotentiallyUnwantedToolFindings = value;
+            // Presentation only: no cache invalidation, IPC policy command or protection toggle.
+            _ = SaveFindingVisibilityAsync();
+        }
+
+        private async Task SaveFindingVisibilityAsync()
+        {
+            try
+            {
+                await _settingsService!.SaveAsync();
+                StatusMessage = "Bulgu görünürlüğü kaydedildi; tarama ve koruma kuralları değişmedi.";
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Bulgu görünürlüğü kaydedilemedi.");
+                StatusMessage = "Bulgu görünürlüğü kaydedilemedi: " + ex.Message;
+            }
+        }
 
         [ObservableProperty]
         private bool scanScheduleEnabled = false;
@@ -314,6 +338,7 @@ namespace AegisPC.App.ViewModels
                 var s = _settingsService.Current;
                 IsRealTimeMonitoringEnabled = s.IsRealTimeMonitoringEnabled;
                 NotificationsEnabled = s.NotificationsEnabled;
+                ShowPotentiallyUnwantedToolFindings = s.ShowPotentiallyUnwantedToolFindings;
                 ScanScheduleEnabled = s.ScanScheduleEnabled;
                 IdleScanEnabled = s.IdleScanEnabled;
                 IdleScanThresholdMinutes = s.IdleScanThresholdMinutes;
@@ -674,6 +699,7 @@ namespace AegisPC.App.ViewModels
             s.Theme = SelectedThemeMode;
             s.IsRealTimeMonitoringEnabled = IsRealTimeMonitoringEnabled;
             s.NotificationsEnabled = NotificationsEnabled;
+            s.ShowPotentiallyUnwantedToolFindings = ShowPotentiallyUnwantedToolFindings;
             s.ScanScheduleEnabled = ScanScheduleEnabled;
             s.IdleScanEnabled = IdleScanEnabled;
             s.IdleScanThresholdMinutes = Math.Clamp(IdleScanThresholdMinutes, 1, 240);

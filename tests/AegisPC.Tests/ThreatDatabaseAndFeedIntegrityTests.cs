@@ -213,24 +213,12 @@ namespace AegisPC.Tests
             }
         }
 
+        /// <summary>The local-only endpoint no longer converts provider family labels into detection categories; metadata collection is a separate developer tool.</summary>
         [Fact]
-        public void Test_DetectCategory_TagsLinuxAndMacSamples_AsLinuxMac()
+        public void EndpointDoesNotExposeFamilyLabelAsDetection()
         {
-            // Görev: elf, sh ve macos örneklerini "Category=Linux/Mac" olarak etiketle
-            Assert.Equal("Linux/Mac", ThreatFeedUpdater.DetectCategory("elf", "Mirai"));
-            Assert.Equal("Linux/Mac", ThreatFeedUpdater.DetectCategory("sh", "Mirai"));
-            Assert.Equal("Linux/Mac", ThreatFeedUpdater.DetectCategory("macos", "Generic"));
-            Assert.Equal("Linux/Mac", ThreatFeedUpdater.DetectCategory("macho", "Trojan"));
-            Assert.Equal("Linux/Mac", ThreatFeedUpdater.DetectCategory("dylib", "Agent"));
-            Assert.Equal("Linux/Mac", ThreatFeedUpdater.DetectCategory("so", "Rootkit"));
-
-            // Windows binaryleri standart kategorilerini korumalıdır
-            Assert.Equal("Ransomware", ThreatFeedUpdater.DetectCategory("exe", "LockBit"));
-            Assert.Equal("Infostealer", ThreatFeedUpdater.DetectCategory("exe", "RedLine"));
-            Assert.Equal("Backdoor/RAT", ThreatFeedUpdater.DetectCategory("exe", "AsyncRAT"));
-            Assert.Equal("Cryptominer", ThreatFeedUpdater.DetectCategory("exe", "XMRig"));
-            Assert.Equal("Dropper/Loader", ThreatFeedUpdater.DetectCategory("exe", "Emotet"));
-            Assert.Equal("Malware", ThreatFeedUpdater.DetectCategory("exe", "UnknownMalware"));
+            Assert.Null(typeof(ThreatFeedUpdater).GetMethod("DetectCategory",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static));
         }
 
         [Fact]

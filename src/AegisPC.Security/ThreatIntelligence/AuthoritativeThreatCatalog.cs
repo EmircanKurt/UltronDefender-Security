@@ -27,7 +27,12 @@ public static class AuthoritativeThreatCatalog
             "131F95C51CC819465FA1797F6CCACF9D494AAAFF46FA3EAC73AE63FFBCF18291" => "EICAR-Standard-AV-Test-CRLF",
             _ => null
         };
-        if (name == null) return Packages.TryGet(hash, out record);
+        if (name == null)
+        {
+            if (!Packages.TryGet(hash, out record)) return false;
+            if (record?.Category != "PotentiallyUnwantedToolOnly") return true;
+            record = null; return false; // Optional tools are not malware hashes.
+        }
         record = new ThreatIntelRecord
         {
             Sha256 = hash, ThreatName = name, Category = "TestMalware", Source = "EICAR",
@@ -37,4 +42,15 @@ public static class AuthoritativeThreatCatalog
         };
         return true;
     }
+
+    /// <summary>Only a current authenticated explicit tool-only classification is optional, never arbitrary HackTool labels.</summary>
+    public static bool TryGetOptionalTool(string? sha256, out ThreatIntelRecord? record)
+    {
+        record = null;
+        if (sha256 == null || !Packages.TryGet(sha256, out var verified) || verified?.Category != "PotentiallyUnwantedToolOnly") return false;
+        record = verified; return true;
+    }
+
+    /// <summary>Stable intel identity for cache invalidation; visibility preferences are intentionally excluded.</summary>
+    public static string CacheIdentity => $"built-in-test-v1:{Packages.HighestSequence}:{Packages.Count}";
 }

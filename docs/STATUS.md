@@ -1,5 +1,9 @@
 # Development verification
 
+## Game/mod and native menu follow-up — 9 October 2026
+
+See [the scoped implementation report](reports/GAME_MOD_SAFETY_2026-10-09.md): exact candidate **580 selected tests passed, 0 failed/skipped**, solution and Review Release build **0 warnings/errors**. Native WPF state fixtures and benign/synthetic pipeline regressions are separate from real corpus efficacy, performance, full contained PE parity and VM gates, which remain pending. App-only portable transfer/backup hashes were checked; service/helper binaries were not updated or started. Preview 3.2.3 is unsigned, not a production release, and does not activate a third-party tool feed or kernel enforcement. UI PR10 and stacked engine PR11 remain draft.
+
 ## Current safety / light-theme preview — 9 October 2026
 
 The [9 October report](reports/GUARD_SCAN_SAFETY_2026-10-09.md) supersedes older current-preview labels below. Selected positive-allowlist regressions: **537 passed, 0 failed, 0 skipped**. No service/driver/firewall deployment or live malware test was performed. Native Guardian actions and independent vault ownership remain gated. Preview source and setup must be treated as development artifacts, not production protection.

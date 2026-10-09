@@ -6,6 +6,14 @@ namespace AegisPC.Core.Models;
 
 public class SecurityFinding
 {
+    /// <summary>Separate software class; legacy records remain unclassified.</summary>
+    public SoftwareFindingClass SoftwareClass { get; set; }
+    /// <summary>Verified hash-bound source metadata, if available.</summary>
+    public SoftwareClassificationMetadata? SoftwareClassification { get; set; }
+    /// <summary>Independent concern can never be hidden by a tool classification.</summary>
+    public bool HasIndependentMalwareEvidence { get; set; }
+    /// <summary>A generic static capability/reference, not proof of an executed attack.</summary>
+    public bool IsOrdinaryCapability { get; set; }
     public Guid Id { get; set; } = Guid.NewGuid();
     public string ObjectPath { get; set; } = string.Empty;
     public string ObjectName { get; set; } = string.Empty;

@@ -55,7 +55,8 @@ public sealed class SignedThreatIntelStore
             record = new ThreatIntelRecord { Sha256 = entry.Sha256, ThreatName = entry.Name,
                 Category = entry.Category, Severity = entry.Severity, Source = entry.Source,
                 SourceReference = entry.SourceReference, TimestampUtc = entry.AcquiredAtUtc.UtcDateTime,
-                PackageVersion = _manifest!.Version, Verification = ThreatIntelVerification.SignedPackage };
+                PackageVersion = _manifest!.Version, Verification = ThreatIntelVerification.SignedPackage,
+                ValidUntilUtc = _manifest.ExpiresAtUtc.UtcDateTime };
             return true;
         }
     }

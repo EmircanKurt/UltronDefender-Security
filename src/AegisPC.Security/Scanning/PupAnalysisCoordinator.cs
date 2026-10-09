@@ -114,19 +114,18 @@ namespace AegisPC.Security.Scanning
 
             // Eşik Değeri ve Risk Kararı Haritalaması (Oyun ve geliştirici paket klasörlerinde 85 eşik, genel sistemde 50 eşik)
             int minThreshold = 50; // Directory names never weaken evidence thresholds.
-            bool hasExplicitSignature = detectionResult.Evidences.Any(e =>
-                e.Category is EvidenceCategory.StaticSignature or EvidenceCategory.AmsiProvider &&
-                e.Confidence == EvidenceConfidence.Absolute &&
-                e.ScoreContribution >= 80);
+            bool hasExplicitSignature = detectionResult.Evidences.Any(e => e.IsExactMalwareEvidence);
             bool hasConfirmedMalwareEvidence = hasExplicitSignature;
             if (!detectionResult.IsComplete && !hasExplicitSignature && reportCoverage == null)
                 throw new IOException($"Dosya analizi tamamlanamadı: {detectionResult.FailedDetectorCount} dedektör hatası. " +
                     string.Join(" ", detectionResult.CoverageLimitations));
 
             if ((detectionResult.Verdict is DetectionVerdict.Suspicious or DetectionVerdict.HighRisk &&
-                 detectionResult.RiskScore >= minThreshold) || hasExplicitSignature)
+                 detectionResult.RiskScore >= minThreshold) || hasExplicitSignature ||
+                 detectionResult.SoftwareClass == SoftwareFindingClass.PotentiallyUnwantedToolOnly)
             {
-                RiskLevel riskLevel = hasConfirmedMalwareEvidence
+                RiskLevel riskLevel = detectionResult.SoftwareClass == SoftwareFindingClass.PotentiallyUnwantedToolOnly ?
+                    detectionResult.IsComplete ? RiskLevel.LowRisk : RiskLevel.Unknown : hasConfirmedMalwareEvidence
                     ? RiskLevel.ConfirmedMalicious
                     : detectionResult.RiskScore >= 70 ? RiskLevel.HighRisk : RiskLevel.Suspicious;
 
@@ -143,9 +142,7 @@ namespace AegisPC.Security.Scanning
 
                 FindingCategory findingCat = FindingCategory.SuspiciousLocation;
                 if (detectionResult.Evidences.Any(e =>
-                    e.Category == EvidenceCategory.StaticSignature &&
-                    e.Confidence == EvidenceConfidence.Absolute &&
-                    e.ScoreContribution > 0))
+                    e.Category == EvidenceCategory.StaticSignature && e.IsExactMalwareEvidence))
                     findingCat = FindingCategory.KnownMalwareHash;
                 else if (detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.StaticPeStructure || e.Category == EvidenceCategory.StaticApi))
                     findingCat = FindingCategory.MalwareSuspicion;
@@ -155,6 +152,8 @@ namespace AegisPC.Security.Scanning
                     findingCat = FindingCategory.SuspiciousPersistence;
                 else if (detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.AmsiProvider))
                     findingCat = FindingCategory.MalwareSuspicion;
+                if (detectionResult.SoftwareClass == SoftwareFindingClass.PotentiallyUnwantedToolOnly)
+                    findingCat = FindingCategory.PotentiallyUnwantedProgram;
 
                 string threatTitle = !string.IsNullOrEmpty(detectionResult.ThreatTitle)
                     ? detectionResult.ThreatTitle
@@ -165,6 +164,9 @@ namespace AegisPC.Security.Scanning
                     ObjectPath = path,
                     ObjectName = fileInfo.Name,
                     SHA256 = sha256,
+                    SoftwareClass = detectionResult.SoftwareClass,
+                    SoftwareClassification = detectionResult.SoftwareClassification,
+                    HasIndependentMalwareEvidence = detectionResult.HasIndependentMalwareEvidence,
                     RiskLevel = riskLevel,
                     RiskScore = detectionResult.RiskScore,
                     Category = findingCat,

@@ -36,10 +36,11 @@ public sealed class RealtimeRevisionAuditReviewTests : IDisposable
         var verdict = await processor.InspectFileAsync(path);
         var cached = await matcher.TryGetCachedAsync(path, new FileInfo(path), CancellationToken.None);
 
-        Assert.Equal(RealTimeVerdict.Clean, verdict.Verdict);
-        Assert.True(verdict.InspectionComplete);
-        Assert.Equal(!invalidateDuringAnalysis, cached.Hit);
-        Assert.Equal(invalidateDuringAnalysis ? 0 : 1, matcher.CachedEntriesCount);
+        // Approved shared-engine contract: absent hub is Unknown, not a completed legacy heuristic scan.
+        Assert.Equal(useHub ? RealTimeVerdict.Clean : RealTimeVerdict.Unknown, verdict.Verdict);
+        Assert.Equal(useHub, verdict.InspectionComplete);
+        Assert.Equal(useHub && !invalidateDuringAnalysis, cached.Hit);
+        Assert.Equal(useHub && !invalidateDuringAnalysis ? 1 : 0, matcher.CachedEntriesCount);
     }
 
     /// <summary>Normal arrival callbacks retain incomplete inspection as a coverage gap and never display an unverified file as allowed.</summary>

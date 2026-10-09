@@ -17,6 +17,8 @@ namespace AegisPC.Contracts.ThreatIntelligence
         public string SourceReference { get; set; } = string.Empty;
         public string PackageVersion { get; set; } = string.Empty;
         public ThreatIntelVerification Verification { get; set; }
+        /// <summary>Expiry from an authenticated package; legacy values cannot support optional hiding.</summary>
+        public DateTime ValidUntilUtc { get; set; }
         public bool IsAuthoritative => Verification is ThreatIntelVerification.BuiltInTestMarker or ThreatIntelVerification.SignedPackage;
     }
 

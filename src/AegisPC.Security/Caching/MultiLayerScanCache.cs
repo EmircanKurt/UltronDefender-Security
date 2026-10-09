@@ -69,7 +69,7 @@ namespace AegisPC.Security.Caching
             if (_l1Cache.TryGetValue(key, out var cached))
             {
                 // Önbellek tazelik doğrulaması (30 gün)
-                if ((DateTime.UtcNow - cached.CachedAtUtc).TotalDays <= 30)
+                if (ScanVerdictCachePolicy.IsCurrent(cached) && (DateTime.UtcNow - cached.CachedAtUtc).TotalDays <= 30)
                 {
                     return cached;
                 }
@@ -92,7 +92,7 @@ namespace AegisPC.Security.Caching
                     _diskLock.Release();
                 }
 
-                if (_l1Cache.TryGetValue(key, out cached))
+                if (_l1Cache.TryGetValue(key, out cached) && ScanVerdictCachePolicy.IsCurrent(cached))
                 {
                     return cached;
                 }
@@ -108,6 +108,7 @@ namespace AegisPC.Security.Caching
         public async Task SetVerdictAsync(CachedScanVerdict verdict, CancellationToken cancellationToken = default)
         {
             if (verdict == null || string.IsNullOrWhiteSpace(verdict.SHA256)) return;
+            if (!ScanVerdictCachePolicy.IsCurrent(verdict)) return;
 
             var key = GenerateKey(verdict.SHA256, verdict.FileSize, verdict.LastWriteTimeUtc);
             verdict.CachedAtUtc = DateTime.UtcNow;
@@ -233,7 +234,7 @@ namespace AegisPC.Security.Caching
                 {
                     foreach (var (k, v) in items)
                     {
-                        if ((DateTime.UtcNow - v.CachedAtUtc).TotalDays <= 30)
+                        if (ScanVerdictCachePolicy.IsCurrent(v) && (DateTime.UtcNow - v.CachedAtUtc).TotalDays <= 30)
                         {
                             _l1Cache[k] = v;
                             if (!string.IsNullOrEmpty(v.FilePath))

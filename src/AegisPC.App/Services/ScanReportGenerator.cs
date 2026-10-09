@@ -195,6 +195,12 @@ namespace AegisPC.App.Services
                     sb.AppendLine($"Tehdit Adı     : {title}");
                     sb.AppendLine($"Risk Skoru     : {f.RiskScore}/100");
                     sb.AppendLine($"Kategori       : {f.Category}");
+                    sb.AppendLine($"Yazılım Sınıfı : {f.SoftwareClass} (zararlılık ve eylem kararından ayrı)");
+                    sb.AppendLine($"SHA-256        : {f.SHA256}");
+                    sb.AppendLine($"Kural / Kapsam : {f.RuleSetVersion} / {(f.InspectionComplete ? "tamamlandı" : "eksik")}");
+                    foreach (var gap in f.CoverageLimitations) sb.AppendLine("Kapsam Eksikliği: " + gap);
+                    if (f.SoftwareClassification is { } metadata)
+                        sb.AppendLine($"Sınıflama Kaynağı: {metadata.SourceReference}; {metadata.IntelVersion}; doğrulanmış={metadata.Verified}; geçerlilik={metadata.ValidUntilUtc:O}");
                     sb.AppendLine($"Dosya Yolu     : {objectPath}");
                     sb.AppendLine($"Alınan Aksiyon : {actionTaken}");
                     sb.AppendLine($"Açıklama       : {description}");
@@ -248,6 +254,8 @@ namespace AegisPC.App.Services
                 Findings = report.Result.Findings.Select(f => new
                 {
                     f.Id, f.Title, f.Description, f.ObjectPath, f.SHA256, f.RiskScore,
+                    f.SoftwareClass, f.SoftwareClassification, f.HasIndependentMalwareEvidence,
+                    f.RuleSetVersion, f.InspectionComplete, f.CoverageLimitations,
                     Category = f.Category.ToString(),
                     Status = f.Status.ToString(),
                     ActionTaken = DetermineActionTaken(f, report.Actions.TryGetValue(f.ObjectPath, out var action) ? action : null)

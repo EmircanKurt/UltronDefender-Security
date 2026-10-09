@@ -90,6 +90,21 @@ namespace AegisPC.Security.Detection.Detectors
                     }
                 }
 
+                list.AddRange(EvaluateText(content, context, cancellationToken));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                // The shared hub records this detector failure instead of silently publishing clean coverage.
+                throw new IOException("Bounded text heuristic inspection could not complete.", ex);
+            }
+
+            return list;
+        }
+
+        internal static List<SecurityEvidence> EvaluateText(string content, DetectionContext context, CancellationToken cancellationToken)
+        {
+            var list = new List<SecurityEvidence>();
                 foreach (var (patB64, rule, desc, score, conf) in ScriptPatterns)
                 {
                     var pattern = Dec(patB64);
@@ -99,7 +114,7 @@ namespace AegisPC.Security.Detection.Detectors
                         list.Add(new SecurityEvidence
                         {
                             Category = EvidenceCategory.ScriptHeuristic,
-                            SourceDetector = DisplayName,
+                            SourceDetector = "Betik ve Komut Dosyasi Sezgisel Analizoru",
                             RuleName = rule,
                             Description = desc,
                             ScoreContribution = score,
@@ -115,14 +130,6 @@ namespace AegisPC.Security.Detection.Detectors
                         });
                     }
                 }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (Exception ex)
-            {
-                // The shared hub records this detector failure instead of silently publishing clean coverage.
-                throw new IOException("Bounded text heuristic inspection could not complete.", ex);
-            }
-
             return list;
         }
     }

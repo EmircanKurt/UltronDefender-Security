@@ -10,6 +10,8 @@ namespace AegisPC.Contracts.PE
     public class PeDeepAnalysisResult
     {
         public bool IsPeFile { get; set; }
+        /// <summary>False when the configured static prefix did not include the whole source; unrelated exact evidence remains valid.</summary>
+        public bool IsStaticInspectionComplete { get; set; } = true;
         public string FilePath { get; set; } = string.Empty;
         public string ExecutableType { get; set; } = "UNKNOWN"; // "PE32", "PE64", "DLL", "SYS"
         public string Machine { get; set; } = "UNKNOWN"; // "AMD64", "I386", "ARM64"

@@ -5,6 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
@@ -176,8 +177,8 @@ namespace AegisPC.Service.Optimization
             DateTime lastWriteUtc,
             CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(sha256) && string.IsNullOrWhiteSpace(filePath))
-                return null;
+            if (string.IsNullOrWhiteSpace(sha256))
+                return await TryGetFastVerdictAsync(filePath, fileSize, lastWriteUtc, cancellationToken);
 
             string key = !string.IsNullOrWhiteSpace(sha256)
                 ? GenerateKey(sha256, fileSize, lastWriteUtc)
@@ -187,7 +188,7 @@ namespace AegisPC.Service.Optimization
             if (_l1Cache.TryGetValue(key, out var cached))
             {
                 // TTL Kontrolü: 7 gün aşılmışsa taze tarama zorunlu kıl
-                if (DateTime.UtcNow > cached.CachedAtUtc + _ttl)
+                if (!AegisPC.Security.Caching.ScanVerdictCachePolicy.IsCurrent(cached) || DateTime.UtcNow > cached.CachedAtUtc + _ttl)
                 {
                     _l1Cache.TryRemove(key, out _);
                     return null;
@@ -236,15 +237,16 @@ namespace AegisPC.Service.Optimization
                         CachedAtUtc = DateTime.Parse(reader.GetString(11))
                     };
 
-                    if (!reader.IsDBNull(10))
+                    if (reader.IsDBNull(10)) return null;
+                    try
                     {
-                        try
-                        {
-                            verdict.Evidences = JsonSerializer.Deserialize<List<string>>(reader.GetString(10)) ?? new();
-                        }
-                        catch { }
+                        var envelope = JsonSerializer.Deserialize<CachedScanVerdict>(reader.GetString(10));
+                        if (envelope == null || !AegisPC.Security.Caching.ScanVerdictCachePolicy.IsCurrent(envelope) ||
+                            envelope.SHA256 != verdict.SHA256 || envelope.FileSize != verdict.FileSize ||
+                            envelope.LastWriteTimeUtc != verdict.LastWriteTimeUtc) return null;
+                        verdict = envelope;
                     }
-
+                    catch (JsonException) { return null; } // Legacy arrays are reanalyzed, not relabeled.
                     // L1 önbelleğe al
                     EnforceL1Capacity();
                     _l1Cache[key] = verdict;
@@ -265,7 +267,7 @@ namespace AegisPC.Service.Optimization
         }
 
         /// <summary>
-        /// Hızlı Yol (FastPath): Dosya içeriğini diskten okumadan yalnızca dosya yolu, boyut ve tarih ile arar.
+        /// Legacy path-only callers must verify current content; equal path, size and timestamp are not file identity.
         /// </summary>
         public async Task<CachedScanVerdict?> TryGetFastVerdictAsync(
             string filePath,
@@ -275,18 +277,21 @@ namespace AegisPC.Service.Optimization
         {
             if (string.IsNullOrWhiteSpace(filePath)) return null;
 
-            string fastKey = GenerateFastPathKey(filePath, fileSize, lastWriteUtc);
-            if (_l1Cache.TryGetValue(fastKey, out var cached))
+            cancellationToken.ThrowIfCancellationRequested();
+            try
             {
-                if (DateTime.UtcNow > cached.CachedAtUtc + _ttl)
-                {
-                    _l1Cache.TryRemove(fastKey, out _);
-                    return null;
-                }
-                return cached;
+                await using var source = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                    FileShare.Read, 81920, useAsync: true);
+                if (source.Length != fileSize || File.GetLastWriteTimeUtc(filePath) != lastWriteUtc) return null;
+                string verifiedHash = Convert.ToHexString(await SHA256.HashDataAsync(source, cancellationToken));
+                // Keep the read lock throughout lookup; a path-only decision cannot bypass the content check.
+                return await TryGetVerdictAsync(filePath, verifiedHash, fileSize, lastWriteUtc, cancellationToken);
             }
-
-            return await TryGetVerdictAsync(filePath, string.Empty, fileSize, lastWriteUtc, cancellationToken);
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger?.LogDebug(ex, "Path-only cache content verification failed: {Path}", filePath);
+                return null;
+            }
         }
 
         /// <summary>
@@ -294,6 +299,7 @@ namespace AegisPC.Service.Optimization
         /// </summary>
         public async Task SetVerdictAsync(CachedScanVerdict verdict, CancellationToken cancellationToken = default)
         {
+            if (!AegisPC.Security.Caching.ScanVerdictCachePolicy.IsCurrent(verdict)) return;
             if (verdict.CachedAtUtc == default)
             {
                 verdict.CachedAtUtc = DateTime.UtcNow;
@@ -558,7 +564,8 @@ namespace AegisPC.Service.Optimization
                     pLevel.Value = (int)v.RiskLevel;
                     pTitle.Value = (object?)v.ThreatTitle ?? DBNull.Value;
                     pConf.Value = v.Confidence;
-                    pEvid.Value = v.Evidences?.Count > 0 ? JsonSerializer.Serialize(v.Evidences) : DBNull.Value;
+                    // Versioned full envelope; old evidence-only arrays cannot establish current coverage.
+                    pEvid.Value = JsonSerializer.Serialize(v);
                     pCached.Value = v.CachedAtUtc.ToString("o");
                     pExpires.Value = expires.ToString("o");
 

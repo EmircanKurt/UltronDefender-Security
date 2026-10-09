@@ -151,23 +151,7 @@ namespace AegisPC.Security.RealTime
                 {
                     var cached = await _fileHashMatcher.TryGetCachedAsync(filePath, fileInfo, ct);
                     verifiedHash = cached.VerifiedHash;
-                    if (cached.Hit && cached.Finding == null && _detectionHub == null && result.ContentClassification.IsComplete &&
-                        !result.ContentClassification.RequiresZipInspection &&
-                        _exclusionService?.IsExcluded(filePath, verifiedHash) != true &&
-                        AegisPC.Contracts.ThreatIntelligence.Sha256Identity.IsValid(verifiedHash) &&
-                        !MalwareSignatureDatabase.HasLoadedHash(verifiedHash))
-                    {
-                        result.Verdict = RealTimeVerdict.Clean;
-                        result.InspectionComplete = true;
-                        result.RecommendedPolicy = RealTimePolicyAction.Allow;
-                        result.RiskScore = 0;
-                        result.RiskLevel = RiskLevel.Clean;
-                        result.ThreatTitle = "Doğrulanmış Temiz Dosya (Önbellek)";
-                        result.SHA256 = verifiedHash ?? string.Empty;
-                        result.ScanEndTime = DateTime.UtcNow;
-                        result.VerdictTime = DateTime.UtcNow;
-                        return result;
-                    }
+                    // A cache cannot stand in for an unavailable shared engine.
                 }
 
                 // STAGE 1: Fast Hash & Signature Database Check
@@ -179,6 +163,7 @@ namespace AegisPC.Security.RealTime
                 if (!AegisPC.Contracts.ThreatIntelligence.Sha256Identity.IsValid(sha256))
                     throw new IOException("Content identity is unavailable; no clean or confirmed-malware verdict can be issued.");
                 result.SHA256 = sha256;
+                result.RuleSetVersion = DetectionRuleSet.Version;
 
 
 
@@ -253,103 +238,12 @@ namespace AegisPC.Security.RealTime
                     return result;
                 }
 
-                // STAGE 2: Digital Signature & Trusted Software Policy (Fast-Path Bypass)
-                var sigInfo = await _signatureVerifier.VerifySignatureAsync(filePath, ct);
-                // Signature is supporting evidence only; continue to content analysis.
-
-                // STAGE 3: Entropy & PE Heuristics
-                var entropy = await EntropyCalculator.CalculateEntropyAsync(filePath, ct);
-                bool isExe = result.ContentClassification.Formats.Contains(FileContentFormat.PortableExecutable);
-                var peAnalysis = isExe ? PeAnalyzer.Analyze(filePath) : new PeAnalysisResult();
-
-                var fileAnalysis = new FileAnalysisResult
-                {
-                    FilePath = filePath,
-                    FileName = fileInfo.Name,
-                    SHA256 = sha256,
-                    FileSize = fileInfo.Length,
-                    CreatedAt = fileInfo.CreationTimeUtc,
-                    ModifiedAt = fileInfo.LastWriteTimeUtc,
-                    IsSigned = sigInfo.IsSigned,
-                    SignaturePublisher = sigInfo.Publisher,
-                    SignatureValid = sigInfo.IsValid,
-                    IsExecutable = isExe,
-                    ExecutableType = peAnalysis.ExecutableType,
-                    Entropy = entropy,
-                    IsKnownLocation = PathHelper.IsKnownSafePath(filePath)
-                };
-
-                var (score, riskLevel, reasons) = await _riskScoringEngine.CalculateRiskScoreAsync(fileAnalysis, ct);
-
-                // Genel PowerShell/ransomware/mimikatz metin desenleri kesin imza değil,
-                // destekleyici sezgisel kanıttır. Kaynak kodu ve yönetim scriptlerini tek bir
-                // substring yüzünden otomatik karantinaya almamak için skora sınırlı eklenir.
-                if (patternMatch.IsMatched && !isExactContentSignature)
-                {
-                    score = Math.Clamp(score + Math.Min(45, patternMatch.SeverityScore), 0, 100);
-                    reasons.Insert(0, $"+{Math.Min(45, patternMatch.SeverityScore)} Sezgisel içerik deseni: {patternMatch.ThreatName}");
-                }
-
-                // Çoklu Sinyal Korelasyonu: RiskScoringEngine tarafından hesaplanan seviyeyi ve skoru güncelle
-                riskLevel = score switch
-                {
-                    >= 85 when riskLevel == RiskLevel.ConfirmedMalicious => RiskLevel.ConfirmedMalicious,
-                    >= 70 => RiskLevel.HighRisk,
-                    >= 50 => RiskLevel.Suspicious,
-                    _ => RiskLevel.Clean
-                };
-
-                result.RiskScore = score;
-                result.RiskLevel = riskLevel;
-                result.Evidences.AddRange(reasons);
-
-                // A newly added exclusion changes permission, never erases existing evidence or caches clean content.
-                if (_exclusionService != null && _exclusionService.IsExcluded(filePath, sha256))
-                {
-                    ApplyUserExclusion(result);
-                    return result;
-                }
-
-                result.InspectionComplete = result.ContentClassification.IsComplete && !result.ContentClassification.RequiresZipInspection;
-                if (result.ContentClassification.RequiresZipInspection)
-                    result.CoverageLimitations = result.CoverageLimitations.Append("ArchiveInspectionUnavailable").Distinct().ToArray();
-
-                // Confirmed actions were already returned by exact hash/content signatures.
-                // A heuristic sum, even 100, is not proof of maliciousness.
-                if (riskLevel >= RiskLevel.HighRisk || score >= 70)
-                {
-                    result.RiskLevel = RiskLevel.HighRisk;
-                    result.Verdict = RealTimeVerdict.Suspicious;
-                    result.RecommendedPolicy = RealTimePolicyAction.Warn;
-                    result.Confidence = 0.75;
-                    result.ThreatTitle = $"⚠️ Yüksek Riskli Dosya Uyarısı: {fileInfo.Name}";
-                    result.ThreatDescription = string.Join(" ", reasons.Take(2));
-                }
-                // RiskScore 50-69: Uyarı (İzin ver + Logla + Kullanıcı Uyarısı, SİLME)
-                else if (score >= 50)
-                {
-                    result.Verdict = RealTimeVerdict.Suspicious;
-                    result.RecommendedPolicy = RealTimePolicyAction.Warn;
-                    result.Confidence = 0.55;
-                    result.ThreatTitle = $"⚠️ Şüpheli Dosya Uyarısı: {fileInfo.Name}";
-                    result.ThreatDescription = string.Join(" ", reasons.Take(2));
-                }
-                else if (!result.ContentClassification.IsComplete || result.ContentClassification.RequiresZipInspection)
-                {
-                    result.Verdict = RealTimeVerdict.Unknown;
-                    result.RecommendedPolicy = RealTimePolicyAction.Observe;
-                    result.ThreatDescription = "Inspection incomplete: " + string.Join("; ", result.ContentClassification.CoverageLimitations);
-                    if (result.ContentClassification.RequiresZipInspection)
-                        result.Evidences.Add("Archive member inspection requires the shared DetectionHub, which is not configured for this compatibility processor.");
-                }
-                else
-                {
-                    result.Verdict = RealTimeVerdict.Clean;
-                    result.RecommendedPolicy = RealTimePolicyAction.Allow;
-                    result.Confidence = 0.90;
-                    fileInfo.Refresh();
-                    _fileHashMatcher?.SetCache(filePath, fileInfo.Length, fileInfo.LastWriteTimeUtc, null, sha256, false, false, policyRevision);
-                }
+                result.Verdict = RealTimeVerdict.Unknown;
+                result.RiskLevel = RiskLevel.Unknown;
+                result.RecommendedPolicy = RealTimePolicyAction.Observe;
+                result.InspectionComplete = false;
+                result.CoverageLimitations = result.CoverageLimitations.Append("SharedDetectionEngineUnavailable").Distinct().ToArray();
+                result.ThreatDescription = "Ortak karar motoru kullanılamadı; eski ad/konum sezgisellerine dönülmedi.";
 
             }
             catch (OperationCanceledException) { throw; }
@@ -401,6 +295,10 @@ namespace AegisPC.Security.RealTime
             var detection = await _detectionHub!.EvaluateAsync(context, ct);
             ct.ThrowIfCancellationRequested();
             result.PolicyBypassed = detection.PolicyBypassed;
+            result.SoftwareClass = detection.SoftwareClass;
+            result.SoftwareClassification = detection.SoftwareClassification;
+            result.HasIndependentMalwareEvidence = detection.HasIndependentMalwareEvidence;
+            result.RuleSetVersion = detection.RuleSetVersion;
             result.InspectionComplete = !detection.PolicyBypassed && detection.IsComplete && detection.FailedDetectorCount == 0 && result.ContentClassification?.IsComplete != false;
             result.CoverageLimitations = detection.CoverageLimitations
                 .Concat(result.ContentClassification?.CoverageLimitations ?? new())
@@ -411,13 +309,19 @@ namespace AegisPC.Security.RealTime
             result.ThreatTitle = detection.ThreatTitle;
             result.Evidences.AddRange(detection.Evidences.Select(e => $"[{e.Category}] {e.Description}"));
             result.ThreatDescription = string.Join(" | ", detection.Evidences.Take(2).Select(e => e.Description));
-            bool exact = detection.Verdict == DetectionVerdict.ConfirmedMalicious && detection.Evidences.Any(e =>
-                e.Category is EvidenceCategory.StaticSignature or EvidenceCategory.AmsiProvider && e.Confidence == EvidenceConfidence.Absolute && e.ScoreContribution >= 80);
+            bool exact = detection.Verdict == DetectionVerdict.ConfirmedMalicious && detection.Evidences.Any(e => e.IsExactMalwareEvidence);
             if (exact)
             {
                 result.Verdict = RealTimeVerdict.ConfirmedMalicious;
                 result.RiskLevel = RiskLevel.ConfirmedMalicious;
                 result.RecommendedPolicy = RealTimePolicyAction.BlockAndQuarantine;
+            }
+            else if (detection.SoftwareClass == SoftwareFindingClass.PotentiallyUnwantedToolOnly && !detection.HasIndependentMalwareEvidence)
+            {
+                result.Verdict = result.InspectionComplete ? RealTimeVerdict.Suspicious : RealTimeVerdict.Unknown;
+                result.RiskLevel = result.InspectionComplete ? RiskLevel.LowRisk : RiskLevel.Unknown;
+                // Records an informational finding only; cannot authorize block/quarantine.
+                result.RecommendedPolicy = RealTimePolicyAction.Warn;
             }
             else if (detection.RiskScore >= 50)
             {

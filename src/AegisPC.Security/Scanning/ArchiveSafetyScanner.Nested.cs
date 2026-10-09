@@ -90,8 +90,10 @@ public partial class ArchiveSafetyScanner
             result.CoverageLimitation = "İç içe üyenin YARA incelemesi kullanılamıyor veya bütçeyi aşıyor.";
             rules = null;
         }
-        var (sha256, pattern, deeperContainer, yaraMatches) =
+        var (sha256, pattern, deeperContainer, yaraMatches, isText, textEvidence, memberGap) =
             await ArchiveEntryInspector.InspectAsync(member, cancellationToken, rules);
+        AppendMemberEvidence(result, textEvidence, $"{parentName} -> {member.FullName}", sha256);
+        if (memberGap != null) result.RecordCoverageGap(memberGap);
         result.HashedMembers++;
         result.HashedExpandedBytes = checked(result.HashedExpandedBytes + member.Length);
         if (result.MemberHashes.Count < 256)
@@ -114,9 +116,10 @@ public partial class ArchiveSafetyScanner
                 ObjectPath = $"{outerPath} -> {parentName} -> {member.FullName}",
                 ObjectName = member.Name,
                 SHA256 = sha256,
+                IsOrdinaryCapability = !confirmed && !known.IsMatched,
                 Category = confirmed ? FindingCategory.KnownMalwareHash : FindingCategory.SuspiciousScript,
-                RiskLevel = confirmed ? RiskLevel.ConfirmedMalicious : RiskLevel.Suspicious,
-                RiskScore = confirmed ? match.SeverityScore : Math.Min(65, match.SeverityScore),
+                RiskLevel = confirmed ? RiskLevel.ConfirmedMalicious : !known.IsMatched ? RiskLevel.LowRisk : RiskLevel.Suspicious,
+                RiskScore = confirmed ? match.SeverityScore : !known.IsMatched ? Math.Min(15, match.SeverityScore) : Math.Min(65, match.SeverityScore),
                 Title = $"İç İçe Arşivde Tehdit: {match.ThreatName}",
                 Description = "İç içe ZIP/JAR üyesinin içerik imzası eşleşti; tüm kapsayıcı kapsamı hâlâ kısmi.",
                 ConfidenceLevel = ConfidenceLevel.High
@@ -130,13 +133,15 @@ public partial class ArchiveSafetyScanner
                 ObjectPath = $"{outerPath} -> {parentName} -> {member.FullName}",
                 ObjectName = member.Name,
                 SHA256 = sha256,
-                Category = FindingCategory.MalwareSuspicion,
-                RiskLevel = RiskLevel.Suspicious,
-                RiskScore = Math.Clamp(rule.Severity > 0 ? rule.Severity : 65, 1, 75),
+                Category = isText ? FindingCategory.SuspiciousScript : FindingCategory.MalwareSuspicion,
+                RiskLevel = isText ? RiskLevel.LowRisk : RiskLevel.Suspicious,
+                IsOrdinaryCapability = isText,
+                RiskScore = isText ? Math.Clamp(rule.Severity, 1, 15) : Math.Clamp(rule.Severity > 0 ? rule.Severity : 80, 1, 84),
                 Title = $"İç İçe Arşiv Üyesinde YARA Kuralı: {rule.RuleName}",
                 Description = "İç içe arşiv üyesinde yapılandırılmış YARA kuralı eşleşti; tek başına doğrulanmış zararlı değildir.",
                 ConfidenceLevel = ConfidenceLevel.Medium
             });
+            result.SharedRuleFindingIds.Add(result.Findings[^1].Id);
         }
         if (yaraMatches.Count > ruleBudget)
             result.CoverageLimitation = "İç içe arşiv YARA bulguları çıktı sınırına ulaştı.";

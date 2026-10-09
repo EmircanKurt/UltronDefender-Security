@@ -88,9 +88,16 @@ namespace AegisPC.Security.RealTime
                     ObjectPath = evt.NormalizedPath,
                     ObjectName = fileInfo.Name,
                     SHA256 = verdict.SHA256,
+                    SoftwareClass = verdict.SoftwareClass,
+                    SoftwareClassification = verdict.SoftwareClassification,
+                    HasIndependentMalwareEvidence = verdict.HasIndependentMalwareEvidence,
+                    RuleSetVersion = verdict.RuleSetVersion,
+                    InspectionComplete = verdict.InspectionComplete,
+                    IsAllowlisted = verdict.PolicyBypassed,
+                    CoverageLimitations = verdict.CoverageLimitations.ToList(),
                     RiskLevel = verdict.RiskLevel,
                     RiskScore = verdict.RiskScore,
-                    Category = FindingCategory.MalwareSuspicion,
+                    Category = verdict.SoftwareClass == SoftwareFindingClass.PotentiallyUnwantedToolOnly ? FindingCategory.PotentiallyUnwantedProgram : FindingCategory.MalwareSuspicion,
                     Title = verdict.ThreatTitle,
                     Description = verdict.ThreatDescription,
                     RiskReasons = verdict.Evidences,
@@ -104,7 +111,7 @@ namespace AegisPC.Security.RealTime
                 OnThreatDetected?.Invoke(finding);
 
                 // 60-84 arası şüpheli dosyalar için kullanıcı uyarısı oluşturulur
-                if (verdict.RiskScore >= 60)
+                if (verdict.RiskScore >= 60 && FindingVisibilityPolicy.IsSecurityConcern(finding))
                 {
                     string toastTitle = "⚠️ Şüpheli Dosya Uyarısı";
                     string toastMsg = $"'{fileInfo.Name}' şüpheli davranış sergiliyor (Risk Skoru: {verdict.RiskScore}/100).";
@@ -144,7 +151,8 @@ namespace AegisPC.Security.RealTime
                 await EnforceWarningAsync(evt, verdict, ct);
                 return false;
             }
-            if (verdict.Verdict != RealTimeVerdict.ConfirmedMalicious ||
+            if (verdict.SoftwareClass == SoftwareFindingClass.PotentiallyUnwantedToolOnly && !verdict.HasIndependentMalwareEvidence ||
+                verdict.Verdict != RealTimeVerdict.ConfirmedMalicious ||
                 verdict.RecommendedPolicy != RealTimePolicyAction.BlockAndQuarantine ||
                 verdict.SHA256.Length != 64 || !System.Linq.Enumerable.All(verdict.SHA256, Uri.IsHexDigit))
             {
@@ -169,6 +177,13 @@ namespace AegisPC.Security.RealTime
                     ObjectPath = evt.NormalizedPath,
                     SHA256 = verdict.SHA256,
                     Title = verdict.ThreatTitle,
+                    SoftwareClass = verdict.SoftwareClass,
+                    SoftwareClassification = verdict.SoftwareClassification,
+                    HasIndependentMalwareEvidence = verdict.HasIndependentMalwareEvidence,
+                    RuleSetVersion = verdict.RuleSetVersion,
+                    InspectionComplete = verdict.InspectionComplete,
+                    IsAllowlisted = verdict.PolicyBypassed,
+                    CoverageLimitations = verdict.CoverageLimitations.ToList(),
                     Description = verdict.ThreatDescription,
                     RiskScore = verdict.RiskScore,
                     RiskLevel = verdict.RiskLevel,

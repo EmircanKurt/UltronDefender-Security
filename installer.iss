@@ -1,15 +1,15 @@
 ; Experimental per-user preview. No service, driver, firewall or automatic startup changes.
 #define MyAppName "Ultron Defender Preview"
 #ifndef MyAppVersion
-  #define MyAppVersion "3.2.2-preview.20261009"
+  #define MyAppVersion "3.2.3-preview.20261009"
 #endif
 #define MyAppPublisher "EmircanKurt"
 #define MyAppURL "https://github.com/EmircanKurt/UltronDefender-Security"
 #ifndef AppPublishDir
-  #define AppPublishDir SourcePath + "artifacts\preview-3.2.2\payload"
+  #define AppPublishDir SourcePath + "artifacts\preview-3.2.3\payload"
 #endif
 #ifndef SetupOutputDir
-  #define SetupOutputDir SourcePath + "artifacts\preview-3.2.2"
+  #define SetupOutputDir SourcePath + "artifacts\preview-3.2.3"
 #endif
 #define MyAppExeName "UltronDefender.exe"
 
@@ -27,7 +27,7 @@ DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 LicenseFile=LICENSE
 OutputDir={#SetupOutputDir}
-OutputBaseFilename=UltronDefenderSetup-3.2.2-preview.20261009
+OutputBaseFilename=UltronDefenderSetup-{#MyAppVersion}
 SetupIconFile=ultron_shield.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/normal

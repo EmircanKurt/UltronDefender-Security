@@ -7,13 +7,15 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Security.Detection.YaraEngine;
+using AegisPC.Contracts.Detection;
+using AegisPC.Security.Detection.Detectors;
 
 namespace AegisPC.Security.Scanning;
 
 /// <summary>Hashes and inspects bounded archive members without trusting their filename or extracting to disk.</summary>
 internal static class ArchiveEntryInspector
 {
-    internal static async Task<(string Sha256, MalwareSignatureMatch Pattern, bool IsNestedContainer, List<YaraMatch> YaraMatches)> InspectAsync(
+    internal static async Task<(string Sha256, MalwareSignatureMatch Pattern, bool IsNestedContainer, List<YaraMatch> YaraMatches, bool IsText, List<SecurityEvidence> TextEvidence, string? CoverageGap)> InspectAsync(
         ZipArchiveEntry entry, CancellationToken cancellationToken, IYaraEngine? yaraEngine = null)
     {
         const int chunkSize = 8192;
@@ -29,8 +31,9 @@ internal static class ArchiveEntryInspector
             using var stream = entry.Open();
             // Large members are hashed/stream-pattern checked without allocating their whole content.
             // Buffer-only rules remain explicitly bounded; the caller must report omitted rule/deep coverage.
-            byte[]? ruleInput = yaraEngine != null && yaraEngine.LoadedRuleCount > 0 &&
-                entry.Length < maximumRuleInputBytes ? new byte[checked((int)entry.Length)] : null;
+            byte[]? ruleInput = entry.Length < maximumRuleInputBytes &&
+                (entry.Length <= 2 * 1024 * 1024 || yaraEngine?.LoadedRuleCount > 0)
+                ? new byte[checked((int)entry.Length)] : null;
             long actual = 0;
             int retained = 0;
             var best = new MalwareSignatureMatch();
@@ -63,11 +66,14 @@ internal static class ArchiveEntryInspector
                 if (testMatch.IsMatched) best = testMatch;
             }
             bool nested = HasContainerHeader(header.AsSpan(0, headerLength));
-            var rules = ruleInput != null
+            var rules = ruleInput != null && yaraEngine?.LoadedRuleCount > 0
                 ? await yaraEngine!.ScanBufferAsync(ruleInput, entry.FullName, cancellationToken)
                 : new List<YaraMatch>();
             cancellationToken.ThrowIfCancellationRequested();
-            return (Convert.ToHexString(hash.GetHashAndReset()), best, nested, rules);
+            string sha256 = Convert.ToHexString(hash.GetHashAndReset());
+            var (isText, textEvidence, gap) = await ArchiveEntryContentInspector.InspectAsync(
+                ruleInput, testContent, rules, entry.FullName, sha256, cancellationToken);
+            return (sha256, best, nested, rules, isText, textEvidence, gap);
         }
         finally { ArrayPool<byte>.Shared.Return(buffer); }
     }

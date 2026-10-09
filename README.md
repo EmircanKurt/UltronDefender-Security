@@ -31,6 +31,10 @@ The current edition has no paid activation key, subscription or expiry. The MIT 
 
 ## Testing and limits
 
+### Game/mod reliability and native menu follow-up
+
+The [9 October game/mod report](docs/reports/GAME_MOD_SAFETY_2026-10-09.md) describes preview 3.2.3: actual native-menu theme regressions, deterministic ordinary-capability scoring, removal of legacy filename/unproven-hash decisions, optional tool-only presentation, versioned content-verified caches and shared ZIP/JAR rule mapping. The exact candidate passed **580 selected benign regressions, 0 failures/skips**; both solution and Review Release builds had **0 warnings/errors**. It adds no game-folder trust exemption. Real 30-file corpus, cold/warm comparison, full contained PE parity, live DPI and VirtualBox gates remain pending; optional third-party classification is inactive until a publisher key is provisioned. No production-protection or crack-safety guarantee is made. Review separately: [native menu PR10](https://github.com/EmircanKurt/UltronDefender-Security/pull/10), [stacked engine PR11](https://github.com/EmircanKurt/UltronDefender-Security/pull/11), both draft.
+
 ### Changes since the 6 October preview
 
 - Plain scan chooser with a scope panel, embedded scan route, silent startup/AFK presentation and clearer partial-coverage reporting.
@@ -41,7 +45,7 @@ The current edition has no paid activation key, subscription or expiry. The MIT 
 - Guardian health expires stale/future core leases. Native recovery, independent vault ownership and kernel enforcement still await isolated VM verification.
 - Preview setup has a separate per-user installation identity, bundles its runtime, and does not install/start services, drivers or autostart entries. It does not replace the existing installation or launch Ultron automatically.
 
-See the [9 October evidence and remaining gates](docs/reports/GUARD_SCAN_SAFETY_2026-10-09.md). The current selected benign regression run passed **537 tests, 0 failed, 0 skipped**; these are unit/infrastructure/UI and inert disk-fixture tests, not a malware-detection rate or a deployed-protection certification.
+The [earlier 9 October Guardian/scan stage](docs/reports/GUARD_SCAN_SAFETY_2026-10-09.md) passed **537 selected tests, 0 failed, 0 skipped**. Its historical total does not replace the newer 580-test game/mod candidate above. These are unit/infrastructure/UI and inert disk-fixture tests, not a malware-detection rate or a deployed-protection certification.
 
 See the [current verification report](docs/STATUS.md) for actual results and outstanding gates. Regression totals do **not** measure malware detection or false-positive rates. EICAR is a workflow test, not real-world efficacy evidence.
 
@@ -53,10 +57,10 @@ Windows 10/11 x64 are development targets; this .NET 8 build does not support Wi
 
 Requirements: Windows and .NET 8 SDK; Inno Setup 6 only for installer generation.
 
-The consolidated safety preview is on `codex/guard-scan-safety-2026-10-09`, based on the earlier scan/resource preview. The default branch and older downloads can still contain older code until review and deployment gates are completed. The commands below select this preview, not a recommended production release.
+The latest draft candidate is on `codex/game-mod-safety-2026-10-09`, stacked on the native-menu and earlier guard/scan reviews. The default branch and older downloads can still contain older code until review and deployment gates are completed. The commands below select this preview, not a recommended production release.
 
 ```powershell
-git clone --branch codex/guard-scan-safety-2026-10-09 https://github.com/EmircanKurt/UltronDefender-Security.git
+git clone --branch codex/game-mod-safety-2026-10-09 https://github.com/EmircanKurt/UltronDefender-Security.git
 cd UltronDefender-Security
 dotnet build tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release -warnaserror
 ./scripts/Test-BenignPreview.ps1 -NoBuild
