@@ -69,26 +69,7 @@
                         <Setter Property="Margin" Value="10,2,10,2"/>
                         <Setter Property="Height" Value="48"/>
                         <Setter Property="ToolTip" Value="{Binding Content, RelativeSource={RelativeSource Self}}"/>
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="{x:Type ui:NavigationViewItem}">
-                                    <Border x:Name="ItemSurface" CornerRadius="4" Background="Transparent">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="4"/><ColumnDefinition Width="42"/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                            <Border x:Name="SelectionMark" Background="{DynamicResource BrushBrandPrimary}" Visibility="Collapsed" CornerRadius="2"/>
-                                            <ContentPresenter Grid.Column="1" Content="{TemplateBinding Icon}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            <ContentPresenter x:Name="ItemLabel" Grid.Column="2" Content="{TemplateBinding Content}" TextElement.Foreground="{TemplateBinding Foreground}" TextElement.FontSize="{TemplateBinding FontSize}" TextElement.FontWeight="{TemplateBinding FontWeight}" VerticalAlignment="Center" Margin="4,0,8,0"/>
-                                        </Grid>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="{DynamicResource BrushShellSidebarHover}"/></Trigger>
-                                        <Trigger Property="IsActive" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="{DynamicResource BrushShellSidebarActive}"/><Setter TargetName="SelectionMark" Property="Visibility" Value="Visible"/><Setter Property="Foreground" Value="{DynamicResource BrushSidebarTextPrimary}"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger>
-                                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ItemSurface" Property="BorderBrush" Value="{DynamicResource BrushSidebarTextPrimary}"/><Setter TargetName="ItemSurface" Property="BorderThickness" Value="1"/></Trigger>
-                                        <DataTrigger Binding="{Binding PaneDisplayMode, RelativeSource={RelativeSource AncestorType={x:Type ui:NavigationView}}}" Value="LeftMinimal"><Setter TargetName="ItemLabel" Property="Visibility" Value="Collapsed"/></DataTrigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
+                        <!-- Native NavigationView.ItemTemplate owns MenuItems/FooterMenuItems. Palette tokens style all states. -->
                     </Style>
 
                     <Style TargetType="{x:Type ui:NavigationViewItemHeader}">

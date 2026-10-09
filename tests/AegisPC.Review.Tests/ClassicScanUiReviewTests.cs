@@ -47,7 +47,7 @@ public sealed class ClassicScanUiReviewTests
 
     private static void SaveShellPreview(Border page, string theme)
     {
-        // Parse the real sidebar item template rather than painting a substitute navigation design.
+        // Real MenuItems are essential: Wpf.Ui overwrites item templates only for these collections.
         string root = FindRepository();
         var doc = XDocument.Load(Path.Combine(root, "src/AegisPC.App/MainWindow.xaml"));
         XNamespace wpf = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -57,10 +57,11 @@ public sealed class ClassicScanUiReviewTests
         string markup = styleElement.ToString().Replace("{StaticResource FontSans}", "Segoe UI");
         var style = (Style)XamlReader.Parse(markup);
         var body = new Grid(); body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(240) }); body.ColumnDefinitions.Add(new ColumnDefinition());
-        var sidebar = new StackPanel(); sidebar.SetResourceReference(Panel.BackgroundProperty, "BrushSidebarBg");
-        sidebar.Children.Add(new TextBlock { Text = "ULTRON\nDefender", FontFamily = new FontFamily("Segoe UI"), FontSize = 24, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(System.Windows.Media.Colors.White), Margin = new Thickness(24,30,10,45) });
+        var sidebar = new Wpf.Ui.Controls.NavigationView { OpenPaneLength = 240, IsPaneOpen = true, PaneDisplayMode = Wpf.Ui.Controls.NavigationViewPaneDisplayMode.Left, IsPaneToggleVisible = false, IsBackButtonVisible = Wpf.Ui.Controls.NavigationViewBackButtonVisible.Collapsed, HeaderVisibility = Visibility.Collapsed };
+        sidebar.PaneHeader = new TextBlock { Text = "ULTRON\nDefender", FontFamily = new FontFamily("Segoe UI"), FontSize = 24, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(System.Windows.Media.Colors.White), Margin = new Thickness(24,30,10,45) };
         foreach (string label in new[] { "Genel bakış", "Tarayıcı", "Korumalar", "Karantina ve olaylar", "Browser Defender", "Süreç Yöneticisi", "Sistem tanılama" })
-            sidebar.Children.Add(new Wpf.Ui.Controls.NavigationViewItem { Content = label, Style = style, IsActive = label == "Tarayıcı", Icon = new Wpf.Ui.Controls.SymbolIcon { Symbol = label == "Tarayıcı" ? Wpf.Ui.Controls.SymbolRegular.Search24 : Wpf.Ui.Controls.SymbolRegular.Shield24 } });
+            sidebar.MenuItems.Add(new Wpf.Ui.Controls.NavigationViewItem { Content = label, Style = style, IsActive = label == "Tarayıcı", Icon = new Wpf.Ui.Controls.SymbolIcon { Symbol = label == "Tarayıcı" ? Wpf.Ui.Controls.SymbolRegular.Search24 : Wpf.Ui.Controls.SymbolRegular.Shield24 } });
+        sidebar.FooterMenuItems.Add(new Wpf.Ui.Controls.NavigationViewItem { Content = "Ayarlar", Style = style });
         body.Children.Add(sidebar); body.Children.Add(page); Grid.SetColumn(page, 1);
         var shell = Host(body, theme, 1180); shell.Padding = new Thickness(0);
         shell.Resources.MergedDictionaries.Insert(0, (ResourceDictionary)XamlReader.Parse(
@@ -72,7 +73,8 @@ public sealed class ClassicScanUiReviewTests
             string bg = state.Length == 0 ? "BrushSidebarBg" : "NavigationViewItemBackground" + state;
             Assert.True(Contrast(Brush(shell, fg), Brush(shell, bg)) >= 4.5, theme + "/native-sidebar/" + state);
         }
-        var active = sidebar.Children.OfType<Wpf.Ui.Controls.NavigationViewItem>().Single(item => item.IsActive);
+        var active = sidebar.MenuItems.OfType<Wpf.Ui.Controls.NavigationViewItem>().Single(item => item.IsActive);
+        Assert.NotNull(active.Template.FindName("MainBorder", active));
         Assert.True(Contrast(((SolidColorBrush)active.Foreground).Color, Brush(shell, "BrushShellSidebarActive")) >= 4.5);
         SaveRender(shell, theme + "-shell-fixture", 1180, 96);
     }
