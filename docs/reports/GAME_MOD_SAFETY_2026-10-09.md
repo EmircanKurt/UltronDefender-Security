@@ -17,7 +17,20 @@ Karar ayrımı [ReShade'ın resmî injector/unsigned add-on açıklaması](https
 
 ## Test kanıtı ve henüz kapanmayan kapılar
 
-Yerel geniş benign allowlist son turunda **574 passed / 0 failed / 0 skipped** (`audited-final/benign-preview.trx`). Değişmez aday turunun sonucu ayrıca kaydedilecektir. İlk RED karar testlerinde üç hata görülüp düzeltildi. İki eski testin motor yokken temiz beklentisi, onaylı `Unknown` sözleşmesine göre gerekçelendirilerek değiştirildi; bağımsız malware eşikleri zayıflatılmadı.
+Son değişmez adayda seçili benign allowlist: **580 passed / 0 failed / 0 skipped**. Hem tüm çözüm hem Review projesi Release/warnings-as-errors derlemesi: **0 hata / 0 uyarı**. Önceki 574 turuna altı inert endpoint uyumluluk testi eklendi. İlk RED karar testlerinde üç hata görülüp düzeltildi. İki eski testin motor yokken temiz beklentisi, onaylı `Unknown` sözleşmesine göre gerekçelendirilerek değiştirildi; bağımsız malware eşikleri zayıflatılmadı.
+
+Geniş çözüm denetimi ayrıca eski public test paketinde 15 derleme uyumsuzluğu buldu: kaldırılmış `DetectCategory` için 12 çağrı ve public alt kümede bulunmayan policy fixture'larının üç tipi. Eski ad/family sınıflandırıcısı geri açılmadı; test, bu API'nin yokluğunu doğruluyor. Tam ağaçta mevcut policy fixture'ları korunur; yalnız eksik oldukları public alt kümede mevcut in-memory Review yardımcıları linklenir. Başka işlemin working-tree test ekleri ezilmedi. Eski ağ/import beklentili lab testlerinin tümü günlük PC'de çalıştırılmadı; bunların runtime kabulü bu sayıdan çıkarılamaz.
+
+Yeni altı test sınıfının 42 vakası aşağıdadır; 580 toplamının içindedir, ek bir toplam değildir. Ayrı UI-only dönüş noktasında 37 test geçti (aynı native menü testi bu turda da vardır).
+
+| Grup | Vaka | Test türü |
+|---|---:|---|
+| Native sidebar | 1 | Gerçek Wpf.Ui kontrolleri, off-screen STA; birçok durum tek vaka içinde |
+| Oyun/mod kanıtları | 6 | Sentetik puan/deduplikasyon ve inert dosya kimliği fixture'ları |
+| İsteğe bağlı kategori | 13 | Metadata/serialization/karar ve fake settings/IPC sınırı |
+| Sürümlü cache | 8 | Sentetik karar + benign disk/cache/JSON fixture'ları |
+| ZIP/JAR ortak kurallar | 8 | Üretilmiş benign dosyalar ve kapsayıcılar; gerçek oyun korpusu değil |
+| Legacy endpoint sınırı | 6 | Fake HTTP/settings hiç çağrılmaz; force/bootstrap/iptal/reflection |
 
 Testler ayrı türler içerir: sentetik karar/serialization testleri, gerçek zararsız dosya I/O ve arşiv fixture'ları, native WPF off-screen kontrolleri. Toplam, malware yakalama oranı veya gerçek oyun/mod yanlış-alarm oranı değildir. Canlı malware/crack örneği indirilmedi, içerik çalıştırılmadı, günlük PC'de geniş lab suite çalıştırılmadı.
 
@@ -29,7 +42,15 @@ Aynı korpus/kapsam/makinede baseline ve aday için beş soğuk + beş sıcak ö
 
 Değişmez kaynak/paket/hash manifesti ve native UI ile motor için ayrı review dönüş noktaları hazırlanır. Yerel portable aktarım yalnız publish manifestindeki uygulama dosyalarını kapsar; `Service/Helpers`, kullanıcı ayarları, log, veritabanı ve karantina değişmez. Kilit varsa uygulama zorla kapatılmaz. Önceki dosyalar hash'li yedekte tutulur; rollback yalnız kendi dağıtım hash'i hâlâ eşleşen dosyalara uygulanabilir.
 
+Yerel app-only aktarım doğrulandı: 545 uygulama/uyumlu alias dosyası ve 436 değişmeyen service/helper ikilisi; masaüstü kısayolunun hedefi 3.2.3-preview. Uygulama başlatılmadı. İnert rollback denetiminde kilitli dosya önceden reddedildi; sonradan değişmiş dosya hiçbir restore yazımı olmadan reddedildi; aktarım ortasındaki I/O hatası eski içerikleri geri getirdi ve yeni dosyaları geri kazanılabilir alana taşıdı. Bunlar native VM kurulum/rollback testi değildir.
+
+İncelemeler: [UI PR10](https://github.com/EmircanKurt/UltronDefender-Security/pull/10) ve onun üzerine bağımlı [motor PR11](https://github.com/EmircanKurt/UltronDefender-Security/pull/11). Draft'tır; main/stable otomatik merge edilmedi. Test-only son uyumluluk değişiklikleri paket/runtime kaynağını değiştirmez.
+
+İmzasız preview setup: `UltronDefenderSetup-3.2.3-preview.20261009.exe`, 126094895 bayt. SHA-256: `467B7D8896E82B3B7F5EF7944DCF0B7FFF77F528426E950C6689C18E17A01D1A`. Derlendi, çalıştırılmadı; public/stable release ilan edilmedi.
+
 İzole Windows 10/11 x64 VM'de snapshot alıp benign kurulum/tarama/iptal/kaldırma/rollback ve servis uyumu sınanmalıdır. Önceki kurulu servis yeni RT semantiğini otomatik almaz. Preview setup servis/driver/Defender kurmaz veya başlatmaz. İmzalama, gerçek korpus, fiziksel DPI/input ve VM kapıları tamamlanmadan kararlı sürüm/otomatik acil politika ilan edilmez.
+
+Pilot sırası: hash'i kontrol et → temiz VM snapshot'ı al → preview setup'ı VM içinde kur → açık/koyu menü hover/seçim/klavye odağı ve %100/%125/%150 DPI'ı dene → yalnız resmî benign korpusta hızlı/tam/özel tarama, duraklat/iptal ve kapsam raporlarını kaydet → kaldırma ve VM snapshot geri dönüşünü dene. RT servis/driver testi ayrı yetkilendirilmiş VM aşamasıdır; bağlantısı olmayan servis aktif gösterilmemelidir. Host Defender kapatılmaz, crack sitesi veya canlı malware kullanılmaz.
 
 ## Şüphecilik ve Doğrulama Notu
 

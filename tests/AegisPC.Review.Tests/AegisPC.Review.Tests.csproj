@@ -15,6 +15,7 @@
     <Compile Include="OptionalToolVisibilityReviewTests.cs" />
     <Compile Include="VersionedVerdictCacheReviewTests.cs" />
     <Compile Include="GameModArchiveParityReviewTests.cs" />
+    <Compile Include="LegacyFeedApiSurfaceReviewTests.cs" />
     <Compile Include="GuardScanSafetyReviewTests.cs" />
     <Compile Include="FolderAllowanceIdentityReviewTests.cs" />
     <Compile Include="ScanDiscoveryCancellationReviewTests.cs" />

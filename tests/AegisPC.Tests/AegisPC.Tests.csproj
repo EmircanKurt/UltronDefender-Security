@@ -38,6 +38,11 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
   </ItemGroup>
 
+  <!-- The public reviewed subset omits PolicyEngineTests, which owns these in-memory fixtures in the full tree. -->
+  <ItemGroup Condition="!Exists('PolicyEngineTests.cs')">
+    <Compile Include="../AegisPC.Review.Tests/ReviewTestDependencies.cs" Link="ReviewTestDependencies.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <None Update="xunit.runner.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
