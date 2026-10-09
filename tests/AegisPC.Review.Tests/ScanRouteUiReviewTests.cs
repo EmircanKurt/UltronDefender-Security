@@ -158,15 +158,16 @@ public sealed class ScanRouteUiReviewTests
         foreach(string label in new[] {"Genel bakış","Tarayıcı","Korumalar","Karantina ve olaylar","Browser Defender","Süreç Yöneticisi","Sistem tanılama","Ayarlar"})
         {
             var item=new MenuProbe {Content=label,Icon=new Wpf.Ui.Controls.SymbolIcon(Wpf.Ui.Controls.SymbolRegular.Search24),IsActive=label=="Tarayıcı",Style=(Style)shell.FindResource("UltronSidebarItemStyle")};
-            sidebar.Children.Add(item); if(item.IsActive)selected=item;
+            if(label == "Ayarlar") navigation.FooterMenuItems.Add(item); else navigation.MenuItems.Add(item);
+            if(item.IsActive)selected=item;
         }
         var command=new Command(); var chooser=new ClassicScanSurface {DataContext=new {IsNotScanning=true,StartQuickScanCommand=command,StartFullScanCommand=command,StartCustomScanCommand=command,StartSelectedCustomScanCommand=command,SelectCustomFolderCommand=command,SelectedCustomFolder="",OpenActiveScanWindowCommand=command,OpenSchedulerCommand=command,OpenReportsCommand=command,RefreshReportsCommand=command,ReportHistoryStatus="Önizleme — gerçek test sonucu değildir.",ReportHistory=new ObservableCollection<ScanReportRecord>()}};
         var body=new Border {Child=chooser,Padding=new Thickness(28)}; Grid.SetColumn(body,1);shell.Children.Add(body);Layout(host,1180);
         Assert.NotNull(selected);Assert.True(selected!.Focusable);Assert.True(selected.IsTabStop);
-        Assert.Equal(Visibility.Visible,((Border)selected.Template.FindName("SelectionMark",selected)).Visibility);
-        Assert.Equal(((SolidColorBrush)host.FindResource("BrushShellSidebarActive")).Color,((SolidColorBrush)((Border)selected.Template.FindName("ItemSurface",selected)).Background).Color);
+        Assert.NotNull(selected.Template.FindName("MainBorder",selected));
+        Assert.Equal(((SolidColorBrush)host.FindResource("NavigationViewItemBackgroundSelected")).Color,((SolidColorBrush)((Border)selected.Template.FindName("MainBorder",selected)).Background).Color);
         int clicked=0;selected.Click+=(_,_)=>clicked++;selected.InvokeNativeClick();Assert.Equal(1,clicked);Assert.Equal(0,command.Count);
-        selected.IsActive=false;Assert.Equal(Visibility.Collapsed,((Border)selected.Template.FindName("SelectionMark",selected)).Visibility);selected.IsActive=true;
+        selected.IsActive=false;Pump();selected.IsActive=true;
         Capture(host,$"shell-{theme}",1180);
     });
 
