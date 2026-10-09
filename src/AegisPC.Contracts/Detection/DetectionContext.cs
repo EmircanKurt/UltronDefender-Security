@@ -62,6 +62,14 @@ namespace AegisPC.Contracts.Detection
     /// </summary>
     public class DetectionResult
     {
+        /// <summary>Classification is separate from risk and actions; legacy default remains unclassified.</summary>
+        public AegisPC.Core.Enums.SoftwareFindingClass SoftwareClass { get; set; }
+        /// <summary>Authenticated optional-tool provenance.</summary>
+        public SoftwareClassificationMetadata? SoftwareClassification { get; set; }
+        /// <summary>Independent malware evidence cannot be suppressed by optional presentation.</summary>
+        public bool HasIndependentMalwareEvidence { get; set; }
+        /// <summary>Stable decision semantics; absent old metadata requires reanalysis.</summary>
+        public string RuleSetVersion { get; set; } = DetectionRuleSet.Version;
         public string CorrelationId { get; set; } = string.Empty;
         public string FilePath { get; set; } = string.Empty;
         public string? SHA256 { get; set; }

@@ -162,6 +162,7 @@ namespace AegisPC.App.ViewModels
                     {
                         foreach (var f in findings)
                         {
+                            if (!FindingVisibilityPolicy.IsVisible(f, _settingsService?.GetSetting("ShowPotentiallyUnwantedToolFindings", false) == true)) continue;
                             if (f.Status == FindingStatus.Resolved || f.Status == FindingStatus.Ignored || f.IsAllowlisted)
                             {
                                 continue;
@@ -182,6 +183,7 @@ namespace AegisPC.App.ViewModels
                 {
                     foreach (var f in _scanCoordinator.CurrentFindings)
                     {
+                        if (!FindingVisibilityPolicy.IsVisible(f, _settingsService?.GetSetting("ShowPotentiallyUnwantedToolFindings", false) == true)) continue;
                         if (f.Status == FindingStatus.Resolved || f.Status == FindingStatus.Ignored || f.IsAllowlisted)
                         {
                             continue;

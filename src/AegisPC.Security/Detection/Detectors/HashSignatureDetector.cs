@@ -46,9 +46,22 @@ namespace AegisPC.Security.Detection.Detectors
             }
 
             // 2. Exact Hash Lookup in Threat Intelligence Store
+            if (ThreatIntelligence.AuthoritativeThreatCatalog.TryGetOptionalTool(context.SHA256, out var optional) && optional != null)
+                list.Add(new SecurityEvidence
+                {
+                    Category = EvidenceCategory.StaticSignature, SourceDetector = DetectorId,
+                    RuleName = "SoftwareClassification.OptionalTool", ScoreContribution = 0, Nature = EvidenceNature.SoftwareClassification,
+                    Description = "İsteğe bağlı araç sınıflaması: " + optional.ThreatName + "; zararlı kanıtı değildir.",
+                    SHA256 = context.SHA256, FilePath = context.FilePath,
+                    OptionalToolClassification = new AegisPC.Core.Models.SoftwareClassificationMetadata
+                    {
+                        SHA256 = optional.Sha256, SourceReference = optional.SourceReference,
+                        IntelVersion = optional.PackageVersion, Verified = true, ValidUntilUtc = optional.ValidUntilUtc
+                    }
+                });
             if (!string.IsNullOrEmpty(context.SHA256))
             {
-                if (_threatStore.IsMaliciousHash(context.SHA256, out var record) && record != null && record.IsAuthoritative)
+                if (_threatStore.IsMaliciousHash(context.SHA256, out var record) && record != null && record.IsAuthoritative && record.Category != "PotentiallyUnwantedToolOnly")
                 {
                     list.Add(new SecurityEvidence
                     {

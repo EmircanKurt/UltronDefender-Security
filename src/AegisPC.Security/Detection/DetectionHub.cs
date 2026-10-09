@@ -186,18 +186,33 @@ namespace AegisPC.Security.Detection
                 .GroupBy(e => (Feature: e.FeatureIdentity.ToUpperInvariant(),
                     Source: e.FeatureIdentity.Length == 0 ? e.SourceDetector : string.Empty,
                     Category: e.FeatureIdentity.Length == 0 ? e.Category : default,
-                    Rule: e.FeatureIdentity.Length == 0 ? e.RuleName : string.Empty, e.FilePath))
-                .Select(g => g.OrderByDescending(e => (e.Category is EvidenceCategory.StaticSignature or EvidenceCategory.AmsiProvider) &&
-                    e.Confidence == EvidenceConfidence.Absolute && e.ScoreContribution >= 80)
-                    .ThenByDescending(e => e.ScoreContribution).ThenByDescending(e => e.Confidence).First())
+                    Rule: e.FeatureIdentity.Length == 0 ? e.RuleName : string.Empty, e.FilePath,
+                    Informational: e.Nature == EvidenceNature.SoftwareClassification))
+                .Select(g => g.OrderByDescending(e => e.IsExactMalwareEvidence)
+                    .ThenByDescending(e => e.ScoreContribution).ThenByDescending(e => e.Confidence)
+                    .ThenByDescending(e => e.Nature != EvidenceNature.Capability)
+                    .ThenBy(e => e.Category).ThenBy(e => e.CorrelationGroup, StringComparer.Ordinal)
+                    .ThenBy(e => e.SourceDetector, StringComparer.Ordinal).ThenBy(e => e.RuleName, StringComparer.Ordinal)
+                    .ThenBy(e => e.Description, StringComparer.Ordinal).First())
+                .OrderBy(e => e.Category).ThenBy(e => e.FeatureIdentity, StringComparer.Ordinal)
+                .ThenBy(e => e.FilePath, StringComparer.Ordinal).ThenBy(e => e.RuleName, StringComparer.Ordinal)
                 .ToList();
 
-            var positiveEvidences = uniqueEvidences.Where(e => e.ScoreContribution > 0).ToList();
+            // A source-authenticated tool label is informational, not malware score or action authority.
+            var positiveEvidences = uniqueEvidences.Where(e => e.ScoreContribution > 0 && e.Nature != EvidenceNature.SoftwareClassification).ToList();
+            bool independentMalware = positiveEvidences.Any(e => e.Nature != EvidenceNature.Capability);
+            var optionalMetadata = uniqueEvidences.Where(e => e.Nature == EvidenceNature.SoftwareClassification).Select(e => e.OptionalToolClassification).FirstOrDefault(m =>
+                m?.Verified == true && m.ValidUntilUtc > DateTime.UtcNow && !string.IsNullOrWhiteSpace(m.SourceReference) &&
+                !string.IsNullOrWhiteSpace(m.IntelVersion) && string.Equals(m.SHA256, context.SHA256, StringComparison.OrdinalIgnoreCase) &&
+                context.SHA256 is { Length: 64 } && context.SHA256.All(Uri.IsHexDigit));
+            var softwareClass = independentMalware ? AegisPC.Core.Enums.SoftwareFindingClass.MalwareConcern :
+                optionalMetadata != null ? AegisPC.Core.Enums.SoftwareFindingClass.PotentiallyUnwantedToolOnly :
+                AegisPC.Core.Enums.SoftwareFindingClass.Unclassified;
             int rawScore = positiveEvidences.Sum(e => e.ScoreContribution);
 
             // 3. Correlation Group Deduplication (Dominant signal + 25% corroboration bonus)
             var groupScores = new Dictionary<(EvidenceCategory Category, string Group), List<SecurityEvidence>>();
-            foreach (var evidence in positiveEvidences)
+            foreach (var evidence in positiveEvidences.Where(e => e.Nature != EvidenceNature.Capability))
             {
                 string grpName = string.IsNullOrEmpty(evidence.CorrelationGroup) ? evidence.Category.ToString() : evidence.CorrelationGroup;
                 var groupKey = (evidence.Category, grpName.ToUpperInvariant());
@@ -210,33 +225,30 @@ namespace AegisPC.Security.Detection
             }
 
             var groupEvaluations = new List<(string GroupName, EvidenceCategory Category, int Dominant, int Corroborating, int EffectiveGroupScore)>();
-            int deduplicatedSum = 0;
-            int remainingCapabilityScore = 25;
+            var capabilityContributions = positiveEvidences.Where(e => e.Nature == EvidenceNature.Capability)
+                .Select(e => e.ScoreContribution).OrderByDescending(s => s).ToArray();
+            int capabilityScore = Math.Min(25, (capabilityContributions.FirstOrDefault()) + capabilityContributions.Skip(1).Sum() / 4);
+            int deduplicatedSum = capabilityScore;
 
-            foreach (var kvp in groupScores)
+            foreach (var kvp in groupScores.OrderBy(g => g.Key.Category).ThenBy(g => g.Key.Group, StringComparer.Ordinal))
             {
                 string grpName = kvp.Key.Group;
                 var items = kvp.Value;
                 var cat = kvp.Key.Category;
 
                 var independent = items.Where(e => e.Nature != EvidenceNature.Capability).OrderByDescending(e => e.ScoreContribution).ToList();
-                var capabilities = items.Where(e => e.Nature == EvidenceNature.Capability).OrderByDescending(e => e.ScoreContribution).ToList();
                 int dominantScore = independent.FirstOrDefault()?.ScoreContribution ?? 0;
                 int corroboratingSum = independent.Skip(1).Sum(i => i.ScoreContribution);
                 int corroborationBonus = (int)Math.Floor(corroboratingSum / 4.0);
                 int effectiveGroupScore = dominantScore + corroborationBonus;
-                // Ordinary capabilities are not independent attack evidence, even across detector categories.
-                int capabilityScore = Math.Min(remainingCapabilityScore,
-                    (capabilities.FirstOrDefault()?.ScoreContribution ?? 0) + capabilities.Skip(1).Sum(e => e.ScoreContribution) / 4);
-                remainingCapabilityScore -= capabilityScore;
-                effectiveGroupScore += capabilityScore;
 
                 groupEvaluations.Add((grpName, cat, dominantScore, corroboratingSum, effectiveGroupScore));
                 deduplicatedSum += effectiveGroupScore;
             }
 
             // 4. Category Score Capping
-            int categoryAdjustedScore = 0;
+            // One global capability pool, outside independent category caps; allocation cannot depend on order.
+            int categoryAdjustedScore = capabilityScore;
             var categoryBreakdown = new List<(EvidenceCategory Category, int RawGroupSum, int Cap, int EffectiveScore)>();
 
             foreach (var catGroup in groupEvaluations.GroupBy(g => g.Category))
@@ -274,6 +286,7 @@ namespace AegisPC.Security.Detection
                     traceSb.AppendLine($" • Group '{g.GroupName}' ({g.Category}): Dominant={g.Dominant}, Corroborating={g.Corroborating} -> Effective = {g.EffectiveGroupScore}");
                 }
                 traceSb.AppendLine($"Deduplicated Group Sum: {deduplicatedSum}");
+                traceSb.AppendLine($"Ordinary capability pool (strongest + other contributions / 4, cap 25): {capabilityScore}");
 
                 traceSb.AppendLine("\n[Category Caps]:");
                 foreach (var c in categoryBreakdown)
@@ -308,6 +321,9 @@ namespace AegisPC.Security.Detection
                 FilePath = context.FilePath,
                 SHA256 = context.SHA256,
                 Verdict = verdict,
+                SoftwareClass = softwareClass,
+                SoftwareClassification = optionalMetadata,
+                HasIndependentMalwareEvidence = independentMalware,
                 PolicyBypassed = policyBypass && verdict != DetectionVerdict.ConfirmedMalicious,
                 IsComplete = failedDetectorCount == 0 && context.CoverageLimitations.Count == 0,
                 FailedDetectorCount = failedDetectorCount,
@@ -333,10 +349,7 @@ namespace AegisPC.Security.Detection
             List<SecurityEvidence> evidences)
         {
             // Exact Signature Match Override
-            var signatureMatch = evidences.FirstOrDefault(e =>
-                (e.Category == EvidenceCategory.StaticSignature || e.Category == EvidenceCategory.AmsiProvider) &&
-                e.Confidence == EvidenceConfidence.Absolute &&
-                e.ScoreContribution >= 80);
+            var signatureMatch = evidences.FirstOrDefault(e => e.IsExactMalwareEvidence);
             if (signatureMatch != null)
             {
                 return (DetectionVerdict.ConfirmedMalicious, DetectionPolicy.BlockAndQuarantine, signatureMatch.Description);
@@ -345,10 +358,7 @@ namespace AegisPC.Security.Detection
             // Calibrated multi-signal scoring:
             if (score >= 85)
             {
-                bool hasAbsoluteMalwareSignature = evidences.Any(e =>
-                    (e.Category == EvidenceCategory.StaticSignature || e.Category == EvidenceCategory.AmsiProvider) &&
-                    e.Confidence == EvidenceConfidence.Absolute &&
-                    e.ScoreContribution >= 80);
+                bool hasAbsoluteMalwareSignature = evidences.Any(e => e.IsExactMalwareEvidence);
 
                 if (hasAbsoluteMalwareSignature)
                 {

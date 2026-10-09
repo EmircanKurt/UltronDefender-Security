@@ -14,6 +14,9 @@ namespace AegisPC.App.ViewModels
     /// </summary>
     public partial class ScanViewModel
     {
+        private bool IsFindingVisible(SecurityFinding finding) => FindingVisibilityPolicy.IsVisible(finding,
+            _settingsService?.GetSetting("ShowPotentiallyUnwantedToolFindings", false) == true);
+        private int HiddenCurrentFindingCount() => _scanCoordinator?.CurrentFindings?.Count(f => !IsFindingVisible(f)) ?? 0;
         private static string FormatActiveResourceProfile(ScanProgress progress)
         {
             if (progress.EffectiveWorkerLimit <= 0) return progress.ResourceProfileName;
@@ -102,7 +105,7 @@ namespace AegisPC.App.ViewModels
                     ScannedBreakdownFormatted = $"{lp.ScannedFromCache:N0} önbellekten • {lp.SkippedSignedClean:N0} imzalı geçti • {lp.NewlyScanned:N0} yeni tarandı";
                 }
                 TotalCount = _scanCoordinator.TotalFiles;
-                FindingsCount = _scanCoordinator.FindingsCount;
+                FindingsCount = Math.Max(0, _scanCoordinator.FindingsCount - HiddenCurrentFindingCount());
                 DetectionsCount = FindingsCount;
                 ScanStatusText = _scanCoordinator.StatusText;
                 if (IsScanning && _isCancellationRequested)
@@ -156,7 +159,7 @@ namespace AegisPC.App.ViewModels
                 NewlyScanned = p.NewlyScanned;
                 ScannedBreakdownFormatted = $"{p.ScannedFromCache:N0} önbellekten • {p.SkippedSignedClean:N0} imzalı geçti • {p.NewlyScanned:N0} yeni tarandı";
                 TotalCount = p.TotalFiles;
-                FindingsCount = p.FindingsCount;
+                FindingsCount = Math.Max(0, p.FindingsCount - HiddenCurrentFindingCount());
                 ConfirmedMaliciousCount = p.ConfirmedMaliciousCount;
                 SuspiciousReviewCount = p.SuspiciousCount;
                 DetectionsCount = FindingsCount;
@@ -247,9 +250,10 @@ namespace AegisPC.App.ViewModels
             }
             DispatchUi(() =>
             {
-                ApplyFinalScanCounters(result, findings.Count);
+                int visibleCount = findings.Count(IsFindingVisible);
+                ApplyFinalScanCounters(result, visibleCount);
                 PopulateFinalFindings(findings);
-                NotifyFinalScanStatus(result, findings.Count);
+                NotifyFinalScanStatus(result, visibleCount);
                 IsScanFinishedView = true;
                 OnPropertyChanged(nameof(ScanResultTitle));
                 OnPropertyChanged(nameof(CleanStateTitle));
@@ -314,6 +318,7 @@ namespace AegisPC.App.ViewModels
             ThreatResults.Clear();
             foreach (var finding in findings)
             {
+                if (!IsFindingVisible(finding)) continue;
                 if (finding.Status == FindingStatus.Resolved || finding.Status == FindingStatus.Ignored || finding.IsAllowlisted) continue;
                 ScanFindings.Add(finding);
                 ThreatResults.Add(new SelectableThreatModel
@@ -346,7 +351,10 @@ namespace AegisPC.App.ViewModels
             else if (findingsCount == 0)
             {
                 bool partialCoverage = !result.Coverage.IsComplete || result.SkippedFiles > 0 || result.FailedFiles > 0 || result.TimedOutFiles > 0;
-                ScanStatusText = $"{result.ScannedFiles:N0} dosya incelendi; bulgu yok." + (partialCoverage ? " Kapsam eksik; ayrıntılar raporda." : " Bu sonuç güvenlik garantisi değildir.");
+                int hidden = result.Findings.Count - findingsCount;
+                ScanStatusText = $"{result.ScannedFiles:N0} dosya incelendi; gösterilen güvenlik bulgusu yok." +
+                    (hidden > 0 ? $" {hidden} isteğe bağlı araç kaydı ham raporda korunur." : "") +
+                    (partialCoverage ? " Kapsam eksik; ayrıntılar raporda." : " Bu sonuç güvenlik garantisi değildir.");
                 _toastService?.ShowToast(partialCoverage ? "Tarama Kapsamı Eksik" : "Tarama Tamamlandı", ScanStatusText, partialCoverage ? "Warning" : "Success");
             }
             else

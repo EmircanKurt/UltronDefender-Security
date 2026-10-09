@@ -4,5 +4,5 @@ namespace AegisPC.Core.Models;
 public static class DetectionRuleSet
 {
     /// <summary>Identifies the rules that distinguish static capabilities from observed attacks.</summary>
-    public const string Version = "2026-10-09-capability-trust-v1";
+    public const string Version = "2026-10-09-game-mod-semantics-v2";
 }

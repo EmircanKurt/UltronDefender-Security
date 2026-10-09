@@ -14,7 +14,11 @@ public sealed class InstallerWorkflowTests
         Assert.Contains("https://github.com/EmircanKurt/UltronDefender-Security", source);
         Assert.Contains("MinVersion=10.0.17763", source);
         Assert.Contains("ArchitecturesAllowed=x64compatible", source);
-        Assert.Contains("#define MyAppVersion \"3.2.2-preview.20261009\"", source);
+        // Preview packaging must track the current application, not silently retain the previous installer version.
+        var project = System.Xml.Linq.XDocument.Parse(Read("src/AegisPC.App/AegisPC.App.csproj"));
+        string version = project.Descendants("Version").Single().Value;
+        Assert.Contains($"#define MyAppVersion \"{version}\"", source);
+        Assert.Contains("OutputBaseFilename=UltronDefenderSetup-{#MyAppVersion}", source);
         Assert.Contains("PrivilegesRequired=lowest", source);
         Assert.DoesNotContain("Filename: \"{sys}\\sc.exe\"", source);
         Assert.DoesNotContain("Root: HKLM", source);

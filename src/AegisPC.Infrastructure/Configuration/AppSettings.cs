@@ -14,6 +14,8 @@ namespace AegisPC.Infrastructure.Configuration
         /// <summary>Enables optional local static Ultron AI review; disabling it does not disable signatures, AMSI, or mandatory action validation.</summary>
         public bool IsUltronAiEnabled { get; set; } = true;
         public bool NotificationsEnabled { get; set; } = true;
+        /// <summary>Per-user presentation preference only; no engine exclusion or Defender policy effect.</summary>
+        public bool ShowPotentiallyUnwantedToolFindings { get; set; } = false;
         public bool ScanScheduleEnabled { get; set; } = false;
         public string ScanScheduleCron { get; set; } = "0 0 * * *"; // Daily at midnight
         public int DataRetentionDays { get; set; } = 30;

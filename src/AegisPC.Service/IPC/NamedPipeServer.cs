@@ -144,6 +144,14 @@ namespace AegisPC.Service.IPC
             var threatNotification = new ThreatNotification
             {
                 FilePath = finding.ObjectPath,
+                SHA256 = finding.SHA256 ?? string.Empty,
+                SoftwareClass = finding.SoftwareClass,
+                SoftwareClassification = finding.SoftwareClassification,
+                RuleSetVersion = finding.RuleSetVersion,
+                InspectionComplete = finding.InspectionComplete,
+                CoverageLimitations = finding.CoverageLimitations.ToArray(),
+                PolicyBypassed = finding.IsAllowlisted,
+                HasIndependentMalwareEvidence = finding.HasIndependentMalwareEvidence,
                 ProcessName = "FileSystemMonitor",
                 ProcessId = 0,
                 ThreatName = finding.Title,

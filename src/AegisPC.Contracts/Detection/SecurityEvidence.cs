@@ -34,7 +34,9 @@ namespace AegisPC.Contracts.Detection
         /// <summary>A structurally validated anomaly, not proof of an executed attack.</summary>
         StructuralAnomaly,
         /// <summary>Provenance-validated exact malware or provider evidence; existing authority checks still apply.</summary>
-        Authoritative
+        Authoritative,
+        /// <summary>Optional software classification only; never a risk contribution or action authority.</summary>
+        SoftwareClassification
     }
 
     public enum EvidenceConfidence
@@ -86,6 +88,12 @@ namespace AegisPC.Contracts.Detection
     /// </summary>
     public class SecurityEvidence
     {
+        /// <summary>Authenticated optional-tool metadata is informational, never a positive malware contribution.</summary>
+        public AegisPC.Core.Models.SoftwareClassificationMetadata? OptionalToolClassification { get; set; }
+        /// <summary>Preserves exact signature/provider authority while excluding informational software labels.</summary>
+        public bool IsExactMalwareEvidence => Nature != EvidenceNature.SoftwareClassification &&
+            Category is EvidenceCategory.StaticSignature or EvidenceCategory.AmsiProvider &&
+            Confidence == EvidenceConfidence.Absolute && ScoreContribution >= 80;
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string? CorrelationId { get; set; }
         public EvidenceCategory Category { get; set; }

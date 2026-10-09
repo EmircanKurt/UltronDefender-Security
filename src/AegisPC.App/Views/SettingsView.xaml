@@ -149,6 +149,13 @@
                     </Grid>
 
                     <!-- Row 5: Network Protection -->
+                    <Grid Margin="0,0,0,14">
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
+                            <TextBlock Text="Riskli araç / potansiyel istenmeyen yazılım bulguları" Style="{StaticResource DataTableStyle}" FontWeight="Bold"/>
+                            <TextBlock Text="Yalnız doğrulanmış araç sınıflamalarını gösterir. Tarama motorunu kapatmaz; zararlı veya eksik inceleme bulgularını gizlemez. Ham raporlar korunur." Style="{StaticResource CaptionTextStyle}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <ui:ToggleSwitch IsChecked="{Binding ShowPotentiallyUnwantedToolFindings, Mode=TwoWay}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
                     <Grid Margin="0">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,80,0">
                             <StackPanel Orientation="Horizontal">

@@ -21,7 +21,7 @@ namespace AegisPC.Recommendations.Rules
             if (findingService != null)
             {
                 var findings = await findingService.GetAllFindingsAsync(cancellationToken);
-                var activeFindings = findings.Where(f => f.Status == FindingStatus.Active).ToList();
+                var activeFindings = findings.Where(f => f.Status == FindingStatus.Active && FindingVisibilityPolicy.IsSecurityConcern(f)).ToList();
 
                 if (activeFindings.Count > 0)
                 {

@@ -99,4 +99,16 @@ public sealed class CachePolicyRevisionReviewTests : IDisposable
         Assert.Equal(ruleCount, engine.LoadedRuleCount);
         Assert.True((await matcher.TryGetCachedAsync(path, info, CancellationToken.None)).Hit);
     }
+
+    /// <summary>Legacy nonempty findings cannot be stamped with the current rules merely by entering a new matcher.</summary>
+    [Fact]
+    public async Task LegacyFindingMetadataCannotCertifyCurrentCache()
+    {
+        string path = Path.Combine(_root, "legacy.txt"); await File.WriteAllTextAsync(path, "benign legacy fixture");
+        var info = new FileInfo(path);
+        var matcher = new FileHashMatcher(new HashService(), new SignatureVerifier(), null!);
+        matcher.SetCache(path, info.Length, info.LastWriteTimeUtc, new AegisPC.Core.Models.SecurityFinding());
+        Assert.Equal(0, matcher.CachedEntriesCount);
+        Assert.False((await matcher.TryGetCachedAsync(path, info, CancellationToken.None)).Hit);
+    }
 }

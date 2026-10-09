@@ -78,8 +78,22 @@ public class ArchiveDetectorPlugin : IDetectorPlugin
             context.CoverageLimitations.Add(inspected.CoverageLimitation ?? "Archive member inspection did not complete.");
 
         var evidences = new List<SecurityEvidence>();
+        foreach (var member in inspected.MemberEvidences)
+        {
+            // Detached copy: aggregation must not rewrite the cached member's hash, feature or forensic identity.
+            evidences.Add(new SecurityEvidence
+            {
+                SourceDetector = member.SourceDetector, RuleName = member.RuleName, Category = member.Category,
+                Nature = member.Nature, Confidence = member.Confidence, ScoreContribution = member.ScoreContribution,
+                CorrelationGroup = member.CorrelationGroup, Description = member.Description,
+                FeatureIdentity = $"ArchiveMember:{member.Metadata.GetValueOrDefault("ArchiveMember")}:{member.RuleName}:{member.FeatureIdentity}",
+                FilePath = context.FilePath, SHA256 = context.SHA256,
+                Metadata = new Dictionary<string, string>(member.Metadata)
+            });
+        }
         foreach (var finding in inspected.Findings)
         {
+            if (inspected.SharedRuleFindingIds.Contains(finding.Id)) continue;
             bool exact = finding.Category == FindingCategory.KnownMalwareHash && finding.RiskLevel == RiskLevel.ConfirmedMalicious;
             var evidence = new SecurityEvidence
             {
@@ -87,8 +101,9 @@ public class ArchiveDetectorPlugin : IDetectorPlugin
                 RuleName = exact ? "Archive.Member.ExactSignature" : $"Archive.Member.{finding.Category}",
                 Category = exact || finding.Category == FindingCategory.MalwareSuspicion ? EvidenceCategory.StaticSignature
                     : finding.Category == FindingCategory.SuspiciousScript ? EvidenceCategory.ScriptHeuristic : EvidenceCategory.ArchiveAnomaly,
-                Confidence = exact ? EvidenceConfidence.Absolute : EvidenceConfidence.High,
-                ScoreContribution = exact ? finding.RiskScore : Math.Min(75, finding.RiskScore),
+                Confidence = exact ? EvidenceConfidence.Absolute : finding.IsOrdinaryCapability ? EvidenceConfidence.Low : EvidenceConfidence.High,
+                Nature = exact ? EvidenceNature.Authoritative : finding.IsOrdinaryCapability ? EvidenceNature.Capability : EvidenceNature.Heuristic,
+                ScoreContribution = exact ? finding.RiskScore : Math.Min(84, finding.RiskScore),
                 CorrelationGroup = "ArchiveMember:" + (finding.SHA256 ?? finding.ObjectPath),
                 Description = finding.Title + " — " + finding.Description,
                 FilePath = context.FilePath,

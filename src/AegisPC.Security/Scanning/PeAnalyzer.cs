@@ -144,7 +144,7 @@ namespace AegisPC.Security.Scanning
 
                     if (result.IsPacked)
                     {
-                        result.TransparencyNote = $"Bu dosya paketlenmiş/korumalı (packed/protector: {result.PackerName ?? "Bilinmeyen Packer"}) bir yürütülebilir olarak tanındı. Bu durum crack/keygen veya oyun modları için olağandır ancak riski sıfırlamaz. Güvendiğiniz bir kaynaktan indirdiyseniz 'Güvenilir Olarak İşaretle' seçeneğini kullanabilirsiniz.";
+                        result.TransparencyNote = $"Paketlenmiş/korumalı yürütülebilir ({result.PackerName ?? "Bilinmeyen Packer"}). Paketleme tek başına zararlılık veya güven kanıtı değildir; diğer içerik kanıtları bağımsız incelenir.";
                     }
                 }
 

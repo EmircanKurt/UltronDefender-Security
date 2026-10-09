@@ -115,7 +115,7 @@ namespace AegisPC.Security.Scanning
 
         // RAM'e göre dinamik cache limitleri (constructor'da hesaplanır)
         private readonly int _maxCacheEntries;
-        private readonly ConcurrentDictionary<string, (long FileSize, DateTime LastWriteTimeUtc, SecurityFinding? Finding, string? Sha256, bool IsAllowlisted, bool IsBypassed, long PolicyRevision)> _scanCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, (long FileSize, DateTime LastWriteTimeUtc, SecurityFinding? Finding, string? Sha256, bool IsAllowlisted, bool IsBypassed, long PolicyRevision, string RuleVersion, string IntelIdentity)> _scanCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _cacheMutationLock = new();
         private readonly LinkedList<string> _cacheKeyQueue = new();
         private readonly Dictionary<string, LinkedListNode<string>> _queuedCacheKeys = new(StringComparer.OrdinalIgnoreCase);
@@ -207,7 +207,12 @@ namespace AegisPC.Security.Scanning
                 fileInfo.Refresh();
                 if (!_scanCache.TryGetValue(path, out var cached) || !fileInfo.Exists ||
                     cached.FileSize != fileInfo.Length || cached.LastWriteTimeUtc != fileInfo.LastWriteTimeUtc ||
-                    string.IsNullOrEmpty(cached.Sha256) || cached.PolicyRevision != DetectionPolicyRevision.Current)
+                    string.IsNullOrEmpty(cached.Sha256) || cached.PolicyRevision != DetectionPolicyRevision.Current ||
+                    cached.RuleVersion != DetectionRuleSet.Version || cached.IntelIdentity != ThreatIntelligence.AuthoritativeThreatCatalog.CacheIdentity ||
+                    cached.Finding != null && (!cached.Finding.InspectionComplete || cached.Finding.RuleSetVersion != DetectionRuleSet.Version ||
+                        cached.Finding.CoverageLimitations.Count != 0 || cached.Finding.RiskLevel == RiskLevel.Unknown) ||
+                    cached.Finding?.SoftwareClass == SoftwareFindingClass.PotentiallyUnwantedToolOnly &&
+                        !(cached.Finding.SoftwareClassification?.ValidUntilUtc > DateTime.UtcNow))
                     return (false, null, null);
                 await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
                 string hash;
@@ -221,7 +226,7 @@ namespace AegisPC.Security.Scanning
                 if (cached.IsAllowlisted || cached.IsBypassed || cached.Finding?.Status == FindingStatus.Resolved ||
                     cached.Finding?.IsAllowlisted == true) return (false, null, hash);
                 // A reload may occur while the content hash is being verified asynchronously.
-                if (cached.PolicyRevision != DetectionPolicyRevision.Current) return (false, null, hash);
+                if (cached.PolicyRevision != DetectionPolicyRevision.Current || cached.IntelIdentity != ThreatIntelligence.AuthoritativeThreatCatalog.CacheIdentity) return (false, null, hash);
                 Interlocked.Increment(ref _scannedFromCache);
                 return (true, cached.Finding, hash);
             }
@@ -264,6 +269,8 @@ namespace AegisPC.Security.Scanning
             string? sha256, bool isAllowlisted, bool isBypassed, long policyRevision)
         {
             if (policyRevision != DetectionPolicyRevision.Current) return;
+            if (finding != null && (!finding.InspectionComplete || finding.RuleSetVersion != DetectionRuleSet.Version ||
+                finding.CoverageLimitations.Count != 0 || finding.RiskLevel == RiskLevel.Unknown)) return;
             if (string.IsNullOrEmpty(sha256))
             {
                 try
@@ -289,7 +296,8 @@ namespace AegisPC.Security.Scanning
                     _queuedCacheKeys.Remove(oldest.Value);
                     _cacheKeyQueue.RemoveFirst();
                 }
-                _scanCache[path] = (fileSize, lastWriteTimeUtc, finding, sha256, isAllowlisted, isBypassed, policyRevision);
+                _scanCache[path] = (fileSize, lastWriteTimeUtc, finding, sha256, isAllowlisted, isBypassed, policyRevision,
+                    DetectionRuleSet.Version, ThreatIntelligence.AuthoritativeThreatCatalog.CacheIdentity);
                 if (!existing) _queuedCacheKeys.Add(path, _cacheKeyQueue.AddLast(path));
             }
         }

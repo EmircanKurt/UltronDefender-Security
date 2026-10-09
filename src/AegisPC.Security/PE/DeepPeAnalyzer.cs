@@ -72,6 +72,7 @@ namespace AegisPC.Security.PE
                 }
 
                 var result = Analyze(buffer, filePath);
+                result.IsStaticInspectionComplete = fs.Length <= buffer.Length;
                 
                 // Authenticode sertifika doğrulaması — asenkron olarak yapılır (deadlock önlemi)
                 if (result.IsPeFile)

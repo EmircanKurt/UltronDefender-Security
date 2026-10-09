@@ -31,6 +31,10 @@ The current edition has no paid activation key, subscription or expiry. The MIT 
 
 ## Testing and limits
 
+### Game/mod reliability and native menu follow-up
+
+The [9 October game/mod report](docs/reports/GAME_MOD_SAFETY_2026-10-09.md) describes the next preview: actual native-menu theme regressions, deterministic ordinary-capability scoring, removal of legacy filename/unproven-hash decisions, optional tool-only presentation, versioned content-verified caches and shared ZIP/JAR rule mapping. It adds no game-folder trust exemption. Real 30-file corpus, cold/warm comparison, live DPI and VirtualBox gates remain pending; optional third-party classification is inactive until a publisher key is provisioned. No production-protection or crack-safety guarantee is made.
+
 ### Changes since the 6 October preview
 
 - Plain scan chooser with a scope panel, embedded scan route, silent startup/AFK presentation and clearer partial-coverage reporting.

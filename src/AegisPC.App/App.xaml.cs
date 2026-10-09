@@ -286,6 +286,10 @@ namespace AegisPC.App
                         {
                             ipcClient.ThreatDetected += (threat) =>
                             {
+                                if (!AegisPC.Core.Models.FindingVisibilityPolicy.IsVisible(threat.SoftwareClass,
+                                    threat.SoftwareClassification, threat.SHA256, threat.RuleSetVersion, threat.InspectionComplete,
+                                    threat.CoverageLimitations.Length != 0, threat.PolicyBypassed, threat.HasIndependentMalwareEvidence,
+                                    threat.RiskLevel, ServiceProvider?.GetService<AegisPC.Contracts.Services.ISettingsService>()?.GetSetting("ShowPotentiallyUnwantedToolFindings", false) == true)) return;
                                 string label = threat.IsObservationOnly ? "Güvenlik gözlemi" : "Güvenlik bulgusu";
                                 toastService.ShowToast($"{label}: {threat.ThreatName}", $"Dosya: {threat.FilePath}\nİşlem: {threat.ActionTaken}", "Warning");
                             };

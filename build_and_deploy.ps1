@@ -8,13 +8,16 @@ param (
     [switch]$SkipTests,
     [switch]$SkipInstaller,
     [switch]$UpdateDesktopShortcut,
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\preview-3.2.2'),
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\preview-3.2.3'),
     [string]$InnoCompilerPath = ''
 )
 
 $ErrorActionPreference = "Stop"
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $repoRoot = $PSScriptRoot
+[xml]$projectVersion = Get-Content -LiteralPath (Join-Path $repoRoot 'src/AegisPC.App/AegisPC.App.csproj') -Raw
+$appVersion = @($projectVersion.Project.PropertyGroup.Version | Where-Object { $_ })[0]
+if ($appVersion -notmatch '^\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$') { throw 'Invalid application version; package names cannot be inferred.' }
 Set-Location -LiteralPath $repoRoot
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
@@ -76,9 +79,9 @@ if (-not $SkipInstaller) {
         $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
     }
     if ($iscc -and (Test-Path $iscc)) {
-        & $iscc /Q "/DAppPublishDir=$appDir" "/DSetupOutputDir=$OutputDirectory" (Join-Path $repoRoot "installer.iss")
+        & $iscc /Q "/DMyAppVersion=$appVersion" "/DAppPublishDir=$appDir" "/DSetupOutputDir=$OutputDirectory" (Join-Path $repoRoot "installer.iss")
         if ($LASTEXITCODE -eq 0) {
-            $setupPath = Join-Path $OutputDirectory "UltronDefenderSetup-3.2.2-preview.20261009.exe"
+            $setupPath = Join-Path $OutputDirectory "UltronDefenderSetup-$appVersion.exe"
             $setupSizeMb = [math]::Round((Get-Item $setupPath).Length / 1MB, 2)
             Write-Host "[OK] Kurulum paketi hazir: $setupPath ($setupSizeMb MB)" -ForegroundColor Green
         } else {

@@ -474,7 +474,7 @@ namespace AegisPC.App.ViewModels
                 int activeScanFindings = 0;
                 if (_scanCoordinator?.CurrentFindings != null)
                 {
-                    activeScanFindings = _scanCoordinator.CurrentFindings.Count(f => f.Status == AegisPC.Core.Enums.FindingStatus.Active && !f.IsAllowlisted);
+                    activeScanFindings = _scanCoordinator.CurrentFindings.Count(f => f.Status == AegisPC.Core.Enums.FindingStatus.Active && !f.IsAllowlisted && AegisPC.Core.Models.FindingVisibilityPolicy.IsSecurityConcern(f));
                 }
 
                 int activeServiceFindings = 0;
@@ -482,7 +482,7 @@ namespace AegisPC.App.ViewModels
                 {
                     try
                     {
-                        activeServiceFindings = await _findingService.GetActiveCountAsync();
+                        activeServiceFindings = (await _findingService.GetAllFindingsAsync()).Count(f => f.Status == AegisPC.Core.Enums.FindingStatus.Active && !f.IsAllowlisted && AegisPC.Core.Models.FindingVisibilityPolicy.IsSecurityConcern(f));
                     }
                     catch { }
                 }

@@ -55,6 +55,13 @@ namespace AegisPC.Security.Detection.Detectors
             bool isTextDocument = !isCanonicalTestContent &&
                 await IsVerifiedTextDocumentAsync(context.FilePath, canonicalStream, cancellationToken);
 
+            return BuildEvidence(matches, context, isTextDocument, isCanonicalTestContent);
+        }
+
+        /// <summary>Maps identical rule matches over loose and decompressed content; wrapping cannot change confidence/category/group.</summary>
+        internal static List<SecurityEvidence> BuildEvidence(IEnumerable<YaraMatch> matches, DetectionContext context, bool isTextDocument, bool isCanonicalTestContent)
+        {
+            var evidenceList = new List<SecurityEvidence>();
             foreach (var match in matches)
             {
                 EvidenceCategory category;
@@ -87,12 +94,13 @@ namespace AegisPC.Security.Detection.Detectors
                 var evidence = new SecurityEvidence
                 {
                     Category = category,
-                    SourceDetector = DisplayName,
+                    SourceDetector = "YARA Kural ve İmza Dedektörü",
                     RuleName = $"Yara.{match.RuleName}",
                     Description = $"YARA Kural Eşleşmesi: {match.RuleName} - {match.Description} (Eşleşen Desen Sayısı: {match.MatchedStrings.Count})",
                     ScoreContribution = score,
                     Confidence = confidence,
                     CorrelationGroup = group,
+                    Nature = isTextDocument ? EvidenceNature.Capability : isCanonicalTestContent ? EvidenceNature.Authoritative : EvidenceNature.Heuristic,
                     FilePath = context.FilePath,
                     SHA256 = context.SHA256,
                     ProcessId = context.ProcessId,
@@ -143,10 +151,6 @@ namespace AegisPC.Security.Detection.Detectors
 
         private static async Task<bool> IsVerifiedTextDocumentAsync(string filePath, Stream stream, CancellationToken cancellationToken)
         {
-            string extension = Path.GetExtension(filePath).ToLowerInvariant();
-            if (extension is not (".txt" or ".md" or ".rtf" or ".html" or ".htm" or ".log" or ".xml" or
-                ".json" or ".csv" or ".tsv" or ".rst" or ".cs" or ".py" or ".c" or ".cpp")) return false;
-
             const int maximumTextBytes = 1024 * 1024;
             long length = stream.Length;
             if (length == 0 || length > maximumTextBytes) return false;
@@ -162,15 +166,7 @@ namespace AegisPC.Security.Detection.Detectors
             }
             if (stream.Length != length) return false;
 
-            try
-            {
-                string text = new UTF8Encoding(false, true).GetString(content);
-                return text.All(character => !char.IsControl(character) || character is '\r' or '\n' or '\t' or '\f' or '\uFEFF');
-            }
-            catch (DecoderFallbackException)
-            {
-                return false;
-            }
+            return ContentRuleSemantics.IsBoundedText(content);
         }
     }
 }
