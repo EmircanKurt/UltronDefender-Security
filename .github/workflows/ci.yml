@@ -2,9 +2,9 @@ name: Ultron Defender CI Pipeline
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "codex/final-audit-*" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "codex/**" ]
 
 permissions:
   contents: read
@@ -33,7 +33,14 @@ jobs:
           ${{ runner.os }}-nuget-
 
     - name: Restore Dependencies
-      run: dotnet restore tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj
+      run: |
+        dotnet restore AegisPC.sln
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        dotnet restore tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Build complete solution without executing host-mutating tests
+      run: dotnet build AegisPC.sln -c Release --no-restore --warnaserror
 
     - name: Build Review dependencies (Release)
       run: dotnet build tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --no-restore --warnaserror

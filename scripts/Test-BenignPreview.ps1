@@ -16,6 +16,9 @@ $arguments[$arguments.IndexOf('--filter') + 1] += '|' + $discoveryFilter
 $arguments[$arguments.IndexOf('--filter') + 1] += '|FullyQualifiedName~AegisPC.Review.Tests.GameModEvidenceReviewTests|FullyQualifiedName~AegisPC.Review.Tests.NativeSidebarStateReviewTests|FullyQualifiedName~AegisPC.Review.Tests.OptionalToolVisibilityReviewTests'
 $arguments[$arguments.IndexOf('--filter') + 1] += '|FullyQualifiedName~AegisPC.Review.Tests.VersionedVerdictCacheReviewTests|FullyQualifiedName~AegisPC.Review.Tests.GameModArchiveParityReviewTests'
 $arguments[$arguments.IndexOf('--filter') + 1] += '|FullyQualifiedName~AegisPC.Review.Tests.LegacyFeedApiSurfaceReviewTests'
+$arguments[$arguments.IndexOf('--filter') + 1] += '|FullyQualifiedName~AegisPC.Review.Tests.ServiceCacheFinalAuditTests'
+$arguments[$arguments.IndexOf('--filter') + 1] += '|FullyQualifiedName~AegisPC.Tests.AutoUpdateServiceTests'
+$arguments[$arguments.IndexOf('--filter') + 1] += '|FullyQualifiedName~AegisPC.Review.Tests.BrowserProfileBudgetReviewTests|FullyQualifiedName~AegisPC.Review.Tests.LargeArchiveReviewTests|FullyQualifiedName~AegisPC.Review.Tests.BrowserPresentationReviewTests|FullyQualifiedName~AegisPC.Tests.ExternalTerminalBoundaryReviewTests|FullyQualifiedName~AegisPC.Tests.ReviewStageOneSafetyTests|FullyQualifiedName~AegisPC.Tests.ThreatIntelProvenanceReviewTests|FullyQualifiedName~AegisPC.Review.Tests.UltronFilterReviewTests|FullyQualifiedName~AegisPC.Review.Tests.LabTestGateReviewTests'
 & dotnet @arguments
 if ($LASTEXITCODE -ne 0) { throw "Selected benign regressions failed: $LASTEXITCODE" }
 [xml]$result = Get-Content -LiteralPath (Join-Path $ResultsDirectory 'benign-preview.trx') -Raw

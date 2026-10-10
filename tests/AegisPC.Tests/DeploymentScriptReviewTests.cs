@@ -30,6 +30,18 @@ public sealed class DeploymentScriptReviewTests
         Assert.DoesNotContain("postinstall", script);
     }
 
+    /// <summary>Requires the independent Review project to be restored before a clean no-restore CI build.</summary>
+    [Fact]
+    public void ContinuousIntegration_RestoresIndependentReviewProjectBeforeBuild()
+    {
+        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", "ci.yml"));
+        const string restore = "dotnet restore tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj";
+        const string build = "dotnet build tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj";
+        Assert.Contains("dotnet restore AegisPC.sln", workflow);
+        Assert.Contains(restore, workflow);
+        Assert.True(workflow.IndexOf(restore, StringComparison.Ordinal) < workflow.IndexOf(build, StringComparison.Ordinal));
+    }
+
     private static string RepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

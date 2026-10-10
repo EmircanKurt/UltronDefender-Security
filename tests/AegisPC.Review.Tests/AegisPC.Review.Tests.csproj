@@ -10,6 +10,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ReviewTestDependencies.cs" />
+    <Compile Include="ServiceCacheFinalAuditTests.cs" />
+    <Compile Include="../AegisPC.Tests/AutoUpdateServiceTests.cs" />
     <Compile Include="GameModEvidenceReviewTests.cs" />
     <Compile Include="NativeSidebarStateReviewTests.cs" />
     <Compile Include="OptionalToolVisibilityReviewTests.cs" />
