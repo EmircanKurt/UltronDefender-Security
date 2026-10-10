@@ -14,6 +14,8 @@ Sınırlı FIFO kanal ve gerçek commit bariyeri eklendi. Invalidation/clear ayn
 
 Bu seçki 12 yeni cache altyapı vakası ile diğer karar/sentetik kanıt, benign disk/ZIP, tarayıcı metadata ve off-screen WPF kontrollerini kapsar. Tüm main/lab paketinin günlük PC'de çalıştırıldığı veya geçtiği iddia edilmez. Çözüm Release derlemesi 0 hata/0 uyarı; son paket derlemesi ve uzak CI çıktıları ayrı teslim kanıtıdır. CI stacked PR ve final-audit branch yollarına da açılmıştır.
 
+GitHub'ın ilk temiz ortam koşusu (run 38027684139) solution derlemesini 0 hata/uyarıyla tamamladı, fakat bağımsız Review projesinde NETSDK1004 ile durdu: solution restore bu ayrı projenin assets dosyasını üretmiyordu. Yerel obj dosyaları bu boşluğu gizlemişti. Önce eklenen restore-sırası regresyonu başarısız oldu; workflow'a explicit Review restore ve exit-code kontrolleri eklendikten sonra son yerel aday **655 passed / 0 failed / 0 skipped** verdi. Bu bir ek altyapı testidir; ilk 654'e yeniden koşu sayıları eklenmemiştir. Uzak CI yeniden koşusunun sonucu, installer hash'i ve yayın bağlantısı release teslim kaydında ayrıca belirtilir.
+
 Queue, clear/invalidation ve gerçek SQL commit tek sıradan geçer. Pending invalidation/generation, eşzamanlı L2 okumayı miss'e dönüştürür. Dosya erişim hakları fixture üzerinde ve mevcut kullanıcı kimliğinde sınanmıştır; iki kullanıcı/SYSTEM native servis izolasyonu VM kapısıdır. Preview setup servis payload'unu içerir fakat onu kurmaz veya başlatmaz.
 
 ## Dar performans ve geri dönüş ölçümü

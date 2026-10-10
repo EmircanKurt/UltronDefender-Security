@@ -33,7 +33,7 @@ The current edition has no paid activation key, subscription or expiry. The MIT 
 
 ### Final preview audit — 10 October 2026
 
-Preview **3.2.4-preview.20261010** adds committed-cache barriers, ordered invalidation/clear, detached verdict snapshots, UTC-safe persistence, independent Quick/Full history and a cache-owner write-permission correction. **654 selected benign regressions passed, 0 failed/skipped**; this includes temporary database/archive fixtures, fake-HTTP signed-update integrity, synthetic policy and off-screen WPF tests, not a malware-detection rate. See [the final audit](docs/reports/FINAL_AUDIT_2026-10-10.md) and its unfinished VM/corpus/native gates. CI now also checks stacked review branches. No service, driver or Defender setting is changed by building this preview.
+Preview **3.2.4-preview.20261010** adds committed-cache barriers, ordered invalidation/clear, detached verdict snapshots, UTC-safe persistence, independent Quick/Full history and a cache-owner write-permission correction. **655 selected benign regressions passed, 0 failed/skipped**; this includes temporary database/archive fixtures, fake-HTTP signed-update integrity, synthetic policy, clean-CI restore ordering and off-screen WPF tests, not a malware-detection rate. See [the final audit](docs/reports/FINAL_AUDIT_2026-10-10.md) and its unfinished VM/corpus/native gates. CI also checks stacked review branches and explicitly restores the independent Review project. No service, driver or Defender setting is changed by building this preview.
 
 ### Game/mod reliability and native menu follow-up
 

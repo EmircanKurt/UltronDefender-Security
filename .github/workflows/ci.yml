@@ -33,7 +33,11 @@ jobs:
           ${{ runner.os }}-nuget-
 
     - name: Restore Dependencies
-      run: dotnet restore AegisPC.sln
+      run: |
+        dotnet restore AegisPC.sln
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        dotnet restore tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Build complete solution without executing host-mutating tests
       run: dotnet build AegisPC.sln -c Release --no-restore --warnaserror

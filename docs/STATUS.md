@@ -2,7 +2,7 @@
 
 ## Final cache / package review — 10 October 2026
 
-Preview **3.2.4-preview.20261010**: [final audit](reports/FINAL_AUDIT_2026-10-10.md). **654 explicitly selected benign regressions passed, 0 failed/skipped**: policy/synthetic evidence, fake-HTTP signed-update integrity, temporary disk/SQLite/ZIP fixtures and off-screen WPF state checks; not live malware efficacy. New cache tests cover commit barriers, invalidation/clear ordering, snapshots, cancellation, UTC/expiry and separate Quick/Full history. The previous 580-test frozen baseline was also rerun successfully. Native OS-mutating tests were not executed on the daily PC. Package identity/checksums and CI results are separate publication receipts; do not infer VM validation or signing from a green build.
+Preview **3.2.4-preview.20261010**: [final audit](reports/FINAL_AUDIT_2026-10-10.md). **655 explicitly selected benign regressions passed, 0 failed/skipped**: policy/synthetic evidence, fake-HTTP signed-update integrity, temporary disk/SQLite/ZIP fixtures, clean-CI restore ordering and off-screen WPF state checks; not live malware efficacy. New cache tests cover commit barriers, invalidation/clear ordering, snapshots, cancellation, UTC/expiry and separate Quick/Full history. The previous 580-test frozen baseline was also rerun successfully. Native OS-mutating tests were not executed on the daily PC. Package identity/checksums and CI results are separate publication receipts; do not infer VM validation or signing from a green build.
 
 ## Game/mod and native menu follow-up — 9 October 2026
 
