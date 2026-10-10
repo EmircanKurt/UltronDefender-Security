@@ -22,6 +22,23 @@ namespace AegisPC.Security.Scanning
         /// Dosyayı DetectionHub 13 dedektörü üzerinden değerlendirir ve tehdit bulunursa SecurityFinding üretir.
         /// </summary>
         Task<SecurityFinding?> AnalyzeAsync(string path, FileInfo fileInfo, string sha256, bool isGameDir, CancellationToken ct);
+        /// <summary>Reuses an actual bounded container inspection while preserving compatibility with other coordinators.</summary>
+        Task<SecurityFinding?> AnalyzeArchiveAsync(string path, FileInfo fileInfo, string sha256, ArchiveScanResult archiveResult, CancellationToken ct)
+            => AnalyzeAsync(path, fileInfo, sha256, false, ct);
+        /// <summary>Shares typed structural identity and a completed archive inspection without changing legacy coordinators.</summary>
+        Task<SecurityFinding?> AnalyzeContentAsync(string path, FileInfo fileInfo, string sha256,
+            FileContentClassification classification, ArchiveScanResult? archiveResult, CancellationToken ct)
+            => archiveResult != null ? AnalyzeArchiveAsync(path, fileInfo, sha256, archiveResult, ct) : AnalyzeAsync(path, fileInfo, sha256, false, ct);
+        /// <summary>Returns observed evidence and pipeline completeness independently.</summary>
+        async Task<FileContentInspectionResult> AnalyzeContentDetailedAsync(string path, FileInfo fileInfo, string sha256,
+            FileContentClassification classification, ArchiveScanResult? archiveResult, CancellationToken ct)
+            => new() { Finding = await AnalyzeContentAsync(path, fileInfo, sha256, classification, archiveResult, ct),
+                IsComplete = classification.IsComplete && archiveResult?.IsComplete != false,
+                CoverageLimitations = classification.CoverageLimitations.ToArray() };
+        /// <summary>Inspects the caller-held source while remaining compatible with legacy coordinator implementations.</summary>
+        Task<FileContentInspectionResult> AnalyzeLockedContentDetailedAsync(string path, FileInfo fileInfo, string sha256,
+            FileContentClassification classification, ArchiveScanResult? archiveResult, Stream source, CancellationToken ct)
+            => AnalyzeContentDetailedAsync(path, fileInfo, sha256, classification, archiveResult, ct);
     }
 
     /// <summary>
@@ -40,7 +57,44 @@ namespace AegisPC.Security.Scanning
             _findingService = findingService;
         }
 
-        public async Task<SecurityFinding?> AnalyzeAsync(string path, FileInfo fileInfo, string sha256, bool isGameDir, CancellationToken ct)
+        /// <summary>Analyzes a stable whole-file identity through the shared detector pipeline.</summary>
+        public Task<SecurityFinding?> AnalyzeAsync(string path, FileInfo fileInfo, string sha256, bool isGameDir, CancellationToken ct)
+            => AnalyzeCoreAsync(path, fileInfo, sha256, ct, null);
+
+        /// <summary>Passes real member findings and coverage to the hub without decompressing the same container twice.</summary>
+        public Task<SecurityFinding?> AnalyzeArchiveAsync(string path, FileInfo fileInfo, string sha256, ArchiveScanResult archiveResult, CancellationToken ct)
+            => AnalyzeCoreAsync(path, fileInfo, sha256, ct, archiveResult);
+
+        /// <summary>Passes observed content and explicit coverage to the same detector pipeline used by real-time scans.</summary>
+        public Task<SecurityFinding?> AnalyzeContentAsync(string path, FileInfo fileInfo, string sha256,
+            FileContentClassification classification, ArchiveScanResult? archiveResult, CancellationToken ct)
+            => AnalyzeCoreAsync(path, fileInfo, sha256, ct, archiveResult, classification);
+
+        /// <summary>Retains a confirmed finding without turning incomplete detector or format coverage into success.</summary>
+        public async Task<FileContentInspectionResult> AnalyzeContentDetailedAsync(string path, FileInfo fileInfo, string sha256,
+            FileContentClassification classification, ArchiveScanResult? archiveResult, CancellationToken ct)
+            => await AnalyzeLockedContentDetailedCoreAsync(path, fileInfo, sha256, classification, archiveResult, null, ct);
+
+        /// <summary>Shares stable bytes with detector feature extraction without reopening the path.</summary>
+        public Task<FileContentInspectionResult> AnalyzeLockedContentDetailedAsync(string path, FileInfo fileInfo, string sha256,
+            FileContentClassification classification, ArchiveScanResult? archiveResult, Stream source, CancellationToken ct)
+            => AnalyzeLockedContentDetailedCoreAsync(path, fileInfo, sha256, classification, archiveResult, source, ct);
+
+        private async Task<FileContentInspectionResult> AnalyzeLockedContentDetailedCoreAsync(string path, FileInfo fileInfo, string sha256,
+            FileContentClassification classification, ArchiveScanResult? archiveResult, Stream? source, CancellationToken ct)
+        {
+            DetectionResult? observed = null;
+            var finding = await AnalyzeCoreAsync(path, fileInfo, sha256, ct, archiveResult, classification, x => observed = x, source);
+            bool complete = observed?.IsComplete == true && classification.IsComplete && archiveResult?.IsComplete != false;
+            var limits = (observed?.CoverageLimitations ?? new()).Concat(classification.CoverageLimitations).Distinct().Take(128).ToList();
+            if (observed?.FailedDetectorCount > 0) limits.Add("DetectorExecutionFailed");
+            if (archiveResult?.IsComplete == false) limits.Add(archiveResult.CoverageLimitation ?? "ArchiveInspectionIncomplete");
+            if (!complete && limits.Count == 0) limits.Add("DetectorInspectionIncomplete");
+            return new() { Finding = finding, IsComplete = complete, CoverageLimitations = limits.ToArray() };
+        }
+
+        private async Task<SecurityFinding?> AnalyzeCoreAsync(string path, FileInfo fileInfo, string sha256, CancellationToken ct,
+            ArchiveScanResult? archiveResult, FileContentClassification? classification = null, Action<DetectionResult>? reportCoverage = null, Stream? source = null)
         {
             var context = new DetectionContext
             {
@@ -50,25 +104,35 @@ namespace AegisPC.Security.Scanning
                 ProcessId = 0,
                 CorrelationId = Guid.NewGuid().ToString("N")
             };
+            context.ContentClassification = classification;
+            context.SharedScan = new ScanContext(path, sha256, fileInfo.Length) { LastWriteTimeUtc = fileInfo.LastWriteTimeUtc, ContentClassification = classification, LockedContent = source };
+            if (classification != null) context.CoverageLimitations.AddRange(classification.CoverageLimitations);
+            if (archiveResult != null) context.Properties["Ultron.ArchiveInspectionResult"] = archiveResult;
 
             var detectionResult = await _detectionHub.EvaluateAsync(context, ct);
+            reportCoverage?.Invoke(detectionResult);
 
             // Eşik Değeri ve Risk Kararı Haritalaması (Oyun ve geliştirici paket klasörlerinde 85 eşik, genel sistemde 50 eşik)
-            bool isDevDir = PathHelper.IsDevelopmentOrPackageDirectory(path);
-            int minThreshold = (isGameDir || isDevDir) ? 85 : 50;
-            bool hasExplicitSignature = detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.StaticSignature && e.ScoreContribution >= 80);
+            int minThreshold = 50; // Directory names never weaken evidence thresholds.
+            bool hasExplicitSignature = detectionResult.Evidences.Any(e => e.IsExactMalwareEvidence);
+            bool hasConfirmedMalwareEvidence = hasExplicitSignature;
+            if (!detectionResult.IsComplete && !hasExplicitSignature && reportCoverage == null)
+                throw new IOException($"Dosya analizi tamamlanamadı: {detectionResult.FailedDetectorCount} dedektör hatası. " +
+                    string.Join(" ", detectionResult.CoverageLimitations));
 
-            if ((detectionResult.Verdict >= DetectionVerdict.Suspicious && detectionResult.RiskScore >= minThreshold) || hasExplicitSignature)
+            if ((detectionResult.Verdict is DetectionVerdict.Suspicious or DetectionVerdict.HighRisk &&
+                 detectionResult.RiskScore >= minThreshold) || hasExplicitSignature ||
+                 detectionResult.SoftwareClass == SoftwareFindingClass.PotentiallyUnwantedToolOnly)
             {
-                RiskLevel riskLevel = detectionResult.RiskScore switch
-                {
-                    >= 85 => RiskLevel.ConfirmedMalicious,
-                    >= 70 => RiskLevel.HighRisk,
-                    _ => RiskLevel.Suspicious
-                };
+                RiskLevel riskLevel = detectionResult.SoftwareClass == SoftwareFindingClass.PotentiallyUnwantedToolOnly ?
+                    detectionResult.IsComplete ? RiskLevel.LowRisk : RiskLevel.Unknown : hasConfirmedMalwareEvidence
+                    ? RiskLevel.ConfirmedMalicious
+                    : detectionResult.RiskScore >= 70 ? RiskLevel.HighRisk : RiskLevel.Suspicious;
 
                 var reasons = detectionResult.Evidences
-                    .Select(e => $"[{e.Category}] {e.Description} (+{e.ScoreContribution})")
+                    .Select(e => $"[{e.Category}] {e.Description} (+{e.ScoreContribution})" +
+                        (e.Metadata.TryGetValue("ArchiveMember", out var member)
+                            ? $"; Archive member: {member}; member SHA-256: {e.Metadata.GetValueOrDefault("ArchiveMemberSHA256")}" : string.Empty))
                     .ToList();
 
                 if (reasons.Count == 0 && !string.IsNullOrEmpty(detectionResult.ThreatTitle))
@@ -77,7 +141,8 @@ namespace AegisPC.Security.Scanning
                 }
 
                 FindingCategory findingCat = FindingCategory.SuspiciousLocation;
-                if (detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.StaticSignature))
+                if (detectionResult.Evidences.Any(e =>
+                    e.Category == EvidenceCategory.StaticSignature && e.IsExactMalwareEvidence))
                     findingCat = FindingCategory.KnownMalwareHash;
                 else if (detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.StaticPeStructure || e.Category == EvidenceCategory.StaticApi))
                     findingCat = FindingCategory.MalwareSuspicion;
@@ -85,21 +150,34 @@ namespace AegisPC.Security.Scanning
                     findingCat = FindingCategory.SuspiciousScript;
                 else if (detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.Persistence))
                     findingCat = FindingCategory.SuspiciousPersistence;
+                else if (detectionResult.Evidences.Any(e => e.Category == EvidenceCategory.AmsiProvider))
+                    findingCat = FindingCategory.MalwareSuspicion;
+                if (detectionResult.SoftwareClass == SoftwareFindingClass.PotentiallyUnwantedToolOnly)
+                    findingCat = FindingCategory.PotentiallyUnwantedProgram;
 
                 string threatTitle = !string.IsNullOrEmpty(detectionResult.ThreatTitle)
                     ? detectionResult.ThreatTitle
-                    : (riskLevel == RiskLevel.ConfirmedMalicious ? $"Zararlı Yazılım Tespit Edildi: {fileInfo.Name}" : $"Yüksek Riskli Şüpheli Dosya: {fileInfo.Name}");
+                    : (riskLevel == RiskLevel.ConfirmedMalicious ? $"Zararlı Yazılım Tespit Edildi: {fileInfo.Name}" : $"Şüpheli Dosya: {fileInfo.Name}");
 
                 var finding = new SecurityFinding
                 {
                     ObjectPath = path,
                     ObjectName = fileInfo.Name,
                     SHA256 = sha256,
+                    SoftwareClass = detectionResult.SoftwareClass,
+                    SoftwareClassification = detectionResult.SoftwareClassification,
+                    HasIndependentMalwareEvidence = detectionResult.HasIndependentMalwareEvidence,
                     RiskLevel = riskLevel,
                     RiskScore = detectionResult.RiskScore,
                     Category = findingCat,
                     Title = threatTitle,
                     Description = string.Join(" | ", detectionResult.Evidences.Take(2).Select(e => e.Description)),
+                    RuleSetVersion = DetectionRuleSet.Version,
+                    InspectionComplete = detectionResult.IsComplete && classification?.IsComplete != false && archiveResult?.IsComplete != false,
+                    CoverageLimitations = detectionResult.CoverageLimitations
+                        .Concat(classification?.CoverageLimitations ?? new())
+                        .Concat(archiveResult?.IsComplete == false ? new[] { archiveResult.CoverageLimitation ?? "ArchiveInspectionIncomplete" } : Array.Empty<string>())
+                        .Distinct(StringComparer.Ordinal).Take(32).ToList(),
                     RiskReasons = reasons,
                     ConfidenceLevel = detectionResult.OverallConfidence == EvidenceConfidence.Absolute || detectionResult.OverallConfidence == EvidenceConfidence.High
                         ? ConfidenceLevel.High

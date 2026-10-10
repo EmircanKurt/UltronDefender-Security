@@ -261,6 +261,7 @@
          ═══════════════════════════════════════════════════════════ -->
     <Style TargetType="DataGrid">
         <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="RowHeight" Value="38"/>
         <Setter Property="ColumnHeaderHeight" Value="38"/>
@@ -293,6 +294,7 @@
 
     <Style TargetType="DataGridRow">
         <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="Margin" Value="0"/>
         <Setter Property="MinHeight" Value="38"/>
@@ -308,6 +310,8 @@
     </Style>
 
     <Style TargetType="DataGridCell">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=DataGridRow}}"/>
         <Setter Property="Padding" Value="12,6"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -323,6 +327,12 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{DynamicResource BrushCardBorderHover}"/>
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!-- ═══════════════════════════════════════════════════════════

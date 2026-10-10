@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using AegisPC.Core.Enums;
+using AegisPC.Core.Models;
 
 namespace AegisPC.App.Views
 {
@@ -18,9 +19,7 @@ namespace AegisPC.App.Views
         {
             InitializeComponent();
 
-            SelectedMode = (initialMode == ScanResourceMode.Auto || initialMode == ScanResourceMode.VeryLow)
-                ? ScanResourceMode.Balanced
-                : initialMode;
+            SelectedMode = initialMode;
 
             UpdateUiForMode(SelectedMode);
 
@@ -30,14 +29,19 @@ namespace AegisPC.App.Views
             if (totalGb < 1) totalGb = 1;
 
             TxtSystemRamInfo.Text = $"Sisteminizde {totalGb} GB RAM algılandı. Uygun kaynak profilini seçin:";
-            TxtLowDesc.Text = $"~1 GB RAM, düşük CPU • ({totalGb} GB RAM'in ~1 GB'ı kullanılabilir • Günlük işleri aksatmaz)";
-            TxtBalancedDesc.Text = $"RAM'in yarısı • ({totalGb} GB RAM'in ~{Math.Max(1, totalGb / 2)} GB'ı kullanılabilir • Hızlı ve dengeli)";
-            TxtMaximumDesc.Text = $"Tüm çekirdekler • ({totalGb} GB RAM'in ~{Math.Max(1, (long)(totalGb * 0.75))} GB'ı kullanılabilir • Maksimum güç)";
+            // These are upper budgets, not promises to occupy RAM or force CPU utilization.
+            TxtLowDesc.Text = DescribeBudget(ScanResourceMode.Low, totalRam);
+            TxtBalancedDesc.Text = DescribeBudget(ScanResourceMode.Balanced, totalRam);
+            TxtMaximumDesc.Text = DescribeBudget(ScanResourceMode.Maximum, totalRam);
         }
+
+        private static string DescribeBudget(ScanResourceMode mode, long ram) =>
+            $"RAM bütçesi üst sınırı: {ScanResourceProfile.Create(mode, false, Environment.ProcessorCount, ram).MaxMemoryBudgetBytes / (1024 * 1024)} MB • Disk politikasına göre uyarlanır";
 
         private void UpdateUiForMode(ScanResourceMode mode)
         {
             SelectedMode = mode;
+            RbAuto.IsChecked = mode == ScanResourceMode.Auto;
             RbLow.IsChecked = (mode == ScanResourceMode.Low || mode == ScanResourceMode.VeryLow);
             RbBalanced.IsChecked = (mode == ScanResourceMode.Balanced);
             RbMaximum.IsChecked = (mode == ScanResourceMode.Maximum || mode == ScanResourceMode.High);
@@ -51,6 +55,8 @@ namespace AegisPC.App.Views
             {
                 var activeBrush = (Brush)FindResource("BrushBrandPrimary");
                 var inactiveBrush = (Brush)FindResource("BrushCardBorder");
+                BorderAuto.BorderBrush = RbAuto.IsChecked == true ? activeBrush : inactiveBrush;
+                BorderAuto.BorderThickness = new Thickness(RbAuto.IsChecked == true ? 1.5 : 1.0);
 
                 BorderLow.BorderBrush = RbLow.IsChecked == true ? activeBrush : inactiveBrush;
                 BorderBalanced.BorderBrush = RbBalanced.IsChecked == true ? activeBrush : inactiveBrush;
@@ -62,6 +68,8 @@ namespace AegisPC.App.Views
             }
             catch { }
         }
+
+        private void OnSelectAuto(object sender, MouseButtonEventArgs e) => UpdateUiForMode(ScanResourceMode.Auto);
 
         private void OnSelectLow(object sender, MouseButtonEventArgs e)
         {
@@ -80,7 +88,8 @@ namespace AegisPC.App.Views
 
         private void OnRadioClicked(object sender, RoutedEventArgs e)
         {
-            if (RbLow.IsChecked == true) SelectedMode = ScanResourceMode.Low;
+            if (RbAuto.IsChecked == true) SelectedMode = ScanResourceMode.Auto;
+            else if (RbLow.IsChecked == true) SelectedMode = ScanResourceMode.Low;
             else if (RbMaximum.IsChecked == true) SelectedMode = ScanResourceMode.Maximum;
             else SelectedMode = ScanResourceMode.Balanced;
 

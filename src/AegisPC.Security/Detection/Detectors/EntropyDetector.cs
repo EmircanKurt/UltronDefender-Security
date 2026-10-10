@@ -23,18 +23,8 @@ namespace AegisPC.Security.Detection.Detectors
                 return list;
             }
 
-            var ext = Path.GetExtension(context.FilePath).ToLowerInvariant();
-            
-            // Geliştirme kütüphaneleri ve bilinen güvenli yolları entropi anomalisi taramasından muaf tut
-            if (AegisPC.Core.Helpers.PathHelper.IsDevelopmentOrPackageDirectory(context.FilePath) ||
-                AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(context.FilePath))
-            {
-                return list;
-            }
-
-            // Yalnızca PE ikili yürütülebilirleri (.exe, .dll, .sys, .scr, .ocx, .cpl, .efi) veya uzantısız dosyalar için entropi hesapla
-            bool isPeExecutable = ext == ".exe" || ext == ".dll" || ext == ".sys" || ext == ".scr" || ext == ".ocx" || ext == ".cpl" || ext == ".efi" || string.IsNullOrEmpty(ext);
-            if (!isPeExecutable)
+            // File structure, not a name or directory, determines applicability.
+            if (context.ContentClassification?.Formats.Contains(AegisPC.Core.Models.FileContentFormat.PortableExecutable) != true)
             {
                 return list;
             }
@@ -49,6 +39,8 @@ namespace AegisPC.Security.Detection.Detectors
                     Category = EvidenceCategory.EntropyAnomaly,
                     SourceDetector = DisplayName,
                     RuleName = "Entropy.Extreme.PackerOrEncrypted",
+                    FeatureIdentity = "PE.Entropy",
+                    Nature = EvidenceNature.Capability,
                     Description = $"Yüksek Shannon entropisi ({entropy:F2} / 8.0) — Paketlenmiş/Sıkıştırılmış veri",
                     ScoreContribution = 20,
                     Confidence = EvidenceConfidence.Low,
@@ -63,6 +55,8 @@ namespace AegisPC.Security.Detection.Detectors
                     Category = EvidenceCategory.EntropyAnomaly,
                     SourceDetector = DisplayName,
                     RuleName = "Entropy.High.SuspiciousPacking",
+                    FeatureIdentity = "PE.Entropy",
+                    Nature = EvidenceNature.Capability,
                     Description = $"Shannon entropisi ({entropy:F2} / 8.0)",
                     ScoreContribution = 10,
                     Confidence = EvidenceConfidence.Low,

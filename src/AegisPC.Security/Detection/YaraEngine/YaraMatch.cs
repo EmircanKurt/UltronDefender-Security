@@ -36,6 +36,7 @@ namespace AegisPC.Security.Detection.YaraEngine
     public interface IYaraEngine
     {
         int LoadedRuleCount { get; }
+        long? MaximumScanBytes => null;
         string RulesDirectory { get; }
         void ReloadRules();
         System.Threading.Tasks.Task<List<YaraMatch>> ScanFileAsync(string filePath, System.Threading.CancellationToken ct = default);

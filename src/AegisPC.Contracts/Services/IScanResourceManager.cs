@@ -31,6 +31,12 @@ namespace AegisPC.Contracts.Services
         /// Updates the current resource mode. If a scan is executing, dynamically adapts worker concurrency.
         /// </summary>
         void SetMode(ScanResourceMode mode);
+        /// <summary>Updates the storage policy for the actual scan target.</summary>
+        void ConfigureTarget(string targetPath) { }
+        /// <summary>Uses a common CPU/memory budget; individual volumes must retain their own seek limits.</summary>
+        void ConfigureMultipleVolumes() { }
+        /// <summary>Applies the owning scan's useful working-memory budget; never preallocates RAM merely to fill that budget.</summary>
+        void ConfigureScanType(ScanType scanType) { }
 
         /// <summary>
         /// Awaits permission for a worker to process a file, enforcing dynamic concurrency limits.
@@ -51,5 +57,7 @@ namespace AegisPC.Contracts.Services
         /// Re-evaluates system telemetry and refreshes the active profile (especially in Auto mode).
         /// </summary>
         void RefreshProfile();
+        /// <summary>Reports completed work for throughput-based admission; callers supply deltas, never malware counts.</summary>
+        void ReportCompletedFiles(int completedFiles) { }
     }
 }

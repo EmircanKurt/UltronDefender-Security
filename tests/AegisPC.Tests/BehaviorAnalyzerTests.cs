@@ -10,9 +10,10 @@ namespace AegisPC.Tests
     public class BehaviorAnalyzerTests
     {
         [Fact]
-        public async Task MultiStageAttackChain_EscalatesToCriticalAndCreatesIncident()
+        /// <summary>Typed multi-stage observations require review and cannot claim Critical malware certainty.</summary>
+        public async Task MultiStageObservations_CreateReviewIncidentWithoutCriticalVerdict()
         {
-            var engine = new BehaviorEngine();
+            using var engine = new BehaviorEngine();
             SecurityIncident? createdIncident = null;
             engine.OnIncidentCreated += (inc) => createdIncident = inc;
 
@@ -52,8 +53,10 @@ namespace AegisPC.Tests
 
             // Assertions
             Assert.NotNull(createdIncident);
-            Assert.Equal("CRITICAL", createdIncident.RiskLevel);
-            Assert.True(createdIncident.RiskScore >= 75);
+            Assert.Equal("UNKNOWN", createdIncident.RiskLevel);
+            Assert.Equal("ObservationOnly", createdIncident.Status);
+            Assert.Equal("None", createdIncident.ActionTaken);
+            Assert.InRange(createdIncident.RiskScore, 1, 65);
             Assert.Contains("Login Data", createdIncident.HumanExplanation);
             Assert.NotEmpty(createdIncident.Evidences);
             Assert.NotEmpty(createdIncident.Timeline);
@@ -62,7 +65,7 @@ namespace AegisPC.Tests
         [Fact]
         public async Task BenignProcess_DoesNotEscalateToCritical()
         {
-            var engine = new BehaviorEngine();
+            using var engine = new BehaviorEngine();
             SecurityIncident? createdIncident = null;
             engine.OnIncidentCreated += (inc) => createdIncident = inc;
 
@@ -83,9 +86,10 @@ namespace AegisPC.Tests
         }
 
         [Fact]
-        public async Task RansomwareBehavior_TriggersRansomwareIncident()
+        /// <summary>Reported recovery or encryption activity has no verified ransomware attribution or action.</summary>
+        public async Task RansomwareRelatedObservation_DoesNotClaimRansomwareAttribution()
         {
-            var engine = new BehaviorEngine();
+            using var engine = new BehaviorEngine();
             SecurityIncident? createdIncident = null;
             engine.OnIncidentCreated += (inc) => createdIncident = inc;
 
@@ -111,8 +115,10 @@ namespace AegisPC.Tests
             });
 
             Assert.NotNull(createdIncident);
-            Assert.Equal("CRITICAL", createdIncident.RiskLevel);
-            Assert.Contains("Ransom", createdIncident.ThreatName);
+            Assert.Equal("UNKNOWN", createdIncident.RiskLevel);
+            Assert.Equal("Unverified behavior observations", createdIncident.ThreatName);
+            Assert.Equal("ObservationOnly", createdIncident.Status);
+            Assert.Equal("None", createdIncident.ActionTaken);
         }
     }
 }

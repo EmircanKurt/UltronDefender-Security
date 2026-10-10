@@ -79,9 +79,9 @@ AegisFilter.sys = 1,,
 
 [Strings]
 ManufacturerName        = "Ultron Security Technologies"
-ServiceDescription      = "Ultron Defender Real-Time Minifilter Driver"
+ServiceDescription      = "Ultron Filter audit-only pilot (enforcement unavailable)"
 ServiceName             = "AegisFilter"
 DriverName              = "AegisFilter"
 DiskId1                 = "Ultron Defender Installation Disk"
 DefaultInstance         = "AegisFilter - Top Instance"
-Altitude                = "320500"                  ; FSFilter Anti-Virus standard altitude range (320000 - 329999)
+Altitude                = "UNASSIGNED"              ; Never install this template. Microsoft assignment evidence is required.

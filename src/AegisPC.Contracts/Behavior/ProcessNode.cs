@@ -14,6 +14,8 @@ namespace AegisPC.Contracts.Behavior
         public string ExecutablePath { get; set; } = string.Empty;
         public string CommandLine { get; set; } = string.Empty;
         public DateTime StartTimeUtc { get; set; } = DateTime.UtcNow;
+        /// <summary>Reported OS boot epoch identifier; empty means identity coverage is unknown.</summary>
+        public string BootId { get; set; } = string.Empty;
         public string UserContext { get; set; } = string.Empty;
         public string IntegrityLevel { get; set; } = "Medium";
         public bool IsTerminated { get; set; }

@@ -1,0 +1,166 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <UseWPF>true</UseWPF>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ReviewTestDependencies.cs" />
+    <Compile Include="ServiceCacheFinalAuditTests.cs" />
+    <Compile Include="../AegisPC.Tests/AutoUpdateServiceTests.cs" />
+    <Compile Include="GameModEvidenceReviewTests.cs" />
+    <Compile Include="NativeSidebarStateReviewTests.cs" />
+    <Compile Include="OptionalToolVisibilityReviewTests.cs" />
+    <Compile Include="VersionedVerdictCacheReviewTests.cs" />
+    <Compile Include="GameModArchiveParityReviewTests.cs" />
+    <Compile Include="LegacyFeedApiSurfaceReviewTests.cs" />
+    <Compile Include="GuardScanSafetyReviewTests.cs" />
+    <Compile Include="FolderAllowanceIdentityReviewTests.cs" />
+    <Compile Include="ScanDiscoveryCancellationReviewTests.cs" />
+    <Compile Include="FindingPresentationSafetyReviewTests.cs" />
+    <Compile Include="ScanScopeStorageSafetyReviewTests.cs" />
+    <Compile Include="GuardianFreshnessSafetyReviewTests.cs" />
+    <Compile Include="AntiEvasionSearchPerformanceReviewTests.cs" />
+    <Compile Include="ClaudeCriticalReviewTests.cs" />
+    <Compile Include="UiResourceTrayReviewTests.cs" />
+    <Compile Include="InspectionContractReviewTests.cs" />
+    <Compile Include="ArrivalRetryReviewTests.cs" />
+    <Compile Include="ReviewStageACoverageTests.cs" />
+    <Compile Include="ReviewStageOneFixture.cs" />
+    <Compile Include="ReviewStageOneSafetyTests.cs" />
+    <Compile Include="ReviewStageOneMeasurementTests.cs" />
+    <Compile Include="ReviewStageOnePipelineTests.cs" />
+    <Compile Include="ResourceCorrectnessReviewTests.cs" />
+    <Compile Include="StartupResourceReviewTests.cs" />
+    <Compile Include="ResourcePipelineIntegrationReviewTests.cs" />
+    <Compile Include="SplashPresentationReviewTests.cs" />
+    <Compile Include="ContentSearchStallReviewTests.cs" />
+    <Compile Include="StartupInspectionBudgetReviewTests.cs" />
+    <Compile Include="PlainDashboardUiReviewTests.cs" />
+    <Compile Include="ClassicScanUiReviewTests.cs" />
+    <Compile Include="SilentScanPresentationReviewTests.cs" />
+    <Compile Include="EmbeddedScanPageReviewTests.cs" />
+    <Compile Include="ScanRouteUiReviewTests.cs" />
+    <Compile Include="FlatRouteScanReviewTests.cs" />
+    <Compile Include="FlatRouteBenignPipelineReviewTests.cs" />
+    <Compile Include="PlainProtectionPresentationReviewTests.cs" />
+    <Compile Include="NetworkEnforcementReviewTests.cs" />
+    <Compile Include="ProtectionTargetReviewTests.cs" />
+    <Compile Include="BrowserDefenderReviewTests.cs" />
+    <Compile Include="RemoteWirelessReviewTests.cs" />
+    <Compile Include="UltronFilterReviewTests.cs" />
+    <Compile Include="LargeArchiveReviewTests.cs" />
+    <Compile Include="PassiveObservationLifecycleReviewTests.cs" />
+    <Compile Include="BrowserPresentationReviewTests.cs" />
+    <Compile Include="QuarantineBulkReceiptReviewTests.cs" />
+    <Compile Include="RealtimeRevisionAuditReviewTests.cs" />
+    <Compile Include="BrowserProfileBudgetReviewTests.cs" />
+    <Compile Include="ExternalTerminalBoundaryReviewTests.cs" />
+    <Compile Include="LabTestGateReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/BrowserSecurityAutoSelectionTests.cs" />
+    <Compile Include="../AegisPC.Tests/NetworkProcessCorrelatorTests.cs" />
+    <Compile Include="../AegisPC.Tests/NetworkProtectionCoordinatorTests.cs" />
+    <Compile Include="ThreatIntelProvenanceReviewTests.cs" />
+    <Compile Include="BehaviorCorrelationReviewTests.cs" />
+    <Compile Include="MetadataCollectorReviewTests.cs" />
+    <Compile Include="../../tools/Ultron.ThreatIntel.Collector/MetadataCollector.cs" Link="DeveloperTools/MetadataCollector.cs" />
+    <Compile Include="../AegisPC.Tests/FileContentClassificationTests.cs" />
+    <Compile Include="../AegisPC.Tests/DeviceDiscoveryTests.cs" />
+    <Compile Include="../AegisPC.Tests/DecisionEvidenceIntegrityTests.cs" />
+    <Compile Include="../AegisPC.Tests/AmsiDecisionSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/ProtectionCoverageTruthTests.cs" />
+    <Compile Include="../AegisPC.Tests/TargetResolutionTests.cs" />
+    <Compile Include="../AegisPC.Tests/ImplicitLocalPathPolicyTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanQueueFailureSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/FilePipelineCoverageTests.cs" />
+    <Compile Include="../AegisPC.Tests/ProtectionLifecycleDeviceTests.cs" />
+    <Compile Include="../AegisPC.Tests/RealtimeMediaInspectionTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineOwnershipSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/AmsiContentPipelineTests.cs" />
+    <Compile Include="../AegisPC.Tests/ServiceOwnedRansomwareUiTests.cs" />
+    <Compile Include="../AegisPC.Tests/RansomwareObserverHealthTests.cs" />
+    <Compile Include="../AegisPC.Tests/RansomwareActionEvidenceSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/CanaryIdentitySafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/NotificationTruthRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/ManualScanResourceTelemetryTests.cs" />
+    <Compile Include="../AegisPC.Tests/ManualScanOwnershipTests.cs" />
+    <Compile Include="../AegisPC.Tests/ManualScanPreferenceTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineRiskMigrationTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineStructuredRiskTests.cs" />
+    <Compile Include="../AegisPC.Tests/ArchiveNestedCoverageTests.cs" />
+    <Compile Include="../AegisPC.Tests/ExternalScanOwnershipTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanDurationSynchronizationTests.cs" />
+    <Compile Include="../AegisPC.Tests/NotificationProducerRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/AntivirusTestReferenceRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/BackgroundNotificationRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/CloudAuthenticationSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/YaraCertaintySafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/StartupSweepSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/SelfPathTrustBoundaryTests.cs" />
+    <Compile Include="../AegisPC.Tests/HashDetectorCancellationTests.cs" />
+    <Compile Include="../AegisPC.Tests/BehaviorRansomwareTrustBoundaryTests.cs" />
+    <Compile Include="../AegisPC.Tests/ToastNotificationTests.cs" />
+    <Compile Include="../AegisPC.Tests/WorkflowUiRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/ProcessArchiveWorkflowTests.cs" />
+    <Compile Include="../AegisPC.Tests/ExclusionScheduleWorkflowTests.cs" />
+    <Compile Include="../AegisPC.Tests/ResourceTelemetryWorkflowTests.cs" />
+    <Compile Include="../AegisPC.Tests/ExclusionDetectionPriorityTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanReportGeneratorTests.cs" />
+    <Compile Include="../AegisPC.Tests/InstallerWorkflowTests.cs" />
+    <!-- Inert file/decision fixtures only. Do not include live credential, process kill or deployment tests. -->
+    <Compile Include="../AegisPC.Tests/AdaptiveIdleReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/CachePolicyRevisionReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/DeploymentScriptReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/IdleSchedulerReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/IpcBoundaryReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/ProtectionCommandLifecycleReviewTests.cs" />
+    <Compile Include="../AegisPC.Tests/RealtimeReviewRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/RealtimeWatcherRecoveryTests.cs" />
+    <Compile Include="../AegisPC.Tests/EtwObservationSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/ReviewFixRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/DetectionReviewFixTests.cs" />
+    <Compile Include="../AegisPC.Tests/PerformanceReviewFixTests.cs" />
+    <Compile Include="../AegisPC.Tests/FinalReviewScanRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/FinalReviewPerformanceTests.cs" />
+    <Compile Include="../AegisPC.Tests/DetectionRevisionRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/BugFixRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScoringRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineHardeningTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineVaultTests.cs" />
+    <Compile Include="../AegisPC.Tests/QuarantineRestoreTests.cs" />
+    <Compile Include="../AegisPC.Tests/AdaptiveResourceManagerTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanPerformanceBenchmarkTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanLifecycleCancellationTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScheduledScanRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/FalsePositiveRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/PhaseTwoTrustRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/YaraConditionParserTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanSessionAndWindowLifecycleTests.cs" />
+    <Compile Include="../AegisPC.Tests/GoldenTestSuite.cs" />
+    <Compile Include="../AegisPC.Tests/UltronAiTests.cs" />
+    <Compile Include="../AegisPC.Tests/BehaviorObservationSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/BehaviorChainTests.cs" />
+    <Compile Include="../AegisPC.Tests/BehaviorAnalyzerTests.cs" />
+    <Compile Include="../AegisPC.Tests/ScanCoordinatorFailureTests.cs" />
+    <Compile Include="../AegisPC.Tests/UltronRobotUiTests.cs" />
+    <Compile Include="../AegisPC.Tests/UltronChiefSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/UltronStartupSafetyTests.cs" />
+    <Compile Include="../AegisPC.Tests/UltronAiShieldUiTests.cs" />
+    <Compile Include="../AegisPC.Tests/UltronAiShieldBackendTests.cs" />
+    <Compile Include="../AegisPC.Tests/MouseWheelViewportRegressionTests.cs" />
+    <Compile Include="../AegisPC.Tests/SafeScanDiagnosticLoggingTests.cs" />
+    <Compile Include="../AegisPC.Tests/UiAiPreferenceSyncTests.cs" />
+    <Compile Include="../AegisPC.Tests/FreeEditionPresentationTests.cs" />
+    <Compile Include="../AegisPC.Tests/ReportsTableThemeRegressionTests.cs" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <ProjectReference Include="../../src/AegisPC.App/AegisPC.App.csproj" />
+    <ProjectReference Include="../../src/AegisPC.Service/AegisPC.Service.csproj" />
+    <None Include="../AegisPC.Tests/xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

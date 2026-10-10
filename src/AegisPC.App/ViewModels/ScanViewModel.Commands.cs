@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Models;
 using CommunityToolkit.Mvvm.Input;
@@ -15,13 +17,22 @@ namespace AegisPC.App.ViewModels
     public partial class ScanViewModel
     {
         /// <summary>
-        /// Kullanıcının devam eden veya yeni başlayan taramayı izlemesi için aktif tarama penceresini açar.
+        /// Opens the scanner or existing scan window without starting an unsolicited scan.
         /// </summary>
         [RelayCommand]
-        public void OpenActiveScanWindow()
+        public Task OpenActiveScanWindowAsync()
         {
-            Views.ActiveScanWindow.ShowScanWindow(this);
+            _presentScanner();
+            return Task.CompletedTask;
         }
+
+        /// <summary>Opens actual per-user report history without starting a scan.</summary>
+        [RelayCommand]
+        public void OpenReports() => Views.ActiveScanWindow.ShowReportsWindow(this);
+
+        /// <summary>Opens schedule settings shared with the application's settings page.</summary>
+        [RelayCommand]
+        public void OpenScheduler() => Views.ActiveScanWindow.ShowSchedulerWindow(this);
 
         /// <summary>
         /// Sistem başlangıç ve bellek alanlarını hedefleyen Hızlı Tarama (Quick Scan) işlemini başlatır.
@@ -32,7 +43,7 @@ namespace AegisPC.App.ViewModels
         {
             if (_scanCoordinator != null && _scanCoordinator.IsScanning && _scanCoordinator.CurrentScanType == ScanType.Quick)
             {
-                Views.ActiveScanWindow.ShowScanWindow(this);
+                _presentScanner();
                 return;
             }
             await RunScanAsync(ScanType.Quick, string.Empty);
@@ -47,7 +58,7 @@ namespace AegisPC.App.ViewModels
         {
             if (_scanCoordinator != null && _scanCoordinator.IsScanning && _scanCoordinator.CurrentScanType == ScanType.Full)
             {
-                Views.ActiveScanWindow.ShowScanWindow(this);
+                _presentScanner();
                 return;
             }
             await RunScanAsync(ScanType.Full, string.Empty);
@@ -95,6 +106,11 @@ namespace AegisPC.App.ViewModels
         [RelayCommand]
         public void CloseResults()
         {
+            if (_scanCoordinator?.IsScanning == true) return;
+            _timer?.Stop();
+            _stopwatch.Stop();
+            IsScanning = false;
+            IsNotScanning = true;
             IsScanFinishedView = false;
             ScanFindings.Clear();
             ThreatResults.Clear();
@@ -109,7 +125,7 @@ namespace AegisPC.App.ViewModels
         [RelayCommand]
         public void TogglePauseResume()
         {
-            if (_scanCoordinator == null || !IsScanning) return;
+            if (_scanCoordinator == null || !CanControlScan) return;
 
             if (IsPaused)
             {
@@ -132,23 +148,21 @@ namespace AegisPC.App.ViewModels
         }
 
         /// <summary>
-        /// Devam eden tarama işlemini derhal iptal eder ve sayaçları durdurur.
+        /// Requests cancellation without claiming the owned worker has already stopped.
         /// </summary>
         [RelayCommand]
         public void CancelScan()
         {
-            if (_scanCoordinator != null)
+            if (_scanCoordinator != null && CanControlScan)
             {
                 _isCancellationRequested = true;
-                _stopwatch.Stop();
-                _timer?.Stop();
-                IsScanning = false;
-                IsNotScanning = true;
                 IsPaused = false;
-                IsScanFinishedView = true;
-                ScanStatusText = "Tarama kullanıcı tarafından durduruldu.";
-                RemainingEtaFormatted = "İptal edildi";
-                CurrentFile = "İptal edildi.";
+                IsScanFinishedView = false;
+                ScanStatusText = "İptal isteniyor; çalışan işler durduruluyor.";
+                RemainingEtaFormatted = "İptal bekleniyor";
+                _stopwatch.Start();
+                _timer?.Start();
+                OnPropertyChanged(nameof(CanControlScan));
                 OnPropertyChanged(nameof(PauseButtonText));
                 OnPropertyChanged(nameof(ScanResultTitle));
                 OnPropertyChanged(nameof(CleanStateTitle));
@@ -179,6 +193,8 @@ namespace AegisPC.App.ViewModels
                         bool ok = await _quarantineService.QuarantineFileAsync(item.Location, item.Finding.Title);
                         if (ok)
                         {
+                            item.ActionTaken = "Karantinaya alındı";
+                            RecordConfirmedAction(item.Finding, item.ActionTaken);
                             item.Finding.Status = FindingStatus.Resolved;
                             if (_findingService != null) await _findingService.UpdateFindingAsync(item.Finding);
                             ThreatResults.Remove(item);
@@ -188,10 +204,13 @@ namespace AegisPC.App.ViewModels
                     }
                     else
                     {
-                        ThreatResults.Remove(item);
+                        item.ActionTaken = "Dosya bulunamadı; karantina doğrulanmadı";
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Serilog.Log.Warning(ex, "Karantinaya alma sırasında hata oluştu: {Path}", item.Location);
+                }
             }
 
             FindingsCount = ThreatResults.Count;
@@ -213,201 +232,130 @@ namespace AegisPC.App.ViewModels
             }
         }
 
-        /// <summary>
-        /// Kullanıcı tarafından sonuç tablosunda işaretlenmiş olan tüm tehdit dosyalarını
-        /// "Çözüldü" olarak işaretler, güvenli listeye ekler ve sonraki taramalardan muaf tutar.
-        /// </summary>
+        /// <summary>Closes selected incident records without declaring their files trusted or excluding future scans.</summary>
         [RelayCommand]
         public async Task ResolveSelectedAsync()
         {
-            if (ThreatResults.Count == 0) return;
-
-            var selectedItems = ThreatResults.Where(t => t.IsSelected).ToList();
-            if (selectedItems.Count == 0) return;
-
             int count = 0;
-
-            foreach (var item in selectedItems)
+            foreach (var item in ThreatResults.Where(t => t.IsSelected).ToList())
             {
+                if (_findingService == null)
+                {
+                    ScanStatusText = "Olay kayıt servisi hazır değil; bulgu kapatılmadı.";
+                    continue;
+                }
+                var previousStatus = item.Finding.Status;
                 try
                 {
                     item.Finding.Status = FindingStatus.Resolved;
-                    item.Finding.IsAllowlisted = true;
-
-                    if (_findingService != null)
-                    {
-                        await _findingService.UpdateFindingAsync(item.Finding);
-                    }
-
-                    if (_allowlistService != null && !string.IsNullOrEmpty(item.Location))
-                    {
-                        var entry = new AllowlistEntry
-                        {
-                            FilePath = item.Location,
-                            FileName = item.Name,
-                            SHA256 = item.Finding.SHA256 ?? string.Empty,
-                            Reason = "Kullanıcı tarafından çözüldü olarak işaretlendi.",
-                            AddedBy = "Kullanıcı (Çözüldü)",
-                            AddedAt = DateTime.UtcNow,
-                            IsActive = true
-                        };
-                        await _allowlistService.AddToAllowlistAsync(entry);
-                    }
-
-                    if (_settingsService != null)
-                    {
-                        try
-                        {
-                            var dismissed = _settingsService.GetSetting<List<string>>("DismissedIncidentIds", new List<string>()) ?? new List<string>();
-                            if (!string.IsNullOrEmpty(item.Location) && !dismissed.Contains(item.Location, StringComparer.OrdinalIgnoreCase))
-                            {
-                                dismissed.Add(item.Location);
-                            }
-                            _settingsService.SetSetting("DismissedIncidentIds", dismissed);
-                            await _settingsService.SaveAsync();
-                        }
-                        catch { }
-                    }
-
+                    await _findingService.UpdateFindingAsync(item.Finding);
+                    RecordConfirmedAction(item.Finding, "Olay kapatıldı (dosya güvenilir ilan edilmedi)");
                     ThreatResults.Remove(item);
                     ScanFindings.Remove(item.Finding);
                     count++;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    item.Finding.Status = previousStatus;
+                    Serilog.Log.Warning(ex, "Could not close incident {FindingId}", item.Finding.Id);
+                    ScanStatusText = "Olay kapatılamadı: " + ex.Message;
+                }
+            }
+            RefreshFindingCounters();
+            if (count > 0)
+                _toastService?.ShowToast("Olay Kapatıldı", $"{count} olay kapatıldı. Dosyalar istisna yapılmadı; sonraki taramalar yine inceleyebilir.", "Information");
+        }
+
+        /// <summary>Persists a content-bound exclusion, or an explicitly confirmed path exclusion; absent services or failures never remove the finding.</summary>
+        [RelayCommand]
+        public async Task ExcludeFindingAsync(SelectableThreatModel? item)
+        {
+            if (item == null) return;
+            if ((_exclusionService == null && _allowlistService == null) || string.IsNullOrWhiteSpace(item.Location))
+            {
+                ScanStatusText = "İstisna servisi veya dosya yolu hazır değil; bulgu kaldırılmadı.";
+                _toastService?.ShowToast("İstisna Uygulanamadı", ScanStatusText, "Warning");
+                return;
             }
 
+            try
+            {
+                string? hash = item.Finding.SHA256;
+                bool hasHash = hash?.Length == 64 && hash.All(Uri.IsHexDigit);
+                if (_exclusionService != null && hasHash)
+                {
+                    var entry = await _exclusionService.AddSha256ExclusionAsync(hash!, reason: "User explicitly excluded this file content from scan results");
+                    if (entry == null) throw new InvalidOperationException("The exclusion was not persisted.");
+                }
+                else if (_exclusionService != null)
+                {
+                    if (Application.Current == null || MessageBox.Show(
+                        "Bu bulguda doğrulanmış SHA-256 yok. Yol istisnası, bu konuma daha sonra yerleştirilen farklı dosyaları da taramadan çıkarabilir.\n\nBu dosya yolunu yine de istisna yapmak istiyor musunuz?",
+                        "Yol İstisnası Güvenlik Uyarısı", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                    var entry = await _exclusionService.AddPathExclusionAsync(item.Location, includeSubdirectories: false, reason: "User confirmed a path exclusion without a content hash");
+                    if (entry == null) throw new InvalidOperationException("The exclusion was not persisted.");
+                }
+                else if (_allowlistService != null && hasHash)
+                {
+                    await _allowlistService.AddToAllowlistAsync(new AllowlistEntry
+                    {
+                        FilePath = item.Location, FileName = item.Name, SHA256 = hash!,
+                        Reason = "User explicitly excluded this file content from scan results", AddedBy = "User", IsActive = true
+                    });
+                }
+                else
+                {
+                    ScanStatusText = "İçerik özeti veya güvenli istisna servisi yok; bulgu kaldırılmadı.";
+                    return;
+                }
+
+                bool serviceSynchronized = await RefreshServiceExclusionsAsync();
+
+                item.Finding.Status = FindingStatus.Ignored;
+                item.Finding.IsAllowlisted = true;
+                RecordConfirmedAction(item.Finding, hasHash ? "Kullanıcı SHA-256 istisnası" : "Kullanıcı yol istisnası");
+                if (_findingService != null) await _findingService.UpdateFindingAsync(item.Finding);
+                ThreatResults.Remove(item);
+                ScanFindings.Remove(item.Finding);
+                RefreshFindingCounters();
+                ScanStatusText = serviceSynchronized ? "İstisna kaydedildi." : "İstisna yerelde kaydedildi; koruma servisine aktarım doğrulanamadı.";
+                _toastService?.ShowToast(serviceSynchronized ? "İstisna Kaydedildi" : "İstisna Kısmen Uygulandı", ScanStatusText, serviceSynchronized ? "Success" : "Warning");
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Could not persist exclusion for {Path}", item.Location);
+                ScanStatusText = "İstisna işlemi tamamlanamadı: " + ex.Message;
+                _toastService?.ShowToast("İstisna Hatası", ScanStatusText, "Danger");
+            }
+        }
+
+        private void RefreshFindingCounters()
+        {
             FindingsCount = ThreatResults.Count;
             DetectionsCount = FindingsCount;
             HasFindings = FindingsCount > 0;
             HasNoFindings = FindingsCount == 0;
-
-            if (count > 0)
-            {
-                _toastService?.ShowToast(
-                    "Tehdit Çözüldü Olarak İşaretlendi",
-                    $"{count} adet öğe çözüldü olarak işaretlendi ve sonraki taramalardan hariç tutuldu.",
-                    "Success");
-            }
-
-            if (ThreatResults.Count == 0)
-            {
-                OnPropertyChanged(nameof(CleanStateTitle));
-                OnPropertyChanged(nameof(CleanStateSubtitle));
-            }
+            OnPropertyChanged(nameof(CleanStateTitle));
+            OnPropertyChanged(nameof(CleanStateSubtitle));
         }
 
-        /// <summary>
-        /// Tamamlanan tarama sonuçlarını, istatistiklerini ve tespit edilen bulguları
-        /// metin (.txt) veya JSON (.json) formatında dışa aktarır.
-        /// </summary>
-        [RelayCommand]
-        public async Task ExportScanReportAsync()
+        private async Task<bool> RefreshServiceExclusionsAsync()
         {
+            if (_ipcClient == null) return true;
+            if (!_ipcClient.IsConnected) return false;
             try
             {
-                var sfd = new Microsoft.Win32.SaveFileDialog
+                await _ipcClient.SendCommandAsync(new AegisPC.ServiceContracts.IpcMessages.ServiceCommand
                 {
-                    Title = "Tarama Raporunu Dışa Aktar",
-                    FileName = $"UltronDefender_ScanReport_{DateTime.Now:yyyyMMdd_HHmmss}.txt",
-                    Filter = "Metin Raporu (*.txt)|*.txt|JSON Raporu (*.json)|*.json|Tüm Dosyalar (*.*)|*.*",
-                    DefaultExt = ".txt"
-                };
-
-                if (sfd.ShowDialog() != true)
-                    return;
-
-                string filePath = sfd.FileName;
-                bool isJson = filePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
-
-                var scanType = _scanCoordinator?.CurrentScanType ?? ScanType.Quick;
-
-                if (isJson)
-                {
-                    var reportObj = new
-                    {
-                        Application = "Ultron Defender Total Security (AegisPC)",
-                        ExportTimestamp = DateTime.UtcNow,
-                        ScanType = scanType.ToString(),
-                        Duration = ScanDurationFormatted,
-                        ScannedFiles = ScannedCount,
-                        TotalFiles = TotalCount,
-                        SkippedFiles = SkippedCount,
-                        FailedFiles = FailedCount,
-                        TimedOutFiles = TimedOutCount,
-                        ResourceProfile = ActiveResourceProfileText,
-                        FindingsCount = FindingsCount,
-                        Findings = ScanFindings.Select(f => new
-                        {
-                            FindingId = f.Id,
-                            f.Title,
-                            f.Description,
-                            f.ObjectPath,
-                            RiskLevel = f.RiskLevel.ToString(),
-                            f.RiskScore,
-                            DetectedAt = f.CreatedAt,
-                            Status = f.Status.ToString()
-                        }).ToList()
-                    };
-
-                    string jsonText = System.Text.Json.JsonSerializer.Serialize(reportObj, new System.Text.Json.JsonSerializerOptions
-                    {
-                        WriteIndented = true
-                    });
-
-                    await File.WriteAllTextAsync(filePath, jsonText);
-                }
-                else
-                {
-                    var sb = new System.Text.StringBuilder();
-                    sb.AppendLine("================================================================================");
-                    sb.AppendLine("            ULTRON DEFENDER TOTAL SECURITY - GÜVENLİK TARAMA RAPORU             ");
-                    sb.AppendLine("================================================================================");
-                    sb.AppendLine($"Rapor Tarihi       : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                    sb.AppendLine($"Tarama Türü        : {scanType}");
-                    sb.AppendLine($"Tarama Süresi      : {ScanDurationFormatted}");
-                    sb.AppendLine($"Kaynak Profili     : {ActiveResourceProfileText}");
-                    sb.AppendLine($"İncelenen Dosyalar : {ScannedCount:N0}");
-                    sb.AppendLine($"Atlanan Dosyalar   : {SkippedCount:N0}");
-                    sb.AppendLine($"Hatalı / Zaman Aşımı: {FailedCount:N0} / {TimedOutCount:N0}");
-                    sb.AppendLine($"Durum              : {(HasFindings ? $"⚠️ {FindingsCount} Tehdit Tespit Edildi" : "✓ Temiz - Sistem Güvende")}");
-                    sb.AppendLine("--------------------------------------------------------------------------------");
-                    sb.AppendLine();
-
-                    if (ScanFindings.Count > 0)
-                    {
-                        sb.AppendLine($"[TESPİT EDİLEN TEHDİTLER ({ScanFindings.Count})]");
-                        int index = 1;
-                        foreach (var f in ScanFindings)
-                        {
-                            sb.AppendLine($"{index}. Tehdit Başlığı : {f.Title}");
-                            sb.AppendLine($"   Konum           : {f.ObjectPath}");
-                            sb.AppendLine($"   Risk Seviyesi   : {f.RiskLevel} (Skor: {f.RiskScore}/100)");
-                            sb.AppendLine($"   Durum           : {f.Status}");
-                            sb.AppendLine($"   Açıklama        : {f.Description}");
-                            sb.AppendLine();
-                            index++;
-                        }
-                    }
-                    else
-                    {
-                        sb.AppendLine("Herhangi bir zararlı yazılım veya tehdit tespit edilmedi.");
-                        sb.AppendLine("Sistem koruması güncel ve güvenlidir.");
-                    }
-
-                    sb.AppendLine("================================================================================");
-                    sb.AppendLine("Ultron Defender Total Security | Gelişmiş Tehdit Savunma Motoru");
-
-                    await File.WriteAllTextAsync(filePath, sb.ToString());
-                }
-
-                _toastService?.ShowToast(
-                    "Rapor Kaydedildi",
-                    $"Tarama raporu başarıyla kaydedildi: {Path.GetFileName(filePath)}",
-                    "Success");
+                    CommandType = AegisPC.ServiceContracts.IpcMessages.ServiceCommandType.UpdateSettings,
+                    Payload = "{\"RefreshExclusions\":true}", Timestamp = DateTime.UtcNow
+                });
+                return true;
             }
             catch (Exception ex)
             {
-                _toastService?.ShowToast("Rapor Hatası", $"Rapor kaydedilemedi: {ex.Message}", "Danger");
+                Serilog.Log.Warning(ex, "Exclusion persisted locally but service refresh failed");
+                return false;
             }
         }
 
@@ -426,67 +374,99 @@ namespace AegisPC.App.ViewModels
 
             if (IsScanning || _scanCoordinator.IsScanning)
             {
-                Views.ActiveScanWindow.ShowScanWindow(this);
+                _presentScanner();
                 return;
             }
 
-            // GÖREV 6: Hızlı Tarama veya Tam Tarama başlatıldığında kaynak profili seçimi
-            if (scanType == ScanType.Quick || scanType == ScanType.Full)
+            bool chooseResources = scanType is ScanType.Quick or ScanType.Full;
+            ScanResourceMode targetMode = ScanResourceMode.Auto;
+            bool? rememberChoice = null;
+            bool claimed = false;
+            try
             {
-                bool rememberMode = _settingsService?.GetSetting("RememberScanResourceMode", false) ?? false;
-                var configuredMode = _settingsService?.GetSetting("ScanResourceMode", ScanResourceMode.Balanced) ?? ScanResourceMode.Balanced;
-                if (configuredMode == ScanResourceMode.Auto) configuredMode = ScanResourceMode.Balanced;
+                if (chooseResources && !TrySelectManualResourceMode(out targetMode, out rememberChoice))
+                    return;
 
-                ScanResourceMode targetMode = configuredMode;
-
-                if (!rememberMode && System.Windows.Application.Current != null)
+                Task<ScanResult?> scanTask = _scanCoordinator.TryStartManualScanAsync(scanType, customPath, () =>
                 {
-                    var dialog = new Views.ScanResourceSelectionDialog(configuredMode);
-                    var mainWindow = System.Windows.Application.Current.MainWindow;
-                    if (mainWindow != null && mainWindow.IsVisible)
-                    {
-                        dialog.Owner = mainWindow;
-                    }
+                    if (chooseResources) ApplyManualResourceMode(targetMode);
+                    ResetScanState(scanType);
+                    claimed = true;
+                });
 
-                    bool? res = dialog.ShowDialog();
-                    if (res != true)
-                    {
-                        // Kullanıcı taramayı başlatmaktan vazgeçti
-                        return;
-                    }
-
-                    targetMode = dialog.SelectedMode;
-
-                    if (dialog.RememberChoice && _settingsService != null)
-                    {
-                        _settingsService.SetSetting("ScanResourceMode", targetMode);
-                        _settingsService.SetSetting("RememberScanResourceMode", true);
-                        _ = _settingsService.SaveAsync();
-                    }
+                if (!claimed)
+                {
+                    // A different scan claimed the coordinator while the modal was open.
+                    await scanTask;
+                    if (_scanCoordinator.IsScanning)
+                        _presentScanner();
+                    else
+                        ScanStatusText = "Tarama başlatılamadı; başka bir tarama oturumu aktif olabilir.";
+                    return;
                 }
 
-                SelectedResourceMode = targetMode;
-
-                if (_resourceManager != null)
+                _presentScanner();
+                if (rememberChoice is { } remember && _settingsService != null)
                 {
-                    _resourceManager.SetMode(targetMode);
-                    HardwareTuningText = _resourceManager.ActiveProfile.SummaryText;
-                    ActiveResourceProfileText = _resourceManager.ActiveProfile.SummaryText;
+                    _settingsService.SetSetting<ScanResourceMode?>("LastManualScanResourceMode",
+                        remember ? targetMode : null);
+                    _settingsService.SetSetting("RememberScanResourceMode", remember);
+                    try { await _settingsService.SaveAsync(); }
+                    catch (Exception ex)
+                    {
+                        // Persistence failure cannot cancel an already-owned manual scan.
+                        Serilog.Log.Warning(ex, "Could not persist manual scan resource preference; applying it to this scan only");
+                    }
                 }
-                else
-                {
-                    var p = ScanResourceProfile.CreateDefault(targetMode);
-                    AegisPC.Security.Scanning.ScanQueueCoordinator.ActiveResourceSummary = p.SummaryText;
-                    HardwareTuningText = p.SummaryText;
-                    ActiveResourceProfileText = p.SummaryText;
-                }
+                await scanTask;
             }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Manual scan request failed for {ScanType}", scanType);
+                ScanStatusText = "Tarama başlatılamadı veya tamamlanamadı: " + ex.Message;
+                if (!_scanCoordinator.IsScanning)
+                {
+                    _timer?.Stop();
+                    IsScanning = false;
+                    IsNotScanning = true;
+                }
+                try { _toastService?.ShowToast("Tarama Hatası", ScanStatusText, "Warning"); }
+                catch (Exception toastEx) { Serilog.Log.Warning(toastEx, "Could not present manual scan failure notification"); }
+            }
+        }
 
-            ResetScanState(scanType);
+        private bool TrySelectManualResourceMode(out ScanResourceMode targetMode, out bool? rememberChoice)
+        {
+            bool rememberMode = _settingsService?.GetSetting("RememberScanResourceMode", false) ?? false;
+            var configuredMode = _settingsService?.GetSetting<ScanResourceMode?>("LastManualScanResourceMode", null);
+            targetMode = rememberMode && configuredMode is { } savedMode && Enum.IsDefined(savedMode)
+                ? savedMode
+                : ScanResourceMode.Auto;
+            rememberChoice = null;
 
-            Views.ActiveScanWindow.ShowScanWindow(this);
+            var app = System.Windows.Application.Current;
+            if (app == null) return true;
 
-            await _scanCoordinator.StartScanAsync(scanType, customPath);
+            var dialog = new Views.ScanResourceSelectionDialog(targetMode);
+            var mainWindow = app.MainWindow;
+            if (mainWindow != null && mainWindow.IsVisible)
+                dialog.Owner = mainWindow;
+            if (dialog.ShowDialog() != true) return false;
+
+            targetMode = dialog.SelectedMode;
+            rememberChoice = dialog.RememberChoice;
+            return true;
+        }
+
+        private void ApplyManualResourceMode(ScanResourceMode targetMode)
+        {
+            if (_resourceManager == null)
+                throw new InvalidOperationException("Kaynak yöneticisi hazır değil; seçilen tarama profili uygulanamadı.");
+
+            _resourceManager.SetMode(targetMode);
+            SelectedResourceMode = targetMode;
+            HardwareTuningText = _resourceManager.ActiveProfile.SummaryText;
+            ActiveResourceProfileText = _resourceManager.ActiveProfile.SummaryText;
         }
     }
 }

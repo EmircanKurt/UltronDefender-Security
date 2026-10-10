@@ -7,11 +7,11 @@
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:viewmodels="clr-namespace:AegisPC.App.ViewModels"
+      xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
       mc:Ignorable="d" 
       d:DesignHeight="950" d:DesignWidth="1100"
       Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
-      PreviewMouseWheel="OnPagePreviewMouseWheel"
       Title="Fidye Yazılımı Kalkanı">
 
     <Page.Resources>
@@ -19,6 +19,7 @@
     </Page.Resources>
 
     <ScrollViewer x:Name="RootScrollViewer" Margin="28,20,28,24"
+                  helpers:WheelScrollHelper.EnableRootRedirect="True"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
                   CanContentScroll="False"
@@ -35,7 +36,7 @@
             <!-- 1. Header -->
             <StackPanel Grid.Row="0" Margin="0,0,0,20">
                 <TextBlock Text="Fidye Yazılımı Savunma Sistemi (Ransomware Defense)" Style="{StaticResource PageHeadingStyle}"/>
-                <TextBlock Text="Controlled Folder Access, Canary tuzak dosyaları, kitle modifikasyon ve anlık entropi analizi." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,4,0,0"/>
+                <TextBlock Text="Hizmetin kullanıcı modu dosya gözlemi ve tuzak dosyaları; ön-yazma engelleme veya Windows Controlled Folder Access değildir." Style="{StaticResource BodyTextStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,4,0,0" TextWrapping="Wrap"/>
             </StackPanel>
 
             <!-- 2. Status Banner Card -->
@@ -53,7 +54,7 @@
                     
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock Text="{Binding ShieldStatusText}" Style="{StaticResource SectionHeadingStyle}" FontSize="17" Margin="0,0,0,4"/>
-                        <TextBlock Text="Kişisel dosyalarınız ve belgeleriniz izinsiz şifreleme girişimlerine karşı 7/24 korunmaktadır." Style="{StaticResource BodyTextStyle}"/>
+                        <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
                     </StackPanel>
 
                     <Button Grid.Column="2" Content="{Binding ToggleButtonText}" Command="{Binding ToggleShieldCommand}" Style="{StaticResource PrimaryButtonStyle}" VerticalAlignment="Center" Padding="20,10"/>
@@ -72,22 +73,22 @@
 
                 <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Margin="0">
                     <StackPanel>
-                        <TextBlock Text="Korumalı Klasör Sayısı" Style="{StaticResource CaptionTextStyle}" FontWeight="Medium" Margin="0,0,0,6"/>
-                        <TextBlock Text="{Binding ProtectedFolderCount}" Style="{StaticResource MetricValueStyle}"/>
+                        <TextBlock Text="Gözlenen Klasör Kökleri" Style="{StaticResource CaptionTextStyle}" FontWeight="Medium" Margin="0,0,0,6"/>
+                        <TextBlock Text="{Binding ProtectedFolderCountText}" Style="{StaticResource MetricValueStyle}"/>
                     </StackPanel>
                 </Border>
 
                 <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Margin="0">
                     <StackPanel>
                         <TextBlock Text="Aktif Canary Yem Tuzakları" Style="{StaticResource CaptionTextStyle}" FontWeight="Medium" Margin="0,0,0,6"/>
-                        <TextBlock Text="{Binding CanaryFileCount}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushStatusWarning}"/>
+                        <TextBlock Text="{Binding CanaryFileCountText}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushStatusWarning}"/>
                     </StackPanel>
                 </Border>
 
                 <Border Grid.Column="4" Style="{StaticResource MetricCardStyle}" Margin="0">
                     <StackPanel>
-                        <TextBlock Text="Engellenen Saldırılar" Style="{StaticResource CaptionTextStyle}" FontWeight="Medium" Margin="0,0,0,6"/>
-                        <TextBlock Text="{Binding TotalBlockedCount}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushStatusDanger}"/>
+                        <TextBlock Text="Doğrulanmış Sınırlama İşlemleri" Style="{StaticResource CaptionTextStyle}" FontWeight="Medium" Margin="0,0,0,6"/>
+                        <TextBlock Text="{Binding TotalBlockedCountText}" Style="{StaticResource MetricValueStyle}" Foreground="{DynamicResource BrushStatusDanger}"/>
                     </StackPanel>
                 </Border>
             </Grid>
@@ -110,8 +111,8 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                            <TextBlock Text="Korumalı Klasörler (Controlled Folders)" Style="{StaticResource SectionHeadingStyle}"/>
-                            <TextBlock Text="Bu klasörlerdeki dosyalara yalnızca güvenilir uygulamalar yazabilir." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Hizmetin Gözlem Klasörleri" Style="{StaticResource SectionHeadingStyle}"/>
+                            <TextBlock Text="Liste/yönetim uç noktası bu sürümde kullanılamıyor. Dosya yazma izinleri değiştirilmez." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
 
                         <ListView Grid.Row="1" ItemsSource="{Binding ProtectedFolders}" BorderThickness="0" Background="Transparent" MinHeight="160" MaxHeight="220" ScrollViewer.VerticalScrollBarVisibility="Auto">
@@ -136,7 +137,7 @@
                             </ListView.ItemTemplate>
                         </ListView>
 
-                        <Button Grid.Row="2" Content="+ Yeni Klasör Ekle" Command="{Binding AddFolderCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,12,0,0" HorizontalAlignment="Stretch" Padding="0,8"/>
+                        <Button Grid.Row="2" Content="Klasör Yönetimi (Kullanılamıyor)" Command="{Binding AddFolderCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,12,0,0" HorizontalAlignment="Stretch" Padding="0,8"/>
                     </Grid>
                 </Border>
 
@@ -151,7 +152,7 @@
 
                         <StackPanel Grid.Row="0" Margin="0,0,0,12">
                             <TextBlock Text="İzinli Uygulamalar (Allowlist)" Style="{StaticResource SectionHeadingStyle}"/>
-                            <TextBlock Text="Korunan klasörlerde güvenle yazma işlemi yapabilen uygulamalar." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0"/>
+                            <TextBlock Text="Yetkili liste/yönetim uç noktası bulunmuyor; burada izin verildiği iddia edilmez." Style="{StaticResource CaptionTextStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
 
                         <ListView Grid.Row="1" ItemsSource="{Binding AllowedApplications}" BorderThickness="0" Background="Transparent" MinHeight="160" MaxHeight="220" ScrollViewer.VerticalScrollBarVisibility="Auto">
@@ -176,7 +177,7 @@
                             </ListView.ItemTemplate>
                         </ListView>
 
-                        <Button Grid.Row="2" Content="+ Güvenilir Uygulama Ekle (.exe)" Command="{Binding AddAllowedAppCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,12,0,0" HorizontalAlignment="Stretch" Padding="0,8"/>
+                        <Button Grid.Row="2" Content="İzin Yönetimi (Kullanılamıyor)" Command="{Binding AddAllowedAppCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,12,0,0" HorizontalAlignment="Stretch" Padding="0,8"/>
                     </Grid>
                 </Border>
             </Grid>
@@ -189,7 +190,7 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <TextBlock Text="Son Fidye Saldırısı ve İhlal Kayıtları" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,12"/>
+                    <TextBlock Text="Yetkili Fidye Olay Kayıtları (Bu Sürümde Kullanılamıyor)" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,12"/>
 
                     <ListView Grid.Row="1" ItemsSource="{Binding RecentEvents}" BorderThickness="0" Background="Transparent" MinHeight="100">
                         <ListView.ItemTemplate>

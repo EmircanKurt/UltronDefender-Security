@@ -29,6 +29,7 @@ VOID AegisDisconnect(PVOID ConnectionCookie)
 NTSTATUS AegisSendEventToUser(PAEGIS_EVENT_MESSAGE Event, PAEGIS_SCAN_REPLY Reply)
 {
     ULONG replyLength = 0;
+    if (Reply) RtlZeroMemory(Reply, sizeof(*Reply));
     LARGE_INTEGER timeout;
     NTSTATUS status;
 
@@ -41,11 +42,11 @@ NTSTATUS AegisSendEventToUser(PAEGIS_EVENT_MESSAGE Event, PAEGIS_SCAN_REPLY Repl
         replyLength = sizeof(AEGIS_SCAN_REPLY);
     }
 
-    timeout.QuadPart = -50000000; // 5 seconds (100-ns intervals)
+    timeout.QuadPart = -2000000; // Bounded 200 ms audit exchange; never an enforcement deadline.
 
     status = FltSendMessage(gFilterHandle, &gClientPort, Event, sizeof(AEGIS_EVENT_MESSAGE), Reply, &replyLength, &timeout);
 
-    if (!NT_SUCCESS(status) || status == STATUS_TIMEOUT) {
+    if (status != STATUS_SUCCESS || (Reply && replyLength != sizeof(AEGIS_SCAN_REPLY))) {
         if (Reply) Reply->Result = AegisScanResultAllow;
     }
 

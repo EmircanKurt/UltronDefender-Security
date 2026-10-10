@@ -8,6 +8,8 @@ namespace AegisPC.Contracts.PE
     /// </summary>
     public class PeCertificateDetail
     {
+        /// <summary>Preserves unavailable verification rather than mapping it to an invalid certificate.</summary>
+        public AegisPC.Core.Enums.SignatureVerificationStatus VerificationStatus { get; set; }
         public bool IsSigned { get; set; }
         public bool IsValid { get; set; }
         public string Subject { get; set; } = string.Empty;

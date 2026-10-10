@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Helpers;
 using AegisPC.Core.Models;
+using Serilog;
 
 namespace AegisPC.Security.Scanning
 {
@@ -17,9 +20,57 @@ namespace AegisPC.Security.Scanning
     public interface IFileHashMatcher
     {
         /// <summary>
+        /// Önbellekte tutulan toplam kayıt sayısı (dosya tarama + dijital imza önbellekleri).
+        /// </summary>
+        int CachedEntriesCount { get; }
+
+        /// <summary>
+        /// Aktif bir taramanın yürütülüp yürütülmediğini belirten bayrak.
+        /// </summary>
+        bool IsScanActive { get; set; }
+
+        /// <summary>
+        /// Dış koordinatör veya tarayıcıdan gelen aktif tarama kontrol delegesi.
+        /// </summary>
+        Func<bool>? ActiveScanChecker { get; set; }
+
+        /// <summary>
+        /// Önbellek isabetiyle taranan dosya sayısı.
+        /// </summary>
+        int ScannedFromCache { get; }
+
+        /// <summary>
+        /// Dijital imza / beyaz liste doğrulamasıyla güvenli atlanan dosya sayısı.
+        /// </summary>
+        int SkippedSignedClean { get; }
+
+        /// <summary>
+        /// Diskten hash hesaplanarak ve motorla yeni taranan dosya sayısı.
+        /// </summary>
+        int NewlyScanned { get; }
+
+        /// <summary>
+        /// Kırılım sayaçlarını sıfırlar.
+        /// </summary>
+        void ResetCounters();
+
+        /// <summary>
+        /// Clears cached verdicts and FIFO bookkeeping together under their mutation lock.
+        /// Aktif tarama varsa işlem reddedilir ve loglanır.
+        /// </summary>
+        void ClearCache();
+
+        /// <summary>
         /// Değişmemiş dosyalar için önbellekten önceki tarama sonucunu sorgular.
         /// </summary>
         bool TryGetCached(string path, FileInfo fileInfo, bool isGameDir, out SecurityFinding? finding);
+        Task<(bool Hit, SecurityFinding? Finding, string? VerifiedHash)> TryGetCachedAsync(
+            string path, FileInfo info, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            bool hit = TryGetCached(path, info, false, out var finding);
+            return Task.FromResult((hit, finding, (string?)null));
+        }
 
         /// <summary>
         /// Tarama sonucunu önbelleğe yazar (FIFO tahliyeli).
@@ -27,9 +78,29 @@ namespace AegisPC.Security.Scanning
         void SetCache(string path, long fileSize, DateTime lastWriteTimeUtc, SecurityFinding? finding);
 
         /// <summary>
+        /// Genişletilmiş parametrelerle tarama sonucunu önbelleğe yazar.
+        /// </summary>
+        void SetCache(string path, long fileSize, DateTime lastWriteTimeUtc, SecurityFinding? finding, string? sha256, bool isAllowlisted, bool isBypassed);
+
+        /// <summary>
+        /// Caches a completed analysis only for its captured policy revision. Implementations supporting revisions
+        /// reject results that became stale during analysis; the default retains compatibility with existing matchers.
+        /// </summary>
+        void SetCache(string path, long fileSize, DateTime lastWriteTimeUtc, SecurityFinding? finding,
+            string? sha256, bool isAllowlisted, bool isBypassed, long policyRevision)
+            => SetCache(path, fileSize, lastWriteTimeUtc, finding, sha256, isAllowlisted, isBypassed);
+
+        /// <summary>
         /// Dosyanın SHA-256 özetini hesaplar, beyaz liste ve Microsoft sistem imzası durumunu değerlendirir.
         /// </summary>
         Task<(string sha256, bool isAllowlisted, bool isMicrosoftBypassed)> EvaluateHashAndAllowlistAsync(string path, CancellationToken ct);
+        Task<(string sha256, bool isAllowlisted, bool isMicrosoftBypassed)> EvaluateHashAndAllowlistAsync(
+            string path, CancellationToken ct, string? verifiedHash) => EvaluateHashAndAllowlistAsync(path, ct);
+
+        /// <summary>
+        /// Belirli bir dosya yolu için tarama ve imza önbelleğini geçersiz kılar.
+        /// </summary>
+        void InvalidateCache(string path);
     }
 
     /// <summary>
@@ -39,219 +110,217 @@ namespace AegisPC.Security.Scanning
     public class FileHashMatcher : IFileHashMatcher
     {
         private readonly IHashService _hashService;
-        private readonly ISignatureVerifier _signatureVerifier;
         private readonly IAllowlistService _allowlistService;
+        private readonly IExclusionService? _exclusionService;
 
         // RAM'e göre dinamik cache limitleri (constructor'da hesaplanır)
         private readonly int _maxCacheEntries;
-        private readonly int _maxSignatureCacheEntries;
-        private readonly ConcurrentDictionary<string, (long FileSize, DateTime LastWriteTimeUtc, SecurityFinding? Finding, string? Sha256, bool IsAllowlisted, bool IsBypassed)> _scanCache = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentQueue<string> _cacheKeyQueue = new();
-        private readonly ConcurrentDictionary<string, byte> _queuedCacheKeys = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, (long FileSize, DateTime LastWriteTimeUtc, SecurityFinding? Finding, string? Sha256, bool IsAllowlisted, bool IsBypassed, long PolicyRevision, string RuleVersion, string IntelIdentity)> _scanCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _cacheMutationLock = new();
+        private readonly LinkedList<string> _cacheKeyQueue = new();
+        private readonly Dictionary<string, LinkedListNode<string>> _queuedCacheKeys = new(StringComparer.OrdinalIgnoreCase);
 
-        // İmza kararı önbelleği: pahalı WinVerifyTrust/chain doğrulaması dosya sürümü başına bir kez yapılır
-        private readonly ConcurrentDictionary<string, (long FileSize, DateTime LastWriteTimeUtc, bool Trusted)> _signatureCache = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentQueue<string> _signatureCacheQueue = new();
+        // Kırılım sayaçları (Lock-free thread safe)
+        private int _scannedFromCache;
+        private int _skippedSignedClean;
+        private int _newlyScanned;
+
+        public int ScannedFromCache => Volatile.Read(ref _scannedFromCache);
+        public int SkippedSignedClean => Volatile.Read(ref _skippedSignedClean);
+        public int NewlyScanned => Volatile.Read(ref _newlyScanned);
+
+        public int CachedEntriesCount => _scanCache.Count;
+        public bool IsScanActive { get; set; }
+        public Func<bool>? ActiveScanChecker { get; set; }
+
+        public void ResetCounters()
+        {
+            Interlocked.Exchange(ref _scannedFromCache, 0);
+            Interlocked.Exchange(ref _skippedSignedClean, 0);
+            Interlocked.Exchange(ref _newlyScanned, 0);
+        }
+
+        public void ClearCache()
+        {
+            if (IsScanActive || (ActiveScanChecker != null && ActiveScanChecker()))
+            {
+                Log.Warning("Aktif tarama devam ederken önbellek temizleme işlemi reddedildi.");
+                return;
+            }
+
+            int count;
+            lock (_cacheMutationLock)
+            {
+                count = _scanCache.Count;
+                _scanCache.Clear();
+                _cacheKeyQueue.Clear();
+                _queuedCacheKeys.Clear();
+            }
+            Log.Information("Tarama önbelleği temizlendi. {Count} önbellek kaydı temizlendi.", count);
+        }
+
+        public void InvalidateCache(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+            lock (_cacheMutationLock)
+            {
+                _scanCache.TryRemove(path, out _);
+                if (_queuedCacheKeys.Remove(path, out var node)) _cacheKeyQueue.Remove(node);
+            }
+            Log.Debug("Scan cache invalidated for {Path}", path);
+        }
 
         public FileHashMatcher(
             IHashService hashService,
             ISignatureVerifier signatureVerifier,
-            IAllowlistService allowlistService)
+            IAllowlistService allowlistService,
+            IExclusionService? exclusionService = null)
         {
             _hashService = hashService;
-            _signatureVerifier = signatureVerifier;
             _allowlistService = allowlistService;
+            _exclusionService = exclusionService;
 
-            // RAM'e göre cache boyutları: her MB RAM için ~50 scan cache, ~25 signature cache
+            // Bound cache memory on low-RAM computers. An entry contains a path, hash, result
+            // metadata and a FIFO key; hundreds of thousands of entries can cost hundreds of MB.
             long ramMb = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / (1024 * 1024);
             if (ramMb <= 0) ramMb = 8192; // 8 GB fallback
-            _maxCacheEntries = (int)Math.Clamp(ramMb * 50, 100_000, 500_000);
-            _maxSignatureCacheEntries = (int)Math.Clamp(ramMb * 25, 50_000, 200_000);
+            _maxCacheEntries = (int)Math.Clamp(ramMb * 5, 10_000, 100_000);
         }
 
         public bool TryGetCached(string path, FileInfo fileInfo, bool isGameDir, out SecurityFinding? finding)
         {
-            finding = null;
-            if (_scanCache.TryGetValue(path, out var cached))
-            {
-                if (cached.FileSize == fileInfo.Length && cached.LastWriteTimeUtc == fileInfo.LastWriteTimeUtc)
-                {
-                    var ext = fileInfo.Extension.ToLowerInvariant();
-                    // Eski sahte tespitleri (oyun, mod, zip) önbellekten dönmeyip temizce değerlendir
-                    if (cached.Finding == null || (!isGameDir && ext != ".zip"))
-                    {
-                        // EĞER dosya beyaz listeye / çözüldüye eklenmişse veya cached finding çözüldüyse asla tehdit dönme
-                        if (cached.Finding != null && (cached.Finding.Status == FindingStatus.Resolved || cached.Finding.IsAllowlisted))
-                        {
-                            _scanCache[path] = (cached.FileSize, cached.LastWriteTimeUtc, null, cached.Sha256, true, cached.IsBypassed);
-                            finding = null;
-                            return true;
-                        }
-
-                        if (_allowlistService != null && _allowlistService.IsPathAllowlistedAsync(path).GetAwaiter().GetResult())
-                        {
-                            _scanCache[path] = (cached.FileSize, cached.LastWriteTimeUtc, null, cached.Sha256, true, cached.IsBypassed);
-                            finding = null;
-                            return true;
-                        }
-
-                        if (!string.IsNullOrEmpty(cached.Sha256) && _allowlistService != null && _allowlistService.IsAllowlistedAsync(cached.Sha256).GetAwaiter().GetResult())
-                        {
-                            _scanCache[path] = (cached.FileSize, cached.LastWriteTimeUtc, null, cached.Sha256, true, cached.IsBypassed);
-                            finding = null;
-                            return true;
-                        }
-
-                        // Stale finding koruması: Meşru kurulum klasöründe yer alan veya güvenilir konuma taşınmış dosyaların eski hatalı bulgularını temizle
-                        if (cached.Finding != null && AegisPC.Security.Safety.TrustedSoftwarePolicy.IsLegitimateInstallLocation(path))
-                        {
-                            _scanCache[path] = (cached.FileSize, cached.LastWriteTimeUtc, null, cached.Sha256, false, true);
-                            finding = null;
-                            return true;
-                        }
-
-                        finding = cached.Finding;
-                        return true;
-                    }
-                }
-            }
-            return false;
+            var result = TryGetCachedAsync(path, fileInfo, CancellationToken.None).GetAwaiter().GetResult();
+            finding = result.Finding;
+            return result.Hit;
         }
 
+        /// <summary>
+        /// Returns a cached verdict only after validating file metadata, current content, mutable threat hashes and policy revision.
+        /// A policy change during the asynchronous hash check invalidates the result; cancellation propagates to the caller.
+        /// </summary>
+        public async Task<(bool Hit, SecurityFinding? Finding, string? VerifiedHash)> TryGetCachedAsync(
+            string path, FileInfo fileInfo, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                fileInfo.Refresh();
+                if (!_scanCache.TryGetValue(path, out var cached) || !fileInfo.Exists ||
+                    cached.FileSize != fileInfo.Length || cached.LastWriteTimeUtc != fileInfo.LastWriteTimeUtc ||
+                    string.IsNullOrEmpty(cached.Sha256) || cached.PolicyRevision != DetectionPolicyRevision.Current ||
+                    cached.RuleVersion != DetectionRuleSet.Version || cached.IntelIdentity != ThreatIntelligence.AuthoritativeThreatCatalog.CacheIdentity ||
+                    cached.Finding != null && (!cached.Finding.InspectionComplete || cached.Finding.RuleSetVersion != DetectionRuleSet.Version ||
+                        cached.Finding.CoverageLimitations.Count != 0 || cached.Finding.RiskLevel == RiskLevel.Unknown) ||
+                    cached.Finding?.SoftwareClass == SoftwareFindingClass.PotentiallyUnwantedToolOnly &&
+                        !(cached.Finding.SoftwareClassification?.ValidUntilUtc > DateTime.UtcNow))
+                    return (false, null, null);
+                await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+                string hash;
+                using (ScanStageMeasurements.Measure(ScanStageTiming.Hash))
+                    hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct));
+                if (!string.Equals(hash, cached.Sha256, StringComparison.OrdinalIgnoreCase)) return (false, null, hash);
+                // Re-query mutable threat databases; previous clean results cannot override new intelligence.
+                if (MalwareSignatureDatabase.CheckHash(hash).IsMatched || ThreatSignatureDatabase.CheckHash(hash).IsMatched)
+                    return (false, null, hash);
+                // Explicit trust decisions are re-evaluated by the normal path, not frozen in the cache.
+                if (cached.IsAllowlisted || cached.IsBypassed || cached.Finding?.Status == FindingStatus.Resolved ||
+                    cached.Finding?.IsAllowlisted == true) return (false, null, hash);
+                // A reload may occur while the content hash is being verified asynchronously.
+                if (cached.PolicyRevision != DetectionPolicyRevision.Current || cached.IntelIdentity != ThreatIntelligence.AuthoritativeThreatCatalog.CacheIdentity) return (false, null, hash);
+                Interlocked.Increment(ref _scannedFromCache);
+                return (true, cached.Finding, hash);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Log.Debug(ex, "Cached content could not be verified for {Path}", path);
+                return (false, null, null);
+            }
+        }
+
+        /// <summary>
+        /// Fingerprints and caches an already-completed verdict under the current policy for legacy callers.
+        /// Long-running analyses should instead pass the revision captured before analysis to the revision-aware overload.
+        /// </summary>
         public void SetCache(string path, long fileSize, DateTime lastWriteTimeUtc, SecurityFinding? finding)
         {
-            SetCacheInternal(path, fileSize, lastWriteTimeUtc, finding, null, false, finding == null);
+            SetCacheInternal(path, fileSize, lastWriteTimeUtc, finding, null, false, false, DetectionPolicyRevision.Current);
         }
 
+        /// <summary>
+        /// Stores a completed verdict with an optional previously-computed hash under the current policy.
+        /// Legacy callers remain compatible; the revision-aware overload is required to reject in-flight stale analyses.
+        /// </summary>
         public void SetCache(string path, long fileSize, DateTime lastWriteTimeUtc, SecurityFinding? finding, string? sha256, bool isAllowlisted, bool isBypassed)
         {
-            SetCacheInternal(path, fileSize, lastWriteTimeUtc, finding, sha256, isAllowlisted, isBypassed);
+            SetCacheInternal(path, fileSize, lastWriteTimeUtc, finding, sha256, isAllowlisted, isBypassed, DetectionPolicyRevision.Current);
         }
 
-        private void SetCacheInternal(string path, long fileSize, DateTime lastWriteTimeUtc, SecurityFinding? finding, string? sha256, bool isAllowlisted, bool isBypassed)
+        /// <summary>
+        /// Publishes a completed scan with the revision captured before analysis. A changed policy prevents publication;
+        /// a change racing the write leaves an old-revision entry that readers reject.
+        /// </summary>
+        public void SetCache(string path, long fileSize, DateTime lastWriteTimeUtc, SecurityFinding? finding,
+            string? sha256, bool isAllowlisted, bool isBypassed, long policyRevision)
         {
-            if (_scanCache.Count >= _maxCacheEntries)
+            SetCacheInternal(path, fileSize, lastWriteTimeUtc, finding, sha256, isAllowlisted, isBypassed, policyRevision);
+        }
+
+        private void SetCacheInternal(string path, long fileSize, DateTime lastWriteTimeUtc, SecurityFinding? finding,
+            string? sha256, bool isAllowlisted, bool isBypassed, long policyRevision)
+        {
+            if (policyRevision != DetectionPolicyRevision.Current) return;
+            if (finding != null && (!finding.InspectionComplete || finding.RuleSetVersion != DetectionRuleSet.Version ||
+                finding.CoverageLimitations.Count != 0 || finding.RiskLevel == RiskLevel.Unknown)) return;
+            if (string.IsNullOrEmpty(sha256))
             {
-                // Sıfır tahsisli FIFO tahliye (Snapshot almadan mikrosaniyede temizlik)
-                int evictCount = _maxCacheEntries / 10;
-                while (_scanCache.Count >= (_maxCacheEntries - evictCount) && _cacheKeyQueue.TryDequeue(out var oldKey))
+                try
                 {
-                    _scanCache.TryRemove(oldKey, out _);
-                    _queuedCacheKeys.TryRemove(oldKey, out _);
+                    using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    using (ScanStageMeasurements.Measure(ScanStageTiming.Hash))
+                        sha256 = Convert.ToHexString(SHA256.HashData(stream));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Log.Debug(ex, "Unable to fingerprint completed scan for {Path}", path);
+                    return;
                 }
             }
-            _scanCache[path] = (fileSize, lastWriteTimeUtc, finding, sha256, isAllowlisted, isBypassed);
-            if (_queuedCacheKeys.TryAdd(path, 0))
+            if (policyRevision != DetectionPolicyRevision.Current) return;
+            lock (_cacheMutationLock)
             {
-                _cacheKeyQueue.Enqueue(path);
+                if (policyRevision != DetectionPolicyRevision.Current) return;
+                bool existing = _queuedCacheKeys.ContainsKey(path);
+                while (!existing && _scanCache.Count >= _maxCacheEntries && _cacheKeyQueue.First is { } oldest)
+                {
+                    _scanCache.TryRemove(oldest.Value, out _);
+                    _queuedCacheKeys.Remove(oldest.Value);
+                    _cacheKeyQueue.RemoveFirst();
+                }
+                _scanCache[path] = (fileSize, lastWriteTimeUtc, finding, sha256, isAllowlisted, isBypassed, policyRevision,
+                    DetectionRuleSet.Version, ThreatIntelligence.AuthoritativeThreatCatalog.CacheIdentity);
+                if (!existing) _queuedCacheKeys.Add(path, _cacheKeyQueue.AddLast(path));
             }
-        }
-
-        /// <summary>
-        /// Hash'siz geçiş için güvenilir konum: Windows dizini, Program Files ve meşru yazılım kurulum dizinleri.
-        /// </summary>
-        private static bool IsTrustedLocation(string path)
-        {
-            return AegisPC.Security.Safety.TrustedSoftwarePolicy.IsLegitimateInstallLocation(path);
-        }
-
-        /// <summary>
-        /// Zincir doğrulaması geçmiş bir sertifikadaki yayıncı, güvenilir OS veya ticari yayıncı mı?
-        /// </summary>
-        private static bool IsTrustedPublisher(string? publisher)
-        {
-            if (string.IsNullOrEmpty(publisher)) return false;
-            return AegisPC.Security.Safety.TrustedSoftwarePolicy.IsTrustedOsPublisher(publisher)
-                || AegisPC.Security.Safety.TrustedSoftwarePolicy.IsTrustedCommercialPublisher(publisher);
         }
 
         public async Task<(string sha256, bool isAllowlisted, bool isMicrosoftBypassed)> EvaluateHashAndAllowlistAsync(string path, CancellationToken ct)
+            => await EvaluateHashAndAllowlistAsync(path, ct, null);
+
+        public async Task<(string sha256, bool isAllowlisted, bool isMicrosoftBypassed)> EvaluateHashAndAllowlistAsync(
+            string path, CancellationToken ct, string? verifiedHash)
         {
-            // 0. Kullanıcı tarafından çözüldü / güvenli işaretlenmiş yol kontrolü
-            if (await _allowlistService.IsPathAllowlistedAsync(path, ct))
+            ct.ThrowIfCancellationRequested();
+
+            // Always establish content identity before considering user trust.
+            // Hash evaluation is NOT a completed scan and must not publish a clean cache entry.
+            var sha256 = verifiedHash ?? await _hashService.ComputeSha256Async(path, ct);
+            ct.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(sha256))
+                throw new IOException("The file could not be hashed; no clean verdict is available.");
+
+            if (sha256 == "VIRUS_INFECTED_OS_BLOCKED")
             {
-                return (string.Empty, true, false);
+                throw new AegisPC.Core.Exceptions.OperatingSystemFileBlockException(AegisPC.Core.Exceptions.OperatingSystemFileBlockKind.ThreatBlocked);
             }
-
-            // 1. Önce Scan-Cache kontrolü: Aynı dosya daha önce tarandıysa tekrar hash'leme
-            FileInfo? fileInfo = null;
-            try
-            {
-                fileInfo = new FileInfo(path);
-                if (fileInfo.Exists && _scanCache.TryGetValue(path, out var cached))
-                {
-                    if (cached.FileSize == fileInfo.Length && cached.LastWriteTimeUtc == fileInfo.LastWriteTimeUtc)
-                    {
-                        if (cached.IsBypassed)
-                        {
-                            return (string.Empty, false, true);
-                        }
-                        if (cached.IsAllowlisted)
-                        {
-                            return (cached.Sha256 ?? string.Empty, true, false);
-                        }
-                        if (!string.IsNullOrEmpty(cached.Sha256))
-                        {
-                            if (await _allowlistService.IsAllowlistedAsync(cached.Sha256, ct))
-                            {
-                                SetCacheInternal(path, cached.FileSize, cached.LastWriteTimeUtc, null, cached.Sha256, true, false);
-                                return (cached.Sha256, true, false);
-                            }
-                            return (cached.Sha256, false, false);
-                        }
-                    }
-                }
-            }
-            catch { }
-
-            // 2. Fast-Path: Güvenilir sistem konumlarındaki (Windows/Program Files) dijital imzalı dosyaları
-            // diskten hash hesaplamadan ÖNCE kontrol et. Geçerli Microsoft veya bilinen ticari yayımcı imzası varsa hash'lemeyi atla.
-            try
-            {
-                if (fileInfo != null && fileInfo.Exists && IsTrustedLocation(path))
-                {
-                    long sigSize = fileInfo.Length;
-                    DateTime sigMtime = fileInfo.LastWriteTimeUtc;
-
-                    if (_signatureCache.TryGetValue(path, out var sigEntry))
-                    {
-                        if (sigEntry.FileSize == sigSize && sigEntry.LastWriteTimeUtc == sigMtime)
-                        {
-                            if (sigEntry.Trusted)
-                            {
-                                return (string.Empty, false, true);
-                            }
-                        }
-                        else
-                        {
-                            _signatureCache.TryRemove(path, out _);
-                        }
-                    }
-
-                    var sig = await _signatureVerifier.VerifySignatureAsync(path, ct);
-                    bool trusted = sig.IsSigned && sig.IsValid && IsTrustedPublisher(sig.Publisher);
-
-                    if (_signatureCache.Count >= _maxSignatureCacheEntries && _signatureCacheQueue.TryDequeue(out var oldSigKey))
-                    {
-                        _signatureCache.TryRemove(oldSigKey, out _);
-                    }
-                    _signatureCache[path] = (sigSize, sigMtime, trusted);
-                    _signatureCacheQueue.Enqueue(path);
-
-                    if (trusted)
-                    {
-                        SetCacheInternal(path, sigSize, sigMtime, null, string.Empty, false, true);
-                        return (string.Empty, false, true);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Signature evaluation failed for {path}: {ex.Message}");
-            }
-
-            // 3. İmzasız veya kullanıcı konumundaki dosyalar için SHA-256 hesapla
-            var sha256 = await _hashService.ComputeSha256Async(path, ct);
 
             // 4. Tehdit Veritabanı Kontrolü (MalwareSignatureDatabase + ThreatSignatureDatabase)
             if (!string.IsNullOrEmpty(sha256))
@@ -274,29 +343,21 @@ namespace AegisPC.Security.Scanning
 
                 if (malwareCheck.IsMatched)
                 {
-                    long sz = fileInfo?.Length ?? 0;
-                    DateTime mtime = fileInfo?.LastWriteTimeUtc ?? DateTime.MinValue;
-                    SetCacheInternal(path, sz, mtime, null, sha256, false, false);
+
+                    Interlocked.Increment(ref _newlyScanned);
                     return (sha256, false, false);
                 }
             }
 
             // 5. Kullanıcı tanımlı Güvenli Beyaz Liste (Allowlist)
-            if (!string.IsNullOrEmpty(sha256) && (await _allowlistService.IsAllowlistedAsync(sha256, ct) || await _allowlistService.IsPathAllowlistedAsync(path, ct)))
+            if (!string.IsNullOrEmpty(sha256) && ((_exclusionService?.IsExcluded(path, sha256) ?? false) || await _allowlistService.IsAllowlistedAsync(sha256, ct) || await _allowlistService.IsPathAllowlistedAsync(path, ct)))
             {
-                long sz = fileInfo?.Length ?? 0;
-                DateTime mtime = fileInfo?.LastWriteTimeUtc ?? DateTime.MinValue;
-                SetCacheInternal(path, sz, mtime, null, sha256, true, false);
+
+                Interlocked.Increment(ref _skippedSignedClean);
                 return (sha256, true, false);
             }
 
-            if (!string.IsNullOrEmpty(sha256))
-            {
-                long sz = fileInfo?.Length ?? 0;
-                DateTime mtime = fileInfo?.LastWriteTimeUtc ?? DateTime.MinValue;
-                SetCacheInternal(path, sz, mtime, null, sha256, false, false);
-            }
-
+            Interlocked.Increment(ref _newlyScanned);
             return (sha256 ?? string.Empty, false, false);
         }
     }

@@ -7,7 +7,7 @@ extern NTSTATUS AegisSendEventToUser(PAEGIS_EVENT_MESSAGE Event, PAEGIS_SCAN_REP
 VOID AegisProcessNotifyRoutine(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo)
 {
     AEGIS_EVENT_MESSAGE msg;
-    AEGIS_SCAN_REPLY reply;
+    AEGIS_SCAN_REPLY reply = { 0 };
     NTSTATUS status;
 
     UNREFERENCED_PARAMETER(Process);
@@ -34,9 +34,8 @@ VOID AegisProcessNotifyRoutine(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_N
         }
 
         status = AegisSendEventToUser(&msg, &reply);
-        if (NT_SUCCESS(status) && reply.Result == AegisScanResultBlock) {
-            CreateInfo->CreationStatus = STATUS_ACCESS_DENIED;
-        }
+        // Legacy results have no authenticated file identity or applied-action receipt.
+        UNREFERENCED_PARAMETER(status);
     }
 }
 

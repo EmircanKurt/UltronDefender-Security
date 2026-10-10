@@ -10,6 +10,7 @@ using AegisPC.Core.Helpers;
 
 namespace AegisPC.Security.Detection.Detectors
 {
+    /// <summary>Collects location review hints and verified signature metadata without exempting development directories or erasing content evidence.</summary>
     public class LocationReputationDetector : IDetectorPlugin
     {
         private readonly ISignatureVerifier _signatureVerifier;
@@ -35,11 +36,13 @@ namespace AegisPC.Security.Detection.Detectors
             ".js", ".jse", ".wsf", ".wsh", ".hta", ".cpl", ".sys"
         };
 
+        /// <summary>Requires a verifier of the actual file signature; locations and publisher strings alone cannot establish trust.</summary>
         public LocationReputationDetector(ISignatureVerifier signatureVerifier)
         {
-            _signatureVerifier = signatureVerifier;
+            _signatureVerifier = signatureVerifier ?? throw new ArgumentNullException(nameof(signatureVerifier));
         }
 
+        /// <summary>Produces explanatory signature facts and review evidence; verification failures propagate to the hub.</summary>
         public async Task<IEnumerable<SecurityEvidence>> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
         {
             var list = new List<SecurityEvidence>();
@@ -60,10 +63,17 @@ namespace AegisPC.Security.Detection.Detectors
 
             try
             {
-                var sigInfo = await _signatureVerifier.VerifySignatureAsync(path, cancellationToken);
+                var sigInfo = context.SharedScan != null
+                    ? await context.SharedScan.GetOrVerifySignatureAsync(_signatureVerifier, cancellationToken)
+                    : await _signatureVerifier.VerifySignatureAsync(path, cancellationToken);
                 isSigned = sigInfo.IsSigned;
                 isSignatureValid = sigInfo.IsValid;
                 publisher = sigInfo.Publisher;
+                if (sigInfo.VerificationStatus == AegisPC.Core.Enums.SignatureVerificationStatus.Unknown)
+                {
+                    context.CoverageLimitations.Add("SignatureVerificationUnavailable");
+                    return list;
+                }
 
                 if (isSigned && isSignatureValid)
                 {
@@ -73,7 +83,8 @@ namespace AegisPC.Security.Detection.Detectors
                         SourceDetector = DisplayName,
                         RuleName = "Signature.Valid.TrustedPublisher",
                         Description = $"Doğrulanmış dijital imza: '{publisher ?? "Güvenilir Yayımcı"}'",
-                        ScoreContribution = -40, // Trust bonus
+                        ScoreContribution = 0,
+                        TrustKind = EvidenceTrustKind.VerifiedAuthenticode,
                         Confidence = EvidenceConfidence.High,
                         FilePath = path,
                         SHA256 = context.SHA256
@@ -86,6 +97,8 @@ namespace AegisPC.Security.Detection.Detectors
                         Category = EvidenceCategory.DigitalCertificate,
                         SourceDetector = DisplayName,
                         RuleName = "Signature.Unsigned.Binary",
+                        FeatureIdentity = "PE.Unsigned",
+                        Nature = EvidenceNature.Capability,
                         Description = "Yürütülebilir dosya dijital olarak imzalanmamış",
                         ScoreContribution = 10,
                         Confidence = EvidenceConfidence.Low,
@@ -94,13 +107,10 @@ namespace AegisPC.Security.Detection.Detectors
                     });
                 }
             }
-            catch { }
+            catch { throw; }
 
-            // 2. High-Risk Location Checks (ONLY for binaries/scripts)
-            // 2. High-Risk Location Checks (ONLY for binaries/scripts, skip if inside verified development environment)
-            bool isDevDir = PathHelper.IsDevelopmentOrPackageDirectory(path);
-
-            if (isBinaryOrScript && !isDevDir)
+            // A directory name cannot exempt an executable or script from the same location review rules.
+            if (isBinaryOrScript)
             {
                 if (PathHelper.IsTempPath(path) || path.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase))
                 {
@@ -109,6 +119,8 @@ namespace AegisPC.Security.Detection.Detectors
                         Category = EvidenceCategory.LocationReputation,
                         SourceDetector = DisplayName,
                         RuleName = "Location.TempDirectory",
+                        FeatureIdentity = "Location.Temp",
+                        Nature = EvidenceNature.Capability,
                         Description = "Dosya geçici dizinde (Temp) çalıştırılıyor veya indirildi",
                         ScoreContribution = 25,
                         Confidence = EvidenceConfidence.Medium,
@@ -123,6 +135,8 @@ namespace AegisPC.Security.Detection.Detectors
                         Category = EvidenceCategory.LocationReputation,
                         SourceDetector = DisplayName,
                         RuleName = "Location.Downloads.Unsigned",
+                        FeatureIdentity = "Location.Downloads",
+                        Nature = EvidenceNature.Capability,
                         Description = "İmzasız dosya İndirilenler (Downloads) klasöründe bulunuyor",
                         ScoreContribution = 15,
                         Confidence = EvidenceConfidence.Low,
@@ -137,6 +151,8 @@ namespace AegisPC.Security.Detection.Detectors
                         Category = EvidenceCategory.LocationReputation,
                         SourceDetector = DisplayName,
                         RuleName = "Location.AppDataRoaming.Unsigned",
+                        FeatureIdentity = "Location.Roaming",
+                        Nature = EvidenceNature.Capability,
                         Description = "İmzasız dosya kullanıcı AppData\\Roaming dizininde bulunuyor",
                         ScoreContribution = 15,
                         Confidence = EvidenceConfidence.Low,
@@ -158,6 +174,8 @@ namespace AegisPC.Security.Detection.Detectors
                         Category = EvidenceCategory.AntiEvasion,
                         SourceDetector = DisplayName,
                         RuleName = "Evasion.DoubleExtensionMasking",
+                        FeatureIdentity = "File.ExtensionMismatch",
+                        Nature = EvidenceNature.Capability,
                         Description = "Çift uzantı kamuflajı tespit edildi (Örn: .pdf.exe aldatmacası)",
                         ScoreContribution = 75,
                         Confidence = EvidenceConfidence.High,
@@ -195,7 +213,9 @@ namespace AegisPC.Security.Detection.Detectors
                 {
                     Category = EvidenceCategory.AntiEvasion,
                     SourceDetector = DisplayName,
-                    RuleName = "Evasion.SystemProcessMasquerading",
+                        RuleName = "Evasion.SystemProcessMasquerading",
+                        FeatureIdentity = "File.NameSimilarity",
+                        Nature = EvidenceNature.Capability,
                     Description = $"Kritik Windows sistem süreci kamuflajı tespit edildi: '{fileName}' meşru sistem dizini dışında yürütülüyor.",
                     ScoreContribution = 80,
                     Confidence = EvidenceConfidence.High,

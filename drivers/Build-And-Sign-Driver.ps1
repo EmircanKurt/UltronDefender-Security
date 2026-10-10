@@ -1,316 +1,131 @@
 <#
 .SYNOPSIS
-    Ultron Defender (AegisPC) - AegisFilter Kernel Minifilter Build & Sign Pipeline
+    Builds the audit-only Ultron Filter pilot without installing a driver or changing host trust.
 .DESCRIPTION
-    Automates the compilation, catalog generation, test-signing, and local deployment
-    of the AegisFilter.sys ring-0 filesystem minifilter driver.
-.PARAMETER Configuration
-    Build configuration (default: Release)
-.PARAMETER Platform
-    Target platform (default: x64)
-.PARAMETER Install
-    If specified, installs and loads the driver via rundll32 and fltmc (requires elevation)
-.PARAMETER Uninstall
-    If specified, unloads and uninstalls the driver package (requires elevation)
-.PARAMETER Verify
-    If specified, verifies driver registration, altitude, and filter manager status
-.PARAMETER SkipBuild
-    Skips compilation step (uses existing AegisFilter.sys)
+    Requires explicit Microsoft altitude-assignment evidence, WDK tools and a successful catalog.
+    Signing uses an existing user-store certificate only; signatures and native exit codes are checked.
+    An artifact is not a release approval. Native protocol, signing route and isolated VM gates remain pending.
+.PARAMETER AssignedAltitude
+    Microsoft-assigned FSFilter Anti-Virus altitude. The source INF is deliberately unassigned.
+.PARAMETER AltitudeAssignmentEvidencePath
+    Existing local assignment evidence. Its hash is recorded for manual verification, not treated as proof by its filename.
+.PARAMETER SigningCertificateThumbprint
+    Existing code-signing certificate in CurrentUser/My. No certificate is created or imported.
 .PARAMETER SkipSign
-    Skips signing step
+    Explicitly produces an unsigned developer build, never an installable/release-approved package.
 #>
-
 [CmdletBinding()]
 param(
-    [string]$Configuration = "Release",
-    [string]$Platform = "x64",
+    [ValidateSet("Debug", "Release")][string]$Configuration = "Release",
+    [ValidateSet("x64")][string]$Platform = "x64",
+    [string]$AssignedAltitude,
+    [string]$AltitudeAssignmentEvidencePath,
+    [string]$SigningCertificateThumbprint,
+    [switch]$SkipSign,
+    [switch]$SkipBuild,
     [switch]$Install,
     [switch]$Uninstall,
-    [switch]$Verify,
-    [switch]$SkipBuild,
-    [switch]$SkipSign
+    [switch]$Verify
 )
-
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
-Write-Host "===================================================================" -ForegroundColor Cyan
-Write-Host "   ULTRON DEFENDER - KERNEL MINIFILTER BUILD & SIGN PIPELINE     " -ForegroundColor Cyan
-Write-Host "===================================================================" -ForegroundColor Cyan
-Write-Host ""
-
-$driverDir = Join-Path $PSScriptRoot "AegisFilter"
-$outputDir = Join-Path $PSScriptRoot "bin\$Platform\$Configuration"
-$certSubject = "CN=Ultron Defender Driver Test Signing Authority"
-$certFriendlyName = "Ultron Defender Driver Test Signing Authority"
-
-if (-not (Test-Path $outputDir)) {
-    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+if ($Install -or $Uninstall -or $Verify) {
+    throw "Driver activation/servicing is not part of this build script. An independently approved isolated VM pilot is required."
+}
+if ($SkipBuild) { throw "Existing unverified driver binaries cannot be repackaged by skipping the build." }
+if ($AssignedAltitude -notmatch '^32[0-9]{4}(\.[0-9]+)?$' -or
+    $AssignedAltitude -match '^320500(\.|$)') {
+    throw "A valid, independently verified Microsoft-assigned altitude is required. Avira's assigned altitude is not available to Ultron."
+}
+if ([string]::IsNullOrWhiteSpace($AltitudeAssignmentEvidencePath)) {
+    throw "Provide altitude assignment evidence; numeric syntax is not evidence of assignment."
+}
+$assignmentEvidence = Get-Item -LiteralPath $AltitudeAssignmentEvidencePath
+if ($assignmentEvidence.PSIsContainer -or $assignmentEvidence.Length -le 0 -or $assignmentEvidence.Length -gt 65536) {
+    throw "Assignment evidence must be a nonempty file no larger than 64 KiB."
 }
 
-# -------------------------------------------------------------------------
-# UNINSTALL MODE
-# -------------------------------------------------------------------------
-if ($Uninstall) {
-    Write-Host "[*] UNINSTALL: Unloading and removing AegisFilter minifilter driver..." -ForegroundColor Yellow
-    try {
-        Write-Host "[*] Unloading driver via fltmc..." -ForegroundColor DarkCyan
-        & fltmc unload AegisFilter
-    } catch {
-        Write-Warning "[!] fltmc unload AegisFilter: $_"
+function Find-DriverTool {
+    param([string]$Name)
+    $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($command) { return $command.Source }
+    $kitRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
+    if (Test-Path -LiteralPath $kitRoot) {
+        foreach ($version in (Get-ChildItem -LiteralPath $kitRoot -Directory | Sort-Object Name -Descending)) {
+            $candidate = Join-Path $version.FullName ("x64\" + $Name)
+            if (Test-Path -LiteralPath $candidate) { return $candidate }
+        }
     }
-
-    $infPath = Join-Path $outputDir "AegisFilter.inf"
-    if (-not (Test-Path $infPath)) {
-        $infPath = Join-Path $driverDir "AegisFilter.inf"
-    }
-
-    if (Test-Path $infPath) {
-        Write-Host "[*] Executing INF uninstallation: rundll32.exe setupapi.dll,InstallHinfSection DefaultUninstall 132 `"$infPath`"" -ForegroundColor DarkCyan
-        Start-Process -FilePath "rundll32.exe" -ArgumentList "setupapi.dll,InstallHinfSection DefaultUninstall 132 `"$infPath`"" -Wait
-    }
-
-    try {
-        & sc.exe stop AegisFilter 2>$null
-        & sc.exe delete AegisFilter 2>$null
-    } catch {}
-
-    Write-Host "[+] AegisFilter driver uninstallation completed." -ForegroundColor Green
-    return
+    throw "Required driver tool is missing: $Name"
 }
 
-# -------------------------------------------------------------------------
-# VERIFY MODE
-# -------------------------------------------------------------------------
-if ($Verify) {
-    Write-Host "[*] VERIFY: Checking AegisFilter minifilter driver status and altitude..." -ForegroundColor Yellow
-
-    $fltOutput = & fltmc instances -f AegisFilter 2>&1 | Out-String
-    Write-Host $fltOutput -ForegroundColor Cyan
-
-    $isLoaded = $fltOutput -match "AegisFilter"
-    $hasAltitude = $fltOutput -match "320500"
-
-    if ($isLoaded -and $hasAltitude) {
-        Write-Host "[+] SUCCESS: AegisFilter is ACTIVE and attached with Altitude 320500 (FSFilter Anti-Virus)!" -ForegroundColor Green
-    } elseif ($isLoaded) {
-        Write-Host "[+] AegisFilter is loaded, but altitude differs from standard 320500." -ForegroundColor Yellow
-    } else {
-        Write-Host "[-] AegisFilter driver is NOT loaded in Windows Filter Manager." -ForegroundColor Red
-        Write-Host "[*] User-Mode Progressive Protection (ETW Pre-Exec + FileSystemWatcher) will run in DEGRADED mode." -ForegroundColor Yellow
-    }
-
-    $sysPath = Join-Path $outputDir "AegisFilter.sys"
-    if (Test-Path $sysPath) {
-        $sigStatus = Get-AuthenticodeSignature $sysPath
-        Write-Host "[*] Binary Authenticode status: $($sigStatus.Status) - $($sigStatus.SignerCertificate.Subject)" -ForegroundColor Cyan
-    }
-    return
-}
-
-# -------------------------------------------------------------------------
-# STEP 1: Toolchain Discovery (MSBuild & WDK)
-# -------------------------------------------------------------------------
-Write-Host "[*] STEP 1: Discovering MSBuild and Windows Driver Kit (WDK)..." -ForegroundColor Yellow
-
-$msBuildExe = $null
-$msBuildCandidates = @(
-    "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\amd64\MSBuild.exe",
-    "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe",
-    "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\MSBuild.exe",
-    "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
-    "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe"
-)
-
-foreach ($c in $msBuildCandidates) {
-    if (Test-Path $c) {
-        $msBuildExe = $c
-        break
-    }
-}
-
-$wdkBin = $null
-$wdkCandidates = @(
-    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64",
-    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22631.0\x64",
-    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64",
-    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22000.0\x64",
-    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64",
-    "C:\Program Files (x86)\Windows Kits\10\bin\x64"
-)
-
-if (Test-Path "C:\Program Files (x86)\Windows Kits\10\bin") {
-    $dynamicKits = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Directory -ErrorAction SilentlyContinue | 
-        Where-Object { $_.Name -like "10.*" } | 
-        Sort-Object Name -Descending | 
-        ForEach-Object { Join-Path $_.FullName "x64" }
-    if ($dynamicKits) {
-        $wdkCandidates = @($dynamicKits) + @($wdkCandidates)
-    }
-}
-
-foreach ($w in $wdkCandidates) {
-    if (Test-Path "$w\signtool.exe") {
-        $wdkBin = $w
-        break
-    }
-}
-
-if ($wdkBin) {
-    Write-Host "[+] WDK binary directory: $wdkBin" -ForegroundColor Green
-    $env:PATH = "$wdkBin;$env:PATH"
-}
-
-# -------------------------------------------------------------------------
-# STEP 2: Compilation (AegisFilter.vcxproj)
-# -------------------------------------------------------------------------
-if (-not $SkipBuild) {
-    Write-Host ""
-    Write-Host "[*] STEP 2: Compiling AegisFilter ($Configuration|$Platform)..." -ForegroundColor Yellow
-
-    if (-not $msBuildExe) {
-        Write-Error "[-] MSBuild.exe could not be located. Ensure Visual Studio with C++ tools is installed."
-        exit 1
-    }
-
-    $projectPath = Join-Path $driverDir "AegisFilter.vcxproj"
-    if (-not (Test-Path $projectPath)) {
-        Write-Error "[-] Driver project file not found: $projectPath"
-        exit 1
-    }
-
-    $buildArgs = @(
-        "`"$projectPath`"",
-        "/p:Configuration=$Configuration",
-        "/p:Platform=$Platform",
-        "/p:OutDir=`"$outputDir\`"",
-        "/t:Rebuild",
-        "/m"
-    )
-
-    Write-Host "Executing: & `"$msBuildExe`" $buildArgs" -ForegroundColor DarkGray
-    & $msBuildExe $buildArgs
-
+function Invoke-CheckedDriverTool {
+    param([string]$Executable, [string[]]$ToolArguments)
+    & $Executable @ToolArguments
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "[-] Minifilter driver compilation failed with exit code $LASTEXITCODE."
-        exit $LASTEXITCODE
+        throw "Driver tool failed with exit code $LASTEXITCODE : $Executable"
     }
-
-    Write-Host "[+] Minifilter driver compiled successfully: $outputDir\AegisFilter.sys" -ForegroundColor Green
-} else {
-    Write-Host "[*] STEP 2: Compilation skipped by user (-SkipBuild)." -ForegroundColor DarkGray
 }
 
-# Copy INF file to output directory
-Copy-Item (Join-Path $driverDir "AegisFilter.inf") (Join-Path $outputDir "AegisFilter.inf") -Force
-Write-Host "[+] Copied AegisFilter.inf to $outputDir" -ForegroundColor Green
-
-# -------------------------------------------------------------------------
-# STEP 3: Catalog (.cat) File Generation via Inf2Cat
-# -------------------------------------------------------------------------
-Write-Host ""
-Write-Host "[*] STEP 3: Generating driver package catalog (.cat) file..." -ForegroundColor Yellow
-
-$inf2cat = Get-Command inf2cat.exe -ErrorAction SilentlyContinue
-if ($inf2cat) {
-    & inf2cat.exe /driver:"$outputDir" /os:10_X64,Server2022_X64,Server2019_X64
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "[+] Driver catalog generated: $outputDir\AegisFilter.cat" -ForegroundColor Green
-    } else {
-        Write-Warning "[!] Inf2Cat exited with code $LASTEXITCODE. Continuing without catalog..."
+$msbuild = Get-Command msbuild.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+$msbuildPath = if ($msbuild) { $msbuild.Source } else { $null }
+if (-not $msbuildPath) {
+    foreach ($edition in @("Enterprise", "Professional", "Community")) {
+        $candidate = "C:\Program Files\Microsoft Visual Studio\2022\$edition\MSBuild\Current\Bin\amd64\MSBuild.exe"
+        if (Test-Path -LiteralPath $candidate) { $msbuildPath = $candidate; break }
     }
-} else {
-    Write-Warning "[!] inf2cat.exe not found. Catalog generation skipped."
 }
-
-# -------------------------------------------------------------------------
-# STEP 4: Test Certificate Setup
-# -------------------------------------------------------------------------
+if (-not $msbuildPath) { throw "MSBuild/WDK C++ toolchain is required; no partial success will be reported." }
+$inf2catPath = Find-DriverTool "inf2cat.exe"
+$signtoolPath = if (-not $SkipSign) { Find-DriverTool "signtool.exe" } else { $null }
 if (-not $SkipSign) {
-    Write-Host ""
-    Write-Host "[*] STEP 4: Verifying/Creating Test Signing Certificate..." -ForegroundColor Yellow
-
-    $cert = Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*Ultron Defender Driver Test Signing Authority*" } | Select-Object -First 1
-
-    if (-not $cert) {
-        Write-Host "[*] Generating new SHA256 Code-Signing Certificate in LocalMachine\My..." -ForegroundColor Cyan
-        try {
-            $cert = New-SelfSignedCertificate `
-                -Type CodeSigningCert `
-                -Subject $certSubject `
-                -FriendlyName $certFriendlyName `
-                -CertStoreLocation "Cert:\LocalMachine\My" `
-                -HashAlgorithm "SHA256" `
-                -KeyLength 2048 `
-                -NotAfter (Get-Date).AddYears(5)
-
-            # Add to Root and TrustedPublisher stores for driver loading
-            $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
-            $rootStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-            $rootStore.Add($cert)
-            $rootStore.Close()
-
-            $pubStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("TrustedPublisher", "LocalMachine")
-            $pubStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-            $pubStore.Add($cert)
-            $pubStore.Close()
-
-            Write-Host "[+] Installed certificate to Root and TrustedPublisher stores: $($cert.Thumbprint)" -ForegroundColor Green
-        } catch {
-            Write-Warning "[!] Failed to create LocalMachine certificate (requires Administrator). Attempting CurrentUser store..."
-            $cert = New-SelfSignedCertificate `
-                -Type CodeSigningCert `
-                -Subject $certSubject `
-                -CertStoreLocation "Cert:\CurrentUser\My" `
-                -HashAlgorithm "SHA256"
-        }
-    } else {
-        Write-Host "[+] Found existing test signing certificate: $($cert.Thumbprint)" -ForegroundColor Green
+    if ($SigningCertificateThumbprint -notmatch '^[0-9a-fA-F]{40}$') {
+        throw "Provide the thumbprint of an existing signing certificate; this script never creates or imports host trust."
     }
-
-    # -------------------------------------------------------------------------
-    # STEP 5: Sign Driver & Catalog via SignTool
-    # -------------------------------------------------------------------------
-    Write-Host ""
-    Write-Host "[*] STEP 5: Signing AegisFilter.sys and catalog with Authenticode SHA256..." -ForegroundColor Yellow
-
-    $signtool = Get-Command signtool.exe -ErrorAction SilentlyContinue
-    $sysPath = Join-Path $outputDir "AegisFilter.sys"
-    $catPath = Join-Path $outputDir "AegisFilter.cat"
-
-    if ($signtool -and (Test-Path $sysPath)) {
-        & signtool.exe sign /v /s My /n "Ultron Defender Driver Test Signing Authority" /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 "$sysPath"
-        if (Test-Path $catPath) {
-            & signtool.exe sign /v /s My /n "Ultron Defender Driver Test Signing Authority" /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 "$catPath"
-        }
-        Write-Host "[+] Binary and catalog test-signing completed successfully!" -ForegroundColor Green
-    } else {
-        Write-Warning "[!] signtool.exe not found in PATH or $sysPath missing. Signing skipped."
+    $certificate = Get-Item -LiteralPath ("Cert:\CurrentUser\My\" + $SigningCertificateThumbprint)
+    if (-not $certificate.HasPrivateKey -or $certificate.NotAfter -le (Get-Date) -or $certificate.NotBefore -gt (Get-Date)) {
+        throw "The existing signing certificate is expired, not yet valid, or has no private key."
     }
 }
 
-# -------------------------------------------------------------------------
-# STEP 6: Optional Driver Installation
-# -------------------------------------------------------------------------
-if ($Install) {
-    Write-Host ""
-    Write-Host "[*] STEP 6: Installing and starting AegisFilter..." -ForegroundColor Yellow
+$driverDirectory = Join-Path $PSScriptRoot "AegisFilter"
+$outputDirectory = Join-Path $PSScriptRoot ("bin\" + $Platform + "\" + $Configuration)
+$projectPath = Join-Path $driverDirectory "AegisFilter.vcxproj"
+$sourceInf = Get-Content -LiteralPath (Join-Path $driverDirectory "AegisFilter.inf") -Raw
+if (($sourceInf | Select-String -Pattern '"UNASSIGNED"' -AllMatches).Matches.Count -ne 1) {
+    throw "The source INF must remain an unassigned template; review unexpected source changes before packaging."
+}
+New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+Invoke-CheckedDriverTool $msbuildPath @(
+    $projectPath, "/p:Configuration=$Configuration", "/p:Platform=$Platform",
+    "/p:OutDir=$outputDirectory\", "/t:Rebuild", "/m", "/warnAsError")
+$sysPath = Join-Path $outputDirectory "AegisFilter.sys"
+$catPath = Join-Path $outputDirectory "AegisFilter.cat"
+if (-not (Test-Path -LiteralPath $sysPath)) { throw "Successful tool exit did not produce the expected driver binary." }
+$packagedInf = $sourceInf.Replace('"UNASSIGNED"', ('"' + $AssignedAltitude + '"'))
+[System.IO.File]::WriteAllText((Join-Path $outputDirectory "AegisFilter.inf"), $packagedInf)
+Invoke-CheckedDriverTool $inf2catPath @("/driver:$outputDirectory", "/os:10_X64")
+if (-not (Test-Path -LiteralPath $catPath)) { throw "Catalog generation did not produce AegisFilter.cat." }
 
-    $infPath = Join-Path $outputDir "AegisFilter.inf"
-    Write-Host "[*] Executing INF installation: rundll32.exe setupapi.dll,InstallHinfSection DefaultInstall 132 $infPath" -ForegroundColor DarkCyan
-    Start-Process -FilePath "rundll32.exe" -ArgumentList "setupapi.dll,InstallHinfSection DefaultInstall 132 `"$infPath`"" -Wait
-
-    Write-Host "[*] Loading minifilter via fltmc..." -ForegroundColor DarkCyan
-    & fltmc load AegisFilter
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "[+] AegisFilter driver successfully loaded into Windows Filter Manager!" -ForegroundColor Green
-        & fltmc instances -n AegisFilter
-    } else {
-        Write-Warning "[!] fltmc load AegisFilter exited with code $LASTEXITCODE. Ensure 'bcdedit /set testsigning on' is enabled and the system has been rebooted."
+if (-not $SkipSign) {
+    foreach ($filePath in @($sysPath, $catPath)) {
+        Invoke-CheckedDriverTool $signtoolPath @("sign", "/v", "/s", "My", "/sha1", $SigningCertificateThumbprint,
+            "/fd", "SHA256", "/tr", "https://timestamp.digicert.com", "/td", "SHA256", $filePath)
+        Invoke-CheckedDriverTool $signtoolPath @("verify", "/kp", "/all", "/v", $filePath)
     }
 }
-
-Write-Host ""
-Write-Host "===================================================================" -ForegroundColor Cyan
-Write-Host "   BUILD & PACKAGING COMPLETE                                     " -ForegroundColor Cyan
-Write-Host "   Output files: $outputDir                                        " -ForegroundColor Cyan
-Write-Host "===================================================================" -ForegroundColor Cyan
+$artifactManifest = [ordered]@{
+    NativeMode = "AuditOnly"
+    ReleaseApproved = $false
+    Altitude = $AssignedAltitude
+    AssignmentEvidenceSha256 = (Get-FileHash -LiteralPath $assignmentEvidence.FullName -Algorithm SHA256).Hash
+    AssignmentIndependentlyVerified = $false
+    DriverSha256 = (Get-FileHash -LiteralPath $sysPath -Algorithm SHA256).Hash
+    CatalogSha256 = (Get-FileHash -LiteralPath $catPath -Algorithm SHA256).Hash
+    SigningRequested = (-not $SkipSign)
+    CreatedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
+}
+[System.IO.File]::WriteAllText((Join-Path $outputDirectory "pilot-artifact.json"), ($artifactManifest | ConvertTo-Json))
+Write-Warning "Audit-only build produced. No driver was installed or loaded; assignment validation, native identity, signing route and VM gates are still required."
+if ($SkipSign) { Write-Warning "Unsigned developer artifact: do not install or publish as a security release." }

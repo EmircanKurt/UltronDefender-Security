@@ -53,8 +53,8 @@ namespace AegisPC.Tests
 
             Assert.NotNull(verdict);
             Assert.True(verdict.IsSuspicious);
-            Assert.True(verdict.IsC2Beaconing);
-            Assert.Equal(90, verdict.RiskScore);
+            Assert.False(verdict.IsC2Beaconing);
+            Assert.Equal(35, verdict.RiskScore);
             Assert.Contains("c2-malware-server.evil", verdict.ThreatTitle);
         }
 
@@ -87,7 +87,7 @@ namespace AegisPC.Tests
         [Fact]
         public void WfpEnforcementService_Lifecycle_And_BlockIp_Tracking()
         {
-            using var wfp = new WfpEnforcementService();
+            using var wfp = new WfpEnforcementService(new InertBackend());
 
             Assert.Equal(0, wfp.ActiveBlockFilterCount);
 
@@ -113,14 +113,14 @@ namespace AegisPC.Tests
         }
 
         [Fact]
-        public void NetworkProtectionService_Integrates_WfpEnforcement_On_Malicious_Flow()
+        public void NetworkProtectionService_DomainHintDoesNotAuthorizeIpWideBlock()
         {
             var blocklist = new UrlBlocklistManager();
             blocklist.AddRule("evil-c2.net", UrlBlockCategory.C2Server, "Test C2");
             var hostsHelper = new HostsInjectionHelper();
             var dnsFilter = new DnsFilterService(blocklist, hostsHelper);
 
-            using var wfp = new WfpEnforcementService();
+            using var wfp = new WfpEnforcementService(new InertBackend());
             using var service = new NetworkProtectionService(dnsFilter, wfpEnforcement: wfp);
             service.Start();
 
@@ -137,8 +137,17 @@ namespace AegisPC.Tests
 
             Assert.NotNull(verdict);
             Assert.True(verdict.IsSuspicious);
-            // Verify that WFP recorded the IP block
-            Assert.True(wfp.ActiveBlockFilterCount > 0);
+            // A mutable label or review verdict is not an independently authorized action.
+            Assert.Equal(0, wfp.ActiveBlockFilterCount);
+        }
+        private sealed class InertBackend : IWfpNativeBackend
+        {
+            private ulong _nextId = 1;
+            public bool IsSupported => true;
+            public bool IsAvailable => true;
+            public (uint Error, ulong FilterId) AddOutboundFilter(System.Net.IPAddress address, string reason) => (0, _nextId++);
+            public uint DeleteFilter(ulong filterId) => 0;
+            public void Dispose() { }
         }
     }
 }

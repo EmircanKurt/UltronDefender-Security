@@ -61,7 +61,7 @@
                          AutoGenerateColumns="False" IsReadOnly="True"
                          SelectionMode="Single" Margin="0,0,16,0">
                 <ui:DataGrid.Columns>
-                    <DataGridTextColumn Header="Uygulama Adı" Binding="{Binding DisplayName}" Width="240"/>
+                    <DataGridTextColumn Header="Uygulama Adı" Binding="{Binding DisplayName}" Width="*" MinWidth="180"/>
                     <DataGridTextColumn Header="Yayımcı" Binding="{Binding Publisher}" Width="160"/>
                     <DataGridTextColumn Header="Sürüm" Binding="{Binding Version}" Width="90"/>
                     <DataGridTextColumn Header="Boyut (KB)" Binding="{Binding EstimatedSizeKB, StringFormat='\{0:N0\} KB'}" Width="100"/>

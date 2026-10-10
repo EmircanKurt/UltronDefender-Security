@@ -44,7 +44,7 @@ namespace AegisPC.Recommendations.Engine
             if (_findingService != null)
             {
                 var findings = await _findingService.GetAllFindingsAsync(cancellationToken);
-                var active = findings.Where(f => f.Status == FindingStatus.Active).ToList();
+                var active = findings.Where(f => f.Status == FindingStatus.Active && FindingVisibilityPolicy.IsSecurityConcern(f)).ToList();
                 activeFindings = active.Count;
 
                 int high = active.Count(f => f.RiskLevel == RiskLevel.HighRisk);

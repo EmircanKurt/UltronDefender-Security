@@ -1,86 +1,74 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Models;
 using Microsoft.Extensions.Logging;
 
-namespace AegisPC.BrowserSecurity.Browser
+namespace AegisPC.BrowserSecurity.Browser;
+
+/// <summary>Coordinates metadata-only Browser Defender inventory with explicit authorization roots and coverage gaps.</summary>
+public sealed class BrowserSecurityService : IBrowserInventoryScanner
 {
-    public class BrowserSecurityService : IBrowserSecurityScanner
+    private readonly ILogger<BrowserSecurityService>? _logger;
+    private readonly IBrowserProfileResolver _resolver;
+    private BrowserInventorySnapshot _lastSnapshot = new() { Coverage = BrowserInventoryCoverage.Unknown };
+
+    /// <summary>Creates an inventory coordinator; services must supply authorized user roots instead of enumerating all accounts.</summary>
+    public BrowserSecurityService(ILogger<BrowserSecurityService>? logger = null, IBrowserProfileResolver? resolver = null)
     {
-        private readonly ILogger<BrowserSecurityService>? _logger;
+        _logger = logger;
+        _resolver = resolver ?? new CurrentUserBrowserProfileResolver();
+    }
 
-        public BrowserSecurityService(ILogger<BrowserSecurityService>? logger = null)
+    /// <summary>Gets the last completed inventory; unknown before observation and never a guarantee against cookie theft.</summary>
+    public BrowserInventorySnapshot LastSnapshot => Volatile.Read(ref _lastSnapshot);
+
+    /// <summary>Returns real profile rows for compatibility; detailed callers should use <see cref="ScanInventoryAsync"/>.</summary>
+    public async Task<List<BrowserProfile>> ScanAllBrowsersAsync(CancellationToken cancellationToken = default) =>
+        (await ScanInventoryAsync(cancellationToken).ConfigureAwait(false)).Profiles.Select(item => item.Profile).ToList();
+
+    /// <summary>Inventories authorized roots with cancellation and bounded outputs; no fictitious clean profile is returned.</summary>
+    public Task<BrowserInventorySnapshot> ScanInventoryAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(() => Inventory(cancellationToken), cancellationToken);
+
+    /// <summary>Gets the first observed real profile of the requested browser, or null when none could be observed.</summary>
+    public async Task<BrowserProfile?> ScanBrowserAsync(BrowserType browserType, CancellationToken cancellationToken = default) =>
+        (await ScanAllBrowsersAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault(item => item.BrowserType == browserType);
+
+    private BrowserInventorySnapshot Inventory(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var profiles = new List<BrowserProfileInventory>();
+        var issues = new List<BrowserInventoryIssue>();
+        var anyPresent = false;
+        var incomplete = false;
+        var roots = _resolver.ResolveRoots();
+        if (roots.Count == 0) issues.Add(new BrowserInventoryIssue { Code = "AuthorizedBrowserRootsUnavailable" });
+        if (roots.Count > 32) issues.Add(new BrowserInventoryIssue { Code = "BrowserRootLimitExceeded" });
+        foreach (var root in roots.Take(32).DistinctBy(item => (item.BrowserType, item.RootPath.ToUpperInvariant())))
         {
-            _logger = logger;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(root.RootPath))
+            { issues.Add(new BrowserInventoryIssue { Code = "InvalidBrowserRoot" }); continue; }
+            var snapshot = root.BrowserType == BrowserType.Firefox
+                ? FirefoxSecurityScanner.ScanInventory(root.RootPath, cancellationToken)
+                : ChromiumExtensionScanner.ScanInventory(root.RootPath, root.BrowserType, cancellationToken);
+            anyPresent |= snapshot.Coverage != BrowserInventoryCoverage.NotPresent;
+            incomplete |= snapshot.Coverage is BrowserInventoryCoverage.Partial or BrowserInventoryCoverage.Unknown
+                || snapshot.Profiles.Any(item => item.Coverage != BrowserInventoryCoverage.Complete);
+            profiles.AddRange(snapshot.Profiles.Take(Math.Max(0, 256 - profiles.Count)));
+            issues.AddRange(snapshot.Issues.Take(Math.Max(0, 256 - issues.Count)));
+            if (profiles.Count >= 256)
+            { issues.Add(new BrowserInventoryIssue { Code = "AggregateProfileLimitExceeded" }); break; }
         }
-
-        public Task<List<BrowserProfile>> ScanAllBrowsersAsync(CancellationToken cancellationToken = default)
+        var completed = new BrowserInventorySnapshot
         {
-            return Task.Run(() =>
-            {
-                var profiles = new List<BrowserProfile>();
-                var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-
-                // 1. Google Chrome
-                var chromeUserData = Path.Combine(localAppData, "Google", "Chrome", "User Data");
-                profiles.AddRange(ChromiumExtensionScanner.ScanChromiumProfiles(chromeUserData, BrowserType.Chrome));
-
-                // 2. Microsoft Edge
-                var edgeUserData = Path.Combine(localAppData, "Microsoft", "Edge", "User Data");
-                profiles.AddRange(ChromiumExtensionScanner.ScanChromiumProfiles(edgeUserData, BrowserType.Edge));
-
-                // 3. Brave Browser
-                var braveUserData = Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data");
-                profiles.AddRange(ChromiumExtensionScanner.ScanChromiumProfiles(braveUserData, BrowserType.Brave));
-
-                // 4. Opera & Opera GX
-                var operaUserData = Path.Combine(appData, "Opera Software", "Opera Stable");
-                profiles.AddRange(ChromiumExtensionScanner.ScanChromiumProfiles(operaUserData, BrowserType.Opera));
-
-                var operaGxUserData = Path.Combine(appData, "Opera Software", "Opera GX Stable");
-                profiles.AddRange(ChromiumExtensionScanner.ScanChromiumProfiles(operaGxUserData, BrowserType.Opera));
-
-                // 5. Vivaldi
-                var vivaldiUserData = Path.Combine(localAppData, "Vivaldi", "User Data");
-                profiles.AddRange(ChromiumExtensionScanner.ScanChromiumProfiles(vivaldiUserData, BrowserType.Vivaldi));
-
-                // 6. Yandex Browser
-                var yandexUserData = Path.Combine(localAppData, "Yandex", "YandexBrowser", "User Data");
-                if (Directory.Exists(yandexUserData))
-                {
-                    profiles.AddRange(ChromiumExtensionScanner.ScanChromiumProfiles(yandexUserData, BrowserType.Yandex));
-                }
-
-                // 7. Mozilla Firefox
-                profiles.AddRange(FirefoxSecurityScanner.ScanFirefoxProfiles());
-
-                // Deduplicate and ensure at least an informative default entry if no browser profiles found
-                if (profiles.Count == 0)
-                {
-                    profiles.Add(new BrowserProfile
-                    {
-                        BrowserType = BrowserType.Edge,
-                        ProfileName = "Sistem Varsayılanı",
-                        ProfilePath = "C:\\Windows\\SystemApps",
-                        Extensions = new List<BrowserExtension>()
-                    });
-                }
-
-                return profiles;
-            }, cancellationToken);
-        }
-
-        public async Task<BrowserProfile?> ScanBrowserAsync(BrowserType browserType, CancellationToken cancellationToken = default)
-        {
-            var all = await ScanAllBrowsersAsync(cancellationToken);
-            return all.FirstOrDefault(p => p.BrowserType == browserType);
-        }
+            Profiles = profiles.ToArray(), Issues = issues.Take(256).ToArray(),
+            Coverage = incomplete || issues.Count > 0 ? profiles.Count > 0 ? BrowserInventoryCoverage.Partial : BrowserInventoryCoverage.Unknown
+                : anyPresent ? BrowserInventoryCoverage.Complete : BrowserInventoryCoverage.NotPresent
+        };
+        Interlocked.Exchange(ref _lastSnapshot, completed);
+        _logger?.LogInformation("Browser Defender metadata inventory completed: {ProfileCount} profiles, coverage {Coverage}.",
+            profiles.Count, completed.Coverage);
+        return completed;
     }
 }

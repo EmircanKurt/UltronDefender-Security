@@ -17,6 +17,10 @@ namespace AegisPC.Core.Models
         ProcessInjection
     }
 
+    /// <summary>
+    /// Reported telemetry for review. Source labels, event IDs, timestamps, and actor metadata are
+    /// descriptive inputs; they do not authenticate a process or authorize containment.
+    /// </summary>
     public class BehaviorEvent
     {
         public string EventId { get; set; } = Guid.NewGuid().ToString("N");
@@ -31,8 +35,30 @@ namespace AegisPC.Core.Models
         public string TargetResource { get; set; } = string.Empty;
         public string Details { get; set; } = string.Empty;
         public double RiskWeight { get; set; } = 10.0;
+
+        /// <summary>Gets or sets the collector label used for deduplication and provenance, never as proof of trust.</summary>
+        public string Source { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the upstream observation ID. Related features copied from one source event
+        /// must retain this value; an absent value falls back to EventId for replay deduplication.
+        /// </summary>
+        public string? OriginatingEventId { get; set; }
+
+        /// <summary>
+        /// Gets or sets the reported process creation time in UTC. Missing or invalid creation identity
+        /// leaves actor correlation Unknown; the telemetry Timestamp must never be substituted.
+        /// </summary>
+        public DateTime? ProcessStartTimeUtc { get; set; }
+
+        /// <summary>
+        /// Gets or sets optional reported parent creation time in UTC. A parent PID alone does not
+        /// establish ancestry; this observation-only model does not authenticate the reported relationship.
+        /// </summary>
+        public DateTime? ParentProcessStartTimeUtc { get; set; }
     }
 
+    /// <summary>Describes a reported behavior feature and its provenance without asserting malicious intent.</summary>
     public class BehaviorEvidence
     {
         public string EvidenceId { get; set; } = Guid.NewGuid().ToString("N");
@@ -43,8 +69,18 @@ namespace AegisPC.Core.Models
         public string Explanation { get; set; } = string.Empty;
         public double Confidence { get; set; } = 0.9;
         public int Severity { get; set; } = 50;
+
+        /// <summary>Gets or sets the detached telemetry ID that produced this observation.</summary>
+        public string SourceEventId { get; set; } = string.Empty;
+
+        /// <summary>Gets or sets the upstream observation ID shared by features derived from the same event.</summary>
+        public string OriginatingEventId { get; set; } = string.Empty;
+
+        /// <summary>Gets or sets the reported collector label; a label is not authenticated provenance.</summary>
+        public string ObservationSource { get; set; } = string.Empty;
     }
 
+    /// <summary>Displays observed evidence and the actual action status; a heuristic score is not malware proof.</summary>
     public class SecurityIncident : System.ComponentModel.INotifyPropertyChanged
     {
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
@@ -78,9 +114,20 @@ namespace AegisPC.Core.Models
         }
 
         public int RootPid { get; set; }
+        /// <summary>Displays an unavailable actor without fabricating PID zero as a correlated process.</summary>
+        public string ActorPidDisplay => RootPid > 0 ? RootPid.ToString(System.Globalization.CultureInfo.InvariantCulture) : "İlişkilendirilmedi";
         public string RootProcessName { get; set; } = string.Empty;
         public string RootExecutablePath { get; set; } = string.Empty;
         public string? RootHashSha256 { get; set; }
+
+        /// <summary>Gets or sets reported creation identity, or null when the actor cannot be correlated.</summary>
+        public DateTime? RootProcessStartTimeUtc { get; set; }
+
+        /// <summary>
+        /// Gets or sets actor attribution status. Unknown means a reported PID was not correlated;
+        /// ReportedCreationIdentity is still caller telemetry and never authorizes mutation.
+        /// </summary>
+        public string ActorIdentityStatus { get; set; } = "Unknown";
 
         public int RiskScore
         {

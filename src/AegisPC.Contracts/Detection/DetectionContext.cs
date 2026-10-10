@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AegisPC.Core.Models;
 
 namespace AegisPC.Contracts.Detection
 {
@@ -45,9 +46,15 @@ namespace AegisPC.Contracts.Detection
         public int? ParentProcessId { get; set; }
         public string? ProcessName { get; set; }
         public bool IsRunningProcess { get; set; }
+        /// <summary>Authenticated caller policy can bypass deep analysis, but cannot suppress authoritative signature inspection.</summary>
+        public bool IsUserExcluded { get; set; }
         public FileIdentity? FileIdentity { get; set; }
         public ProcessIdentity? ProcessContext { get; set; }
         public Dictionary<string, object> Properties { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public ScanContext? SharedScan { get; set; }
+        /// <summary>Routes all applicable detectors using observed structure; omissions remain explicit coverage.</summary>
+        public FileContentClassification? ContentClassification { get; set; }
+        public List<string> CoverageLimitations { get; set; } = new();
     }
 
     /// <summary>
@@ -55,11 +62,25 @@ namespace AegisPC.Contracts.Detection
     /// </summary>
     public class DetectionResult
     {
+        /// <summary>Classification is separate from risk and actions; legacy default remains unclassified.</summary>
+        public AegisPC.Core.Enums.SoftwareFindingClass SoftwareClass { get; set; }
+        /// <summary>Authenticated optional-tool provenance.</summary>
+        public SoftwareClassificationMetadata? SoftwareClassification { get; set; }
+        /// <summary>Independent malware evidence cannot be suppressed by optional presentation.</summary>
+        public bool HasIndependentMalwareEvidence { get; set; }
+        /// <summary>Stable decision semantics; absent old metadata requires reanalysis.</summary>
+        public string RuleSetVersion { get; set; } = DetectionRuleSet.Version;
         public string CorrelationId { get; set; } = string.Empty;
         public string FilePath { get; set; } = string.Empty;
         public string? SHA256 { get; set; }
-        public DetectionVerdict Verdict { get; set; } = DetectionVerdict.Clean;
-        public DetectionPolicy RecommendedPolicy { get; set; } = DetectionPolicy.Allow;
+        public DetectionVerdict Verdict { get; set; } = DetectionVerdict.Unknown;
+        /// <summary>True only when the configured analysis finished; a default result is unknown and incomplete.</summary>
+        public bool IsComplete { get; set; }
+        /// <summary>Explicit user permission, independent of inspection coverage and evidence.</summary>
+        public bool PolicyBypassed { get; set; }
+        public int FailedDetectorCount { get; set; }
+        public List<string> CoverageLimitations { get; set; } = new();
+        public DetectionPolicy RecommendedPolicy { get; set; } = DetectionPolicy.Observe;
         public DetectionPolicy Policy { get => RecommendedPolicy; set => RecommendedPolicy = value; }
         public string RecommendedAction => RecommendedPolicy.ToString();
         public int RiskScore { get; set; }
@@ -71,7 +92,7 @@ namespace AegisPC.Contracts.Detection
         public string Severity => RiskScore >= 85 ? "Critical" : (RiskScore >= 70 ? "High" : (RiskScore >= 50 ? "Suspicious" : (RiskScore >= 30 ? "Low" : "Clean")));
         public EvidenceConfidence OverallConfidence { get; set; } = EvidenceConfidence.Low;
         public EvidenceConfidence Confidence { get => OverallConfidence; set => OverallConfidence = value; }
-        public string ThreatTitle { get; set; } = "Güvenli / Temiz";
+        public string ThreatTitle { get; set; } = string.Empty;
         public List<SecurityEvidence> Evidences { get; set; } = new();
         public FileIdentity? FileIdentity { get; set; }
         public ProcessIdentity? ProcessContext { get; set; }

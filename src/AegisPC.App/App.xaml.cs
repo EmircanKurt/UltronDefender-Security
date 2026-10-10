@@ -13,6 +13,7 @@ namespace AegisPC.App
     public partial class App : System.Windows.Application
     {
         public static IServiceProvider? ServiceProvider { get; private set; }
+        public static bool IsStartMinimized { get; set; }
         private static readonly string LogFile = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "AegisPC", "Logs", "aegis_debug.log");
@@ -28,22 +29,41 @@ namespace AegisPC.App
                 }
                 File.AppendAllText(LogFile, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {msg}\r\n");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Failed to write to app log: {ex.Message}");
+            }
         }
 
         protected override async void OnStartup(StartupEventArgs e)
         {
+            // Scanner ILogger failures previously had no provider and vanished from runtime diagnostics.
+            Serilog.Log.Logger = AegisPC.Infrastructure.Logging.SerilogConfiguration.Configure();
+            var diagnosticAssembly = typeof(App).Assembly;
+            var diagnosticVersion = diagnosticAssembly.GetName().Version;
+            Serilog.Log.ForContext("SourceContext", "AegisPC.App.Startup")
+                .Information("Application diagnostic session started with module {ModuleId}, version {VersionMajor}.{VersionMinor}.{VersionBuild}.",
+                    diagnosticAssembly.ManifestModule.ModuleVersionId, diagnosticVersion?.Major ?? 0,
+                    diagnosticVersion?.Minor ?? 0, diagnosticVersion?.Build ?? 0);
             Log("=== AegisPC App Startup Begin ===");
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
             DispatcherUnhandledException += App_DispatcherUnhandledException;
+            TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
 
-            // GÖREV 2: 1.5-2 sn'lik koyu temalı açılış (splash) animasyonu
+            IsStartMinimized = Array.Exists(e.Args ?? Array.Empty<string>(), arg =>
+                arg.Equals("--minimized", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("/minimized", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("-minimized", StringComparison.OrdinalIgnoreCase));
+            // Keep interactive startup visible a little longer; background startup must not flash a window.
             SplashWindow? splash = null;
-            DateTime splashStart = DateTime.UtcNow;
+            var splashClock = System.Diagnostics.Stopwatch.StartNew();
             try
             {
+                if (!IsStartMinimized)
+                {
                 splash = new SplashWindow();
                 splash.Show();
+                }
             }
             catch (Exception ex)
             {
@@ -58,6 +78,21 @@ namespace AegisPC.App
                 ServiceRegistration.RegisterServices(serviceCollection);
                 ServiceProvider = serviceCollection.BuildServiceProvider();
                 Log("2. Services registered successfully.");
+                // Schema readiness precedes any repositories, event subscriptions or protection-dependent view models.
+                await ServiceProvider.GetRequiredService<AegisPC.Contracts.Services.IDatabaseService>().InitializeAsync();
+                await ServiceProvider.GetRequiredService<AegisPC.Contracts.Services.ISettingsService>().LoadAsync();
+                _ = ServiceProvider.GetRequiredService<AegisPC.App.Services.UltronAiServicePreferenceSync>();
+
+                // Eagerly resolve ScanViewModel so it attaches to IScanCoordinatorService events immediately from boot
+                try
+                {
+                    _ = ServiceProvider.GetService<AegisPC.App.ViewModels.ScanViewModel>();
+                    Log("2.1. ScanViewModel eagerly resolved.");
+                }
+                catch (Exception ex)
+                {
+                    Log($"[WARN] ScanViewModel eager resolve failed: {ex.Message}");
+                }
 
 
                 // Register Windows Startup entry & Antivirus Security Center Registration
@@ -86,28 +121,15 @@ namespace AegisPC.App
                 var mainWindow = ServiceProvider.GetRequiredService<MainWindow>();
                 MainWindow = mainWindow;
 
-                bool startMinimized = false;
-                if (e.Args != null)
-                {
-                    foreach (var arg in e.Args)
-                    {
-                        if (arg.Equals("--minimized", StringComparison.OrdinalIgnoreCase) || 
-                            arg.Equals("/minimized", StringComparison.OrdinalIgnoreCase) ||
-                            arg.Equals("-minimized", StringComparison.OrdinalIgnoreCase))
-                        {
-                            startMinimized = true;
-                            break;
-                        }
-                    }
-                }
+                bool startMinimized = IsStartMinimized;
 
                 // DI konteyneri hazırlandıktan sonra splash penceresini 250 ms fade-out ile kapat
                 try
                 {
                     if (splash != null)
                     {
-                        var elapsed = DateTime.UtcNow - splashStart;
-                        var minDuration = TimeSpan.FromMilliseconds(1600);
+                        var elapsed = splashClock.Elapsed;
+                        var minDuration = TimeSpan.FromMilliseconds(2600);
                         if (elapsed < minDuration)
                         {
                             await Task.Delay(minDuration - elapsed);
@@ -119,14 +141,14 @@ namespace AegisPC.App
                         }
                         else
                         {
-                            await splash.FadeOutAndCloseAsync(250);
+                            await splash.FadeOutAndCloseAsync(350);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Serilog.Log.Warning(ex, "Splash penceresi kapatılırken hata oluştu.");
-                    try { splash?.Close(); } catch { }
+                    Serilog.Log.Warning(ex, "Splash window close failed.");
+                    try { splash?.Close(); } catch (Exception closeEx) { Serilog.Log.Warning(closeEx, "Fallback splash.Close() failed."); }
                 }
 
                 if (!startMinimized)
@@ -147,7 +169,9 @@ namespace AegisPC.App
                     var toastService = ServiceProvider.GetService<AegisPC.Contracts.Services.IWindowsToastNotificationService>();
                     var behaviorEngine = ServiceProvider.GetService<AegisPC.Contracts.Services.IBehaviorEngine>();
                     var ipcClient = ServiceProvider.GetService<AegisPC.ServiceContracts.IServiceIpcClient>();
-                    var scanCoordinator = ServiceProvider.GetService<AegisPC.Contracts.Services.IScanCoordinatorService>();
+
+                    // Eagerly resolve ScanViewModel so it attaches to IScanCoordinatorService events immediately from boot
+                    var scanVm = ServiceProvider.GetService<AegisPC.App.ViewModels.ScanViewModel>();
 
                     // Initialize System Tray Icon First
                     var trayService = ServiceProvider.GetService<AegisPC.App.Services.ISystemTrayService>();
@@ -158,41 +182,23 @@ namespace AegisPC.App
                         if (bgService != null)
                         {
                             bgService.OnNotificationRaised += (title, msg) => toastService.ShowToast(title, msg);
-                            bgService.StartProtection();
                         }
 
                         if (behaviorEngine != null)
                         {
                             behaviorEngine.OnThreatContained += (proc, threat) =>
                             {
-                                toastService.ShowToast($"🚨 Tehdit Engellendi: {threat}", $"Zararlı davranış sergileyen '{proc}' süreci sonlandırıldı ve dosya karantinaya alındı.", "Error");
+                                toastService.ShowToast($"⚠️ Davranış Uyarısı: {threat}", $"'{proc}' için güvenlik olayı kaydedildi. Müdahalenin ayrıntılarını Olay Merkezinden inceleyin.", "Warning");
                             };
                         }
 
-                        if (scanCoordinator != null)
-                        {
-                            scanCoordinator.ScanCompleted += (result) =>
-                            {
-                                // Otomatik (zamanlanmış) taramalar BackgroundProtectionService tarafından
-                                // yalnızca YENİ bulgu varsa bildirilir; burada çift bildirim yapma.
-                                if (AegisPC.Security.RealTime.BackgroundProtectionService.IsAutomaticScanInProgress) return;
-
-                                int activeCount = result.Findings.Count(f => f.Status == AegisPC.Core.Enums.FindingStatus.Active && !f.IsAllowlisted);
-                                if (activeCount > 0)
-                                {
-                                    toastService.ShowToast(
-                                        "🚨 Ultron Defender: Tehdit Tespit Edildi!",
-                                        $"{result.ScanType} taraması tamamlandı: {activeCount} adet riskli tehdit bulundu. Detayları görmek için tıklayın.",
-                                        "Warning");
-                                }
-                            };
-                        }
+                        // ScanViewModel owns the final scan notification. A second startup
+                        // subscription would count heuristic findings as threats and duplicate it.
 
                         // Start Core Real-Time Progressive Protection Engine
                         var realTimeEngine = ServiceProvider.GetService<AegisPC.Security.RealTime.IRealTimeProtectionEngine>();
                         if (realTimeEngine != null)
                         {
-                            realTimeEngine.Start();
                             realTimeEngine.OnNotificationRaised += (title, msg, type) =>
                             {
                                 toastService?.ShowToast(title, msg, type);
@@ -202,13 +208,14 @@ namespace AegisPC.App
                         var ransomwareEngine = ServiceProvider.GetService<AegisPC.Security.RealTime.IRansomwareProtectionEngine>();
                         if (ransomwareEngine != null)
                         {
-                            ransomwareEngine.StartShield();
                             ransomwareEngine.OnRansomwareAttemptDetected += (s, ev) =>
                             {
                                 toastService?.ShowToast(
-                                    "🚨 Fidye Saldırısı Engellendi!",
-                                    $"Şüpheli şifreleme girişimi durduruldu: '{System.IO.Path.GetFileName(ev.OffendingFilePath)}'",
-                                    "Error");
+                                    "⚠️ Şüpheli Şifreleme Uyarısı",
+                                    ev.ProcessTerminated
+                                        ? $"Süreç sonlandırıldı. İncelenen dosya: '{System.IO.Path.GetFileName(ev.OffendingFilePath)}'. Dosya karantinası bu olayda doğrulanmadı."
+                                        : $"Şüpheli etkinlik kaydedildi: '{System.IO.Path.GetFileName(ev.OffendingFilePath)}'. Müdahale sonucu doğrulanmadı; olayı inceleyin.",
+                                    "Warning");
                             };
                         }
 
@@ -220,9 +227,9 @@ namespace AegisPC.App
                             etwMonitor.ThreatDetected += (alert) =>
                             {
                                 toastService?.ShowToast(
-                                    $"🚨 ETW Tehdit Engellendi: {alert.ThreatName}",
-                                    $"Zararlı komut çalıştıran süreç durduruldu (PID: {alert.ProcessId})\nKomut: {alert.CommandLine}",
-                                    "Danger");
+                                    $"⚠️ Süreç Komutu Uyarısı: {alert.ThreatName}",
+                                    $"Şüpheli komut algılandı (PID: {alert.ProcessId}). Bu bildirim süreç sonlandırmasını doğrulamaz.\nKomut: {alert.CommandLine}",
+                                    "Warning");
                             };
 
                             // P0 Telemetry Pipeline: Wire Process Creation -> DAG Lineage Tree -> Behavior Engine
@@ -273,16 +280,21 @@ namespace AegisPC.App
                                 }
                             };
 
-                            etwMonitor.Start();
                         }
 
                         if (ipcClient != null)
                         {
                             ipcClient.ThreatDetected += (threat) =>
                             {
-                                toastService.ShowToast($"🚨 Arka Plan Tehdit Uyarısı: {threat.ThreatName}", $"Dosya: {threat.FilePath}\nİşlem: {threat.ActionTaken}", "Warning");
+                                if (!AegisPC.Core.Models.FindingVisibilityPolicy.IsVisible(threat.SoftwareClass,
+                                    threat.SoftwareClassification, threat.SHA256, threat.RuleSetVersion, threat.InspectionComplete,
+                                    threat.CoverageLimitations.Length != 0, threat.PolicyBypassed, threat.HasIndependentMalwareEvidence,
+                                    threat.RiskLevel, ServiceProvider?.GetService<AegisPC.Contracts.Services.ISettingsService>()?.GetSetting("ShowPotentiallyUnwantedToolFindings", false) == true)) return;
+                                string label = threat.IsObservationOnly ? "Güvenlik gözlemi" : "Güvenlik bulgusu";
+                                toastService.ShowToast($"{label}: {threat.ThreatName}", $"Dosya: {threat.FilePath}\nİşlem: {threat.ActionTaken}", "Warning");
                             };
                             _ = ipcClient.ConnectAsync();
+                            Log("Protection engines are service-owned; UI connected through IPC without starting duplicate local watchers.");
                         }
                     }
 
@@ -299,6 +311,9 @@ namespace AegisPC.App
                 Log($"CRITICAL STARTUP ERROR: {ex}");
                 MessageBox.Show($"Uygulama başlatılırken bir hata oluştu:\n\n{ex.Message}\n\nDetay:\n{ex.StackTrace}", 
                     "Ultron Defender Total Security - Başlatma Hatası", MessageBoxButton.OK, MessageBoxImage.Error);
+                try { splash?.Close(); } catch (Exception closeError) { Serilog.Log.Warning(closeError, "Startup failure splash cleanup failed."); }
+                Shutdown(1);
+                return;
             }
 
             base.OnStartup(e);
@@ -323,21 +338,28 @@ namespace AegisPC.App
                     // 1. Yönetilen bellek 400 MB'ı aşarsa veya fiziksel RAM 1 GB'ı geçerse optimize toplama
                     if (managedMemory > 400 * 1024 * 1024 || workingSet > 1024 * 1024 * 1024)
                     {
-                        GC.Collect(2, GCCollectionMode.Optimized, blocking: false);
+                        // GC.Collect kaldırıldı: .NET 8 Server GC bu işi otomatik yönetir, manuel GC WPF UI thread'ini dondurur
+                        // GC.Collect(2, GCCollectionMode.Optimized, blocking: false);
 
                         // Kullanılmayan fiziksel sayfaları Windows çekirdeğine geri ver
                         try
                         {
                             SetProcessWorkingSetSize(System.Diagnostics.Process.GetCurrentProcess().Handle, (IntPtr)(-1), (IntPtr)(-1));
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            Log($"[TRACE] SetProcessWorkingSetSize error: {ex.Message}");
+                        }
                     }
                     else if (managedMemory > 200 * 1024 * 1024)
                     {
-                        GC.Collect(1, GCCollectionMode.Optimized, false, false);
+                        // GC.Collect(1, GCCollectionMode.Optimized, false, false);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Log($"[ERROR] Memory watchdog exception: {ex.Message}");
+                }
             }, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
         }
         #endregion
@@ -361,6 +383,10 @@ namespace AegisPC.App
             catch (Exception ex)
             {
                 Log($"[WARN] Service cleanup warning: {ex.Message}");
+            }
+            finally
+            {
+                Serilog.Log.CloseAndFlush();
             }
             base.OnExit(e);
         }
@@ -406,10 +432,27 @@ namespace AegisPC.App
                 MessageBox.Show($"Arayüz Hatası:\n{e.Exception?.Message}\n\nDetay: {e.Exception?.InnerException?.Message}", 
                     "Ultron Defender Total Security - Arayüz Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log($"[CRITICAL] Error displaying dispatcher unhandled exception: {ex.Message}");
+            }
             finally
             {
                 e.Handled = true;
+            }
+        }
+
+        private void TaskScheduler_UnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+        {
+            try
+            {
+                Log($"[CRITICAL] Unobserved Task Exception: {e.Exception}");
+                Serilog.Log.Error(e.Exception, "Ultron Defender arka plan görevinde (Task) yakalanmamış istisna.");
+                e.SetObserved();
+            }
+            catch (Exception ex)
+            {
+                Log($"[CRITICAL] Error handling unobserved task exception: {ex.Message}");
             }
         }
     }

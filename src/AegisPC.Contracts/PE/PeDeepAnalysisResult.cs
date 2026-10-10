@@ -10,6 +10,8 @@ namespace AegisPC.Contracts.PE
     public class PeDeepAnalysisResult
     {
         public bool IsPeFile { get; set; }
+        /// <summary>False when the configured static prefix did not include the whole source; unrelated exact evidence remains valid.</summary>
+        public bool IsStaticInspectionComplete { get; set; } = true;
         public string FilePath { get; set; } = string.Empty;
         public string ExecutableType { get; set; } = "UNKNOWN"; // "PE32", "PE64", "DLL", "SYS"
         public string Machine { get; set; } = "UNKNOWN"; // "AMD64", "I386", "ARM64"
@@ -28,6 +30,10 @@ namespace AegisPC.Contracts.PE
 
         // --- TLS (Thread Local Storage) Callback Telemetrisi ---
         public bool HasTlsCallbacks { get; set; }
+        /// <summary>Records a TLS data directory independently of callback existence; ordinary TLS data is not malicious evidence.</summary>
+        public bool HasTlsDirectory { get; set; }
+        /// <summary>False when TLS structures could not be validated within the supplied on-disk content.</summary>
+        public bool IsTlsInspectionComplete { get; set; } = true;
         public int TlsCallbackCount { get; set; }
         public List<ulong> TlsCallbackAddresses { get; set; } = new();
 

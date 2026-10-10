@@ -8,19 +8,36 @@ public class ScanProgress
     public ScanType ScanType { get; set; }
     public string Phase { get; set; } = string.Empty;
     public int ScannedFiles { get; set; }
+    public int ScannedFromCache { get; set; }
+    public int SkippedSignedClean { get; set; }
+    public int NewlyScanned { get; set; }
     public int TotalFiles { get; set; }
     public int SkippedFiles { get; set; }
     public int FailedFiles { get; set; }
     public int TimedOutFiles { get; set; }
     public int FindingsCount { get; set; }
+    /// <summary>Verified malware findings, excluding suspicion, low-priority observations and missing coverage.</summary>
+    public int ConfirmedMaliciousCount { get; set; }
+    /// <summary>Review-required findings with non-authoritative evidence; never a virus count.</summary>
+    public int SuspiciousCount { get; set; }
     public TimeSpan ElapsedTime { get; set; }
     public double ElapsedSeconds { get; set; }
     public double? EstimatedRemainingSeconds { get; set; }
     public ConfidenceLevel EtaConfidence { get; set; } = ConfidenceLevel.Low;
     public string FormattedEta { get; set; } = "Hesaplanıyor...";
     public double CpuUsagePercent { get; set; }
+    /// <summary>Indicates that process CPU utilization has a valid elapsed-time sample, rather than a default zero.</summary>
+    public bool IsCpuTelemetryAvailable { get; set; }
     public double RamUsageMb { get; set; }
+    /// <summary>Highest scanner-process working set observed during this scan (sampled, not an exact peak).</summary>
+    public double PeakObservedRamUsageMb { get; set; }
     public double DiskThroughputMbSec { get; set; }
+    /// <summary>Number of file-analysis workers currently executing rather than merely created.</summary>
+    public int ActiveWorkers { get; set; }
+    /// <summary>Current effective global worker permit count after resource-pressure policy.</summary>
+    public int EffectiveWorkerLimit { get; set; }
+    /// <summary>Files awaiting analysis, including producers waiting for bounded queue space.</summary>
+    public int PendingFiles { get; set; }
     public string ResourceProfileName { get; set; } = "Auto";
     public string CurrentFile { get; set; } = string.Empty;
     public bool IsCompleted { get; set; }

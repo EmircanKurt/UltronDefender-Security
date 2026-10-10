@@ -3,6 +3,9 @@ using System.Collections.Generic;
 
 namespace AegisPC.Contracts.ThreatIntelligence
 {
+    /// <summary>Provenance of an exact hash, not an estimated malware probability.</summary>
+    public enum ThreatIntelVerification { Unverified, BuiltInTestMarker, SignedPackage }
+
     public class ThreatIntelRecord
     {
         public string Sha256 { get; set; } = string.Empty;
@@ -11,11 +14,17 @@ namespace AegisPC.Contracts.ThreatIntelligence
         public int Severity { get; set; } = 100;
         public string Source { get; set; } = "LocalDatabase";
         public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
+        public string SourceReference { get; set; } = string.Empty;
+        public string PackageVersion { get; set; } = string.Empty;
+        public ThreatIntelVerification Verification { get; set; }
+        /// <summary>Expiry from an authenticated package; legacy values cannot support optional hiding.</summary>
+        public DateTime ValidUntilUtc { get; set; }
+        public bool IsAuthoritative => Verification is ThreatIntelVerification.BuiltInTestMarker or ThreatIntelVerification.SignedPackage;
     }
 
     /// <summary>
-    /// Çok sinyalli dosya analizi için çevrimdışı öncelikli (offline-first) Tehdit İstihbarat Deposu.
-    /// Bilinen zararlı hash'leri, bilinen temiz/güvenilir hash'leri ve doğrulanmış üreticileri yönetir.
+    /// Local-only exact intelligence and bounded review metadata.
+    /// Source strings and caller labels are not publisher authentication or clean-content proof.
     /// </summary>
     public interface IThreatIntelligenceStore
     {
@@ -30,17 +39,17 @@ namespace AegisPC.Contracts.ThreatIntelligence
         bool IsTrustedHash(string sha256);
 
         /// <summary>
-        /// Yayımcı adının bilinen meşru işletim sistemi veya yazılım üreticisi olup olmadığını denetler.
+        /// Compatibility display-name query. A name cannot certify an Authenticode chain; current implementation returns false.
         /// </summary>
         bool IsTrustedPublisher(string? publisher);
 
         /// <summary>
-        /// Yeni bir zararlı hash kaydını istihbarat deposuna ekler.
+        /// Registers review-only metadata. A caller-supplied label cannot authorize a malware verdict.
         /// </summary>
         void RegisterMaliciousHash(string sha256, string threatName, string category = "Malware", int severity = 100);
 
         /// <summary>
-        /// Güvenilir bilinen bir dosya hash'ini depoya ekler.
+        /// Retains a caller preference only; it cannot become verified clean-content evidence.
         /// </summary>
         void RegisterTrustedHash(string sha256);
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AegisPC.Core.Enums;
+using AegisPC.Core.Models;
 
 namespace AegisPC.Security.RealTime
 {
@@ -10,10 +11,30 @@ namespace AegisPC.Security.RealTime
     /// </summary>
     public class RealTimeVerdictResult
     {
+        /// <summary>Software classification independent of risk and actions.</summary>
+        public SoftwareFindingClass SoftwareClass { get; set; }
+        /// <summary>Authenticated source details; absent legacy metadata remains visible.</summary>
+        public SoftwareClassificationMetadata? SoftwareClassification { get; set; }
+        /// <summary>Mixed malware evidence cannot be hidden.</summary>
+        public bool HasIndependentMalwareEvidence { get; set; }
+        /// <summary>Stable producer rule identity.</summary>
+        public string RuleSetVersion { get; set; } = string.Empty;
+        /// <summary>Reports structural identity and omissions from the same locked source used by detection.</summary>
+        public FileContentClassification? ContentClassification { get; set; }
+        /// <summary>Whether the configured detector inspection completed; confirmed evidence never hides a coverage gap.</summary>
+        public bool InspectionComplete { get; set; }
+        /// <summary>User permission to skip inspection; never a certificate of clean content.</summary>
+        public bool PolicyBypassed { get; set; }
+        /// <summary>Only transient OS sharing/locking errors permit bounded retries; unsupported content does not.</summary>
+        public bool Retryable { get; set; }
+        /// <summary>Separates OS security-provider access blocks from Ultron's own content findings.</summary>
+        public AegisPC.Core.Exceptions.OperatingSystemFileBlockKind? OperatingSystemBlock { get; set; }
+        /// <summary>Explicit detector and structural limitations, independent of the malware verdict.</summary>
+        public string[] CoverageLimitations { get; set; } = [];
         /// <summary>
         /// Dosyanın nihai kararı (Clean, Suspicious, ConfirmedMalicious).
         /// </summary>
-        public RealTimeVerdict Verdict { get; set; }
+        public RealTimeVerdict Verdict { get; set; } = RealTimeVerdict.Unknown;
 
         /// <summary>
         /// Kararın güven derecesi (0.0 - 1.0 arası).
@@ -48,7 +69,7 @@ namespace AegisPC.Security.RealTime
         /// <summary>
         /// Bu karar için uygulanması önerilen politika eylemi (Allow, Warn, BlockAndQuarantine).
         /// </summary>
-        public RealTimePolicyAction RecommendedPolicy { get; set; }
+        public RealTimePolicyAction RecommendedPolicy { get; set; } = RealTimePolicyAction.Observe;
 
         /// <summary>
         /// İncelenen dosyanın SHA-256 kriptografik özeti.

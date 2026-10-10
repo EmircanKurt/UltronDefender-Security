@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -122,7 +122,7 @@ namespace AegisPC.Tests
             var res2 = await task2;
 
             Assert.Same(res1, res2);
-            Assert.Equal(2, sessionStartedCount);
+            Assert.Equal(1, sessionStartedCount);
         }
 
         [Fact]
@@ -150,6 +150,19 @@ namespace AegisPC.Tests
             session.Cancel();
             Assert.True(cancelled);
             Assert.True(session.CancellationToken.IsCancellationRequested);
+        }
+
+        [Fact]
+        public void App_IsStartMinimized_DefaultAndToggle_WorksCorrectly()
+        {
+            AegisPC.App.App.IsStartMinimized = false;
+            Assert.False(AegisPC.App.App.IsStartMinimized);
+
+            AegisPC.App.App.IsStartMinimized = true;
+            Assert.True(AegisPC.App.App.IsStartMinimized);
+
+            AegisPC.App.App.IsStartMinimized = false;
+            Assert.False(AegisPC.App.App.IsStartMinimized);
         }
     }
 }

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -20,6 +20,18 @@ namespace AegisPC.Security.Scanning
     {
         bool IsPaused { get; }
         ManualResetEventSlim PauseEvent { get; }
+        int ScannedFromCache { get; }
+        int SkippedSignedClean { get; }
+        int NewlyScanned { get; }
+        /// <summary>Gets the number of workers currently analyzing a file.</summary>
+        int ActiveWorkers => 0;
+        /// <summary>Gets the current resource-policy worker limit.</summary>
+        int EffectiveWorkerLimit => 0;
+        /// <summary>Gets the number of files waiting for analysis or queue space.</summary>
+        int PendingFiles => 0;
+        /// <summary>Last owned pipeline's measured timing and per-volume throughput, including interrupted work.</summary>
+        ScanMeasurementSummary? LastMeasurements => null;
+        void ResetCounters();
         void PauseScan();
         void ResumeScan();
 
@@ -49,15 +61,71 @@ namespace AegisPC.Security.Scanning
     public class ScanQueueCoordinator : IScanQueueCoordinator
     {
         private readonly ManualResetEventSlim _pauseEvent = new(true);
+        private readonly object _pauseLock = new();
+        private volatile TaskCompletionSource<bool> _pauseTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly IScanResourceManager? _injectedResourceManager;
         private readonly Action<ScanResourceProfile>? _profileChangedHandler;
         private readonly ILogger<ScanQueueCoordinator>? _logger;
 
+        private int _scannedFromCache;
+        private int _skippedSignedClean;
+        private int _newlyScanned;
+        private int _activeWorkers;
+        private int _pendingFiles;
+        private IScanResourceManager? _activeResourceManager;
+
+        public int ScannedFromCache => Volatile.Read(ref _scannedFromCache);
+        public int SkippedSignedClean => Volatile.Read(ref _skippedSignedClean);
+        public int NewlyScanned => Volatile.Read(ref _newlyScanned);
+        /// <inheritdoc />
+        public int ActiveWorkers => Volatile.Read(ref _activeWorkers);
+        /// <inheritdoc />
+        public int EffectiveWorkerLimit => Volatile.Read(ref _activeResourceManager)?.ActiveProfile.Concurrency ?? 0;
+        /// <inheritdoc />
+        public int PendingFiles => Math.Max(0, Volatile.Read(ref _pendingFiles));
+        /// <inheritdoc />
+        public ScanMeasurementSummary? LastMeasurements { get; private set; }
+
+        public void ResetCounters()
+        {
+            Interlocked.Exchange(ref _scannedFromCache, 0);
+            Interlocked.Exchange(ref _skippedSignedClean, 0);
+            Interlocked.Exchange(ref _newlyScanned, 0);
+            Interlocked.Exchange(ref _activeWorkers, 0);
+            Interlocked.Exchange(ref _pendingFiles, 0);
+        }
+
         public bool IsPaused => !_pauseEvent.IsSet;
         public ManualResetEventSlim PauseEvent => _pauseEvent;
 
-        public void PauseScan() => _pauseEvent.Reset();
-        public void ResumeScan() => _pauseEvent.Set();
+        public void PauseScan()
+        {
+            _pauseEvent.Reset();
+            lock (_pauseLock)
+            {
+                if (_pauseTcs.Task.IsCompleted)
+                {
+                    _pauseTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                }
+            }
+        }
+
+        public void ResumeScan()
+        {
+            _pauseEvent.Set();
+            lock (_pauseLock)
+            {
+                _pauseTcs.TrySetResult(true);
+            }
+        }
+
+        private async Task WaitPauseAsync(CancellationToken cancellationToken)
+        {
+            if (!_pauseEvent.IsSet)
+            {
+                await _pauseTcs.Task.WaitAsync(cancellationToken);
+            }
+        }
 
         private static string _activeResourceSummary = string.Empty;
 
@@ -110,6 +178,7 @@ namespace AegisPC.Security.Scanning
             _pauseEvent.Dispose();
         }
 
+        /// <summary>Processes every scoped file through the common scanner; fatal pipeline failures abort siblings and are rethrown after cleanup.</summary>
         public async Task<(int TotalFiles, int ScannedFiles, int SkippedFiles, int FailedFiles, int TimedOutFiles)> ExecuteScanQueueDetailedAsync(
             string targetPath,
             ScanType scanType,
@@ -119,6 +188,12 @@ namespace AegisPC.Security.Scanning
             Action<string, int, int, int, int, int> reportProgressWithCounters,
             CancellationToken cancellationToken)
         {
+            ResetCounters();
+            LastMeasurements = null;
+            using var measurements = new ScanMeasurementRecorder();
+            using var abort = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cancellationToken = abort.Token;
+            ExceptionDispatchInfo? fatalFailure = null;
             int totalFiles = 0;
             int scannedFiles = 0;
             int skippedFiles = 0;
@@ -126,97 +201,115 @@ namespace AegisPC.Security.Scanning
             int timedOutFiles = 0;
 
             var resourceManager = _injectedResourceManager ?? new AdaptiveScanResourceManager(targetPath);
+            Volatile.Write(ref _activeResourceManager, resourceManager);
+            try
+            {
+            resourceManager.ConfigureScanType(scanType);
+            resourceManager.ConfigureTarget(targetPath);
+            if (scanType == ScanType.Full || string.IsNullOrWhiteSpace(targetPath)) resourceManager.ConfigureMultipleVolumes();
+            resourceManager.RefreshProfile();
             var activeProfile = resourceManager.ActiveProfile;
 
             int channelCapacity = activeProfile.ChannelCapacity;
-            var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(channelCapacity)
-            {
-                FullMode = BoundedChannelFullMode.Wait,
-                SingleWriter = false,
-                SingleReader = false
-            });
+            var channel = new VolumeScanQueue<string>(channelCapacity,
+                path => Path.GetPathRoot(Path.GetFullPath(path)) ?? "unknown",
+                root => DiskHardwareHelper.IsSolidStateDrive(root) ? Math.Max(resourceManager.ActiveProfile.Concurrency, resourceManager.ActiveProfile.MaximumConcurrency) : 1);
 
             var queuedPaths = scanType != ScanType.Full ? new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase) : null;
 
+            void Abort(Exception exception)
+            {
+                if (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+                    exception = new InvalidOperationException("Scan pipeline cancelled without a requested scan cancellation.", exception);
+                Interlocked.CompareExchange(ref fatalFailure, ExceptionDispatchInfo.Capture(exception), null);
+                channel.Complete(exception);
+                try { abort.Cancel(); }
+                catch (AggregateException cancellationException)
+                { _logger?.LogWarning(cancellationException, "A scan abort callback failed; the original pipeline failure is retained."); }
+            }
+
+            void NotifyProgress(string filePath, int total, int scanned, int skipped, int failed, int timedOut)
+            {
+                try { reportProgressWithCounters(filePath, total, scanned, skipped, failed, timedOut); }
+                catch (Exception exception)
+                { _logger?.LogWarning(exception, "Scan progress observer failed; file analysis continues."); }
+            }
+
             async Task TryQueueFileAsync(string? filePath)
             {
-                if (string.IsNullOrWhiteSpace(filePath) || cancellationToken.IsCancellationRequested) return;
+                if (string.IsNullOrWhiteSpace(filePath)) return;
+                cancellationToken.ThrowIfCancellationRequested();
 
                 try
                 {
-                    _pauseEvent.Wait(cancellationToken);
+                    await WaitPauseAsync(cancellationToken);
 
                     if (queuedPaths == null || queuedPaths.TryAdd(filePath, 0))
                     {
-                        int curTot = Interlocked.Increment(ref totalFiles);
-
-                        string ext = Path.GetExtension(filePath);
-
-                        // Fast-Path 1: Medya ve statik asset dosyalarını anında atla
-                        if (!string.IsNullOrEmpty(ext) && ScanFilterPolicy.SafeMediaExtensions.Contains(ext))
+                        Interlocked.Increment(ref totalFiles);
+                        // Target scope is decided by the walker; only the common hash/content scanner can classify a file.
+                        Interlocked.Increment(ref _pendingFiles);
+                        try { await channel.WriteAsync(filePath, cancellationToken); }
+                        catch (ChannelClosedException exception) when (cancellationToken.IsCancellationRequested)
                         {
-                            int curScn = Interlocked.Increment(ref scannedFiles);
-                            int curSkp = Interlocked.Increment(ref skippedFiles);
-                            // Raporlama kilidi baskısını azaltmak için periyodik güncelle
-                            if (curTot % 20 == 0)
-                            {
-                                int curFail = Volatile.Read(ref failedFiles);
-                                int curTout = Volatile.Read(ref timedOutFiles);
-                                reportProgressWithCounters(filePath, curTot, curScn, curSkp, curFail, curTout);
-                            }
-                            return;
+                            // Closing the writer can win the race with the pending write's cancellation callback.
+                            // Preserve a previously recorded fatal failure, but do not invent one for user cancellation.
+                            Interlocked.Decrement(ref _pendingFiles);
+                            throw new OperationCanceledException("Scan queue closed during cancellation.", exception, cancellationToken);
                         }
-
-                        // Kural 27 gereğince: Oyun / repack klasör adı bazlı dosya atlama bypass'ı TAMAMEN KALDIRILDI.
-                        // Her çalıştırılabilir ikili dosya, script ve arşiv adilce kuyruğa yazılır.
-                        await channel.Writer.WriteAsync(filePath, cancellationToken);
+                        catch
+                        {
+                            Interlocked.Decrement(ref _pendingFiles);
+                            throw;
+                        }
                     }
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    // Tarama iptal edildiğinde beklenen durum
-                }
-                catch (ChannelClosedException)
-                {
-                    // Kanal kapatıldığında / iptal edildiğinde beklenen durum
+                    throw; // Stop the producer too, including a walker using the caller's original token.
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogTrace(ex, "Dosya kuyruğa eklenirken hata: {Path}", filePath);
+                    Abort(ex);
+                    _logger?.LogWarning(ex, "Queueing a scoped file failed: {Path}", filePath);
+                    throw;
                 }
             }
 
             // Üretici Görevi (Directory Walker)
             var producerTask = Task.Run(async () =>
             {
+                using var producerStages = measurements.BeginPipelineStages();
                 try
                 {
                     await producerAction(TryQueueFileAsync);
                 }
-                catch (OperationCanceledException) { }
-                catch (ChannelClosedException) { }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
                 catch (Exception ex)
                 {
-                    _logger?.LogTrace(ex, "Producer task encountered an error.");
+                    Abort(ex);
+                    _logger?.LogWarning(ex, "Scan producer failed; remaining work is aborted.");
                 }
                 finally
                 {
-                    channel.Writer.TryComplete();
+                    channel.Complete();
                 }
             }, cancellationToken);
 
             // İptal durumunda kanal kapatma ve bekleyen işçileri anında uyandırma kaydı
             using var cancelRegistration = cancellationToken.Register(() =>
             {
-                channel.Writer.TryComplete();
-                _pauseEvent.Set();
+                channel.Complete();
+                ResumeScan();
             });
 
-            // Tüketici İşçileri: Dinamik Concurrency Slot Gate ile yönetilir (Asgari 32 veya 4x çekirdek)
-            int maxParallelWorkers = Math.Max(32, Math.Max(Environment.ProcessorCount * 4, activeProfile.Concurrency * 2));
+            // Donanım üst sınırına kadar hazır bekleyen işçi havuzu oluşturulur.
+            // Aktif çalışan işçi sayısı canlı izin bütçesi (EnterWorkerSlotAsync) ile dinamik olarak kontrol edilir.
+            // Başlangıç işçi sayısına bağlı kalınmaz; mod VeryLow'dan High/Maximum'a geçtiğinde yeni işçiler anında devreye girer.
+            int hardwareMaxWorkers = Math.Max(activeProfile.Concurrency, Math.Min(64, Environment.ProcessorCount * 4));
             var workerTasks = new List<Task>();
 
-            for (int i = 0; i < maxParallelWorkers; i++)
+            for (int i = 0; i < hardwareMaxWorkers; i++)
             {
                 workerTasks.Add(Task.Run(async () =>
                 {
@@ -224,26 +317,45 @@ namespace AegisPC.Security.Scanning
 
                     try
                     {
-                        while (!cancellationToken.IsCancellationRequested && await channel.Reader.WaitToReadAsync(cancellationToken))
+                        while (!cancellationToken.IsCancellationRequested)
                         {
-                            // Duraklatma etkinse kuyruktan yeni dosya çekmeyi hemen dondur
-                            _pauseEvent.Wait(cancellationToken);
+                            // Duraklatma etkinse kuyruktan yeni dosya çekmeyi hemen asenkron dondur
+                            await WaitPauseAsync(cancellationToken);
 
-                            if (!channel.Reader.TryRead(out var filePath))
+                            using var volumeLease = await channel.ReadAsync(cancellationToken);
+                            if (volumeLease == null) break;
+                            var filePath = volumeLease.Item;
+
+                            if (cancellationToken.IsCancellationRequested)
                             {
-                                continue;
+                                Interlocked.Decrement(ref _pendingFiles);
+                                break;
                             }
 
-                            if (cancellationToken.IsCancellationRequested) break;
-
                             // Adaptif Concurrency: Aktif profil kotası kadar işçinin eşzamanlı çalışmasına izin ver
-                            await resourceManager.EnterWorkerSlotAsync(cancellationToken);
-
                             try
                             {
-                                _pauseEvent.Wait(cancellationToken);
+                                await RealtimeScanPriority.WaitAsync(cancellationToken);
+                                await resourceManager.EnterWorkerSlotAsync(cancellationToken);
+                            }
+                            catch
+                            {
+                                Interlocked.Decrement(ref _pendingFiles);
+                                throw;
+                            }
+                            Interlocked.Decrement(ref _pendingFiles);
+                            Interlocked.Increment(ref _activeWorkers);
 
-                                var detailedResult = await scanFileFunc(filePath, cancellationToken);
+                            FileScanDetailedResult? detailedResult = null;
+                            ScanMeasurementRecorder.Attempt? fileMeasurement = null;
+                            try
+                            {
+                                await WaitPauseAsync(cancellationToken);
+                                await RealtimeScanPriority.WaitAsync(cancellationToken);
+
+                                fileMeasurement = measurements.Begin(filePath, volumeLease.QueuedAt);
+                                detailedResult = await scanFileFunc(filePath, cancellationToken);
+                                fileMeasurement.Complete(detailedResult);
                                 switch (detailedResult.Outcome)
                                 {
                                     case FileScanOutcome.Success:
@@ -259,11 +371,17 @@ namespace AegisPC.Security.Scanning
 
                                     case FileScanOutcome.Failed:
                                         Interlocked.Increment(ref failedFiles);
+                                        if (detailedResult.Finding != null)
+                                        {
+                                            findings.Add(detailedResult.Finding);
+                                        }
                                         break;
 
                                     case FileScanOutcome.Skipped:
                                         Interlocked.Increment(ref skippedFiles);
                                         break;
+                                    default:
+                                        throw new InvalidOperationException("File scanner returned an unsupported outcome.");
                                 }
                             }
                             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -273,24 +391,53 @@ namespace AegisPC.Security.Scanning
                             catch (OperationCanceledException)
                             {
                                 // Tekil dosya zaman aşımı
+                                fileMeasurement?.Complete(FileScanOutcome.Timeout, inspectionComplete: false);
                                 Interlocked.Increment(ref timedOutFiles);
                             }
                             catch (Exception ex)
                             {
-                                _logger?.LogTrace(ex, "Dosya taranırken hata: {Path}", filePath);
+                                fileMeasurement?.Complete(FileScanOutcome.Failed);
                                 Interlocked.Increment(ref failedFiles);
+                                Abort(ex);
+                                _logger?.LogWarning(ex, "File-analysis worker failed: {Path}", filePath);
+                                throw;
                             }
                             finally
                             {
+                                fileMeasurement?.Dispose();
+                                Interlocked.Decrement(ref _activeWorkers);
                                 resourceManager.ExitWorkerSlot();
 
                                 if (!cancellationToken.IsCancellationRequested)
                                 {
                                     int currentScanned = Interlocked.Increment(ref scannedFiles);
+                                    resourceManager.ReportCompletedFiles(1);
+                                    if (detailedResult != null)
+                                    {
+                                        if (detailedResult.IsFromCache)
+                                        {
+                                            Interlocked.Increment(ref _scannedFromCache);
+                                        }
+                                        else if (detailedResult.IsSignedClean)
+                                        {
+                                            Interlocked.Increment(ref _skippedSignedClean);
+                                        }
+                                        else
+                                        {
+                                            Interlocked.Increment(ref _newlyScanned);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Interlocked.Increment(ref _newlyScanned);
+                                    }
+
                                     fileProcessCounter++;
 
-                                    // Kooperatif gecikme ve bellek temizliği (Yalnızca profil pacing gerektiriyorsa)
-                                    if (activeProfile.DelayBetweenFilesMs > 0 || (activeProfile.YieldFrequency > 0 && (fileProcessCounter % activeProfile.YieldFrequency == 0)))
+                                    // Kooperatif gecikme ve bellek temizliği:
+                                    // Pacing başlangıç profilinden okunmaz; çalışma zamanındaki güncel profilden dinamik okunur.
+                                    var currentProfile = resourceManager.ActiveProfile;
+                                    if (currentProfile.DelayBetweenFilesMs > 0 || (currentProfile.YieldFrequency > 0 && (fileProcessCounter % currentProfile.YieldFrequency == 0)))
                                     {
                                         await resourceManager.ApplyPacingAsync(fileProcessCounter, cancellationToken);
                                     }
@@ -299,15 +446,16 @@ namespace AegisPC.Security.Scanning
                                     int curSkp = Volatile.Read(ref skippedFiles);
                                     int curFail = Volatile.Read(ref failedFiles);
                                     int curTout = Volatile.Read(ref timedOutFiles);
-                                    reportProgressWithCounters(filePath, curTot, currentScanned, curSkp, curFail, curTout);
+                                    NotifyProgress(filePath, curTot, currentScanned, curSkp, curFail, curTout);
                                 }
                             }
                         }
                     }
-                    catch (OperationCanceledException) { }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
                     catch (Exception ex)
                     {
-                        _logger?.LogTrace(ex, "Worker task exited.");
+                        Abort(ex);
+                        _logger?.LogWarning(ex, "Scan worker exited with a fatal pipeline failure.");
                     }
                 }, cancellationToken));
             }
@@ -317,7 +465,30 @@ namespace AegisPC.Security.Scanning
             {
                 await Task.WhenAll(workerTasks);
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+            }
+            catch (Exception exception)
+            {
+                Interlocked.CompareExchange(ref fatalFailure, ExceptionDispatchInfo.Capture(exception), null);
+            }
+            finally
+            {
+                LastMeasurements = measurements.Snapshot();
+                Volatile.Write(ref _activeResourceManager, null);
+                Interlocked.Exchange(ref _pendingFiles, 0);
+                // Yerel oluşturulan kaynak yöneticisi güvenle kapatılır
+                if (_injectedResourceManager == null && resourceManager is IDisposable disp)
+                {
+                    try { disp.Dispose(); }
+                    catch (Exception exception)
+                    {
+                        Interlocked.CompareExchange(ref fatalFailure, ExceptionDispatchInfo.Capture(exception), null);
+                        _logger?.LogWarning(exception, "Scan resource cleanup failed.");
+                    }
+                }
+            }
+
+            fatalFailure?.Throw();
 
             return (
                 Volatile.Read(ref totalFiles),

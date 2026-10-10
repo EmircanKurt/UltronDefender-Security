@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
+using AegisPC.Security.Scanning;
 using AegisPC.Contracts.AntiEvasion;
 using AegisPC.Contracts.Detection;
 using Microsoft.Extensions.Logging;
@@ -11,18 +13,13 @@ using Microsoft.Extensions.Logging;
 namespace AegisPC.Security.AntiEvasion
 {
     /// <summary>
-    /// Statik ikili ve süreç davranışlarında anti-debug, anti-vm, indirect syscall ve
-    /// AMSI/ETW yamalama kaçınma tekniklerini tespit eden derin sezgisel motor.
+    /// Observes bounded static API/VM/syscall references and reported command-line capabilities;
+    /// these references do not establish executed evasion, attribution or native-action authority.
     /// </summary>
     public class AntiEvasionDetector : IAntiEvasionDetector
     {
         private readonly ILogger<AntiEvasionDetector>? _logger;
         private const int MaxSampleBytes = 512 * 1024; // 512 KB örnekleme sınırı — tüm dosyayı belleğe almayı engeller
-
-        private static readonly HashSet<string> TargetBinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".exe", ".dll", ".sys", ".scr", ".ocx", ".drv", ".efi", ".bin", ".com", ".pif"
-        };
 
         private static readonly (string ApiName, int Score, string Description)[] AntiDebugApis = new[]
         {
@@ -55,14 +52,23 @@ namespace AegisPC.Security.AntiEvasion
         // Indirect Syscall Stubs: mov r10, rcx (4C 8B D1) -> mov eax, XX (B8 XX XX XX XX) -> syscall (0F 05) -> ret (C3)
         private static readonly byte[] SyscallPatternPrefix = new byte[] { 0x4C, 0x8B, 0xD1, 0xB8 };
         private static readonly byte[] SyscallPatternSuffix = new byte[] { 0x0F, 0x05, 0xC3 };
+        private static readonly Dictionary<string, ContentBytePattern> CompiledPatterns = AntiDebugApis.Select(x => x.ApiName)
+            .Concat(AntiVmArtifacts.Select(x => x.Artifact)).Concat(AmsiEtwBypassSignatures.Select(x => x.Pattern))
+            .Distinct(StringComparer.Ordinal).ToDictionary(x => x, x => new ContentBytePattern(x), StringComparer.Ordinal);
 
         public AntiEvasionDetector(ILogger<AntiEvasionDetector>? logger = null)
         {
             _logger = logger;
         }
 
+        /// <summary>Observes bounded static references; presence never establishes that evasion executed.</summary>
         public AntiEvasionEvaluation AnalyzeBinary(string filePath, byte[]? rawBytes = null)
+            => AnalyzeBinary(filePath, rawBytes, CancellationToken.None);
+
+        /// <summary>Observes bounded bytes with cooperative cancellation, producing capability evidence rather than executed-attack assertions.</summary>
+        public AntiEvasionEvaluation AnalyzeBinary(string filePath, byte[]? rawBytes, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var result = new AntiEvasionEvaluation();
 
             byte[]? rentedBuffer = null;
@@ -80,33 +86,27 @@ namespace AegisPC.Security.AntiEvasion
                 {
                     if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return result;
 
-                    string ext = Path.GetExtension(filePath);
-                    if (!string.IsNullOrEmpty(ext) && !TargetBinaryExtensions.Contains(ext))
-                    {
-                        // Binary olmayan dosyaları (video, ses, metin, ofis) atla
-                        return result;
-                    }
-
                     var fileInfo = new FileInfo(filePath);
                     if (fileInfo.Length == 0) return result;
 
                     int bytesToRead = (int)Math.Min(fileInfo.Length, MaxSampleBytes);
                     rentedBuffer = ArrayPool<byte>.Shared.Rent(bytesToRead);
 
-                    using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 8192);
-                    validLength = fs.Read(rentedBuffer, 0, bytesToRead);
+                    using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 8192);
+                    validLength = fs.ReadAtLeast(rentedBuffer.AsSpan(0, bytesToRead), bytesToRead, throwOnEndOfStream: false);
                     if (validLength <= 0) return result;
 
                     bytes = rentedBuffer;
                 }
 
-                string asciiContent = Encoding.ASCII.GetString(bytes, 0, validLength);
+                ReadOnlySpan<byte> dataSpan = bytes.AsSpan(0, validLength);
 
                 // 1. Anti-Debug API Tespiti
                 int antiDebugCount = 0;
                 foreach (var (api, score, desc) in AntiDebugApis)
                 {
-                    if (asciiContent.Contains(api, StringComparison.OrdinalIgnoreCase))
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (SpanContainsPattern(dataSpan, api))
                     {
                         antiDebugCount++;
                         result.DetectedTechniques |= AntiEvasionTechnique.AntiDebugging;
@@ -116,6 +116,8 @@ namespace AegisPC.Security.AntiEvasion
                         {
                             Category = EvidenceCategory.AntiEvasion,
                             RuleName = $"ANTI_DEBUG_{api.ToUpperInvariant()}",
+                            FeatureIdentity = $"PE.Api.{api}",
+                            Nature = EvidenceNature.Capability,
                             ScoreContribution = score,
                             Confidence = EvidenceConfidence.Medium,
                             Description = desc
@@ -126,7 +128,8 @@ namespace AegisPC.Security.AntiEvasion
                 // 2. Anti-VM / Sandbox Tespiti
                 foreach (var (artifact, score, desc) in AntiVmArtifacts)
                 {
-                    if (asciiContent.Contains(artifact, StringComparison.OrdinalIgnoreCase))
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (SpanContainsPattern(dataSpan, artifact))
                     {
                         result.DetectedTechniques |= AntiEvasionTechnique.AntiVmHypervisor;
                         result.TechniqueDescriptions.Add($"Anti-VM: {artifact}");
@@ -135,6 +138,8 @@ namespace AegisPC.Security.AntiEvasion
                         {
                             Category = EvidenceCategory.AntiEvasion,
                             RuleName = "ANTI_VM_ARTIFACT_CHECK",
+                            FeatureIdentity = $"PE.VmArtifact.{artifact}",
+                            Nature = EvidenceNature.Capability,
                             ScoreContribution = score,
                             Confidence = EvidenceConfidence.High,
                             Description = desc
@@ -145,24 +150,27 @@ namespace AegisPC.Security.AntiEvasion
                 // 3. AMSI / ETW Bellek Yamalama Desenleri
                 foreach (var (pat, score, desc) in AmsiEtwBypassSignatures)
                 {
-                    if (asciiContent.Contains(pat, StringComparison.OrdinalIgnoreCase))
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (SpanContainsPattern(dataSpan, pat))
                     {
                         result.DetectedTechniques |= AntiEvasionTechnique.AmsiEtwPatching;
-                        result.TechniqueDescriptions.Add($"AMSI/ETW Patching: {pat}");
+                        result.TechniqueDescriptions.Add($"AMSI/ETW reference: {pat}; execution not established");
                         result.EvasionScore += score;
                         result.Evidences.Add(new SecurityEvidence
                         {
                             Category = EvidenceCategory.AntiEvasion,
                             RuleName = "AMSI_ETW_TAMPERING_PATTERN",
+                            FeatureIdentity = $"PE.Api.{pat}",
+                            Nature = EvidenceNature.Capability,
                             ScoreContribution = score,
-                            Confidence = EvidenceConfidence.High,
-                            Description = desc
+                            Confidence = EvidenceConfidence.Low,
+                            Description = $"Statik AMSI/ETW referansı: {pat}. Bellek yaması veya saldırı gerçekleştiği doğrulanmadı."
                         });
                     }
                 }
 
                 // 4. Indirect Syscall Stub Taraması (Statik Byte Taraması)
-                if (ContainsIndirectSyscallStub(bytes))
+                if (ContainsIndirectSyscallStub(dataSpan))
                 {
                     result.DetectedTechniques |= AntiEvasionTechnique.IndirectSyscallStubs;
                     result.TechniqueDescriptions.Add("Indirect Syscall: Doğrudan çekirdek çağrı (Hell's Gate / SysWhispers) taslağı");
@@ -171,9 +179,11 @@ namespace AegisPC.Security.AntiEvasion
                     {
                         Category = EvidenceCategory.AntiEvasion,
                         RuleName = "INDIRECT_SYSCALL_STUB",
+                        FeatureIdentity = "PE.SyscallStub",
+                        Nature = EvidenceNature.Capability,
                         ScoreContribution = 35,
-                        Confidence = EvidenceConfidence.High,
-                        Description = "EDR kancalarını (User-Mode Hooking) atlatmak için doğrudan Syscall yönergesi tespit edildi."
+                        Confidence = EvidenceConfidence.Low,
+                        Description = "Statik syscall komut dizisi bulundu; Windows bileşenleri de kullanır. Kanca atlatma veya yürütme doğrulanmadı."
                     });
                 }
 
@@ -182,9 +192,10 @@ namespace AegisPC.Security.AntiEvasion
 
                 if (result.HasEvasionTechniques)
                 {
-                    result.Explanation = $"Dosya analizden ve tespitten kaçınmak için {result.TechniqueDescriptions.Count} farklı teknik barındırıyor: {string.Join(", ", result.TechniqueDescriptions)}";
+                    result.Explanation = $"{result.TechniqueDescriptions.Count} statik yetenek/referans gözlendi; gerçekleşmiş saldırı kanıtı değildir: {string.Join(", ", result.TechniqueDescriptions)}";
                 }
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
                 _logger?.LogTrace(ex, "AntiEvasion analysis error for {Path}", filePath);
@@ -200,6 +211,7 @@ namespace AegisPC.Security.AntiEvasion
             return result;
         }
 
+        /// <summary>Observes reported command text without treating an API name as proof of execution or tampering.</summary>
         public AntiEvasionEvaluation AnalyzeBehavior(int pid, string commandLine, IEnumerable<string>? loadedModules = null)
         {
             var result = new AntiEvasionEvaluation();
@@ -217,9 +229,11 @@ namespace AegisPC.Security.AntiEvasion
                     {
                         Category = EvidenceCategory.AntiEvasion,
                         RuleName = "CLI_AMSI_ETW_TAMPERING",
+                        FeatureIdentity = $"CLI.Api.{pat}",
+                        Nature = EvidenceNature.Capability,
                         ScoreContribution = score,
-                        Confidence = EvidenceConfidence.High,
-                        Description = desc
+                        Confidence = EvidenceConfidence.Low,
+                        Description = $"Command text references {pat}; executed tampering is not established."
                     });
                 }
             }
@@ -247,7 +261,7 @@ namespace AegisPC.Security.AntiEvasion
             return result;
         }
 
-        private static bool ContainsIndirectSyscallStub(byte[] bytes)
+        private static bool ContainsIndirectSyscallStub(ReadOnlySpan<byte> bytes)
         {
             if (bytes.Length < 9) return false;
 
@@ -274,5 +288,11 @@ namespace AegisPC.Security.AntiEvasion
 
             return false;
         }
+
+        private static bool SpanContainsPattern(ReadOnlySpan<byte> source, string pattern)
+        {
+            return CompiledPatterns[pattern].Contains(source);
+        }
+
     }
 }

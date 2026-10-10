@@ -9,7 +9,8 @@
     <Product>Ultron Defender Security</Product>
     <Title>Ultron Defender Security</Title>
     <Company>Ultron Defender Security</Company>
-    <Description>Ultron Defender Security - Total Endpoint Protection</Description>
+    <Description>Ultron Defender Security - Experimental Windows security application</Description>
+    <Version>3.2.4-preview.20261010</Version>
     <AssemblyTitle>Ultron Defender Security</AssemblyTitle>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
@@ -27,6 +28,9 @@
   <ItemGroup>
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AegisPC.Tests" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\AegisPC.Core\AegisPC.Core.csproj" />

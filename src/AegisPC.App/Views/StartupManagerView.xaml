@@ -135,7 +135,7 @@
                             <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
                                 <Border Background="{Binding SelectedItem.RiskLevel, Converter={StaticResource RiskColorConverter}}" 
                                         CornerRadius="4" Padding="8,3" Margin="0,0,8,0">
-                                    <TextBlock Text="{Binding SelectedItem.RiskLevel}" Style="{StaticResource BadgeTextStyle}" Foreground="White"/>
+                                    <TextBlock Text="{Binding SelectedItem.RiskLevel}" Style="{StaticResource BadgeTextStyle}" Foreground="{DynamicResource BrushTextOnAccent}"/>
                                 </Border>
                             </StackPanel>
 

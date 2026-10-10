@@ -8,13 +8,39 @@
     <IsTestProject>true</IsTestProject>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- Live OS mutation fixtures are opt-in lab code, never an implicit host regression run. -->
+    <EnableUnsafeLabTests Condition="'$(EnableUnsafeLabTests)' == ''">false</EnableUnsafeLabTests>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(EnableUnsafeLabTests)' != 'true'">
+    <Compile Remove="RealBrowserAndStressValidationTests.cs" />
+    <Compile Remove="LiveSampleTests.cs" />
+    <Compile Remove="RansomwareRealProcessKillTests.cs" />
+    <Compile Remove="RansomwareShieldTests.cs" />
+    <Compile Remove="RealTimeProtectionTests.cs" />
+    <Compile Remove="SelfProtectionTests.cs" />
+    <Compile Remove="LiveEndpointHardeningTests.cs" />
+    <Compile Remove="EtwPreExecProtectionTests.cs" />
+    <Compile Remove="DnsFilterTest.cs" />
+    <Compile Remove="OfflineDnsAndUrlFilteringTests.cs" />
+  </ItemGroup>
+
+  <Target Name="ValidateUnsafeLabOptIn" BeforeTargets="CoreCompile"
+          Condition="'$(EnableUnsafeLabTests)' == 'true'">
+    <Error Condition="'$(UltronIsolatedLabAcknowledged)' != 'true'"
+           Text="Live OS mutation tests require a separately authorized isolated laboratory. Use AegisPC.Review.Tests for selected harmless regressions. EnableUnsafeLabTests alone is insufficient; no VM or host safety is certified by this flag." />
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+  </ItemGroup>
+
+  <!-- The public reviewed subset omits PolicyEngineTests, which owns these in-memory fixtures in the full tree. -->
+  <ItemGroup Condition="!Exists('PolicyEngineTests.cs')">
+    <Compile Include="../AegisPC.Review.Tests/ReviewTestDependencies.cs" Link="ReviewTestDependencies.cs" />
   </ItemGroup>
 
   <ItemGroup>

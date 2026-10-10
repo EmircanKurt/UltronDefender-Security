@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -8,83 +7,106 @@ using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.Notifications
 {
+    /// <summary>
+    /// Groups distinct recorded security events while preserving source action text.
+    /// The legacy string contract cannot prove quarantine, blocking, or malware confirmation.
+    /// </summary>
     public class NotificationAggregator : INotificationAggregator, IDisposable
     {
         private readonly IWindowsToastNotificationService _toastService;
         private readonly ILogger<NotificationAggregator>? _logger;
-        private readonly ConcurrentQueue<AggregatedThreatItem> _queue = new();
+        private readonly object _queueLock = new();
+        private readonly Dictionary<EventKey, AggregatedThreatItem> _queue = new();
         private readonly Timer _aggregationTimer;
+        private readonly bool _enableAggregationTimer;
+        private TimeSpan _aggregationWindow = TimeSpan.FromSeconds(3);
         private int _isFlushing;
+        private bool _disposed;
 
-        public TimeSpan AggregationWindow { get; set; } = TimeSpan.FromSeconds(3);
+        /// <summary>
+        /// Gets or sets the positive debounce window for noncritical events.
+        /// Values outside the supported timer millisecond range are rejected.
+        /// </summary>
+        public TimeSpan AggregationWindow
+        {
+            get => _aggregationWindow;
+            set
+            {
+                if (value <= TimeSpan.Zero || value.TotalMilliseconds > int.MaxValue)
+                    throw new ArgumentOutOfRangeException(nameof(value));
+                _aggregationWindow = value;
+            }
+        }
 
+        /// <summary>
+        /// Creates an event aggregator. Disabling its timer allows explicit deterministic
+        /// flushing; the default continues to debounce production notifications.
+        /// </summary>
         public NotificationAggregator(
             IWindowsToastNotificationService toastService,
-            ILogger<NotificationAggregator>? logger = null)
+            ILogger<NotificationAggregator>? logger = null,
+            bool enableAggregationTimer = true)
         {
-            _toastService = toastService;
+            _toastService = toastService ?? throw new ArgumentNullException(nameof(toastService));
             _logger = logger;
+            _enableAggregationTimer = enableAggregationTimer;
             _aggregationTimer = new Timer(OnTimerTick, null, Timeout.Infinite, Timeout.Infinite);
         }
 
+        /// <summary>
+        /// Queues source event facts. Repeated name/path/action tuples count once per batch;
+        /// critical severity never implies that an action succeeded. Disposed calls are ignored.
+        /// </summary>
         public void PushThreatEvent(string threatName, string objectPath, string actionTaken, bool isCritical = false)
         {
-            _queue.Enqueue(new AggregatedThreatItem
+            lock (_queueLock)
             {
-                ThreatName = threatName,
-                ObjectPath = objectPath,
-                ActionTaken = actionTaken,
-                IsCritical = isCritical,
-                Timestamp = DateTime.UtcNow
-            });
+                if (_disposed) return;
+                var key = new EventKey(threatName ?? string.Empty, objectPath ?? string.Empty, actionTaken ?? string.Empty);
+                if (_queue.TryGetValue(key, out var previous)) isCritical |= previous.IsCritical;
+                _queue[key] = new AggregatedThreatItem(key.ThreatName, key.ObjectPath, key.ActionTaken, isCritical);
 
-            // Kayan pencere (Sliding Debounce): Seri halde düşen tehditleri tek bir toplu bildirimde birleştirir
-            int windowMs = isCritical ? 200 : (int)AggregationWindow.TotalMilliseconds;
-            _aggregationTimer.Change(windowMs, Timeout.Infinite);
+                if (_enableAggregationTimer)
+                {
+                    var window = _queue.Values.Any(i => i.IsCritical) ? TimeSpan.FromMilliseconds(200) : AggregationWindow;
+                    _aggregationTimer.Change(window, Timeout.InfiniteTimeSpan);
+                }
+            }
         }
 
-        private void OnTimerTick(object? state)
-        {
-            Flush();
-        }
+        private void OnTimerTick(object? state) => Flush();
 
+        /// <summary>
+        /// Emits unique queued events as source records, not inferred malware or successful
+        /// actions. Empty or disposed instances do not emit; presentation failures are logged.
+        /// </summary>
         public void Flush()
         {
-            if (Interlocked.Exchange(ref _isFlushing, 1) == 1) return;
-
+            if (Volatile.Read(ref _disposed) || Interlocked.Exchange(ref _isFlushing, 1) == 1) return;
             try
             {
-                var items = new List<AggregatedThreatItem>();
-                while (_queue.TryDequeue(out var item))
+                AggregatedThreatItem[] items;
+                lock (_queueLock)
                 {
-                    items.Add(item);
+                    if (_disposed) return;
+                    items = _queue.Values.ToArray();
+                    _queue.Clear();
                 }
+                if (items.Length == 0 || Volatile.Read(ref _disposed)) return;
 
-                if (items.Count == 0) return;
+                bool critical = items.Any(i => i.IsCritical);
+                string title = items.Length == 1
+                    ? critical ? "KRİTİK GÜVENLİK OLAYI" : "Güvenlik olayı"
+                    : $"{items.Length} güvenlik olayı";
+                string message = string.Join("\n\n", items.Take(3).Select(i =>
+                    $"{i.ThreatName}\nKaynak işlem kaydı: {i.ActionTaken}\nKonum: {i.ObjectPath}"));
+                if (items.Length > 3) message += $"\n\n{items.Length - 3} ek olay bu özette gösterilmedi.";
 
-                if (items.Count == 1)
-                {
-                    var single = items[0];
-                    string prefix = single.IsCritical ? "🚨 KRİTİK GÜVENLİK TEHDİDİ ENGELLENDİ" : "🛡️ Tehdit Etkisiz Hale Getirildi";
-                    string type = single.IsCritical ? "danger" : "warning";
-                    _toastService.ShowToast(
-                        $"Ultron Defender (Antivirüs Programı) - {prefix}",
-                        $"{single.ThreatName} ({single.ActionTaken})\nKonum: {single.ObjectPath}",
-                        type);
-                }
-                else
-                {
-                    int quarantined = items.Count(i => i.ActionTaken.Contains("Karantina", StringComparison.OrdinalIgnoreCase) || i.ActionTaken.Contains("Quarantine", StringComparison.OrdinalIgnoreCase));
-                    int blocked = items.Count - quarantined;
-                    bool hasCritical = items.Any(i => i.IsCritical);
-
-                    string sampleNames = string.Join(", ", items.Select(i => i.ThreatName).Distinct().Take(3));
-
-                    _toastService.ShowToast(
-                        $"Ultron Defender (Antivirüs Programı) - 🛡️ {items.Count} Güvenlik Tehdidi Etkisiz Hale Getirildi",
-                        $"{items.Count} adet tehdit engellendi ({quarantined} karantinaya alındı, {blocked} işlem durduruldu).\n({sampleNames}{(items.Count > 3 ? "..." : "")})\nDetaylar için Güvenlik Merkezini açın.",
-                        hasCritical ? "danger" : "warning");
-                }
+                _toastService.ShowToast(title, message, critical ? "danger" : "warning");
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to flush security event notifications");
             }
             finally
             {
@@ -92,19 +114,22 @@ namespace AegisPC.Security.Notifications
             }
         }
 
+        /// <summary>
+        /// Drops pending events and stops future emissions without a shutdown toast.
+        /// An emission already passed downstream cannot be recalled by this aggregator.
+        /// </summary>
         public void Dispose()
         {
-            _aggregationTimer.Dispose();
-            Flush();
+            lock (_queueLock)
+            {
+                if (_disposed) return;
+                Volatile.Write(ref _disposed, true);
+                _queue.Clear();
+                _aggregationTimer.Dispose();
+            }
         }
 
-        private record AggregatedThreatItem
-        {
-            public string ThreatName { get; init; } = string.Empty;
-            public string ObjectPath { get; init; } = string.Empty;
-            public string ActionTaken { get; init; } = string.Empty;
-            public bool IsCritical { get; init; }
-            public DateTime Timestamp { get; init; }
-        }
+        private readonly record struct EventKey(string ThreatName, string ObjectPath, string ActionTaken);
+        private sealed record AggregatedThreatItem(string ThreatName, string ObjectPath, string ActionTaken, bool IsCritical);
     }
 }

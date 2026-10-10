@@ -3,6 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
       Title="{Binding PageTitle}"
       Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True"
@@ -28,7 +29,11 @@
         </Grid.RowDefinitions>
 
         <!-- 1. Header -->
-        <TextBlock Grid.Row="0" Style="{StaticResource PageHeadingStyle}" Text="Tarayıcı Güvenliği ve Eklenti Analizi" Margin="0,0,0,4"/>
+        <StackPanel Grid.Row="0" Margin="0,0,0,8">
+            <TextBlock Style="{StaticResource PageHeadingStyle}" Text="Browser Defender" Margin="0,0,0,4"/>
+            <TextBlock Text="{Binding InventoryCoverageMessage}" Style="{StaticResource CaptionTextStyle}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding ProfileCoverageMessage}" Style="{StaticResource CaptionTextStyle}" TextWrapping="Wrap"/>
+        </StackPanel>
 
         <!-- 2. Profile Selector / Toolbar -->
         <Grid Grid.Row="1" Margin="0,0,0,16" Panel.ZIndex="100">
@@ -93,11 +98,11 @@
                                 <Setter Property="BorderThickness" Value="0"/>
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="#262626"/>
+                                        <Setter Property="Background" Value="{DynamicResource BrushCardBorder}"/>
                                         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
                                     </Trigger>
                                     <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#1F1F1F"/>
+                                        <Setter Property="Background" Value="{DynamicResource BrushCardBgAlt}"/>
                                     </Trigger>
                                 </Style.Triggers>
                             </Style>
@@ -107,9 +112,18 @@
                                 <Setter Property="Background" Value="Transparent"/>
                                 <Setter Property="BorderThickness" Value="0"/>
                                 <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="DataGridCell">
+                                            <Border Padding="6,8" Background="{TemplateBinding Background}" BorderThickness="0" SnapsToDevicePixels="True">
+                                                <ContentPresenter VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="#262626"/>
+                                        <Setter Property="Background" Value="{DynamicResource BrushCardBorder}"/>
                                         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
                                     </Trigger>
                                 </Style.Triggers>
@@ -140,10 +154,10 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
-                            <DataGridTemplateColumn Header="Harici (Sideload)" Width="135">
+                            <DataGridTemplateColumn Header="Bildirilen kaynak" Width="175">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding IsSideloaded, Converter={StaticResource BoolToStatus}, ConverterParameter=yesno}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" FontWeight="SemiBold" Padding="6,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding SourceLabel}" Style="{StaticResource DataTableStyle}" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" Padding="6,0" VerticalAlignment="Center"/>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -170,12 +184,16 @@
 
             <!-- Detail Panel -->
             <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+                <ScrollViewer helpers:WheelScrollHelper.EnableRootRedirect="True"
+                              VerticalScrollBarVisibility="Auto" 
+                              HorizontalScrollBarVisibility="Disabled" 
+                              CanContentScroll="False">
                     <StackPanel Margin="4">
                         <TextBlock Text="Eklenti Güvenlik İncelemesi" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,16"/>
 
                         <StackPanel Visibility="{Binding SelectedExtension, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="{Binding SelectedExtension.Name}" Style="{StaticResource SectionHeadingStyle}" FontSize="18" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding SelectedExtension.ActivationLabel, StringFormat='Etkinlik: {0}'}" Style="{StaticResource CaptionTextStyle}" Margin="0,0,0,4"/>
                             <TextBlock Text="{Binding SelectedExtension.Version, StringFormat='Sürüm: \{0\}'}" Style="{StaticResource CaptionTextStyle}" Margin="0,0,0,8"/>
 
                             <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
@@ -198,7 +216,7 @@
                                     <ItemsControl ItemsSource="{Binding SelectedExtension.Permissions}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding StringFormat='• \{0\}'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,1"/>
+                                                <TextBlock Text="{Binding Path=., StringFormat='• \{0\}'}" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,1"/>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>

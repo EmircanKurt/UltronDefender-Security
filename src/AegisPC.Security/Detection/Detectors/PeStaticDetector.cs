@@ -5,6 +5,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Detection;
 using AegisPC.Security.Scanning;
+using AegisPC.Core.Models;
+using System.Linq;
 
 namespace AegisPC.Security.Detection.Detectors
 {
@@ -16,6 +18,7 @@ namespace AegisPC.Security.Detection.Detectors
         public int Priority => 20;
         public bool IsEnabled { get; set; } = true;
 
+        /// <summary>Inspects actual PE structures independently of extension; unsupported structural parsing remains explicit.</summary>
         public async Task<IEnumerable<SecurityEvidence>> EvaluateAsync(DetectionContext context, CancellationToken cancellationToken = default)
         {
             var list = new List<SecurityEvidence>();
@@ -24,9 +27,17 @@ namespace AegisPC.Security.Detection.Detectors
                 return list;
             }
 
-            // 1. Multi-Signal Suspicious Win32 API Indicators (Only for files outside known safe system/program directories)
-            bool isKnownSafe = AegisPC.Core.Helpers.PathHelper.IsKnownSafePath(context.FilePath);
-            if (!isKnownSafe)
+            var classification = context.ContentClassification ?? context.SharedScan?.ContentClassification;
+            if (classification != null && !classification.Formats.Contains(FileContentFormat.PortableExecutable)) return list;
+            var peResult = PeAnalyzer.Analyze(context.FilePath);
+            if (!peResult.IsPeFile)
+            {
+                if (classification?.Formats.Contains(FileContentFormat.PortableExecutable) == true)
+                    context.CoverageLimitations.Add("PE candidate could not be fully interpreted by the configured static PE parser.");
+                return list;
+            }
+
+            // API indicators are supporting evidence from PE content, never a directory-based trust exception.
             {
                 var apiIndicators = await MalwareSignatureDatabase.ScanApiIndicatorsAsync(context.FilePath, cancellationToken);
                 foreach (var api in apiIndicators)
@@ -36,6 +47,8 @@ namespace AegisPC.Security.Detection.Detectors
                         Category = EvidenceCategory.StaticApi,
                         SourceDetector = DisplayName,
                         RuleName = $"PE.SuspiciousApi.{api.ApiName}",
+                        FeatureIdentity = $"PE.Api.{api.ApiName}",
+                        Nature = EvidenceNature.Capability,
                         Description = api.Description,
                         ScoreContribution = api.Weight,
                         Confidence = EvidenceConfidence.Medium,
@@ -47,13 +60,6 @@ namespace AegisPC.Security.Detection.Detectors
                 }
             }
 
-            // 2. Perform PE binary header inspection if PE format
-            var peResult = PeAnalyzer.Analyze(context.FilePath);
-            if (!peResult.IsPeFile)
-            {
-                return list;
-            }
-
             // 1. W+X Writable & Executable Section Anomaly
             if (peResult.HasWritableExecutableSection)
             {
@@ -62,7 +68,9 @@ namespace AegisPC.Security.Detection.Detectors
                     Category = EvidenceCategory.StaticPeStructure,
                     SourceDetector = DisplayName,
                     RuleName = "PE.Anomaly.WritableExecutableSection",
-                    Description = "Hem yazılabilir hem çalıştırılabilir bölüm (W+X anomalisi) — Kod enjeksiyonu veya crypter göstergesi",
+                    FeatureIdentity = "PE.WritableExecutableSection",
+                    Nature = EvidenceNature.Capability,
+                    Description = "Yazılabilir ve çalıştırılabilir PE bölümü; paketleyici/JIT/mod araçlarında da bulunabilir. Çalıştırılmış saldırı kanıtı değildir.",
                     ScoreContribution = 35,
                     Confidence = EvidenceConfidence.Medium,
                     FilePath = context.FilePath,
@@ -79,7 +87,9 @@ namespace AegisPC.Security.Detection.Detectors
                     Category = EvidenceCategory.AntiEvasion,
                     SourceDetector = DisplayName,
                     RuleName = "PE.Packer.ProtectedBinary",
-                    Description = $"Paketlenmiş/Korunmuş Yürütülebilir ({packerName}) — Doğal crack/koruma yapısı. Risk 'Şüpheli' (Suspicious) seviyesinde tutuldu.",
+                    FeatureIdentity = "PE.PackingCapability",
+                    Nature = EvidenceNature.Capability,
+                    Description = $"Paketlenmiş/korunmuş yürütülebilir ({packerName}); tek başına zararlılık kanıtı değildir.",
                     ScoreContribution = 20,
                     Confidence = EvidenceConfidence.Low,
                     FilePath = context.FilePath,

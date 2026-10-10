@@ -48,5 +48,5 @@ ServiceName       = "AegisDriver"
 ServiceDescription = "Aegis PC Security Kernel Driver"
 DefaultInstance    = "AegisDriver Instance"
 Instance1.Name     = "AegisDriver Instance"
-Instance1.Altitude = "385100"
+Instance1.Altitude = "UNASSIGNED" ; Requires a verified Microsoft-assigned altitude; not an installable package.
 Instance1.Flags    = 0x0

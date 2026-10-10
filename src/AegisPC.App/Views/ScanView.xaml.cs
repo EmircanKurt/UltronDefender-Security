@@ -6,37 +6,23 @@ using AegisPC.App.ViewModels;
 
 namespace AegisPC.App.Views
 {
+    /// <summary>Hosts the theme-specific scan chooser and displays existing per-user reports without starting a scan on navigation.</summary>
     public partial class ScanView : Page
     {
+        /// <summary>Provides existing scan, resource selection and report commands; the view does not replace engine policy.</summary>
         public ScanViewModel ViewModel { get; }
 
+        /// <summary>Connects presentation and refreshes handled read-only history when loaded; no security action is executed here.</summary>
         public ScanView(ScanViewModel viewModel)
         {
             ViewModel = viewModel;
             DataContext = ViewModel;
             InitializeComponent();
-
-            Loaded += (s, e) =>
+            Loaded += async (s, e) =>
             {
                 ViewModel.SyncWithScanCoordinator();
+                await ViewModel.RefreshReportsAsync();
             };
-        }
-
-        private void OnPagePreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            if (RootScrollViewer != null && e.Delta != 0)
-            {
-                RootScrollViewer.ScrollToVerticalOffset(RootScrollViewer.VerticalOffset - (e.Delta * 0.75));
-                e.Handled = true;
-            }
-        }
-
-        private static T? FindVisualParent<T>(DependencyObject child) where T : DependencyObject
-        {
-            var parentObj = VisualTreeHelper.GetParent(child);
-            if (parentObj == null) return null;
-            if (parentObj is T parent) return parent;
-            return FindVisualParent<T>(parentObj);
         }
     }
 }

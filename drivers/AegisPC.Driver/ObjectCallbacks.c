@@ -21,23 +21,8 @@ OB_PREOP_CALLBACK_STATUS AegisPreOperationCallback(PVOID RegistrationContext, PO
 
 NTSTATUS RegisterObjectCallbacks()
 {
-    OB_CALLBACK_REGISTRATION callbackReg;
-    OB_OPERATION_REGISTRATION opReg;
-
-    RtlZeroMemory(&opReg, sizeof(opReg));
-    opReg.ObjectType = PsProcessType;
-    opReg.Operations = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
-    opReg.PreOperation = AegisPreOperationCallback;
-    opReg.PostOperation = NULL;
-
-    RtlZeroMemory(&callbackReg, sizeof(callbackReg));
-    callbackReg.Version = OB_FLT_REGISTRATION_VERSION;
-    callbackReg.OperationRegistrationCount = 1;
-    RtlInitUnicodeString(&callbackReg.Altitude, L"385100");
-    callbackReg.RegistrationContext = NULL;
-    callbackReg.OperationRegistration = &opReg;
-
-    return ObRegisterCallbacks(&callbackReg, &gObRegistrationHandle);
+    // No arbitrary or unauthenticated legacy PID may acquire protection authority.
+    return STATUS_NOT_SUPPORTED;
 }
 
 VOID UnregisterObjectCallbacks()

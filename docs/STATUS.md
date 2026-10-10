@@ -8,7 +8,11 @@ The signed-update tests use fake HTTP and temporary keys/files; cache tests use 
 
 Installer: **NotSigned**, 126,091,934 bytes, SHA-256 `9F136FB11BEA70852EBC1E247BA006188DD0A46D6C82134EA552693082BAA480`. GitHub setup/checksum downloads matched sealed local bytes. Setup was compiled, not installed or executed. It does not install/start a service, driver or autostart; it does not make missing service protection active. Microsoft Defender remains required.
 
-Default-branch application code remains older; only documentation/download pointers were updated here. No staged runtime PR was automatically merged.
+The maintainer explicitly approved promoting the tested preview source to `main`. Its production files match the immutable setup source tag; delivery documentation is newer. This promotion does not activate native service/driver protection or close unfinished VM/corpus/signing gates.
+
+## Older main CI failure — 10 October 2026
+
+The documentation-only main commit initially still ran the obsolete unfiltered live suite. [Run 38028499108](https://github.com/EmircanKurt/UltronDefender-Security/actions/runs/38028499108) aborted in a legacy native WFP call from `LiveEndpointHardeningTests`; it did not pass. This was not the sealed 3.2.4 source. The promoted preview uses the already verified explicit benign allowlist. Native WFP VM testing remains open; do not describe excluding that live test as proving native correctness.
 
 ## Historical evidence — 4 October 2026
 

@@ -49,8 +49,8 @@ namespace AegisPC.App.Services
                     }
                 }
 
-                // Auto-detect Windows System Light/Dark Mode if no explicit preference saved
-                CurrentTheme = DetectWindowsSystemTheme();
+                // New installations use the plain light design; explicit saved preferences remain intact.
+                CurrentTheme = ThemeMode.Light;
             }
             catch
             {
@@ -116,93 +116,7 @@ namespace AegisPC.App.Services
                     }
                     catch { }
 
-                    // 2. Swap Color Token Dictionary in MergedDictionaries
-                    string themeSource = dark 
-                        ? "Resources/Themes/Colors.Dark.xaml" 
-                        : "Resources/Themes/Colors.Light.xaml";
-
-                    var newThemeDict = new ResourceDictionary 
-                    { 
-                        Source = new Uri(themeSource, UriKind.Relative) 
-                    };
-
-                    int themeDictIndex = -1;
-                    for (int i = 0; i < appResources.MergedDictionaries.Count; i++)
-                    {
-                        var d = appResources.MergedDictionaries[i];
-                        if (d.Source != null && 
-                           (d.Source.OriginalString.Contains("Colors.Light.xaml", StringComparison.OrdinalIgnoreCase) || 
-                            d.Source.OriginalString.Contains("Colors.Dark.xaml", StringComparison.OrdinalIgnoreCase)))
-                        {
-                            themeDictIndex = i;
-                            break;
-                        }
-                    }
-
-                    if (themeDictIndex >= 0)
-                    {
-                        appResources.MergedDictionaries[themeDictIndex] = newThemeDict;
-                    }
-                    else
-                    {
-                        appResources.MergedDictionaries.Add(newThemeDict);
-                    }
-
-                    // 3. Direct override update on Application.Current.Resources for all custom keys
-                    foreach (var key in newThemeDict.Keys)
-                    {
-                        appResources[key] = newThemeDict[key];
-                    }
-
-                    // 4. Update WPF-UI Native Controls Palette, TitleBar, and Sidebar
-                    var textPrimary = appResources["BrushTextPrimary"] as Brush;
-                    var textSecondary = appResources["BrushTextSecondary"] as Brush;
-                    var textMuted = appResources["BrushTextMuted"] as Brush;
-                    var cardBg = appResources["BrushCardBg"] as Brush;
-                    var cardBorder = appResources["BrushCardBorder"] as Brush;
-                    var appBg = appResources["BrushAppBg"] as Brush;
-                    var sidebarBg = appResources["BrushSidebarBg"] as Brush;
-
-                    if (textPrimary != null)
-                    {
-                        appResources["TextFillColorPrimaryBrush"] = textPrimary;
-                        appResources["TitleBarButtonForeground"] = textPrimary;
-                        appResources["TitleBarButtonPointerOverForeground"] = textPrimary;
-                        appResources["TitleBarButtonPressedForeground"] = textPrimary;
-                    }
-
-                    if (textSecondary != null)
-                    {
-                        appResources["TextFillColorSecondaryBrush"] = textSecondary;
-                    }
-
-                    if (textMuted != null)
-                    {
-                        appResources["TextFillColorTertiaryBrush"] = textMuted;
-                    }
-
-                    if (cardBg != null)
-                    {
-                        appResources["CardBackgroundSolidColorBrush"] = cardBg;
-                    }
-
-                    if (cardBorder != null)
-                    {
-                        appResources["CardBorderSolidColorBrush"] = cardBorder;
-                    }
-
-                    if (appBg != null)
-                    {
-                        appResources["NavigationViewContentBackground"] = appBg;
-                        appResources["NavigationViewContentGridBackground"] = appBg;
-                    }
-
-                    if (sidebarBg != null)
-                    {
-                        appResources["NavigationViewPaneBackground"] = sidebarBg;
-                        appResources["NavigationViewDefaultPaneBackground"] = sidebarBg;
-                        appResources["NavigationViewExpandedPaneBackground"] = sidebarBg;
-                    }
+                    ThemePalette.Apply(appResources, dark);
                 }
                 catch { }
 

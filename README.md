@@ -47,10 +47,10 @@ Windows 10/11 x64 are development targets; this .NET 8 build does not support Wi
 
 Requirements: Windows and .NET 8 SDK; Inno Setup 6 only for installer generation.
 
-The latest source is on [codex/final-audit-2026-10-10](https://github.com/EmircanKurt/UltronDefender-Security/tree/b2f10a927147eb9250b844ce1428bf80e777c235), proposed in stacked draft PR12. The default branch still contains older application code until the staged reviews are merged; this documentation update does not merge them. The commands below select the preview branch.
+The tested 3.2.4 experimental preview source is now on `main`, promoted with the maintainer's explicit approval. The installer remains tied to [the immutable source tag](https://github.com/EmircanKurt/UltronDefender-Security/tree/v3.2.4-preview.20261010). This is still an unsigned preview, not a production-protection certification; native/VM/corpus gates remain open.
 
 ```powershell
-git clone --branch codex/final-audit-2026-10-10 https://github.com/EmircanKurt/UltronDefender-Security.git
+git clone --branch main https://github.com/EmircanKurt/UltronDefender-Security.git
 cd UltronDefender-Security
 dotnet build tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release -warnaserror
 ./scripts/Test-BenignPreview.ps1 -NoBuild
@@ -65,7 +65,7 @@ These commands do not install/start a service. The main test project includes li
 
 - [Download 3.2.4-preview.20261010 setup](https://github.com/EmircanKurt/UltronDefender-Security/releases/download/v3.2.4-preview.20261010/UltronDefenderSetup-3.2.4-preview.20261010.exe) — unsigned experimental preview for isolated Windows 10/11 x64 VM testing.
 - [Release notes and SHA256SUMS](https://github.com/EmircanKurt/UltronDefender-Security/releases/tag/v3.2.4-preview.20261010) — setup SHA-256 `9F136FB11BEA70852EBC1E247BA006188DD0A46D6C82134EA552693082BAA480`; both public assets were downloaded and matched the sealed local package.
-- [Current source / review PR12](https://github.com/EmircanKurt/UltronDefender-Security/pull/12) — staged source changes remain separate from older default-branch application code.
+- [Current main source](https://github.com/EmircanKurt/UltronDefender-Security/tree/main) · [scoped review PR12](https://github.com/EmircanKurt/UltronDefender-Security/pull/12) — main now contains the tested experimental preview source; the release tag preserves the exact setup source.
 
 This setup has a separate per-user preview identity and does **not** install/start services, drivers or autostart, or launch Ultron. It does not activate background service protection by itself. No signed production installer is available.
 

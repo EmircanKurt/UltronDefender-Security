@@ -1,14 +1,8 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using AegisPC.Contracts.Behavior;
 using AegisPC.Contracts.Services;
-using AegisPC.Core.Enums;
-using AegisPC.Core.Helpers;
-using AegisPC.Core.Models;
 using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Session;
 using Microsoft.Extensions.Logging;
@@ -27,55 +21,81 @@ namespace AegisPC.Service.RealTime
     }
 
     /// <summary>
-    /// Microsoft-Windows-Kernel-Process ETW Sağlayıcısı üzerinden gerçek zamanlı
-    /// DLL, Çalıştırılabilir Modül ve Kernel Sürücüsü (.sys) yükleme telemetri motoru (ImageLoad).
-    /// DLL Side-Loading, DLL Injection ve BYOVD (Bring Your Own Vulnerable Driver) tespiti yapar.
-    /// 256 MB döngüsel bellek (circular buffer), yerel ETL/log kaydı ve BehaviorEngine/SecurityFinding entegrasyonu içerir.
+    /// Observes module-load events through a live ETW session. A module path alone does not
+    /// establish injection, vulnerable-driver use, or maliciousness; this is post-load telemetry.
+    /// A stopped pump or lost events degrades optional coverage and is exposed to the worker.
     /// </summary>
     public class EtwImageLoadMonitor : IDisposable
     {
         private readonly ILogger<EtwImageLoadMonitor>? _logger;
-        private readonly IBehaviorEngine? _behaviorEngine;
-        private readonly ISecurityFindingService? _findingService;
 
         private TraceEventSession? _session;
         private Task? _processingTask;
         private CancellationTokenSource? _cts;
-        private bool _isRunning;
+        private volatile bool _isRunning;
+        private int _lastEventsLost;
         private readonly object _lock = new();
 
         public static readonly Guid KernelProcessProviderGuid = new("22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716");
         public const string DefaultSessionName = "AegisPCEtwSession_ImageLoad";
         public const string DefaultLogDirectory = @"C:\ProgramData\UltronDefender\EtwLogs";
-        private const int DefaultBufferSizeMB = 256;
+        private const int DefaultBufferSizeMB = 32;
 
-        private StreamWriter? _etlLogWriter;
+        private BoundedEtwLogWriter? _etlLogWriter;
         private readonly object _logLock = new();
 
-        public bool IsRunning => _isRunning;
+        /// <summary>True only while the ETW message pump has not terminated; this is not pre-load blocking.</summary>
+        public bool IsRunning => _isRunning && _processingTask?.IsCompleted != true;
+
+        /// <summary>Returns ETW's live lost-event count, or -1 when the active session cannot be queried.</summary>
+        public int EventsLost
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    if (_session == null) return _lastEventsLost;
+                    try
+                    {
+                        _lastEventsLost = Math.Max(_lastEventsLost, _session.EventsLost);
+                        return _lastEventsLost;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Could not read ETW image-load event-loss counter.");
+                        return -1;
+                    }
+                }
+            }
+        }
 
         public event Action<ImageLoadTelemetry>? ImageLoaded;
 
+        /// <summary>Creates an optional module observer; path heuristics never become an independent verdict.</summary>
         public EtwImageLoadMonitor(
             ILogger<EtwImageLoadMonitor>? logger = null,
             IBehaviorEngine? behaviorEngine = null,
             ISecurityFindingService? findingService = null)
         {
             _logger = logger;
-            _behaviorEngine = behaviorEngine;
-            _findingService = findingService;
+            _ = behaviorEngine;
+            _ = findingService;
         }
 
+        /// <summary>Starts a live ETW session; on failure the monitor remains stopped and cleans partial resources.</summary>
         public void Start()
         {
             lock (_lock)
             {
-                if (_isRunning) return;
-                _isRunning = true;
+                if (IsRunning) return;
+                CleanupSession();
                 _cts = new CancellationTokenSource();
+                _lastEventsLost = 0;
+
+                string sessionName = $"{DefaultSessionName}-{Environment.ProcessId}-{Guid.NewGuid():N}";
 
                 _logger?.LogInformation("Starting ETW ImageLoad Monitor (Session: {Session}, Buffer: {Buffer}MB)...",
-                    DefaultSessionName, DefaultBufferSizeMB);
+                    sessionName, DefaultBufferSizeMB);
 
                 try
                 {
@@ -88,27 +108,17 @@ namespace AegisPC.Service.RealTime
                         }
 
                         string logFilePath = Path.Combine(DefaultLogDirectory, "ImageLoadEvents.log");
-                        var fs = new FileStream(logFilePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-                        _etlLogWriter = new StreamWriter(fs, Encoding.UTF8) { AutoFlush = true };
+                        _etlLogWriter = new BoundedEtwLogWriter(logFilePath);
                     }
                     catch (Exception ex)
                     {
                         _logger?.LogWarning(ex, "Could not initialize local ImageLoad log file at {Dir}. Continuing in-memory.", DefaultLogDirectory);
                     }
 
-                    // 2. Önceki artık oturum varsa temizle
-                    try
-                    {
-                        var existingSession = TraceEventSession.GetActiveSession(DefaultSessionName);
-                        existingSession?.Dispose();
-                    }
-                    catch { }
-
-                    // 3. 256 MB Döngüsel Bellek ile ETW Oturumu Başlat
-                    _session = new TraceEventSession(DefaultSessionName, TraceEventSessionOptions.Create)
+                    // A circular in-memory session has no live Source; this must remain real-time.
+                    _session = new TraceEventSession(sessionName, TraceEventSessionOptions.Create)
                     {
                         BufferSizeMB = DefaultBufferSizeMB,
-                        CircularBufferMB = DefaultBufferSizeMB,
                         StopOnDispose = true
                     };
 
@@ -118,72 +128,79 @@ namespace AegisPC.Service.RealTime
                         TraceEventLevel.Informational,
                         matchAnyKeywords: 0x40);
 
-                    // 4. Olay Dinleyicisi
-                    _session.Source.Dynamic.All += OnKernelImageEvent;
+                    var session = _session;
+                    session.Source.Dynamic.All += OnKernelImageEvent;
 
-                    // 5. Arka Plan Dinleme Görevi
+                    _isRunning = true;
                     _processingTask = Task.Factory.StartNew(
                         () =>
                         {
                             try
                             {
-                                _session.Source.Process();
+                                session.Source.Process();
                             }
                             catch (Exception ex)
                             {
-                                _logger?.LogDebug(ex, "ETW ImageLoad message pump terminated.");
+                                if (_isRunning)
+                                    _logger?.LogError(ex, "ETW image-load message pump failed; module telemetry is unavailable.");
+                                else
+                                    _logger?.LogDebug(ex, "ETW image-load message pump stopped during shutdown.");
+                            }
+                            finally
+                            {
+                                if (_isRunning)
+                                    _logger?.LogWarning("ETW image-load message pump stopped unexpectedly; module telemetry is unavailable.");
+                                lock (_lock)
+                                {
+                                    if (ReferenceEquals(_session, session)) _isRunning = false;
+                                }
                             }
                         },
                         _cts.Token,
                         TaskCreationOptions.LongRunning,
                         TaskScheduler.Default);
 
-                    _logger?.LogInformation("ETW ImageLoad Monitor session active and listening.");
+                    _logger?.LogInformation("ETW image-load session configured; message pump scheduled.");
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogWarning(ex, "Failed to start ETW ImageLoad Monitor session (non-admin rights or session limit). Progressive fallback active.");
+                    _logger?.LogWarning(ex, "Failed to start ETW image-load session; module telemetry is unavailable.");
                     _isRunning = false;
+                    CleanupSession();
                 }
             }
         }
 
+        /// <summary>Stops the ETW session and releases partial resources even if the message pump already failed.</summary>
         public void Stop()
         {
             lock (_lock)
             {
-                if (!_isRunning) return;
                 _isRunning = false;
-
-                try
-                {
-                    _cts?.Cancel();
-                    _session?.Stop();
-                    _session?.Dispose();
-                    _session = null;
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogTrace(ex, "Error stopping ETW ImageLoad Monitor session.");
-                }
-                finally
-                {
-                    _cts?.Dispose();
-                    _cts = null;
-
-                    lock (_logLock)
-                    {
-                        try
-                        {
-                            _etlLogWriter?.Flush();
-                            _etlLogWriter?.Dispose();
-                            _etlLogWriter = null;
-                        }
-                        catch { }
-                    }
-                }
+                CleanupSession();
 
                 _logger?.LogInformation("ETW ImageLoad Monitor stopped.");
+            }
+        }
+
+        private void CleanupSession()
+        {
+            _cts?.Cancel();
+            if (_session != null)
+            {
+                try { _lastEventsLost = Math.Max(_lastEventsLost, _session.EventsLost); }
+                catch (Exception ex) { _logger?.LogWarning(ex, "Could not read final ETW image-load loss count."); }
+                try { _session.Dispose(); }
+                catch (Exception ex) { _logger?.LogWarning(ex, "Could not dispose ETW image-load session."); }
+                _session = null;
+            }
+            _cts?.Dispose();
+            _cts = null;
+            lock (_logLock)
+            {
+                try { _etlLogWriter?.Dispose(); }
+                catch (Exception ex) { _logger?.LogWarning(ex, "Could not close ETW image-load log."); }
+                _etlLogWriter = null;
             }
         }
 
@@ -200,7 +217,7 @@ namespace AegisPC.Service.RealTime
                     return;
                 }
 
-                int pid = data.ProcessID;
+                int pid = ExtractTargetProcessId(data);
                 if (pid <= 4) return; // System bypass
 
                 string imageLoadedPath = ExtractPayloadString(data, "FileName", "ImageFileName", "ImageName");
@@ -228,25 +245,6 @@ namespace AegisPC.Service.RealTime
                 // 2. DLL Side-loading ve Enjeksiyon Analizi
                 bool isSuspicious = CheckSuspiciousImageLoad(pid, imageLoadedPath, out string reason);
 
-                // 3. Davranış Motoruna Besle (BehaviorEngine.ProcessEventAsync)
-                if (_behaviorEngine != null)
-                {
-                    try
-                    {
-                        var behaviorEvent = new BehaviorEvent
-                        {
-                            EventType = isSuspicious ? BehaviorEventType.ProcessInjection : BehaviorEventType.ProcessSpawn,
-                            ProcessId = pid,
-                            ProcessName = Path.GetFileName(imageLoadedPath),
-                            ExecutablePath = imageLoadedPath,
-                            Timestamp = timestampUtc,
-                            Details = $"Module loaded: {imageLoadedPath} (Base: 0x{imageBase:X}, Size: {imageSize} bytes)"
-                        };
-                        _ = _behaviorEngine.ProcessEventAsync(behaviorEvent);
-                    }
-                    catch { }
-                }
-
                 var telemetry = new ImageLoadTelemetry
                 {
                     ProcessId = pid,
@@ -258,37 +256,13 @@ namespace AegisPC.Service.RealTime
                     ThreatReason = reason
                 };
 
-                // 4. Şüpheli Modül/Enjeksiyon Durumunda SecurityFinding Oluştur
+                // A path-only heuristic is not evidence of injection or a malicious driver.
                 if (isSuspicious)
                 {
-                    _logger?.LogWarning("SECURITY ALERT: Suspicious DLL/Image Load! PID: {Pid}, Module: {Module}, Reason: {Reason}",
+                    _logger?.LogInformation("ETW image-load heuristic observation: PID: {Pid}, Module: {Module}, Reason: {Reason}",
                         pid, imageLoadedPath, reason);
 
-                    WriteToLocalLog($"[SECURITY_ALERT] PID: {pid} | Threat: {reason} | Module: {imageLoadedPath}");
-
-                    if (_findingService != null)
-                    {
-                        var finding = new SecurityFinding
-                        {
-                            Id = Guid.NewGuid(),
-                            ObjectPath = imageLoadedPath,
-                            ObjectName = Path.GetFileName(imageLoadedPath),
-                            RiskLevel = RiskLevel.HighRisk,
-                            RiskScore = 90,
-                            Category = FindingCategory.SuspiciousLocation,
-                            Title = $"DLL Side-Loading / Injection: {reason}",
-                            Description = $"PID {pid} loaded suspicious module from unprivileged directory: {imageLoadedPath}",
-                            RiskReasons = new List<string> { reason, $"Module Base: 0x{imageBase:X}", $"Module Size: {imageSize} bytes" },
-                            ConfidenceLevel = ConfidenceLevel.High,
-                            FirstObserved = timestampUtc,
-                            LastObserved = timestampUtc,
-                            CreatedAt = timestampUtc,
-                            UpdatedAt = timestampUtc,
-                            Status = FindingStatus.Active
-                        };
-
-                        _ = _findingService.AddFindingAsync(finding);
-                    }
+                    WriteToLocalLog($"[HEURISTIC_OBSERVATION] PID: {pid} | Reason: {reason} | Module: {imageLoadedPath}");
                 }
 
                 ImageLoaded?.Invoke(telemetry);
@@ -301,17 +275,27 @@ namespace AegisPC.Service.RealTime
 
         private void WriteToLocalLog(string entry)
         {
-            if (_etlLogWriter == null) return;
             lock (_logLock)
             {
+                if (_etlLogWriter == null) return;
                 try
                 {
-                    _etlLogWriter.WriteLine(entry);
+                    if (_etlLogWriter.TryWrite(entry)) return;
+                    _logger?.LogWarning("ETW image-load observation log reached its {ByteBudget} byte budget; module telemetry continues without local file logging.", BoundedEtwLogWriter.MaxLogBytes);
+                    _etlLogWriter.Dispose();
+                    _etlLogWriter = null;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Could not write ETW image-load log; module telemetry continues without local file logging.");
+                    try { _etlLogWriter?.Dispose(); }
+                    catch (Exception disposeException) { _logger?.LogWarning(disposeException, "Could not close failed ETW image-load log."); }
+                    _etlLogWriter = null;
+                }
             }
         }
 
+        /// <summary>Returns an unconfirmed path/name observation, never proof of injection or a malicious driver.</summary>
         public static bool CheckSuspiciousImageLoad(int pid, string modulePath, out string reason)
         {
             reason = string.Empty;
@@ -360,6 +344,19 @@ namespace AegisPC.Service.RealTime
                 }
             }
             return string.Empty;
+        }
+
+        private static int ExtractTargetProcessId(TraceEvent data)
+        {
+            // The provider's ProcessID payload identifies the affected process; the ETW header can identify the emitter.
+            var payload = data.PayloadByName("ProcessID");
+            return payload switch
+            {
+                int pid => pid,
+                uint pid when pid <= int.MaxValue => (int)pid,
+                _ when int.TryParse(payload?.ToString(), out int parsed) => parsed,
+                _ => 0
+            };
         }
 
         public void Dispose()

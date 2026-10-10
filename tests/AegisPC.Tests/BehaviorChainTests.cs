@@ -142,7 +142,7 @@ namespace AegisPC.Tests
             {
                 Pid = attackPid,
                 ProcessName = "invoice_macro.exe",
-                ExecutablePath = @"C:\Users\PC\Downloads\invoice_macro.exe"
+                ExecutablePath = @"C:\Users\ReviewUser\Downloads\invoice_macro.exe"
             });
 
             // Stage 1: Child Spawn
@@ -187,9 +187,10 @@ namespace AegisPC.Tests
         }
 
         [Fact]
-        public async Task Test_BehaviorEngine_FullLifecycle_ContainmentAndIncidentCreation()
+        /// <summary>Reported multi-stage telemetry produces review evidence and never claims containment.</summary>
+        public async Task Test_BehaviorEngine_FullLifecycle_ObservationAndIncidentCreation()
         {
-            var engine = new BehaviorEngine();
+            using var engine = new BehaviorEngine();
             SecurityIncident? capturedIncident = null;
             engine.OnIncidentCreated += inc => capturedIncident = inc;
 
@@ -227,9 +228,11 @@ namespace AegisPC.Tests
             });
 
             Assert.NotNull(capturedIncident);
-            Assert.Equal(rootPid, capturedIncident.RootPid);
-            Assert.Equal("Contained", capturedIncident.Status);
-            Assert.True(capturedIncident.RiskScore >= 75);
+            Assert.Equal(0, capturedIncident.RootPid);
+            Assert.Equal("Unknown", capturedIncident.ActorIdentityStatus);
+            Assert.Equal("ObservationOnly", capturedIncident.Status);
+            Assert.Equal("None", capturedIncident.ActionTaken);
+            Assert.InRange(capturedIncident.RiskScore, 1, 65);
             Assert.NotEmpty(capturedIncident.Evidences);
             Assert.NotEmpty(capturedIncident.Timeline);
             Assert.NotEmpty(capturedIncident.HumanExplanation);

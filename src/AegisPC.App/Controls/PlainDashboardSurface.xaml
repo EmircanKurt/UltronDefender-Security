@@ -1,0 +1,139 @@
+<UserControl x:Class="AegisPC.App.Controls.PlainDashboardSurface"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    UseLayoutRounding="True" SnapsToDevicePixels="True"
+    FontFamily="Segoe UI" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="VisibleWhenTrue"/>
+        <Style x:Key="Panel" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource BrushCardBg}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushCardBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="22"/>
+        </Style>
+        <Style x:Key="Body" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="LineHeight" Value="20"/>
+        </Style>
+        <Style x:Key="Heading" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="17"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,14"/>
+        </Style>
+    </UserControl.Resources>
+    <StackPanel>
+        <Grid Margin="0,0,0,24">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="4"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <Border Background="{DynamicResource BrushBrandPrimary}" CornerRadius="2"/>
+            <StackPanel Grid.Column="1" Margin="14,0,0,0">
+                <TextBlock Text="Genel bakış" FontSize="29" FontWeight="SemiBold"/>
+                <TextBlock Text="Bilgisayarınızın güvenliği, bir bakışta." Style="{StaticResource Body}" Margin="0,5,0,0"/>
+            </StackPanel>
+        </Grid>
+        <Border Style="{StaticResource Panel}" Margin="0,0,0,20">
+            <Grid x:Name="StatusGrid">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Button Grid.Column="1" x:Name="RefreshButton" Content="Durumu yenile"
+                    Command="{Binding RefreshProtectionStatusCommand}" Style="{DynamicResource SecondaryButtonStyle}"
+                    HorizontalAlignment="Left" VerticalAlignment="Center" Margin="18,0,0,0" AutomationProperties.Name="Koruma durumunu yenile"/>
+                <StackPanel x:Name="StatusText">
+                    <TextBlock Text="{Binding DashboardPresentation.Title}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding DashboardPresentation.Detail}" Style="{StaticResource Body}" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+        <Border x:Name="FindingsPanel" Style="{StaticResource Panel}" Margin="0,0,0,20"
+            Visibility="{Binding HasThreatsDetected, Converter={StaticResource VisibleWhenTrue}}">
+            <StackPanel>
+                <TextBlock Text="İnceleme bekleyen bulgular var" FontWeight="SemiBold"
+                    Foreground="{DynamicResource BrushStatusDangerText}" TextWrapping="Wrap"/>
+                <TextBlock Text="Tarama bulgularını ve gerçekleşen işlemleri inceleyin." Style="{StaticResource Body}" Margin="0,6,0,12"/>
+                <Button Content="Bulguları incele" Command="{Binding ReviewThreatsCommand}"
+                    Style="{DynamicResource SecondaryButtonStyle}" HorizontalAlignment="Left"/>
+            </StackPanel>
+        </Border>
+        <Border Style="{StaticResource Panel}" Margin="0,0,0,20">
+            <StackPanel>
+                <TextBlock Text="Tarama" Style="{StaticResource Heading}"/>
+                <TextBlock Text="Hızlı tarama önemli konumları, tam tarama erişilebilir yerel diskleri inceler."
+                    Style="{StaticResource Body}" Margin="0,0,0,18"/>
+                <WrapPanel>
+                    <Button x:Name="QuickButton" Content="Hızlı tarama" Command="{Binding StartQuickScanCommand}"
+                        Style="{DynamicResource PrimaryButtonStyle}" Margin="0,0,10,10"/>
+                    <Button x:Name="FullButton" Content="Tam tarama" Command="{Binding StartFullScanCommand}"
+                        Style="{DynamicResource SecondaryButtonStyle}" Margin="0,0,0,10"/>
+                </WrapPanel>
+                <StackPanel Visibility="{Binding IsScanning, Converter={StaticResource VisibleWhenTrue}}" Margin="0,6,0,10">
+                    <ProgressBar x:Name="ScanProgress" Value="{Binding ScanProgress, Mode=OneWay}" Maximum="100" Height="4"
+                        Foreground="{DynamicResource BrushBrandPrimary}" Background="{DynamicResource BrushCardBorder}"/>
+                    <Button Content="Devam eden taramayı görüntüle" Command="{Binding OpenActiveScanWindowCommand}"
+                        Style="{DynamicResource SecondaryButtonStyle}" HorizontalAlignment="Left" Margin="0,10,0,0"/>
+                </StackPanel>
+                <TextBlock Style="{StaticResource Body}"><Run Text="Son tarama: "/><Run Text="{Binding LastScanTime, Mode=OneWay}"/></TextBlock>
+            </StackPanel>
+        </Border>
+        <Grid x:Name="DetailGrid">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="18"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Border x:Name="ProtectionPanel" Style="{StaticResource Panel}">
+                <StackPanel>
+                    <TextBlock Text="Korumalar" Style="{StaticResource Heading}"/>
+                    <ItemsControl ItemsSource="{Binding DashboardPresentation.Rows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="0,0,0,1" Padding="0,12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Name}" TextWrapping="Wrap" Margin="0,0,12,0"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding State}" Style="{StaticResource Body}" TextAlignment="Right"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Content="Korumaları yönet" Command="{Binding OpenUltronProtectionCentreCommand}"
+                        Style="{DynamicResource SecondaryButtonStyle}" HorizontalAlignment="Left" Margin="0,18,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border x:Name="EventsPanel" Grid.Column="2" Style="{StaticResource Panel}">
+                <StackPanel>
+                    <TextBlock Text="Son olaylar" Style="{StaticResource Heading}"/>
+                    <TextBlock Text="Arka plan izlemesinin son bildirimleri. Bir gözlem, engelleme anlamına gelmez."
+                        Style="{StaticResource Body}" Margin="0,0,0,10"/>
+                    <ItemsControl x:Name="EventsList" ItemsSource="{Binding LiveActivities}">
+                        <ItemsControl.Style>
+                            <Style TargetType="ItemsControl"><Setter Property="MaxHeight" Value="220"/>
+                                <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ItemsControl">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><ItemsPresenter/></ScrollViewer>
+                                </ControlTemplate></Setter.Value></Setter>
+                            </Style>
+                        </ItemsControl.Style>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderThickness="0,0,0,1" BorderBrush="{DynamicResource BrushCardBorder}" Padding="0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding TimestampFormatted}" Style="{StaticResource Body}" FontSize="12"/>
+                                        <TextBlock Text="{Binding StageDetails}" Style="{StaticResource Body}" FontSize="12"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="Henüz bu oturumda güvenlik olayı yok." Margin="0,22,0,24">
+                        <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource Body}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers><DataTrigger Binding="{Binding LiveActivities.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
+                        </Style></TextBlock.Style>
+                    </TextBlock>
+                    <Button Content="Olay geçmişini aç" Command="{Binding ReviewThreatsCommand}"
+                        Style="{DynamicResource SecondaryButtonStyle}" HorizontalAlignment="Left" Margin="0,18,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+        <TextBlock Text="Ultron Defender · Yerel çalışan ek koruma" Style="{StaticResource Body}" FontSize="12" Margin="0,24,0,8"/>
+    </StackPanel>
+</UserControl>

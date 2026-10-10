@@ -17,7 +17,7 @@ namespace AegisPC.Tests
     /// Golden Regression Test Suite for Ultron Defender Total Security (AegisPC).
     /// Enforces the core, invariant behaviors of the antivirus engine that must NEVER regress:
     /// 1. EICAR Detection (standard path &amp; whitelisted developer directory).
-    /// 2. Zero Self-Detection (.pdb, .db, and own installation paths).
+    /// 2. Product-path inspection without unverified destructive action.
     /// 3. Zero False Positives on benign user files (.txt, .pdf, .jpg).
     /// 4. Quarantine and Restore roundtrip cryptographic integrity.
     /// 5. Risk Scoring Engine threshold band calibrations.
@@ -122,43 +122,45 @@ namespace AegisPC.Tests
 
         #region 2. Zero Self-Detection Invariants
         /// <summary>
-        /// Invariant 2: Verifies that the application's own files (.pdb, .db, .runtimeconfig.json, .exe)
-        /// and its base directory are NEVER flagged as threats or quarantined.
+        /// Invariant 2: Product-root membership protects files from destructive actions but does not
+        /// make arbitrary writable content clean or exempt it from inspection.
         /// </summary>
         [Fact]
-        public async Task Golden02_ZeroSelfDetection_AppFilesAndBaseDirectory_AlwaysCleanAndAllowed()
+        public async Task Golden02_ProductFilesAreInspectedWithoutUnverifiedAutomaticAction()
         {
             string appBaseDir = AppDomain.CurrentDomain.BaseDirectory;
             string selfPdb = Path.Combine(appBaseDir, "AegisPC.Security.pdb");
-            string selfConfig = Path.Combine(appBaseDir, "UltronDefender.runtimeconfig.json");
-            string selfExe = Path.Combine(appBaseDir, "UltronDefender.exe");
+            string selfConfig = Path.Combine(appBaseDir, typeof(GoldenTestSuite).Assembly.GetName().Name + ".runtimeconfig.json");
+            string selfExe = typeof(FileScannerService).Assembly.Location;
+            Assert.True(File.Exists(selfPdb));
+            Assert.True(File.Exists(selfConfig));
+            Assert.True(File.Exists(selfExe));
 
-            // Self-owned path predicate check
+            // The product-state guard is only for destructive operations.
             Assert.True(FileScannerService.IsSelfOwnedPath(selfPdb));
             Assert.True(FileScannerService.IsSelfOwnedPath(selfConfig));
             Assert.True(FileScannerService.IsSelfOwnedPath(selfExe));
 
-            // Real-Time Engine inspection must always evaluate as Clean and Allow
+            // Actual binaries and diagnostics can have heuristic observations; their path alone
+            // may neither manufacture a clean verdict nor authorize destructive action.
             var verdictPdb = await _realTimeEngine.InspectFileAsync(selfPdb);
-            Assert.Equal(RealTimeVerdict.Clean, verdictPdb.Verdict);
-            Assert.Equal(0, verdictPdb.RiskScore);
-            Assert.Equal(RealTimePolicyAction.Allow, verdictPdb.RecommendedPolicy);
+            Assert.NotEqual(RealTimeVerdict.ConfirmedMalicious, verdictPdb.Verdict);
+            Assert.NotEqual(RealTimePolicyAction.BlockAndQuarantine, verdictPdb.RecommendedPolicy);
 
             var verdictConfig = await _realTimeEngine.InspectFileAsync(selfConfig);
-            Assert.Equal(RealTimeVerdict.Clean, verdictConfig.Verdict);
-            Assert.Equal(0, verdictConfig.RiskScore);
-            Assert.Equal(RealTimePolicyAction.Allow, verdictConfig.RecommendedPolicy);
+            Assert.NotEqual(RealTimeVerdict.ConfirmedMalicious, verdictConfig.Verdict);
+            Assert.NotEqual(RealTimePolicyAction.BlockAndQuarantine, verdictConfig.RecommendedPolicy);
 
-            // File scanner inspection should skip or return clean
+            // File scanning must not implicitly resolve/quarantine an unverified own-file finding.
             var scanFinding = await _fileScanner.ScanFileAsync(selfPdb);
-            Assert.Null(scanFinding);
+            Assert.True(scanFinding == null || scanFinding.RiskLevel != RiskLevel.ConfirmedMalicious);
         }
         #endregion
 
         #region 3. Zero False Positives on Benign Files
         /// <summary>
-        /// Invariant 3: Verifies that legitimate, benign user files (.txt, .pdf, .jpg)
-        /// never produce malicious or suspicious verdicts (Score &lt; 40, Verdict Clean, Action Allow).
+        /// Invariant 3: Benign content never produces a malware verdict, while unsupported or
+        /// truncated structures remain Unknown/Observe instead of being declared fully inspected.
         /// </summary>
         [Fact]
         public async Task Golden03_ZeroFalsePositives_BenignUserFiles_ProduceCleanAndAllowedVerdict()
@@ -170,10 +172,10 @@ namespace AegisPC.Tests
             // Legitimate text document
             await File.WriteAllTextAsync(txtFile, "Sayin Musteri, Gizlilik ve Hizmet Sozlesmesi ektedir. Tarih: 2026.");
 
-            // Valid PDF header and ASCII content
+            // Header-only PDF: no configured embedded-object decoder, so coverage must be explicit.
             await File.WriteAllBytesAsync(pdfFile, Encoding.UTF8.GetBytes("%PDF-1.4 harmless annual budget report contents"));
 
-            // Valid JPEG JFIF header
+            // Truncated JPEG JFIF header, deliberately not a complete image.
             var dummyJpg = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00 };
             await File.WriteAllBytesAsync(jpgFile, dummyJpg);
 
@@ -183,13 +185,15 @@ namespace AegisPC.Tests
             Assert.True(verdictTxt.RiskScore < 40);
 
             var verdictPdf = await _realTimeEngine.InspectFileAsync(pdfFile);
-            Assert.Equal(RealTimeVerdict.Clean, verdictPdf.Verdict);
-            Assert.Equal(RealTimePolicyAction.Allow, verdictPdf.RecommendedPolicy);
+            Assert.Equal(RealTimeVerdict.Unknown, verdictPdf.Verdict);
+            Assert.Equal(RealTimePolicyAction.Observe, verdictPdf.RecommendedPolicy);
+            Assert.False(verdictPdf.ContentClassification!.IsComplete);
             Assert.True(verdictPdf.RiskScore < 40);
 
             var verdictJpg = await _realTimeEngine.InspectFileAsync(jpgFile);
-            Assert.Equal(RealTimeVerdict.Clean, verdictJpg.Verdict);
-            Assert.Equal(RealTimePolicyAction.Allow, verdictJpg.RecommendedPolicy);
+            Assert.Equal(RealTimeVerdict.Unknown, verdictJpg.Verdict);
+            Assert.Equal(RealTimePolicyAction.Observe, verdictJpg.RecommendedPolicy);
+            Assert.False(verdictJpg.ContentClassification!.IsComplete);
             Assert.True(verdictJpg.RiskScore < 40);
         }
         #endregion

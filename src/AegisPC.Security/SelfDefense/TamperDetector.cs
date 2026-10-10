@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
+using AegisPC.Core.Constants;
 using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.SelfDefense
@@ -84,7 +85,7 @@ namespace AegisPC.Security.SelfDefense
             if (evt == null) return;
 
             // Kendi süreçlerimizin meşru eylemlerini hariç tut
-            if (IsLegitimateAegisProcess(evt.ProcessId, evt.ImagePath))
+            if (IsLegitimateAegisProcess(evt.ProcessId, evt.ImagePath, _logger))
             {
                 return;
             }
@@ -154,7 +155,10 @@ namespace AegisPC.Security.SelfDefense
             {
                 TamperDetected?.Invoke(alert);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogTrace(ex, "Error invoking TamperDetected event");
+            }
 
             // 4. Güvenlik Motoruna Bildirim (ISecurityFindingService)
             if (_findingService != null)
@@ -262,16 +266,26 @@ namespace AegisPC.Security.SelfDefense
             return false;
         }
 
-        private static bool TerminateOffendingProcess(int processId, string imagePath)
+        private bool TerminateOffendingProcess(int processId, string imagePath)
         {
+            if (processId <= 4) return false;
+
+            string fileName = Path.GetFileName(imagePath);
+            if (CriticalProcesses.IsCriticalProcess(fileName))
+            {
+                // Kritik Windows sistem süreçleri asla sonlandırılmamalıdır (BSoD önlemi)
+                return false;
+            }
+
             try
             {
                 using var proc = Process.GetProcessById(processId);
                 proc.Kill(entireProcessTree: true);
                 return true;
             }
-            catch
+            catch (Exception procEx)
             {
+                _logger?.LogTrace(procEx, "Doğrudan süreç sonlandırma başarısız oldu (PID: {PID}), taskkill fallback deneniyor", processId);
                 // Fallback: taskkill /f /pid
                 try
                 {
@@ -285,12 +299,15 @@ namespace AegisPC.Security.SelfDefense
                     killProc?.WaitForExit(1500);
                     return killProc?.ExitCode == 0;
                 }
-                catch { }
+                catch (Exception killEx)
+                {
+                    _logger?.LogWarning(killEx, "Tamper engelleme taskkill fallback başarısız oldu (PID: {PID})", processId);
+                    return false;
+                }
             }
-            return false;
         }
 
-        private static bool IsLegitimateAegisProcess(int pid, string imagePath)
+        private static bool IsLegitimateAegisProcess(int pid, string imagePath, ILogger? logger = null)
         {
             try
             {
@@ -306,10 +323,54 @@ namespace AegisPC.Security.SelfDefense
                 string fileName = Path.GetFileName(imagePath).ToLowerInvariant();
                 if (fileName is "aegispc.elevatedhelper.exe" or "aegispc.service.exe")
                 {
-                    return true;
+                    string? dir = Path.GetDirectoryName(imagePath);
+                    bool isValidPath = false;
+                    
+                    if (!string.IsNullOrEmpty(dir))
+                    {
+                        string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+                        string pf86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+                        string pd = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                        string targetPd = Path.Combine(pd, "UltronDefender");
+                        
+                        if (dir.StartsWith(pf, StringComparison.OrdinalIgnoreCase) || 
+                            dir.StartsWith(pf86, StringComparison.OrdinalIgnoreCase) ||
+                            dir.StartsWith(targetPd, StringComparison.OrdinalIgnoreCase) ||
+                            dir.Equals(Path.GetDirectoryName(currentExe), StringComparison.OrdinalIgnoreCase))
+                        {
+                            isValidPath = true;
+                        }
+                    }
+
+                    if (isValidPath)
+                    {
+                        try
+                        {
+                            using var cert = System.Security.Cryptography.X509Certificates.X509Certificate.CreateFromSignedFile(imagePath);
+                            if (cert != null && !string.IsNullOrWhiteSpace(cert.Subject))
+                            {
+                                return true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            logger?.LogWarning(ex, "Meşru görünen sürecin ({FileName}) imza doğrulaması başarısız oldu, sadece loglanıyor. Yol: {ImagePath}", fileName, imagePath);
+                        }
+                        return true;
+                    }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                if (logger != null)
+                {
+                    logger.LogError(ex, "IsLegitimateAegisProcess kontrolü sırasında hata oluştu. PID: {PID}, Yol: {Path}", pid, imagePath);
+                }
+                else
+                {
+                    Console.Error.WriteLine($"[Error] IsLegitimateAegisProcess kontrolü sırasında hata: {ex.Message}");
+                }
+            }
             return false;
         }
 

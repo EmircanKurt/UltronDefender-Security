@@ -32,10 +32,14 @@ Yeni setup ayrı per-user preview kimliğindedir; servis/driver/autostart kurmaz
 
 Gerçek ≥30 resmî benign dosya / altı aile / holdout, eş kapsamlı beş soğuk-beş sıcak baseline karşılaştırması, tüm contained PE adaptörlerinin eşitliği, yerel servis ve sürücü doğrulaması, trusted feed key ve imzalama hâlâ ayrı kapılardır.
 
+## Eski main test koşusunun sınırı
+
+Doküman güncellemesinden sonra eski main kodu hâlâ unfiltered live/lab paketini çalıştırıyordu. [Run 38028499108](https://github.com/EmircanKurt/UltronDefender-Security/actions/runs/38028499108), legacy `WfpEnforcementService.FwpmFilterAdd` çağrısında `LiveEndpointHardeningTests` içinden AccessViolation ile abort oldu; bu koşu geçmedi. Yeni setup'ın kaynak/tag'i farklıdır ve 655 seçili benign regresyonla doğrulandı. Main'e test edilmiş preview kaynağı ve onun pozitif test listesi taşınır; native testin kapsam dışında tutulması WFP'nin doğru çalıştığına kanıt sayılmaz. Native VM kapısı açık kalır.
+
 ## Yayın teslim kanıtı
 
 [3.2.4 preview setup ve checksum](https://github.com/EmircanKurt/UltronDefender-Security/releases/tag/v3.2.4-preview.20261010) yayımlandı. Kaynak/tag `b2f10a927147eb9250b844ce1428bf80e777c235`; 1.037 public kaynak blob hash'i doğrulandı. [GitHub temiz CI run 38028063016](https://github.com/EmircanKurt/UltronDefender-Security/actions/runs/38028063016): 655 passed / 0 failed / 0 skipped, iki Release derlemesinde 0 warning / 0 error.
 
-Setup Authenticode NotSigned; 126.091.934 bayt; SHA-256 `9F136FB11BEA70852EBC1E247BA006188DD0A46D6C82134EA552693082BAA480`. GitHub'dan setup ve SHA256SUMS tekrar indirildi ve mühürlenmiş paketle eşleşti. Setup çalıştırılmadı. Yerel portable uygulamanın 545 dosyası yedekli aktarıldı, 436 servis/helper ikilisi korundu; bu native servis veya installer doğrulaması değildir. Kod PR12'de ayrı kalır; main'e runtime değişiklikleri otomatik birleştirilmedi.
+Setup Authenticode NotSigned; 126.091.934 bayt; SHA-256 `9F136FB11BEA70852EBC1E247BA006188DD0A46D6C82134EA552693082BAA480`. GitHub'dan setup ve SHA256SUMS tekrar indirildi ve mühürlenmiş paketle eşleşti. Setup çalıştırılmadı. Yerel portable uygulamanın 545 dosyası yedekli aktarıldı, 436 servis/helper ikilisi korundu; bu native servis veya installer doğrulaması değildir. Kullanıcının açık onayıyla aynı test edilmiş preview kaynağı main'e de taşındı; bu bir kararlı sürüm veya native koruma etkinleştirmesi değildir.
 
 Şüphecilik ve Doğrulama Notu: Şu an emin olmadığım / tam doğrulayamadığım nokta şudur: bu gerçek korpus, canlı input/DPI, VM ve native koruma kapıları tamamlanmadı. İnceleme tüm olası bug'ların bulunacağını garanti etmez.

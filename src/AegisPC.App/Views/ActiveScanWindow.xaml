@@ -3,15 +3,17 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:conv="clr-namespace:AegisPC.App.Converters"
+        xmlns:controls="clr-namespace:AegisPC.App.Controls"
+        xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
         Title="Tarayıcı - Ultron Defender Total Security"
-        Width="880" Height="580"
+        Width="980" Height="640"
         MinWidth="800" MinHeight="500"
         WindowStartupLocation="CenterScreen"
-        Icon="pack://application:,,,/Resources/Images/app.ico"
+        Icon="pack://application:,,,/UltronDefender;component/Resources/Images/app.ico"
         Background="{DynamicResource BrushCardBg}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
-        FontFamily="Segoe UI Variable, Segoe UI, Inter, sans-serif"
+        FontFamily="{StaticResource FontSans}"
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType">
 
@@ -90,51 +92,7 @@
         </Style>
     </Window.Resources>
 
-    <Window.Triggers>
-        <EventTrigger RoutedEvent="Window.Loaded">
-            <BeginStoryboard>
-                <Storyboard>
-                    <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.0" To="1.0" Duration="0:0:0.28">
-                        <DoubleAnimation.EasingFunction>
-                            <CubicEase EasingMode="EaseOut"/>
-                        </DoubleAnimation.EasingFunction>
-                    </DoubleAnimation>
-                </Storyboard>
-            </BeginStoryboard>
-        </EventTrigger>
-    </Window.Triggers>
-
-    <Grid Margin="24" RenderTransformOrigin="0.5,0.5">
-        <Grid.RenderTransform>
-            <TransformGroup>
-                <ScaleTransform x:Name="ActiveScanScale" ScaleX="0.98" ScaleY="0.98"/>
-                <TranslateTransform x:Name="ActiveScanTranslate" Y="8"/>
-            </TransformGroup>
-        </Grid.RenderTransform>
-        <Grid.Triggers>
-            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
-                <BeginStoryboard>
-                    <Storyboard>
-                        <DoubleAnimation Storyboard.TargetName="ActiveScanScale" Storyboard.TargetProperty="ScaleX" To="1.0" Duration="0:0:0.28">
-                            <DoubleAnimation.EasingFunction>
-                                <CubicEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                        <DoubleAnimation Storyboard.TargetName="ActiveScanScale" Storyboard.TargetProperty="ScaleY" To="1.0" Duration="0:0:0.28">
-                            <DoubleAnimation.EasingFunction>
-                                <CubicEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                        <DoubleAnimation Storyboard.TargetName="ActiveScanTranslate" Storyboard.TargetProperty="Y" To="0.0" Duration="0:0:0.28">
-                            <DoubleAnimation.EasingFunction>
-                                <CubicEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                    </Storyboard>
-                </BeginStoryboard>
-            </EventTrigger>
-        </Grid.Triggers>
-
+    <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -142,6 +100,7 @@
 
         <!-- 1. TOP TAB NAVIGATION BAR -->
         <Border Grid.Row="0" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="0,0,0,1" Padding="0,0,0,12" Margin="0,0,0,20">
+            <Border.Style><Style TargetType="Border"><Style.Triggers><DataTrigger Binding="{Binding IsIdleView}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -151,173 +110,28 @@
 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <ui:SymbolIcon Symbol="Target24" Foreground="{DynamicResource BrushStatusInfo}" FontSize="20" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                    <TextBlock Text="Tarayıcı" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,24,0" VerticalAlignment="Center"/>
+                    <Button x:Name="ScanTabButton" Content="Tarayıcı" Click="OnScanTabClicked" FontSize="17" FontWeight="SemiBold"
+                            Foreground="{DynamicResource BrushTextPrimary}" Background="Transparent" BorderThickness="0" Padding="0,4" Margin="0,0,24,0" VerticalAlignment="Center" ToolTip="Tarama ekranına dön"/>
 
                     <!-- Tabs -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <StackPanel Margin="0,0,20,0">
-                            <TextBlock Text="Tarayıcı" Style="{StaticResource ActiveTabHeaderStyle}"/>
-                            <Rectangle Height="2" Fill="{DynamicResource BrushBrandPrimary}" Margin="0,4,0,0" RadiusX="1" RadiusY="1"/>
-                        </StackPanel>
-                        <TextBlock Text="Zamanlayıcı" Style="{StaticResource TabHeaderStyle}"/>
-                        <TextBlock Text="Raporlar" Style="{StaticResource TabHeaderStyle}"/>
+                        <Button x:Name="SchedulerTabButton" Content="Zamanlayıcı" Click="OnSchedulerTabClicked" Style="{StaticResource SecondaryActionButtonStyle}" Margin="0,0,8,0"/>
+                        <Button x:Name="ReportsTabButton" Content="Raporlar" Click="OnReportsTabClicked" Style="{StaticResource SecondaryActionButtonStyle}"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- 2. ACTIVE SCANNING VIEW -->
-        <Grid Grid.Row="1" Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
+        <Grid Grid.Row="1" x:Name="ScannerPanel">
+        <!-- Same ready chooser in the main page and separate scanner. -->
+        <ScrollViewer Visibility="{Binding IsIdleView, Converter={StaticResource BoolToVis}}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" helpers:WheelScrollHelper.EnableRootRedirect="True" CanContentScroll="False">
+            <controls:ClassicScanSurface/>
+        </ScrollViewer>
 
-            <TextBlock Grid.Row="0" Text="Tehdit Taraması işleniyor..." FontSize="16" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,24"/>
-
-            <!-- Main 3-Column Scan Container -->
-            <Grid Grid.Row="1" Margin="0,0,0,20">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="200"/>
-                </Grid.ColumnDefinitions>
-
-                <!-- Left: Animated Laptop / Scanning Device Illustration -->
-                <Border Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Left" Width="200" Height="145" Background="{DynamicResource BrushAppBg}" CornerRadius="6" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" Padding="14">
-                    <Grid>
-                        <!-- Laptop Display Frame -->
-                        <Border Background="{DynamicResource BrushAppBg}" CornerRadius="4" Margin="4,4,4,22" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1">
-                            <Canvas x:Name="LaserCanvas" ClipToBounds="True">
-                                <!-- Animated Laser Scan Line (Always Green BrushStatusSafe) -->
-                                <Rectangle x:Name="LaserLine" Width="3" Height="90"
-                                           Fill="{DynamicResource BrushStatusSafe}"
-                                           Canvas.Top="0" Canvas.Left="15">
-                                    <Rectangle.Effect>
-                                        <DropShadowEffect BlurRadius="10"
-                                                          Color="{StaticResource ColorStatusSafe}"
-                                                          ShadowDepth="0"/>
-                                    </Rectangle.Effect>
-                                </Rectangle>
-                            </Canvas>
-                        </Border>
-                        <!-- Laptop Base Plate -->
-                        <Border Height="10" VerticalAlignment="Bottom" Background="{DynamicResource BrushCardBorder}" CornerRadius="0,0,4,4" Margin="0,0,0,8"/>
-                    </Grid>
-                </Border>
-
-                <!-- Middle: 5-Step Animated Checklist -->
-                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,20,0">
-                    <!-- Step 1 -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                        <ui:SymbolIcon Symbol="Checkmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="16" Margin="0,0,10,0"/>
-                        <TextBlock Text="Güncellemeleri denetle" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
-                    </StackPanel>
-
-                    <!-- Step 2 -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                        <ui:SymbolIcon Symbol="Checkmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="16" Margin="0,0,10,0"/>
-                        <TextBlock Text="Bellek nesnelerini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
-                    </StackPanel>
-
-                    <!-- Step 3 -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                        <ui:SymbolIcon Symbol="Checkmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="16" Margin="0,0,10,0"/>
-                        <TextBlock Text="Başlangıç öğelerini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
-                    </StackPanel>
-
-                    <!-- Step 4 -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                        <ui:SymbolIcon Symbol="Checkmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="16" Margin="0,0,10,0"/>
-                        <TextBlock Text="Kayıt Defterini tara" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}"/>
-                    </StackPanel>
-
-                    <!-- Step 5 (Active scanning indicator - Always Green BrushStatusSafe) -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
-                        <Canvas Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center">
-                            <Ellipse x:Name="PulseIndicator" Width="14" Height="14"
-                                     Fill="{DynamicResource BrushStatusSafe}"
-                                     Canvas.Left="1" Canvas.Top="1"/>
-                        </Canvas>
-                        <TextBlock Text="Dosya sistemini tara" FontSize="13.5" FontWeight="Bold"
-                                   Foreground="{DynamicResource BrushStatusSafe}"/>
-                    </StackPanel>
-
-                    <!-- Control Buttons (Duraklat & İptal) -->
-                    <StackPanel Orientation="Horizontal">
-                        <Button Content="{Binding PauseButtonText}" Width="100" Height="32" Margin="0,0,12,0" Style="{StaticResource SecondaryActionButtonStyle}"
-                                Command="{Binding TogglePauseResumeCommand}"/>
-                        <Button Content="İptal" Width="100" Height="32" Style="{StaticResource SecondaryActionButtonStyle}"
-                                Command="{Binding CancelScanCommand}"/>
-                    </StackPanel>
-                </StackPanel>
-
-                <!-- Right: Live Statistics Panel -->
-                <Border Grid.Column="2" Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="18,16" VerticalAlignment="Center">
-                    <StackPanel>
-                        <TextBlock Text="Tarama Süresi" FontSize="11" Foreground="{DynamicResource BrushTextMuted}"/>
-                        <TextBlock Text="{Binding ScanDurationFormatted}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,14"/>
-
-                        <TextBlock Text="Taranan Öğeler" FontSize="11" Foreground="{DynamicResource BrushTextMuted}"/>
-                        <TextBlock Text="{Binding ScannedItemsFormatted}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,14"/>
-
-                        <!-- Tespitler: Yalnızca tespit sayısı > 0 iken kırmızı (BrushStatusDanger) -->
-                        <TextBlock Text="Tespitler" FontSize="11">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasFindings}" Value="True">
-                                            <Setter Property="Foreground" Value="{DynamicResource BrushStatusDanger}"/>
-                                            <Setter Property="FontWeight" Value="SemiBold"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                        <TextBlock Text="{Binding DetectionsCount}" FontSize="16" FontWeight="Bold">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasFindings}" Value="True">
-                                            <Setter Property="Foreground" Value="{DynamicResource BrushStatusDanger}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-
-                        <Border Height="1" Background="{DynamicResource BrushCardBorder}" Margin="0,10,0,10"/>
-                        <Grid Margin="0,0,0,4">
-                            <TextBlock Text="Kaynak Profili" FontSize="10.5" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Left"/>
-                            <TextBlock Text="{Binding ActiveResourceProfileText}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource BrushStatusInfo}" HorizontalAlignment="Right"/>
-                        </Grid>
-                        <Grid Margin="0,0,0,6">
-                            <TextBlock Text="CPU / RAM" FontSize="10.5" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Left"/>
-                            <TextBlock Text="{Binding CpuAndRamFormatted}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" HorizontalAlignment="Right"/>
-                        </Grid>
-                        <TextBlock Text="{Binding HardwareTuningText}" FontSize="10" Foreground="{DynamicResource BrushTextMuted}" TextWrapping="Wrap"/>
-                    </StackPanel>
-                </Border>
-            </Grid>
-
-            <!-- Bottom Progress Bar & Current File Path (Always Green BrushStatusSafe) -->
-            <StackPanel Grid.Row="2">
-                <ProgressBar Value="{Binding ProgressPercentage}" Height="6" Background="{DynamicResource BrushCardBorder}"
-                             Foreground="{DynamicResource BrushStatusSafe}" Margin="0,0,0,8"/>
-                <Grid Margin="0,0,0,4">
-                    <TextBlock Text="{Binding CurrentFile, StringFormat='İncelenen: \{0\}'}" FontSize="11.5" Foreground="{DynamicResource BrushTextMuted}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Left" MaxWidth="550"/>
-                    <TextBlock Text="{Binding RemainingEtaFormatted}" FontSize="11.5"
-                               Foreground="{DynamicResource BrushStatusSafe}"
-                               HorizontalAlignment="Right" FontWeight="SemiBold"/>
-                </Grid>
-            </StackPanel>
-        </Grid>
+        <controls:ActiveScanSurface Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}"/>
 
         <!-- 3. SCAN COMPLETED / THREAT RESULTS VIEW -->
-        <Grid Grid.Row="1" Visibility="{Binding IsScanFinishedView, Converter={StaticResource BoolToVis}}">
+        <Grid Visibility="{Binding IsScanFinishedView, Converter={StaticResource BoolToVis}}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -348,6 +162,7 @@
                     <StackPanel>
                         <TextBlock Text="Taranan Öğeler" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center"/>
                         <TextBlock Text="{Binding ScannedItemsFormatted}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding ScannedBreakdownFormatted}" FontSize="10" Foreground="{DynamicResource BrushTextMuted}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>
@@ -360,8 +175,8 @@
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <ui:SymbolIcon Symbol="ShieldCheckmark24" Foreground="{DynamicResource BrushStatusSafe}" FontSize="28" Margin="0,0,14,0" VerticalAlignment="Center"/>
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="{Binding CleanStateTitle, FallbackValue='Sisteminiz temiz'}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushStatusSafeText}"/>
-                            <TextBlock Text="{Binding CleanStateSubtitle, FallbackValue='Taranan dosyalarda herhangi bir zararlı kod veya tehdit bulunamadı.'}" FontSize="12" Foreground="{DynamicResource BrushStatusSafeText}"/>
+                            <TextBlock Text="{Binding CleanStateTitle, FallbackValue='Sonuç durumu alınamadı'}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource BrushStatusSafeText}"/>
+                            <TextBlock Text="{Binding CleanStateSubtitle, FallbackValue='Tarama kapsamını ve hataları rapordan inceleyin.'}" FontSize="12" TextWrapping="Wrap" MaxWidth="610" Foreground="{DynamicResource BrushStatusSafeText}"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -377,9 +192,9 @@
                             </Grid.ColumnDefinitions>
                             <ui:SymbolIcon Grid.Column="0" Symbol="Warning24" Foreground="{DynamicResource BrushStatusDanger}" FontSize="22" Margin="0,0,12,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding FindingsCount, StringFormat='Sisteminizde \{0\} adet zararlı tehdit tespit edildi!'}"
+                                <TextBlock Text="{Binding FindingsCount, StringFormat='İncelenen öğelerde \{0\} güvenlik bulgusu var.'}"
                                            FontSize="13" FontWeight="Bold" Foreground="{DynamicResource BrushStatusDangerText}"/>
-                                <TextBlock Text="Güvenliğiniz için tespit edilen tehditleri derhal Karantina Kasasına kilitleyin."
+                                <TextBlock Text="Şüpheli bulgu kesin zararlı demek değildir; gerekçe ve kaynakları inceleyin."
                                            FontSize="11" Foreground="{DynamicResource BrushStatusDangerText}"/>
                             </StackPanel>
                         </Grid>
@@ -387,51 +202,84 @@
 
                     <!-- Threats Table -->
                     <Border Background="{DynamicResource BrushCardBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" MaxHeight="250">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <StackPanel>
-                                <!-- Header -->
-                                <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="0,0,0,1" Padding="12,10">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="36"/>
-                                            <ColumnDefinition Width="150"/>
-                                            <ColumnDefinition Width="110"/>
-                                            <ColumnDefinition Width="120"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <CheckBox Grid.Column="0" IsChecked="{Binding IsAllSelected}" Command="{Binding ToggleSelectAllCommand}" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="Adı" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                        <TextBlock Grid.Column="2" Text="Tür" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                        <TextBlock Grid.Column="3" Text="Müdahale" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                        <TextBlock Grid.Column="4" Text="Konum" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
-                                    </Grid>
-                                </Border>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
 
-                                <!-- Items -->
-                                <ItemsControl ItemsSource="{Binding ThreatResults}">
+                            <!-- Header (Sticky) -->
+                            <Border Grid.Row="0" Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="0,0,0,1" Padding="12,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="36"/>
+                                        <ColumnDefinition Width="140"/>
+                                        <ColumnDefinition Width="100"/>
+                                        <ColumnDefinition Width="110"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="95"/>
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsAllSelected}" Command="{Binding ToggleSelectAllCommand}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="Adı" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
+                                    <TextBlock Grid.Column="2" Text="Tür" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
+                                    <TextBlock Grid.Column="3" Text="Müdahale" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
+                                    <TextBlock Grid.Column="4" Text="Konum" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}"/>
+                                    <TextBlock Grid.Column="5" Text="İşlem" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}" HorizontalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Virtualized Items -->
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" CanContentScroll="True">
+                                <ItemsControl ItemsSource="{Binding ThreatResults}"
+                                              VirtualizingPanel.IsVirtualizing="True"
+                                              VirtualizingPanel.VirtualizationMode="Recycling">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <VirtualizingStackPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="0,0,0,1" Padding="12,9">
+                                            <Border BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="0,0,0,1" Padding="12,7" Background="Transparent">
+                                                <Border.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="🛡️ Bu dosyayı istisna yap"
+                                                                  Command="{Binding DataContext.ExcludeFindingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding}"/>
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="36"/>
-                                                        <ColumnDefinition Width="150"/>
+                                                        <ColumnDefinition Width="140"/>
+                                                        <ColumnDefinition Width="100"/>
                                                         <ColumnDefinition Width="110"/>
-                                                        <ColumnDefinition Width="120"/>
                                                         <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="95"/>
                                                     </Grid.ColumnDefinitions>
                                                     <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock Grid.Column="2" Text="{Binding ThreatType}" FontSize="11.5" Foreground="{DynamicResource BrushStatusDanger}"/>
-                                                    <TextBlock Grid.Column="3" Text="{Binding ActionTaken}" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushStatusSafeDark}"/>
-                                                    <TextBlock Grid.Column="4" Text="{Binding Location}" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding ThreatType}" FontSize="11.5" Foreground="{DynamicResource BrushStatusDanger}" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="3" Text="{Binding ActionTaken}" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushStatusSafeDark}" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="4" Text="{Binding Location}" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <Button Grid.Column="5"
+                                                            Command="{Binding DataContext.ExcludeFindingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="Bu dosyayı istisna yap"
+                                                            Padding="6,3" Height="24" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                            Style="{StaticResource SecondaryActionButtonStyle}">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <ui:SymbolIcon Symbol="ShieldDismiss20" FontSize="12" Margin="0,0,3,0" Foreground="{DynamicResource BrushBrandPrimary}"/>
+                                                            <TextBlock Text="İstisna" FontSize="10.5" FontWeight="SemiBold"/>
+                                                        </StackPanel>
+                                                    </Button>
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                            </StackPanel>
-                        </ScrollViewer>
+                            </ScrollViewer>
+                        </Grid>
                     </Border>
                 </StackPanel>
             </Grid>
@@ -444,13 +292,13 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <Button Grid.Column="0" Content="Raporla ⌄" Width="100" Height="34" Style="{StaticResource SecondaryActionButtonStyle}"
+                <Button Grid.Column="0" Content="Raporla" Width="100" Height="34" Style="{StaticResource SecondaryActionButtonStyle}"
                         Command="{Binding ExportScanReportCommand}"/>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
                     <Button Content="Kapat" Width="100" Height="34" Margin="0,0,10,0" Style="{StaticResource SecondaryActionButtonStyle}"
                             Command="{Binding CloseResultsCommand}" Click="OnCloseClicked"/>
-                    <Button Content="Çözüldü Olarak İşaretle" Width="160" Height="34" Margin="0,0,10,0" Style="{StaticResource SecondaryActionButtonStyle}"
+                    <Button Content="Olayı Kapat" ToolTip="Olay kaydını kapatır; dosyayı güvenilir ilan etmez ve tarama istisnası oluşturmaz." Width="140" Height="34" Margin="0,0,10,0" Style="{StaticResource SecondaryActionButtonStyle}"
                             Command="{Binding ResolveSelectedCommand}"
                             Visibility="{Binding HasFindings, Converter={StaticResource BoolToVis}}"/>
                     <Button Content="Karantinaya Al" Width="130" Height="34" Style="{StaticResource PrimaryActionButtonStyle}"
@@ -459,5 +307,44 @@
                 </StackPanel>
             </Grid>
         </Grid>
+        </Grid>
+
+        <Grid Grid.Row="1" x:Name="ReportsPanel" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <StackPanel Margin="0,0,0,14">
+                <TextBlock Text="Gerçek Tarama Raporları" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}"/>
+                <TextBlock Text="{Binding ReportHistoryStatus}" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextMuted}" FontSize="12" Margin="0,6,0,0"/>
+            </StackPanel>
+            <DataGrid Grid.Row="1" ItemsSource="{Binding ReportHistory}" SelectedItem="{Binding SelectedReport}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single" Margin="0,0,0,14">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Tarih" Binding="{Binding DateText}" Width="165"/>
+                    <DataGridTextColumn Header="Tarama ve Kapsam" Binding="{Binding Summary}" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Yenile" Command="{Binding RefreshReportsCommand}" Style="{StaticResource SecondaryActionButtonStyle}" Margin="0,0,10,0"/>
+                <Button Content="Seçili Raporu Dışa Aktar" Command="{Binding ExportSelectedReportCommand}" Style="{StaticResource PrimaryActionButtonStyle}"/>
+            </StackPanel>
+        </Grid>
+
+        <ScrollViewer Grid.Row="1" x:Name="SchedulerPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="Tarama Zamanlayıcısı" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,10"/>
+                <TextBlock Text="Ayarlar ana uygulamayla ortaktır. Zamanlanmış ve AFK taramaları koruma servisi çalışırken yürütülür. Açık ve kilitlenmemiş masaüstünde güvenli AFK doğrulaması henüz yoktur; tarama ertelenebilir." FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,18"/>
+                <CheckBox Content="Zamanlanmış rutin taramayı etkinleştir" IsChecked="{Binding ScanScheduleEnabled}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,14"/>
+                <TextBlock Text="Günlük başlangıç saati" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,6"/>
+                <ComboBox ItemsSource="{Binding ScanHours}" SelectedItem="{Binding SelectedScanHourString}" IsEnabled="{Binding ScanScheduleEnabled}" Width="180" HorizontalAlignment="Left" Margin="0,0,0,14"/>
+                <TextBlock Text="Tekrar aralığı" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,6"/>
+                <ComboBox ItemsSource="{Binding ScanPeriods}" SelectedItem="{Binding SelectedScanPeriod}" IsEnabled="{Binding ScanScheduleEnabled}" Width="320" HorizontalAlignment="Left" Margin="0,0,0,20"/>
+                <CheckBox Content="Güvenle doğrulanmış boşta / kilitli oturumda bakım taraması" IsChecked="{Binding IdleScanEnabled}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,12"/>
+                <CheckBox Content="Pil kullanılırken boşta taramayı ertele" IsChecked="{Binding SkipIdleScanOnBattery}" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,14"/>
+                <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource BrushTextMuted}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                <Button Content="Ayarları Kaydet" Command="{Binding SaveSettingsCommand}" Style="{StaticResource PrimaryActionButtonStyle}" HorizontalAlignment="Left"/>
+            </StackPanel>
+        </ScrollViewer>
     </Grid>
 </Window>

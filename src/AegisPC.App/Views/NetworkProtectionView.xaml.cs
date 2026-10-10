@@ -11,14 +11,5 @@ namespace AegisPC.App.Views
             InitializeComponent();
             DataContext = viewModel;
         }
-
-        private void OnPagePreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            if (RootScrollViewer != null && e.Delta != 0)
-            {
-                RootScrollViewer.ScrollToVerticalOffset(RootScrollViewer.VerticalOffset - (e.Delta * 0.75));
-                e.Handled = true;
-            }
-        }
     }
 }

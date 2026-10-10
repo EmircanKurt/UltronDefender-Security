@@ -18,6 +18,7 @@ namespace AegisPC.Security.Detection
 {
     public static class DetectionHubFactory
     {
+        /// <summary>Builds the shared decision pipeline; native AMSI is explicit and the optional AI getter controls only local static review, not other detectors.</summary>
         public static IDetectionHub CreateDefault(
             IHashService? hashService = null,
             ISignatureVerifier? signatureVerifier = null,
@@ -31,11 +32,14 @@ namespace AegisPC.Security.Detection
             INetworkProcessCorrelator? networkCorrelator = null,
             IYaraEngine? yaraEngine = null,
             IReputationService? reputationService = null,
-            AegisPC.Contracts.ThreatIntelligence.IThreatIntelligenceStore? threatStore = null)
+            AegisPC.Contracts.ThreatIntelligence.IThreatIntelligenceStore? threatStore = null,
+            IExclusionService? exclusionService = null,
+            IAmsiScanService? amsiScanService = null,
+            Func<bool>? isUltronAiEnabled = null)
         {
             var hash = hashService ?? new HashService();
             var sigVerifier = signatureVerifier ?? new SignatureVerifier();
-            var deepPe = deepPeAnalyzer ?? new DeepPeAnalyzer();
+            var deepPe = deepPeAnalyzer ?? new DeepPeAnalyzer(sigVerifier);
             var evasion = antiEvasionDetector ?? new AntiEvasionDetector();
             var archive = secureArchiveEngine ?? new SecureArchiveEngine();
             var yara = yaraEngine ?? new YaraEngine.YaraEngine();
@@ -51,15 +55,18 @@ namespace AegisPC.Security.Detection
                 new EntropyDetector(),
                 new PersistenceDetector(),
                 new ScriptHeuristicDetector(),
-                new ArchiveDetectorPlugin(archive),
+                new ArchiveDetectorPlugin(archive, new ArchiveSafetyScanner(yaraEngine: yara)),
                 new AntiEvasionDetectorPlugin(evasion),
                 new ProcessBehaviorDetector(lineageTracker, chainCorrelator),
                 new MemoryBehaviorDetector(injectionDetector, memoryScanner),
                 new NetworkBehaviorDetector(networkCorrelator),
-                new YaraDetector(yara)
+                new YaraDetector(yara),
+                new UltronAiDetectorPlugin(isReviewEnabled: isUltronAiEnabled)
             };
 
-            return new DetectionHub(detectors);
+            if (amsiScanService != null) detectors.Add(new AmsiContentDetector(amsiScanService));
+
+            return new DetectionHub(detectors, exclusionService: exclusionService);
         }
     }
 }

@@ -1,0 +1,35 @@
+<UserControl x:Class="AegisPC.App.Controls.ScanRouteVisual"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             FontFamily="Segoe UI" Foreground="{DynamicResource BrushTextPrimary}" IsHitTestVisible="False">
+    <Border Background="{DynamicResource BrushAppBg}" BorderBrush="{DynamicResource BrushCardBorder}" BorderThickness="1" CornerRadius="6" Padding="14">
+        <StackPanel>
+            <Viewbox Stretch="Uniform" MaxHeight="280">
+                <Canvas Width="360" Height="260" ClipToBounds="True">
+                    <!-- Decorative stations do not assert a per-file phase or a clean verdict. -->
+                    <TextBlock Text="Dosya" Canvas.Left="32" Canvas.Top="24" FontSize="16" Foreground="{DynamicResource BrushTextSecondary}"/>
+                    <TextBlock Text="İçerik" Canvas.Left="154" Canvas.Top="24" FontSize="16" Foreground="{DynamicResource BrushTextSecondary}"/>
+                    <TextBlock Text="Sonuç" Canvas.Left="275" Canvas.Top="24" FontSize="16" Foreground="{DynamicResource BrushTextSecondary}"/>
+                    <Path Stroke="{DynamicResource BrushTextSecondary}" StrokeThickness="1.6" Data="M 38,58 L 57,58 L 68,70 L 68,98 L 38,98 Z M 57,58 L 57,70 L 68,70 M 43,77 L 62,77 M 43,84 L 62,84 M 43,91 L 58,91 M 163,58 L 182,58 L 193,70 L 193,98 L 163,98 Z M 182,58 L 182,70 L 193,70 M 168,77 L 187,77 M 168,84 L 187,84 M 168,91 L 183,91 M 288,58 L 307,58 L 318,70 L 318,98 L 288,98 Z M 307,58 L 307,70 L 318,70 M 293,77 L 312,77 M 293,84 L 312,84 M 293,91 L 308,91"/>
+                    <Path Stroke="{DynamicResource BrushTextMuted}" StrokeThickness="1.5" Data="M 53,120 L 303,120"/>
+                    <Ellipse Canvas.Left="47" Canvas.Top="114" Width="12" Height="12" Fill="{DynamicResource BrushAppBg}" Stroke="{DynamicResource BrushTextSecondary}" StrokeThickness="1.5"/>
+                    <Ellipse Canvas.Left="172" Canvas.Top="114" Width="12" Height="12" Fill="{DynamicResource BrushAppBg}" Stroke="{DynamicResource BrushBrandPrimary}" StrokeThickness="1.5"/>
+                    <Ellipse Canvas.Left="297" Canvas.Top="114" Width="12" Height="12" Fill="{DynamicResource BrushAppBg}" Stroke="{DynamicResource BrushTextSecondary}" StrokeThickness="1.5"/>
+                    <Rectangle Canvas.Left="163" Canvas.Top="69" Width="30" Height="128" Fill="{DynamicResource BrushBrandPrimary}" Opacity="0.10"/>
+                    <Path Stroke="{DynamicResource BrushBrandPrimary}" StrokeThickness="2.4" Data="M 152,67 L 152,54 L 164,54 M 193,54 L 205,54 L 205,67 M 152,91 L 152,104 L 164,104 M 193,104 L 205,104 L 205,91"/>
+                    <!-- Compact top-view car; no external brand or fabricated result tick. -->
+                    <Path Fill="#EEEEF0" Stroke="#BFC3C8" StrokeThickness="1.3" Data="M 178,148 C 161,148 164,160 163,172 L 163,213 C 163,225 170,230 178,230 C 186,230 193,225 193,213 L 193,172 C 192,160 195,148 178,148 Z"/>
+                    <Path Fill="#262B30" Stroke="#BFC3C8" StrokeThickness="1" Data="M 168,166 Q 178,158 188,166 L 185,178 L 171,178 Z M 171,200 L 185,200 L 188,214 Q 178,219 168,214 Z M 164,175 L 169,180 L 169,199 L 164,207 Z M 192,175 L 187,180 L 187,199 L 192,207 Z"/>
+                    <Path Stroke="#AEB4BB" StrokeThickness="1" Data="M 170,181 L 186,181 L 186,198 L 170,198 Z M 162,171 L 158,174 M 194,171 L 198,174"/>
+                    <Path Stroke="{DynamicResource BrushBrandPrimary}" StrokeThickness="1.5" Data="M 166,222 L 173,224 M 183,224 L 190,222"/>
+                    <Path Stroke="{DynamicResource BrushTextMuted}" StrokeThickness="1.3" Data="M 22,171 L 32,171 L 38,178 L 38,193 L 22,193 Z M 32,171 L 32,178 L 38,178 M 50,171 L 60,171 L 66,178 L 66,193 L 50,193 Z M 60,171 L 60,178 L 66,178 M 78,171 L 88,171 L 94,178 L 94,193 L 78,193 Z M 88,171 L 88,178 L 94,178"/>
+                    <Path Stroke="{DynamicResource BrushTextMuted}" StrokeThickness="2" StrokeDashArray="1,5" Data="M 105,182 L 147,182"/>
+                    <Canvas x:Name="FilePacket" Width="24" Height="30" Canvas.Left="25" Canvas.Top="168" Opacity="0">
+                        <Canvas.RenderTransform><TranslateTransform x:Name="CarTranslation"/></Canvas.RenderTransform>
+                        <Path Stroke="{DynamicResource BrushTextPrimary}" Fill="{DynamicResource BrushAppBg}" StrokeThickness="1.3" Data="M 0,0 L 13,0 L 22,10 L 22,30 L 0,30 Z M 13,0 L 13,10 L 22,10 M 5,16 L 17,16 M 5,22 L 17,22"/>
+                    </Canvas>
+                </Canvas>
+            </Viewbox>
+            <TextBlock x:Name="MotionLabel" Text="Dosya rotası" FontSize="11" Foreground="{DynamicResource BrushTextSecondary}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+        </StackPanel>
+    </Border>
+</UserControl>

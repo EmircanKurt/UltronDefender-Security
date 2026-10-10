@@ -1,21 +1,22 @@
 using System;
+using AegisPC.Security.Scanning;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Management;
 using System.Threading;
 using System.Threading.Tasks;
 using AegisPC.Contracts.Services;
+using AegisPC.Contracts.Detection;
 using AegisPC.Core.Enums;
 using AegisPC.Core.Models;
+using AegisPC.Core.Helpers;
 using Microsoft.Extensions.Logging;
 
 namespace AegisPC.Security.RealTime
 {
     /// <summary>
-    /// Gerçek zamanlı, çok aşamalı (Progressive Analysis), olay kararlılığı (Stability Check) doğrulamalı,
-    /// sıfır sahte veri (Zero-Mock) içeren Windows Endpoint Real-Time Protection Ana Orkestratörü.
-    /// Modüler mimaride Ingestor, StabilityChecker, VerdictProcessor ve PolicyEnforcer bileşenlerini koordine eder.
+    /// Coordinates selected-root, post-operation user-mode observations, bounded ingestion and content decisions.
+    /// Observed health and coverage are separate from running state; this does not provide pre-access blocking.
     /// </summary>
     public partial class RealTimeProtectionEngine : IRealTimeProtectionEngine, IDisposable
     {
@@ -28,10 +29,12 @@ namespace AegisPC.Security.RealTime
         private readonly List<FileSystemWatcher> _watchers = new();
         private readonly List<string> _watchedLocationsList = new();
         private CancellationTokenSource? _engineCts;
-        private ManagementEventWatcher? _usbArrivalWatcher;
-        private bool _isRunning;
+        private volatile bool _isRunning;
         private readonly object _lock = new();
         private Timer? _cacheCleanupTimer;
+        private bool _coverageDegraded;
+        private long _engineGeneration;
+        private IScanTargetResolver _scanTargets = new AegisPC.Security.Scanning.WindowsScanTargetResolver();
 
         public bool IsRunning => _isRunning;
 
@@ -50,14 +53,23 @@ namespace AegisPC.Security.RealTime
             ISecurityFindingService findingService,
             IAuditLogService? auditLogService = null,
             IReputationService? reputationService = null,
-            ILogger<RealTimeProtectionEngine>? logger = null)
+            ILogger<RealTimeProtectionEngine>? logger = null,
+            IExclusionService? exclusionService = null,
+            Func<bool>? enableAutoQuarantine = null,
+            Func<int>? autoQuarantineThreshold = null,
+            IDetectionHub? detectionHub = null,
+            IScanResourceManager? backgroundResources = null,
+            IScanTargetResolver? scanTargets = null)
             : this(
                 new RealTimeEventIngestor(),
                 new RealTimeStabilityChecker(),
-                new RealTimeVerdictProcessor(hashService, signatureVerifier, riskScoringEngine, (fileScanner as AegisPC.Security.Scanning.FileScannerService)?.HashMatcher, reputationService, logger),
-                new RealTimePolicyEnforcer(quarantineService, findingService, auditLogService, logger),
+                new RealTimeVerdictProcessor(hashService, signatureVerifier, riskScoringEngine, (fileScanner as AegisPC.Security.Scanning.FileScannerService)?.HashMatcher, reputationService, exclusionService, logger, detectionHub),
+                new RealTimePolicyEnforcer(quarantineService, findingService, auditLogService, logger,
+                    enableAutoQuarantine, autoQuarantineThreshold),
                 logger)
         {
+            _backgroundResources = backgroundResources;
+            if (scanTargets != null) _scanTargets = scanTargets;
         }
 
         public RealTimeProtectionEngine(
@@ -72,6 +84,8 @@ namespace AegisPC.Security.RealTime
             _verdictProcessor = verdictProcessor;
             _policyEnforcer = policyEnforcer;
             _logger = logger;
+            if (_eventIngestor is RealTimeEventIngestor arrivals)
+                arrivals.OnReconciliationRequired += RequestReconciliation;
 
             // Policy enforcer olaylarını ana motora bağla
             _policyEnforcer.OnThreatDetected += finding => OnThreatDetected?.Invoke(finding);
@@ -87,6 +101,11 @@ namespace AegisPC.Security.RealTime
             {
                 if (_isRunning) return;
                 _isRunning = true;
+                _coverageDegraded = false;
+                _arrivalInspections.Clear();
+                _inspectionGaps.Clear();
+                _pendingInspectionRetries.Clear();
+                _engineGeneration++;
                 _engineCts = new CancellationTokenSource();
 
                 // 1. Setup Watchers on Critical Directories
@@ -97,20 +116,42 @@ namespace AegisPC.Security.RealTime
 
                 foreach (var w in _watchers)
                 {
-                    try { w.EnableRaisingEvents = true; } catch { }
+                    try { w.EnableRaisingEvents = true; }
+                    catch (Exception ex)
+                    {
+                        _coverageDegraded = true;
+                        _logger?.LogWarning(ex, "Could not enable file-arrival watcher {Path}", w.Path);
+                    }
                 }
 
                 // 2. Start Background Multi-Worker Pool Consumers
                 int workerCount = Math.Clamp(Environment.ProcessorCount / 2, 2, 4);
-                _eventIngestor.StartWorkers(workerCount, HandleNormalizedEventAsync, _engineCts.Token);
+                try
+                {
+                    _eventIngestor.StartWorkers(workerCount, HandleNormalizedEventAsync, _engineCts.Token);
+                }
+                catch
+                {
+                    // A watcher without consumers would silently discard protection events.
+                    // Roll back the whole generation rather than leaving IsRunning true.
+                    Stop();
+                    throw;
+                }
 
-                // 3. Start WMI Dynamic Removable Media / USB Listener
-                StartUsbArrivalListener();
+                // Device inventory is service-owned and registers before enumeration.
+                // Do not start a second drive-letter-only WMI arrival listener here.
 
-                _cacheCleanupTimer = new Timer(_ => _verdictProcessor.CleanupCache(), null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
+                _cacheCleanupTimer = new Timer(_ =>
+                {
+                    try { _verdictProcessor.CleanupCache(); }
+                    catch (Exception ex) { _logger?.LogWarning(ex, "Real-time cache maintenance failed"); }
+                }, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
 
                 _logger?.LogInformation("Ultron Defender Real-Time Protection Engine started successfully with {Workers} workers.", workerCount);
-                OnProtectionHealthChanged?.Invoke(true, "Sağlıklı - Tüm dizinler ve USB izleniyor");
+                bool covered = !_coverageDegraded && _watchers.Count > 0;
+                OnProtectionHealthChanged?.Invoke(covered, covered
+                    ? "Kullanıcı modu dosya geliş izleme etkin; yalnız listelenen dizinler kapsanıyor"
+                    : "Motor etkin; izleme kapsamı eksik veya henüz dizin seçilmedi");
             }
         }
 
@@ -120,12 +161,20 @@ namespace AegisPC.Security.RealTime
             {
                 if (!_isRunning) return;
                 _isRunning = false;
-
-                StopUsbArrivalListener();
+                _engineGeneration++;
+                _reconciliationRoots.Clear();
+                _arrivalInspections.Clear();
+                _inspectionGaps.Clear();
+                _pendingInspectionRetries.Clear();
+                _activeRecoveryTokens.Clear();
+                _mediaRoots.Clear();
+                _mediaInspections.Clear();
+                _reconciliationRunning = false;
 
                 foreach (var w in _watchers)
                 {
-                    try { w.EnableRaisingEvents = false; w.Dispose(); } catch { }
+                    try { w.EnableRaisingEvents = false; w.Dispose(); }
+                    catch (Exception ex) { _logger?.LogWarning(ex, "Failed disposing file-arrival watcher {Path}", w.Path); }
                 }
                 _watchers.Clear();
                 _watchedLocationsList.Clear();
@@ -160,11 +209,29 @@ namespace AegisPC.Security.RealTime
             return _verdictProcessor.InspectFileAsync(filePath, ct);
         }
 
-        private async Task HandleNormalizedEventAsync(NormalizedFileEvent evt, CancellationToken ct)
+        private async Task<bool> HandleNormalizedEventAsync(NormalizedFileEvent evt, CancellationToken ct)
         {
+            long generation;
+            lock (_lock) generation = _engineGeneration;
+            ArrivalIdentity? arrivalIdentity = null;
             try
             {
+                ct.ThrowIfCancellationRequested();
+                if (!ImplicitLocalPathPolicy.IsEligible(evt.NormalizedPath))
+                {
+                    RecordInspectionGap(generation, ct);
+                    _logger?.LogWarning("An implicit real-time event path was not opened; local storage or ancestor identity is unavailable.");
+                    return false;
+                }
+                if (Directory.Exists(evt.NormalizedPath))
+                {
+                    if (evt.EventType is RealTimeEventType.Created or RealTimeEventType.Renamed)
+                        RequestDirectoryInspection(evt.NormalizedPath);
+                    return false;
+                }
                 var fileName = Path.GetFileName(evt.NormalizedPath);
+                arrivalIdentity = BeginArrivalInspection(evt.NormalizedPath, generation, ct);
+                if (arrivalIdentity == null) return false;
 
                 // Stage 1: Event Captured Telemetry
                 OnActivityLogged?.Invoke(new RealTimeActivityEvent
@@ -190,9 +257,6 @@ namespace AegisPC.Security.RealTime
                     Timestamp = DateTime.Now
                 });
 
-                bool isStable = await _stabilityChecker.WaitForFileStabilityAsync(evt.NormalizedPath, ct);
-                if (!isStable || !File.Exists(evt.NormalizedPath)) return;
-
                 // Stage 3: Progressive Instant Arrival Inspection
                 OnActivityLogged?.Invoke(new RealTimeActivityEvent
                 {
@@ -205,8 +269,13 @@ namespace AegisPC.Security.RealTime
                     Timestamp = DateTime.Now
                 });
 
-                var verdict = await _verdictProcessor.InspectFileAsync(evt.NormalizedPath, ct);
+                var verdict = await InspectArrivalWithRetryAsync(evt, arrivalIdentity, generation, ct);
+                ct.ThrowIfCancellationRequested();
+                if (verdict == null || !IsCurrentArrival(evt.NormalizedPath, arrivalIdentity, generation, ct)) return false;
                 verdict.EventTime = evt.Timestamp;
+                bool inspectionComplete = !verdict.PolicyBypassed && verdict.Verdict != RealTimeVerdict.Unknown && verdict.InspectionComplete &&
+                    verdict.ContentClassification?.IsComplete != false;
+                RecordArrivalCoverage(evt.NormalizedPath, arrivalIdentity, generation, inspectionComplete, ct);
 
                 // Stage 4: Verdict Telemetry
                 OnActivityLogged?.Invoke(new RealTimeActivityEvent
@@ -219,14 +288,20 @@ namespace AegisPC.Security.RealTime
                     Verdict = verdict.Verdict.ToString(),
                     TimeToDetectMs = verdict.TimeToDetectMs,
                     Message = $"Risk Skoru: {verdict.RiskScore}/100 ({verdict.Verdict}) - TTD: {verdict.TimeToDetectMs:F1}ms",
-                    Severity = verdict.RiskScore >= 85 ? "Danger" : (verdict.RiskScore >= 60 ? "Warning" : "Success"),
+                    Severity = verdict.Verdict == RealTimeVerdict.Unknown ? "Warning" :
+                        verdict.RiskScore >= 85 ? "Danger" : (verdict.RiskScore >= 60 ? "Warning" : "Success"),
                     Timestamp = DateTime.Now
                 });
 
                 // Stage 5: Policy Enforcement
                 if (verdict.RecommendedPolicy == RealTimePolicyAction.BlockAndQuarantine)
                 {
-                    await _policyEnforcer.EnforceQuarantineAsync(evt, verdict, ct);
+                    bool quarantined = false;
+                    if (_policyEnforcer is IRealTimePolicyOutcomeEnforcer outcomes)
+                        quarantined = await outcomes.EnforceQuarantineWithOutcomeAsync(evt, verdict, ct);
+                    else
+                        await _policyEnforcer.EnforceQuarantineAsync(evt, verdict, ct);
+                    if (!IsCurrentArrival(evt.NormalizedPath, arrivalIdentity, generation, ct)) return false;
                     verdict.ActionTime = DateTime.UtcNow;
 
                     OnActivityLogged?.Invoke(new RealTimeActivityEvent
@@ -235,11 +310,13 @@ namespace AegisPC.Security.RealTime
                         FileName = fileName,
                         FilePath = evt.NormalizedPath,
                         Stage = "ACTION_APPLIED",
-                        Action = "QUARANTINED",
+                        Action = quarantined ? "QUARANTINED" : "QUARANTINE_UNCONFIRMED",
                         RiskScore = verdict.RiskScore,
                         Verdict = verdict.Verdict.ToString(),
                         TimeToActionMs = verdict.TimeToActionMs,
-                        Message = $"Müdahale: Karantinaya Alındı (TTA: {verdict.TimeToActionMs:F1}ms)",
+                        Message = quarantined
+                            ? $"Müdahale: Karantina doğrulandı (TTA: {verdict.TimeToActionMs:F1}ms)"
+                            : "Tehdit tespit edildi; karantina tamamlanmadı veya doğrulanamadı",
                         Severity = "Danger",
                         Timestamp = DateTime.Now
                     });
@@ -247,6 +324,7 @@ namespace AegisPC.Security.RealTime
                 else if (verdict.RecommendedPolicy == RealTimePolicyAction.Warn)
                 {
                     await _policyEnforcer.EnforceWarningAsync(evt, verdict, ct);
+                    if (!IsCurrentArrival(evt.NormalizedPath, arrivalIdentity, generation, ct)) return false;
                     verdict.ActionTime = DateTime.UtcNow;
 
                     OnActivityLogged?.Invoke(new RealTimeActivityEvent
@@ -268,7 +346,8 @@ namespace AegisPC.Security.RealTime
                 {
                     // Policy is Allow / Unknown - LOG ONLY, NEVER DELETE UNKNOWN!
                     verdict.ActionTime = DateTime.UtcNow;
-                    _logger?.LogInformation("Instant File Arrival: '{Path}' evaluated as {Verdict} (TimeToDetect: {Ttd:F1}ms). Allowed.", evt.NormalizedPath, verdict.Verdict, verdict.TimeToDetectMs);
+                    bool inspected = inspectionComplete && verdict.Verdict == RealTimeVerdict.Clean && verdict.RecommendedPolicy == RealTimePolicyAction.Allow;
+                    _logger?.LogInformation("File arrival {Path}: verdict {Verdict}; inspection completed: {Complete}", evt.NormalizedPath, verdict.Verdict, inspected);
 
                     OnActivityLogged?.Invoke(new RealTimeActivityEvent
                     {
@@ -276,23 +355,35 @@ namespace AegisPC.Security.RealTime
                         FileName = fileName,
                         FilePath = evt.NormalizedPath,
                         Stage = "ACTION_APPLIED",
-                        Action = "ALLOWED",
+                        Action = verdict.PolicyBypassed ? "POLICY_BYPASSED" : inspected ? "ALLOWED" : "OBSERVED_UNVERIFIED",
                         RiskScore = verdict.RiskScore,
                         Verdict = verdict.Verdict.ToString(),
                         TimeToActionMs = verdict.TimeToActionMs,
-                        Message = $"Müdahale: İzin Verildi (TTA: {verdict.TimeToActionMs:F1}ms)",
-                        Severity = "Success",
+                        Message = verdict.PolicyBypassed ? "Kullanıcı istisnası uygulandı; dosyanın temiz olduğu doğrulanmadı" :
+                            inspected ? "İnceleme tamamlandı; tehdit bulunmadı" : "İnceleme tamamlanamadı; dosya temiz ilan edilmedi",
+                        Severity = inspected ? "Success" : "Warning",
                         Timestamp = DateTime.Now
                     });
                 }
+                return inspectionComplete;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                return false;
             }
             catch (Exception ex)
             {
                 _logger?.LogTrace(ex, "Error processing normalized real-time event for {Path}", evt.NormalizedPath);
+                throw;
             }
+            finally { EndArrivalInspection(evt.NormalizedPath, arrivalIdentity); }
+        }
+
+        private void RecordInspectionGap(long generation, CancellationToken ct)
+        {
+            lock (_lock)
+                if (_isRunning && generation == _engineGeneration && !ct.IsCancellationRequested)
+                    _coverageDegraded = true;
         }
 
         public void Dispose()

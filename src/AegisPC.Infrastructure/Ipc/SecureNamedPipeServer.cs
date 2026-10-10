@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Pipes;
+using System.Diagnostics;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -25,6 +26,9 @@ namespace AegisPC.Infrastructure.Ipc
         private readonly string _pipeName;
         private readonly byte[] _hmacKey;
         private CancellationTokenSource? _cts;
+        private Task? _serverTask;
+        private readonly object _lifecycleLock = new();
+        private bool _disposed;
         // Nonce replay cache — tracks used nonces to prevent replay attacks within the 30s window
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _usedNonces = new();
 
@@ -36,62 +40,74 @@ namespace AegisPC.Infrastructure.Ipc
 
         public void Start(Func<IpcSecureMessage, string> messageHandler)
         {
-            _cts = new CancellationTokenSource();
-            Task.Run(async () =>
+            ArgumentNullException.ThrowIfNull(messageHandler);
+            lock (_lifecycleLock)
             {
-                while (!_cts.IsCancellationRequested)
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (_cts != null) throw new InvalidOperationException("IPC server has already started.");
+                _cts = new CancellationTokenSource();
+                var token = _cts.Token;
+                _serverTask = Task.Run(async () =>
                 {
-                    try
+                    while (!token.IsCancellationRequested)
                     {
-                        var pipeSecurity = new PipeSecurity();
-                        var currentUser = WindowsIdentity.GetCurrent().User;
-                        if (currentUser != null)
+                        try
                         {
-                            pipeSecurity.AddAccessRule(new PipeAccessRule(currentUser, PipeAccessRights.ReadWrite, AccessControlType.Allow));
-                        }
-                        var adminSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-                        pipeSecurity.AddAccessRule(new PipeAccessRule(adminSid, PipeAccessRights.ReadWrite, AccessControlType.Allow));
-
-                        using var server = NamedPipeServerStreamAcl.Create(
+                            using var server = NamedPipeServerStreamAcl.Create(
                             _pipeName,
                             PipeDirection.InOut,
-                            NamedPipeServerStream.MaxAllowedServerInstances,
+                            1,
                             PipeTransmissionMode.Message,
-                            PipeOptions.Asynchronous,
+                            PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance,
                             4096,
                             4096,
-                            pipeSecurity);
+                            BoundedPipeProtocol.CreateLocalSecurity(allowAuthenticatedUsers: false));
 
-                        await server.WaitForConnectionAsync(_cts.Token);
+                            await server.WaitForConnectionAsync(token);
 
-                        using var reader = new StreamReader(server, Encoding.UTF8);
-                        using var writer = new StreamWriter(server, Encoding.UTF8) { AutoFlush = true };
+                            using var reader = new StreamReader(server, Encoding.UTF8);
+                            using var writer = new StreamWriter(server, Encoding.UTF8) { AutoFlush = true };
+                            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+                            deadline.CancelAfter(TimeSpan.FromSeconds(30));
 
-                        string? rawJson = await reader.ReadLineAsync();
-                        if (!string.IsNullOrEmpty(rawJson))
-                        {
-                            var msg = JsonSerializer.Deserialize<IpcSecureMessage>(rawJson);
-                            if (msg != null && ValidateMessage(msg))
+                            var rawJson = await BoundedPipeProtocol.ReadCommandAsync(reader, deadline.Token);
+                            if (!string.IsNullOrEmpty(rawJson))
                             {
-                                string response = messageHandler(msg);
-                                await writer.WriteLineAsync(response);
+                                var msg = JsonSerializer.Deserialize<IpcSecureMessage>(rawJson);
+                                if (msg != null && ValidateMessage(msg))
+                                {
+                                    var response = messageHandler(msg);
+                                    await writer.WriteLineAsync(response.AsMemory(), deadline.Token);
+                                }
                             }
                         }
+                        catch (OperationCanceledException)
+                        {
+                            Trace.WriteLine("IPC listener cancelled or client response timed out.");
+                        }
+                        catch (Exception exception)
+                        {
+                            Trace.WriteLine($"IPC listener failed: {exception}");
+                            try { await Task.Delay(1000, token); }
+                            catch (OperationCanceledException) { break; }
+                        }
                     }
-                    catch { }
-                }
-            }, _cts.Token);
+                }, token);
+            }
         }
 
         private bool ValidateMessage(IpcSecureMessage msg)
         {
+            if (msg.Command == null || msg.Command.Length is 0 or > 128 || msg.Command.Contains('|') ||
+                msg.Payload == null || msg.Payload.Length > BoundedPipeProtocol.MaximumCommandCharacters ||
+                msg.Nonce == null || !Guid.TryParseExact(msg.Nonce, "N", out _) ||
+                msg.SignatureHmac == null || msg.SignatureHmac.Length != 44 ||
+                msg.TimestampUtcTicks < DateTime.MinValue.Ticks || msg.TimestampUtcTicks > DateTime.MaxValue.Ticks)
+                return false;
+
             // Replay attack prevention: Max 30 seconds drift
             var msgTime = new DateTime(msg.TimestampUtcTicks, DateTimeKind.Utc);
             if (Math.Abs((DateTime.UtcNow - msgTime).TotalSeconds) > 30) return false;
-
-            // Nonce deduplication: reject previously used nonces (prevents replay within 30s window)
-            if (!_usedNonces.TryAdd(msg.Nonce, DateTime.UtcNow))
-                return false; // Nonce already seen = replay attack
 
             // Periodically clean expired nonces (older than 60s)
             foreach (var kvp in _usedNonces)
@@ -103,16 +119,29 @@ namespace AegisPC.Infrastructure.Ipc
             string contentToSign = $"{msg.Command}|{msg.Payload}|{msg.TimestampUtcTicks}|{msg.Nonce}";
             using var hmac = new HMACSHA256(_hmacKey);
             byte[] expectedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(contentToSign));
-            string expectedSig = Convert.ToBase64String(expectedHash);
+            Span<byte> suppliedHash = stackalloc byte[32];
+            if (!Convert.TryFromBase64String(msg.SignatureHmac, suppliedHash, out var written) || written != 32 ||
+                !CryptographicOperations.FixedTimeEquals(suppliedHash, expectedHash))
+                return false;
 
-            return CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(msg.SignatureHmac),
-                Encoding.UTF8.GetBytes(expectedSig));
+            // Only authenticated messages may consume replay-cache capacity.
+            if (_usedNonces.Count >= 4096) return false;
+            return _usedNonces.TryAdd(msg.Nonce, DateTime.UtcNow);
         }
 
         public void Dispose()
         {
-            _cts?.Cancel();
+            lock (_lifecycleLock)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                _cts?.Cancel();
+                var source = _cts;
+                if (_serverTask != null)
+                    _ = _serverTask.ContinueWith(_ => source?.Dispose(), CancellationToken.None,
+                        TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                else source?.Dispose();
+            }
         }
     }
 }

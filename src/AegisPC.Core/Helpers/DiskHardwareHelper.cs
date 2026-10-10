@@ -6,8 +6,7 @@ using Microsoft.Win32.SafeHandles;
 namespace AegisPC.Core.Helpers
 {
     /// <summary>
-    /// Disk depolama biriminin Katı Hal Sürücüsü (SSD / NVMe) mi yoksa
-    /// mekanik dönen disk (HDD) mi olduğunu 0.1 milisaniyede Win32 IOCTL ile sorgulayan donanım yardımcısı.
+    /// Queries the storage seek characteristic with read-only Win32 IOCTL; access failures remain Unknown.
     /// </summary>
     public static class DiskHardwareHelper
     {
@@ -53,7 +52,26 @@ namespace AegisPC.Core.Helpers
             out int lpBytesReturned,
             IntPtr lpOverlapped);
 
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _driveSsdCache = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, StorageSeekKind> _driveSsdCache = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Represents a measured seek characteristic; Unknown is not a proven rotating disk or SSD.</summary>
+        public enum StorageSeekKind { Unknown, Rotating, SolidState }
+
+        /// <summary>Resolves only drive-letter or canonical volume-GUID device roots; UNC and arbitrary devices are rejected.</summary>
+        public static string? ResolveVolumeDevicePath(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            if (path.StartsWith(@"\\?\Volume{", StringComparison.OrdinalIgnoreCase))
+            {
+                int end = path.IndexOf('}');
+                if (end != 47 || !Guid.TryParseExact(path.Substring(11, 36), "D", out _)) return null;
+                if (path.Length > 48 && path[48] != '\\') return null;
+                return path[..48];
+            }
+            if (path.StartsWith(@"\\", StringComparison.Ordinal) || path.Length < 2 || path[1] != ':' || !char.IsAsciiLetter(path[0])) return null;
+            if (path.Length > 2 && path[2] != '\\' && path[2] != '/') return null;
+            return @"\\.\" + char.ToUpperInvariant(path[0]) + ":";
+        }
 
         /// <summary>
         /// Sürücünün SSD mi olduğunu doğrular.
@@ -61,25 +79,20 @@ namespace AegisPC.Core.Helpers
         /// IncursSeekPenalty == true  -> Mekanik HDD (Kafa atlamalarını önlemek için sıralı/az iş parçacığı kullanılmalıdır)
         /// </summary>
         public static bool IsSolidStateDrive(string? pathOrDrive)
+            => GetSeekKind(pathOrDrive) == StorageSeekKind.SolidState;
+
+        /// <summary>Queries storage without writing it; unavailable measurements remain Unknown and are not cached permanently.</summary>
+        public static StorageSeekKind GetSeekKind(string? pathOrDrive)
         {
-            if (string.IsNullOrWhiteSpace(pathOrDrive)) return true;
+            string? volumeDevicePath = ResolveVolumeDevicePath(pathOrDrive);
+            if (volumeDevicePath == null || !OperatingSystem.IsWindows()) return StorageSeekKind.Unknown;
 
             try
             {
-                string root = Path.GetPathRoot(pathOrDrive) ?? "C:\\";
-                string driveLetter = root.TrimEnd('\\'); // e.g. "C:"
-
-                if (string.IsNullOrEmpty(driveLetter) || !driveLetter.Contains(':'))
+                if (_driveSsdCache.TryGetValue(volumeDevicePath, out var kind))
                 {
-                    driveLetter = "C:";
+                    return kind;
                 }
-
-                if (_driveSsdCache.TryGetValue(driveLetter, out bool isSsd))
-                {
-                    return isSsd;
-                }
-
-                string volumeDevicePath = @"\\.\" + driveLetter;
                 using var handle = CreateFile(
                     volumeDevicePath,
                     0, // Query access
@@ -91,8 +104,7 @@ namespace AegisPC.Core.Helpers
 
                 if (handle.IsInvalid)
                 {
-                    _driveSsdCache[driveLetter] = true; // Varsayılan SSD modu
-                    return true;
+                    return StorageSeekKind.Unknown;
                 }
 
                 var query = new STORAGE_PROPERTY_QUERY
@@ -108,19 +120,20 @@ namespace AegisPC.Core.Helpers
                     Marshal.SizeOf<STORAGE_PROPERTY_QUERY>(),
                     out DEVICE_SEEK_PENALTY_DESCRIPTOR result,
                     Marshal.SizeOf<DEVICE_SEEK_PENALTY_DESCRIPTOR>(),
-                    out _,
+                    out int returned,
                     IntPtr.Zero);
 
-                if (success)
+                if (success && returned >= Marshal.SizeOf<DEVICE_SEEK_PENALTY_DESCRIPTOR>() && result.Size >= Marshal.SizeOf<DEVICE_SEEK_PENALTY_DESCRIPTOR>())
                 {
-                    bool ssd = !result.IncursSeekPenalty;
-                    _driveSsdCache[driveLetter] = ssd;
-                    return ssd;
+                    var observed = result.IncursSeekPenalty ? StorageSeekKind.Rotating : StorageSeekKind.SolidState;
+                    _driveSsdCache[volumeDevicePath] = observed;
+                    return observed;
                 }
             }
-            catch { }
+            catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
+            { System.Diagnostics.Debug.WriteLine("Storage seek measurement unavailable: " + exception.GetType().Name); }
 
-            return true; // Hata durumunda güvenli SSD varsayılanı
+            return StorageSeekKind.Unknown;
         }
     }
 }

@@ -1,0 +1,7 @@
+{
+  "Purpose": "Pending official benign corpus; no binary origin or false-positive rate is certified by this template.",
+  "Families": ["NativeProxy", "Overlay", "ManagedPlugin", "JarMod", "PackedBenignPe", "InstallerScript"],
+  "RequiredUniqueFiles": 30,
+  "RequiredWholeFamilyHoldouts": 1,
+  "Files": []
+}

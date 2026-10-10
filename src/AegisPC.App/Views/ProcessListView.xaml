@@ -3,6 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:conv="clr-namespace:AegisPC.App.Converters"
+      xmlns:helpers="clr-namespace:AegisPC.App.Helpers"
       Background="{DynamicResource BrushAppBg}"
       UseLayoutRounding="True"
       SnapsToDevicePixels="True"
@@ -106,11 +107,11 @@
             </Border>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                <CheckBox Content="Windows Hizmetlerini Gizle" 
+                <CheckBox Content="Hizmet Oturumunu Gizle" 
                           IsChecked="{Binding HideWindowsServices, Mode=TwoWay}" 
                           VerticalAlignment="Center" Margin="0,0,14,0" 
                           FontWeight="SemiBold"
-                          ToolTip="Windows servislerini ve sistem arka plan süreçlerini listeden gizler."/>
+                          ToolTip="Session 0 hizmetlerini ve doğrulanmış Windows sistem ikililerini yalnız görünümden gizler. Tüm süreçleri görmek için kapatın; süreç adı tek başına gizleme nedeni değildir."/>
                 <Button Content="Yenile" Style="{StaticResource SecondaryButtonStyle}" 
                         Command="{Binding LoadProcessesCommand}" Margin="0,0,8,0" Padding="14,6"/>
                 <Button Content="Görevi Sonlandır" Style="{StaticResource DangerButtonStyle}" 
@@ -138,7 +139,9 @@
                           RowBackground="Transparent"
                           AlternatingRowBackground="Transparent"
                           RowHeaderWidth="0"
-                          ScrollViewer.CanContentScroll="False"
+                          ScrollViewer.CanContentScroll="True"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
                           ScrollViewer.VerticalScrollBarVisibility="Auto"
                           HeadersVisibility="Column"
                           GridLinesVisibility="Horizontal"
@@ -197,11 +200,16 @@
 
             <!-- Process Detail Panel -->
             <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Margin="0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+                <ScrollViewer helpers:WheelScrollHelper.EnableRootRedirect="True"
+                              VerticalScrollBarVisibility="Auto" 
+                              HorizontalScrollBarVisibility="Disabled" 
+                              CanContentScroll="False">
                     <StackPanel Margin="4">
                         <TextBlock Text="Süreç Detayı" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,16"/>
 
                         <StackPanel Visibility="{Binding SelectedProcess, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Zorla sonlandırma kaydedilmemiş verileri kaybettirebilir. Windows izinleri ve korumalı süreç sınırları atlatılmaz."
+                                       Style="{StaticResource CaptionTextStyle}" TextWrapping="Wrap" Margin="0,0,0,12"/>
                             <TextBlock Text="{Binding SelectedProcess.Name}" Style="{StaticResource SectionHeadingStyle}" FontSize="18" Margin="0,0,0,4"/>
                             <TextBlock Text="{Binding SelectedProcess.PID, StringFormat='PID: \{0\}'}" Style="{StaticResource DataMonospaceStyle}" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12"/>
 
