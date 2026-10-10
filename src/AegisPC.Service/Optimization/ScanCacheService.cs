@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -24,7 +25,7 @@ namespace AegisPC.Service.Optimization
     /// - TTL: 7 Gün (varsayılan 7 gün sonra otomatik geçersiz sayılır ve fresh scan zorunlu kılınır)
     /// - Arka plan asenkron toplu yazım (Batched Background Writer) ile sıfır disk I/O bloklaması
     /// </summary>
-    public class ScanCacheService : IScanCacheService, IDisposable
+    public partial class ScanCacheService : IScanCacheService, IDisposable
     {
         private readonly ILogger<ScanCacheService>? _logger;
         private readonly string _dbPath;
@@ -34,13 +35,10 @@ namespace AegisPC.Service.Optimization
 
         // L1 In-Memory Cache: Key -> CachedScanVerdict
         private readonly ConcurrentDictionary<string, CachedScanVerdict> _l1Cache = new(StringComparer.OrdinalIgnoreCase);
-        // FastPath Cache: FilePath -> FastPathKey
-        private readonly ConcurrentDictionary<string, string> _pathToKeyMap = new(StringComparer.OrdinalIgnoreCase);
 
         // Background Batch Writer Channel
-        private readonly Channel<CachedScanVerdict> _writeChannel;
+        private readonly Channel<CacheWriteRequest> _writeChannel;
         private readonly Task _writerTask;
-        private readonly CancellationTokenSource _cts = new();
         private readonly SemaphoreSlim _dbWriteLock = new(1, 1);
 
         public int L1Count => _l1Cache.Count;
@@ -73,9 +71,9 @@ namespace AegisPC.Service.Optimization
             TightenFileAcl(_dbPath);
 
             // 50.000 kapasiteli arka plan yazma kanalı
-            _writeChannel = Channel.CreateBounded<CachedScanVerdict>(new BoundedChannelOptions(50_000)
+            _writeChannel = Channel.CreateBounded<CacheWriteRequest>(new BoundedChannelOptions(50_000)
             {
-                FullMode = BoundedChannelFullMode.DropOldest,
+                FullMode = BoundedChannelFullMode.Wait,
                 SingleReader = true,
                 SingleWriter = false
             });
@@ -144,6 +142,19 @@ namespace AegisPC.Service.Optimization
                         ThreatsFound INTEGER NOT NULL DEFAULT 0,
                         DurationMs INTEGER NOT NULL DEFAULT 0
                     );
+
+                    CREATE TABLE IF NOT EXISTS ScanHistoryV2 (
+                        TargetDirectory TEXT NOT NULL COLLATE NOCASE,
+                        ScanType INTEGER NOT NULL,
+                        LastScanCompletedUtc TEXT NOT NULL,
+                        TotalFiles INTEGER NOT NULL DEFAULT 0,
+                        SkippedCachedFiles INTEGER NOT NULL DEFAULT 0,
+                        FreshScannedFiles INTEGER NOT NULL DEFAULT 0,
+                        ThreatsFound INTEGER NOT NULL DEFAULT 0,
+                        DurationMs INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (TargetDirectory, ScanType)
+                    );
+                    INSERT OR IGNORE INTO ScanHistoryV2 SELECT * FROM ScanHistory;
                 ";
                 cmd.ExecuteNonQuery();
 
@@ -152,7 +163,7 @@ namespace AegisPC.Service.Optimization
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "ScanCache.db ilklendirilirken hata oluştu.");
+                RecordPersistenceFailure(ex);
             }
         }
 
@@ -177,6 +188,13 @@ namespace AegisPC.Service.Optimization
             DateTime lastWriteUtc,
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            long observedGeneration;
+            lock (_cacheStateLock)
+            {
+                if (_pendingInvalidations != 0 || _persistenceError != null) return null;
+                observedGeneration = _cacheGeneration;
+            }
             if (string.IsNullOrWhiteSpace(sha256))
                 return await TryGetFastVerdictAsync(filePath, fileSize, lastWriteUtc, cancellationToken);
 
@@ -185,15 +203,18 @@ namespace AegisPC.Service.Optimization
                 : GenerateFastPathKey(filePath, fileSize, lastWriteUtc);
 
             // 1. L1 Bellek İçi Hızlı Arama (< 0.005 ms)
-            if (_l1Cache.TryGetValue(key, out var cached))
+            lock (_cacheStateLock)
             {
-                // TTL Kontrolü: 7 gün aşılmışsa taze tarama zorunlu kıl
-                if (!AegisPC.Security.Caching.ScanVerdictCachePolicy.IsCurrent(cached) || DateTime.UtcNow > cached.CachedAtUtc + _ttl)
+                if (_pendingInvalidations != 0 || observedGeneration != _cacheGeneration || _persistenceError != null) return null;
+                if (_l1Cache.TryGetValue(key, out var cached))
                 {
-                    _l1Cache.TryRemove(key, out _);
-                    return null;
+                    if (!AegisPC.Security.Caching.ScanVerdictCachePolicy.IsCurrent(cached) || DateTime.UtcNow > cached.CachedAtUtc + _ttl)
+                    {
+                        _l1Cache.TryRemove(key, out _);
+                        return null;
+                    }
+                    return Snapshot(cached);
                 }
-                return cached;
             }
 
             // 2. L2 SQLite Kalıcı Veritabanı Araması
@@ -215,7 +236,7 @@ namespace AegisPC.Service.Optimization
                 await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
                 if (await reader.ReadAsync(cancellationToken))
                 {
-                    var expiresUtc = DateTime.Parse(reader.GetString(12));
+                    var expiresUtc = DateTime.Parse(reader.GetString(12), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
                     // TTL kontrolü
                     if (DateTime.UtcNow > expiresUtc)
                     {
@@ -227,14 +248,14 @@ namespace AegisPC.Service.Optimization
                         SHA256 = reader.GetString(0),
                         FilePath = reader.GetString(1),
                         FileSize = reader.GetInt64(2),
-                        LastWriteTimeUtc = DateTime.Parse(reader.GetString(3)),
+                        LastWriteTimeUtc = DateTime.Parse(reader.GetString(3), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
                         Verdict = (RealTimeVerdict)reader.GetInt32(4),
                         RecommendedPolicy = (RealTimePolicyAction)reader.GetInt32(5),
                         RiskScore = reader.GetInt32(6),
                         RiskLevel = (RiskLevel)reader.GetInt32(7),
                         ThreatTitle = reader.IsDBNull(8) ? string.Empty : reader.GetString(8),
                         Confidence = reader.GetDouble(9),
-                        CachedAtUtc = DateTime.Parse(reader.GetString(11))
+                        CachedAtUtc = DateTime.Parse(reader.GetString(11), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)
                     };
 
                     if (reader.IsDBNull(10)) return null;
@@ -247,20 +268,19 @@ namespace AegisPC.Service.Optimization
                         verdict = envelope;
                     }
                     catch (JsonException) { return null; } // Legacy arrays are reanalyzed, not relabeled.
-                    // L1 önbelleğe al
-                    EnforceL1Capacity();
-                    _l1Cache[key] = verdict;
-                    if (!string.IsNullOrEmpty(verdict.FilePath))
+                    lock (_cacheStateLock)
                     {
-                        _pathToKeyMap[verdict.FilePath] = key;
+                        if (_pendingInvalidations != 0 || observedGeneration != _cacheGeneration || _persistenceError != null) return null;
+                        EnforceL1Capacity();
+                        _l1Cache[key] = verdict;
+                        return Snapshot(verdict);
                     }
-
-                    return verdict;
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
-                _logger?.LogTrace(ex, "ScanCache.db sorgulanırken hata oluştu: {Key}", key);
+                _logger?.LogTrace(ex, "ScanCache lookup failed: {Key}", key);
             }
 
             return null;
@@ -299,6 +319,8 @@ namespace AegisPC.Service.Optimization
         /// </summary>
         public async Task SetVerdictAsync(CachedScanVerdict verdict, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            verdict = Snapshot(verdict);
             if (!AegisPC.Security.Caching.ScanVerdictCachePolicy.IsCurrent(verdict)) return;
             if (verdict.CachedAtUtc == default)
             {
@@ -313,18 +335,18 @@ namespace AegisPC.Service.Optimization
                 ? GenerateFastPathKey(verdict.FilePath, verdict.FileSize, verdict.LastWriteTimeUtc)
                 : string.Empty;
 
-            // 1. L1 Bellek İçi Anında Güncelleme
-            EnforceL1Capacity();
-            _l1Cache[primaryKey] = verdict;
-            if (!string.IsNullOrEmpty(fastKey))
+            await _submissionLock.WaitAsync(cancellationToken);
+            try
             {
-                _l1Cache[fastKey] = verdict;
-                _pathToKeyMap[verdict.FilePath] = fastKey;
+                await _writeChannel.Writer.WriteAsync(new(CacheWriteKind.Verdict, verdict), cancellationToken);
+                lock (_cacheStateLock)
+                {
+                    EnforceL1Capacity();
+                    _l1Cache[primaryKey] = verdict;
+                    if (!string.IsNullOrEmpty(fastKey)) _l1Cache[fastKey] = verdict;
+                }
             }
-
-            // 2. L2 Arka Plan Toplu Yazım Kuyruğuna Ekle (Non-Blocking)
-            _writeChannel.Writer.TryWrite(verdict);
-            await Task.CompletedTask;
+            finally { _submissionLock.Release(); }
         }
 
         /// <summary>
@@ -333,55 +355,25 @@ namespace AegisPC.Service.Optimization
         public async Task InvalidateAsync(string filePath, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(filePath)) return;
-
-            if (_pathToKeyMap.TryRemove(filePath, out var fastKey))
-            {
-                _l1Cache.TryRemove(fastKey, out _);
-            }
-
-            try
-            {
-                await using var conn = new SqliteConnection(_connectionString);
-                await conn.OpenAsync(cancellationToken);
-                await using var cmd = conn.CreateCommand();
-                cmd.CommandText = "DELETE FROM ScanCacheEntries WHERE FilePath = $path;";
-                cmd.Parameters.AddWithValue("$path", filePath);
-                await cmd.ExecuteNonQueryAsync(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogTrace(ex, "Önbellek kaydı silinirken hata: {Path}", filePath);
-            }
+            await MutateAsync(CacheWriteKind.Invalidate, filePath, cancellationToken);
         }
 
+        /// <summary>Clears memory and persistent entries in submission order; failures are surfaced instead of acknowledged.</summary>
         public void Clear()
         {
-            _l1Cache.Clear();
-            _pathToKeyMap.Clear();
-
-            try
-            {
-                using var conn = new SqliteConnection(_connectionString);
-                conn.Open();
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = "DELETE FROM ScanCacheEntries;";
-                cmd.ExecuteNonQuery();
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogTrace(ex, "ScanCacheEntries temizlenirken hata oluştu.");
-            }
+            MutateAsync(CacheWriteKind.Clear, string.Empty, CancellationToken.None).GetAwaiter().GetResult();
         }
 
         /// <summary>
-        /// Arka planda bekleyen tüm önbellek yazım kuyruğunu diske anında döker (Flush).
+        /// Waits for all previously accepted writes to commit; persistence failures are not acknowledged as success.
         /// </summary>
         public async Task FlushAsync(CancellationToken cancellationToken = default)
         {
-            while (_writeChannel.Reader.Count > 0)
-            {
-                await Task.Delay(20, cancellationToken);
-            }
+            var request = new CacheWriteRequest(CacheWriteKind.Flush);
+            await _submissionLock.WaitAsync(cancellationToken);
+            try { await _writeChannel.Writer.WriteAsync(request, cancellationToken); }
+            finally { _submissionLock.Release(); }
+            await request.Completion!.Task.WaitAsync(cancellationToken);
         }
 
         /// <summary>
@@ -395,7 +387,7 @@ namespace AegisPC.Service.Optimization
                 await conn.OpenAsync(cancellationToken);
                 await using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
-                    SELECT LastScanCompletedUtc FROM ScanHistory 
+                    SELECT LastScanCompletedUtc FROM ScanHistoryV2
                     WHERE TargetDirectory = $dir AND ScanType = $type 
                     LIMIT 1;
                 ";
@@ -403,12 +395,13 @@ namespace AegisPC.Service.Optimization
                 cmd.Parameters.AddWithValue("$type", (int)scanType);
 
                 var result = await cmd.ExecuteScalarAsync(cancellationToken);
-                if (result != null && DateTime.TryParse(result.ToString(), out var dt))
+                if (result != null && DateTime.TryParse(result.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt))
                 {
                     return dt;
                 }
             }
-            catch { }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Scan history lookup failed: {Target}", targetPath); }
             return null;
         }
 
@@ -431,7 +424,7 @@ namespace AegisPC.Service.Optimization
                 await conn.OpenAsync(cancellationToken);
                 await using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
-                    INSERT OR REPLACE INTO ScanHistory 
+                    INSERT OR REPLACE INTO ScanHistoryV2
                     (TargetDirectory, ScanType, LastScanCompletedUtc, TotalFiles, SkippedCachedFiles, FreshScannedFiles, ThreatsFound, DurationMs)
                     VALUES ($dir, $type, $time, $tot, $skip, $fresh, $thr, $dur);
                 ";
@@ -447,60 +440,9 @@ namespace AegisPC.Service.Optimization
             }
             catch (Exception ex)
             {
-                _logger?.LogTrace(ex, "ScanHistory kaydedilemedi: {Dir}", targetPath);
-            }
-        }
-
-        private async Task ProcessBatchWriteQueueAsync()
-        {
-            var batch = new List<CachedScanVerdict>(250);
-
-            while (!_cts.Token.IsCancellationRequested)
-            {
-                try
-                {
-                    // İlk öğeyi bekle
-                    if (await _writeChannel.Reader.WaitToReadAsync(_cts.Token))
-                    {
-                        while (_writeChannel.Reader.TryRead(out var item))
-                        {
-                            batch.Add(item);
-                            if (batch.Count >= 250) break;
-                        }
-
-                        if (batch.Count > 0)
-                        {
-                            await WriteBatchToSqliteAsync(batch, _cts.Token);
-                            batch.Clear();
-                        }
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogTrace(ex, "ScanCache batch yazım sırasında hata.");
-                    await Task.Delay(200);
-                }
-            }
-
-            // Kapanışta kalanları yaz
-            while (_writeChannel.Reader.TryRead(out var remaining))
-            {
-                batch.Add(remaining);
-            }
-            if (batch.Count > 0)
-            {
-                try
-                {
-                    await WriteBatchToSqliteAsync(batch, CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogError(ex, "Failed to flush remaining scan cache batch to SQLite on shutdown.");
-                }
+                _logger?.LogWarning(ex, "Scan history was not committed: {Target}", targetPath);
+                if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested) throw;
+                throw new IOException("Scan completion history was not committed.", ex);
             }
         }
 
@@ -574,10 +516,6 @@ namespace AegisPC.Service.Optimization
 
                 await trans.CommitAsync(ct);
             }
-            catch (Exception ex)
-            {
-                _logger?.LogTrace(ex, "SQLite batch commit sırasında hata.");
-            }
             finally
             {
                 _dbWriteLock.Release();
@@ -611,7 +549,7 @@ namespace AegisPC.Service.Optimization
             }
         }
 
-        private static void TightenFileAcl(string filePath)
+        private void TightenFileAcl(string filePath)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || !File.Exists(filePath)) return;
             try
@@ -619,6 +557,10 @@ namespace AegisPC.Service.Optimization
                 var fi = new FileInfo(filePath);
                 var fs = new FileSecurity();
                 fs.SetAccessRuleProtection(true, false);
+                using var identity = WindowsIdentity.GetCurrent();
+                if (identity.User != null)
+                    fs.AddAccessRule(new FileSystemAccessRule(identity.User,
+                        FileSystemRights.FullControl, AccessControlType.Allow));
                 fs.AddAccessRule(new FileSystemAccessRule(
                     new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
                     FileSystemRights.FullControl, AccessControlType.Allow));
@@ -630,20 +572,17 @@ namespace AegisPC.Service.Optimization
                     FileSystemRights.ReadAndExecute, AccessControlType.Allow));
                 fi.SetAccessControl(fs);
             }
-            catch { }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Scan cache file ACL could not be applied: {Path}", filePath); }
         }
 
+        /// <summary>Stops submissions and drains accepted writes; a slow writer keeps its semaphore until exit.</summary>
         public void Dispose()
         {
-            try
-            {
-                _cts.Cancel();
-                _writeChannel.Writer.Complete();
-                _writerTask.Wait(TimeSpan.FromSeconds(2));
-                _cts.Dispose();
-                _dbWriteLock.Dispose();
-            }
-            catch { }
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            _writeChannel.Writer.TryComplete();
+            // Do not dispose a semaphore while the draining writer can still use it.
+            if (_writerTask.Wait(TimeSpan.FromSeconds(2))) _dbWriteLock.Dispose();
+            else _ = _writerTask.ContinueWith(_ => _dbWriteLock.Dispose(), TaskScheduler.Default);
         }
     }
 }

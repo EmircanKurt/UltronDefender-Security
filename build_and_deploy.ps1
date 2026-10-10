@@ -8,7 +8,8 @@ param (
     [switch]$SkipTests,
     [switch]$SkipInstaller,
     [switch]$UpdateDesktopShortcut,
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\preview-3.2.3'),
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\preview-3.2.4'),
+    [string]$SourceRevisionId = '',
     [string]$InnoCompilerPath = ''
 )
 
@@ -18,6 +19,11 @@ $repoRoot = $PSScriptRoot
 [xml]$projectVersion = Get-Content -LiteralPath (Join-Path $repoRoot 'src/AegisPC.App/AegisPC.App.csproj') -Raw
 $appVersion = @($projectVersion.Project.PropertyGroup.Version | Where-Object { $_ })[0]
 if ($appVersion -notmatch '^\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$') { throw 'Invalid application version; package names cannot be inferred.' }
+$revisionArguments = @()
+if ($SourceRevisionId) {
+    if ($SourceRevisionId -notmatch '^[a-fA-F0-9]{40}$') { throw 'Source revision must be an exact verified commit SHA.' }
+    $revisionArguments = @("/p:SourceRevisionId=$SourceRevisionId")
+}
 Set-Location -LiteralPath $repoRoot
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
@@ -45,11 +51,11 @@ Write-Host "`n[2/4] Release ikilileri izole paket klasorune yayimlaniyor..." -Fo
 $appDir = Join-Path $OutputDirectory "payload"
 $helpersDir = Join-Path $appDir "Helpers"
 
-& dotnet publish "src\AegisPC.App\AegisPC.App.csproj" -c Release -r win-x64 --self-contained true /p:PublishReadyToRun=true -o $appDir
+& dotnet publish "src\AegisPC.App\AegisPC.App.csproj" -c Release -r win-x64 --self-contained true /p:PublishReadyToRun=true @revisionArguments -o $appDir
 if ($LASTEXITCODE -ne 0) { throw "Application publish failed; deployment stopped." }
-& dotnet publish "src\AegisPC.Service\AegisPC.Service.csproj" -c Release -r win-x64 --self-contained true /p:PublishReadyToRun=true -o (Join-Path $appDir "Service")
+& dotnet publish "src\AegisPC.Service\AegisPC.Service.csproj" -c Release -r win-x64 --self-contained true /p:PublishReadyToRun=true @revisionArguments -o (Join-Path $appDir "Service")
 if ($LASTEXITCODE -ne 0) { throw "Service publish failed; deployment stopped." }
-& dotnet publish "tools\AegisPC.ElevatedHelper\AegisPC.ElevatedHelper.csproj" -c Release -r win-x64 --self-contained true /p:PublishReadyToRun=true -o $helpersDir
+& dotnet publish "tools\AegisPC.ElevatedHelper\AegisPC.ElevatedHelper.csproj" -c Release -r win-x64 --self-contained true /p:PublishReadyToRun=true @revisionArguments -o $helpersDir
 if ($LASTEXITCODE -ne 0) { throw "Elevated helper publish failed; deployment stopped." }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'ultron_shield.ico') -Destination $appDir -Force
 

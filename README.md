@@ -31,6 +31,10 @@ The current edition has no paid activation key, subscription or expiry. The MIT 
 
 ## Testing and limits
 
+### Final preview audit — 10 October 2026
+
+Preview **3.2.4-preview.20261010** adds committed-cache barriers, ordered invalidation/clear, detached verdict snapshots, UTC-safe persistence, independent Quick/Full history and a cache-owner write-permission correction. **654 selected benign regressions passed, 0 failed/skipped**; this includes temporary database/archive fixtures, fake-HTTP signed-update integrity, synthetic policy and off-screen WPF tests, not a malware-detection rate. See [the final audit](docs/reports/FINAL_AUDIT_2026-10-10.md) and its unfinished VM/corpus/native gates. CI now also checks stacked review branches. No service, driver or Defender setting is changed by building this preview.
+
 ### Game/mod reliability and native menu follow-up
 
 The [9 October game/mod report](docs/reports/GAME_MOD_SAFETY_2026-10-09.md) describes preview 3.2.3: actual native-menu theme regressions, deterministic ordinary-capability scoring, removal of legacy filename/unproven-hash decisions, optional tool-only presentation, versioned content-verified caches and shared ZIP/JAR rule mapping. The exact candidate passed **580 selected benign regressions, 0 failures/skips**; both solution and Review Release builds had **0 warnings/errors**. It adds no game-folder trust exemption. Real 30-file corpus, cold/warm comparison, full contained PE parity, live DPI and VirtualBox gates remain pending; optional third-party classification is inactive until a publisher key is provisioned. No production-protection or crack-safety guarantee is made. Review separately: [native menu PR10](https://github.com/EmircanKurt/UltronDefender-Security/pull/10), [stacked engine PR11](https://github.com/EmircanKurt/UltronDefender-Security/pull/11), both draft.
@@ -57,10 +61,10 @@ Windows 10/11 x64 are development targets; this .NET 8 build does not support Wi
 
 Requirements: Windows and .NET 8 SDK; Inno Setup 6 only for installer generation.
 
-The latest draft candidate is on `codex/game-mod-safety-2026-10-09`, stacked on the native-menu and earlier guard/scan reviews. The default branch and older downloads can still contain older code until review and deployment gates are completed. The commands below select this preview, not a recommended production release.
+The latest candidate is on `codex/final-audit-2026-10-10`, stacked on the earlier game/mod, native-menu and guard/scan reviews. The default branch can still contain older application code until those reviews are merged. The commands below select this preview, not a recommended production release.
 
 ```powershell
-git clone --branch codex/game-mod-safety-2026-10-09 https://github.com/EmircanKurt/UltronDefender-Security.git
+git clone --branch codex/final-audit-2026-10-10 https://github.com/EmircanKurt/UltronDefender-Security.git
 cd UltronDefender-Security
 dotnet build tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release -warnaserror
 ./scripts/Test-BenignPreview.ps1 -NoBuild
@@ -73,8 +77,8 @@ These commands do not install/start a service. The main test project includes li
 
 ### Downloads
 
-- [Releases and available downloads](https://github.com/EmircanKurt/UltronDefender-Security/releases) — older installers may contain older code. No newly validated, signed production installer is available.
-- [Latest development preview — 9 October 2026](https://github.com/EmircanKurt/UltronDefender-Security/pull/9) — current interface and scan-safety source changes. The unsigned 3.2.2 preview installer is a maintainer-only draft, not a public recommended release.
+- [Releases and preview downloads](https://github.com/EmircanKurt/UltronDefender-Security/releases) — select **3.2.4-preview.20261010** when it is available; do not substitute older August/October packages. Each preview asset has a matching SHA256SUMS file. No validated, signed production installer is available.
+- [Current preview source — 10 October 2026](https://github.com/EmircanKurt/UltronDefender-Security/tree/codex/final-audit-2026-10-10) — includes the earlier interface, scan-safety and game/mod work. Setup is unsigned and intended for an isolated VM pilot, not a replacement for Defender.
 
 Signing, installation/uninstallation, rollback and isolated Windows VM checks remain required before recommending a new setup. Keep Microsoft Defender enabled.
 
