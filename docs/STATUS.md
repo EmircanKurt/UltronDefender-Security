@@ -1,4 +1,18 @@
-# Current verification — 4 October 2026
+# Current verification — 10 October 2026
+
+Development preview evidence, not antivirus certification. [3.2.4 preview setup and checksums](https://github.com/EmircanKurt/UltronDefender-Security/releases/tag/v3.2.4-preview.20261010) · [final audit](reports/FINAL_AUDIT_2026-10-10.md) · [draft PR12](https://github.com/EmircanKurt/UltronDefender-Security/pull/12).
+
+Source/tag: `b2f10a927147eb9250b844ce1428bf80e777c235`. **655 selected benign regressions passed locally and in clean GitHub CI, 0 failed/skipped; solution and Review Release: 0 warnings/errors.** [CI run](https://github.com/EmircanKurt/UltronDefender-Security/actions/runs/38028063016). The initial independent-Review restore failure was reproduced, corrected and rerun successfully. Regression counts are not malware detection rates; the whole host-mutating lab suite was not run.
+
+The signed-update tests use fake HTTP and temporary keys/files; cache tests use isolated SQLite, and UI checks are off-screen. Real benign game/mod corpus, full scan performance, contained-PE parity, live mouse/DPI, multi-user/native service/driver and VirtualBox gates remain open. L1-only warm cache stress wall time rose 15.3% (~9 ms per 10,000 operations) with defensive copies/ordering; warm peak memory stayed essentially unchanged. This is not a full scan speed measurement.
+
+Installer: **NotSigned**, 126,091,934 bytes, SHA-256 `9F136FB11BEA70852EBC1E247BA006188DD0A46D6C82134EA552693082BAA480`. GitHub setup/checksum downloads matched sealed local bytes. Setup was compiled, not installed or executed. It does not install/start a service, driver or autostart; it does not make missing service protection active. Microsoft Defender remains required.
+
+Default-branch application code remains older; only documentation/download pointers were updated here. No staged runtime PR was automatically merged.
+
+## Historical evidence — 4 October 2026
+
+The earlier results below describe their own source, not this setup. Historical command excerpts are not instructions to replace the current positive-allowlist test script.
 
 Development evidence, not antivirus certification.
 

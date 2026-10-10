@@ -29,6 +29,14 @@ These are implemented components, not claims of complete coverage. Independent G
 
 The current edition has no paid activation key, subscription or expiry. The MIT source license is not an activation requirement. A Windows protection service is a technical background component, not a paid feature. Missing service information must not be presented as active protection.
 
+## Latest preview — 10 October 2026
+
+[3.2.4 preview setup and checksum](https://github.com/EmircanKurt/UltronDefender-Security/releases/tag/v3.2.4-preview.20261010) · [review PR12](https://github.com/EmircanKurt/UltronDefender-Security/pull/12) · [final audit](docs/reports/FINAL_AUDIT_2026-10-10.md).
+
+Since the previous preview: readable native light/dark menu states; scan selection/scope and silent startup/AFK presentation; adaptive resource budgets (not forced RAM filling); content/coverage-aware quick/full/custom scanning and protected-folder hash identity; conservative game/mod evidence with no folder/name trust exemption; versioned optional-tool presentation; ordered cache commits/invalidation, detached verdict snapshots, UTC metadata and independent Quick/Full history. Guardian/native enforcement remains gated, not activated production protection.
+
+The exact candidate passed **655 selected benign regressions locally and in clean GitHub CI, 0 failed/skipped**. Both Release builds had **0 warnings/errors**. These are policy/synthetic, isolated disk/archive/SQLite, fake-HTTP and off-screen UI tests, not a malware detection rate. [CI evidence](https://github.com/EmircanKurt/UltronDefender-Security/actions/runs/38028063016). Real game/mod corpus, full scan-performance comparisons, live mouse/DPI and VirtualBox/native integration gates remain unfinished.
+
 ## Testing and limits
 
 See the [current verification report](docs/STATUS.md) for actual results and outstanding gates. Regression totals do **not** measure malware detection or false-positive rates. EICAR is a workflow test, not real-world efficacy evidence.
@@ -39,13 +47,13 @@ Windows 10/11 x64 are development targets; this .NET 8 build does not support Wi
 
 Requirements: Windows and .NET 8 SDK; Inno Setup 6 only for installer generation.
 
-The reviewed development code is currently in [pull request #3](https://github.com/EmircanKurt/UltronDefender-Security/pull/3). The default branch can still contain older code until the staged changes are reviewed and merged. The commands below intentionally select the reviewed preview branch.
+The latest source is on [codex/final-audit-2026-10-10](https://github.com/EmircanKurt/UltronDefender-Security/tree/b2f10a927147eb9250b844ce1428bf80e777c235), proposed in stacked draft PR12. The default branch still contains older application code until the staged reviews are merged; this documentation update does not merge them. The commands below select the preview branch.
 
 ```powershell
-git clone --branch codex/rt-ai-free-preview-2026-10-04 https://github.com/EmircanKurt/UltronDefender-Security.git
+git clone --branch codex/final-audit-2026-10-10 https://github.com/EmircanKurt/UltronDefender-Security.git
 cd UltronDefender-Security
 dotnet build tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release -warnaserror
-dotnet test tests/AegisPC.Review.Tests/AegisPC.Review.Tests.csproj -c Release --no-build --filter "FullyQualifiedName!~Golden01_&FullyQualifiedName!~SettingsViewModelRegressionTests"
+./scripts/Test-BenignPreview.ps1 -NoBuild
 dotnet publish src/AegisPC.App/AegisPC.App.csproj -c Release -o artifacts/preview/app
 ```
 
@@ -55,8 +63,11 @@ These commands do not install/start a service. The main test project includes li
 
 ### Downloads
 
-- [Releases and available downloads](https://github.com/EmircanKurt/UltronDefender-Security/releases) — older installers may contain older code. No newly validated, signed production installer is available.
-- [Latest development preview — 9 October 2026](https://github.com/EmircanKurt/UltronDefender-Security/pull/9) — current interface and scan-safety source changes. The unsigned 3.2.2 preview installer is a maintainer-only draft, not a public recommended release.
+- [Download 3.2.4-preview.20261010 setup](https://github.com/EmircanKurt/UltronDefender-Security/releases/download/v3.2.4-preview.20261010/UltronDefenderSetup-3.2.4-preview.20261010.exe) — unsigned experimental preview for isolated Windows 10/11 x64 VM testing.
+- [Release notes and SHA256SUMS](https://github.com/EmircanKurt/UltronDefender-Security/releases/tag/v3.2.4-preview.20261010) — setup SHA-256 `9F136FB11BEA70852EBC1E247BA006188DD0A46D6C82134EA552693082BAA480`; both public assets were downloaded and matched the sealed local package.
+- [Current source / review PR12](https://github.com/EmircanKurt/UltronDefender-Security/pull/12) — staged source changes remain separate from older default-branch application code.
+
+This setup has a separate per-user preview identity and does **not** install/start services, drivers or autostart, or launch Ultron. It does not activate background service protection by itself. No signed production installer is available.
 
 Signing, installation/uninstallation, rollback and isolated Windows VM checks remain required before recommending a new setup. Keep Microsoft Defender enabled.
 
