@@ -1,0 +1,147 @@
+name: Linux manual GUI preview qualification
+
+on:
+  push:
+    branches: ["codex/linux-gui-preview-*", "codex/linux-preview-release-*"]
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/linux-preview.yml"
+      - "tools/Ultron.Linux.App/**"
+      - "tools/Ultron.PortableInspection/**"
+      - "tests/Ultron.Linux.Tests/**"
+      - "scripts/package-linux-preview.sh"
+      - "scripts/collect-linux-preview-licenses.sh"
+      - "docs/licenses/linux/**"
+      - "docs/architecture/LINUX_PREVIEW.md"
+      - "src/AegisPC.Core/Models/FileContentClassification.cs"
+      - "src/AegisPC.Contracts/Services/IFileContentClassifier.cs"
+      - "src/AegisPC.Security/Scanning/**"
+      - "src/AegisPC.Security/Detection/YaraEngine/**"
+      - "src/AegisPC.Security/DetectionPolicyRevision.cs"
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-linux-x64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.401
+            8.0.424
+      - name: Install X11 smoke-test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libfontconfig1 libx11-6 libice6 libsm6
+      - name: Restore and build the separate Linux projects
+        working-directory: tools/Ultron.Linux.App
+        run: |
+          dotnet --version
+          dotnet restore ../../tests/Ultron.Linux.Tests/Ultron.Linux.Tests.csproj --locked-mode
+          dotnet build ../../tests/Ultron.Linux.Tests/Ultron.Linux.Tests.csproj -c Release --no-restore -warnaserror
+      - name: Run benign portable, native Linux and rendered GUI fixtures
+        working-directory: tests/Ultron.Linux.Tests
+        env:
+          ULTRON_TEST_SCREENSHOT_DIR: ${{ github.workspace }}/artifacts/linux-validation/headless
+        run: |
+          dotnet test -c Release --no-build --no-restore \
+            --logger "trx;LogFileName=linux-benign.trx" \
+            --results-directory ../../artifacts/linux-validation
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          path = "../../artifacts/linux-validation/linux-benign.trx"
+          counters = ET.parse(path).getroot().find(".//{*}Counters")
+          assert counters is not None
+          total = int(counters.attrib["total"])
+          assert total > 0 and int(counters.attrib["passed"]) == total, counters.attrib
+          assert all(int(counters.attrib.get(k, "0")) == 0 for k in
+                     ("failed", "error", "timeout", "aborted", "notExecuted")), counters.attrib
+          print("Actual Linux benign fixtures:", counters.attrib)
+          PY
+      - name: Build an immutable self-contained x64 preview archive
+        run: bash scripts/package-linux-preview.sh linux-x64
+      - name: Extract and run the packaged real X11 GUI
+        run: |
+          set -euo pipefail
+          cd artifacts/linux-preview-package
+          sha256sum -c UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz.sha256
+          extracted="$(mktemp -d "${RUNNER_TEMP}/ultron-linux-extracted.XXXXXXXX")"
+          tar -xzf UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz -C "$extracted"
+          timeout 60s xvfb-run -a "$extracted/Ultron.Linux.App" \
+            --gui-smoke "$GITHUB_WORKSPACE/artifacts/linux-validation/x11"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path("../linux-validation/x11/gui-runtime.json").read_text())
+          assert result["ActualLinuxRuntime"] and result["VisibleNativeWindow"]
+          assert result["NoStartupScan"] and result["ManualInertScanReports"] == 1
+          assert result["Outcome"] == "GuiRuntimeSmokePassed", result
+          assert not result["MalwareFreeClaim"] and not result["ProtectionVerified"]
+          for name in ("linux-x11-startup.png", "linux-x11-scan.png"):
+              assert Path("../linux-validation/x11", name).stat().st_size > 1000
+          print(result)
+          PY
+      - name: Upload native, rendered and real-window evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-validation
+          path: artifacts/linux-validation/
+          if-no-files-found: error
+      - name: Upload the qualified manual preview package
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-qualified-package
+          path: artifacts/linux-preview-package/
+          if-no-files-found: error
+
+  publish-authorized-linux-preview:
+    # A separate release branch is created only after source review and successful CI.
+    # A PR/fork run cannot publish, and existing releases are never edited.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/codex/linux-preview-release-')
+    needs: qualify-linux-x64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x64-qualified-package
+          path: package
+      - name: Publish a new immutable Linux prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cd package
+          sha256sum -c UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz.sha256
+          tag="v0.1.0-linux-preview.20261011.${SOURCE_SHA:0:8}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            printf '%s\n' "Existing release is immutable; refusing to overwrite: $tag" >&2
+            exit 1
+          fi
+          # Existing tags without releases must not be reused for an unrelated commit.
+          tag_error="$RUNNER_TEMP/ultron-tag-preflight.txt"
+          if gh api "repos/$GH_REPO/git/ref/tags/$tag" 2>"$tag_error" >/dev/null; then
+            printf '%s\n' "Existing tag is immutable; refusing to reuse: $tag" >&2
+            exit 1
+          elif ! grep -Fq '(HTTP 404)' "$tag_error"; then
+            printf '%s\n' 'Could not verify tag absence; refusing publication.' >&2
+            exit 1
+          fi
+          gh release create "$tag" \
+            UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz \
+            UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz.sha256 \
+            --target "$SOURCE_SHA" --prerelease --latest=false \
+            --title "Linux manual GUI preview 0.1 — Ubuntu 24.04 x64" \
+            --notes "Experimental, unsigned, manual read-only GUI preview. Qualified with benign Linux file fixtures, rendered controls and an extracted real X11 application smoke test. No automatic startup scan. Windows service protection, ETW, Defender, WFP, quarantine and process termination are unsupported. No malware efficacy, native picker or all-distribution certification is claimed. No root/service/driver installation is required. Archive includes limitations and third-party notices; verify the supplied SHA-256 before extraction."
