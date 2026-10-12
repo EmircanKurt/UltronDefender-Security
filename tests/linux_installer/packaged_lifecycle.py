@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 
 
 def run(command, environment, input_text=None):
@@ -45,8 +46,30 @@ def main():
         for name in ("ultron-defender-preview.desktop", "ultron-defender-preview-uninstall.desktop"):
             run(["desktop-file-validate", str(desktop / name)], environment)
         gui_evidence = evidence / "installed-x11"
-        run(["xvfb-run", "-a", str(installed / "Ultron.Linux.App"),
-             "--gui-smoke", str(gui_evidence)], environment)
+        gui_evidence.mkdir(parents=True, exist_ok=True)
+        (gui_evidence / "uninstall-probe-request").write_text("CI probe", encoding="utf-8")
+        process = subprocess.Popen(["xvfb-run", "-a", str(installed / "Ultron.Linux.App"),
+                                    "--gui-smoke", str(gui_evidence)], env=environment,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.monotonic() + 30
+            while not (gui_evidence / "uninstall-probe-ready").exists():
+                if process.poll() is not None or time.monotonic() > deadline:
+                    raise RuntimeError("Installed GUI did not reach the real open-window lease probe.")
+                time.sleep(0.03)
+            refusal = subprocess.run([sys.executable, "-B", str(package / "uninstall.py")],
+                                     env=environment, input="REMOVE\n", capture_output=True,
+                                     text=True, timeout=10, check=False)
+            print(refusal.stdout)
+            print(refusal.stderr, file=sys.stderr)
+            assert refusal.returncode == 1 and "Ultron is running" in refusal.stderr
+            assert installed.exists() and process.poll() is None
+        finally:
+            (gui_evidence / "uninstall-probe-complete").write_text("Complete", encoding="utf-8")
+            stdout, stderr = process.communicate(timeout=30)
+            print(stdout)
+            print(stderr, file=sys.stderr)
+        assert process.returncode == 0
         gui = json.loads((gui_evidence / "gui-runtime.json").read_text())
         assert gui["ActualLinuxRuntime"] and gui["VisibleNativeWindow"] and gui["NoStartupScan"]
         assert gui["ManualInertScanReports"] == 1 and gui["Outcome"] == "GuiRuntimeSmokePassed"
@@ -69,6 +92,7 @@ def main():
                "NoRoot": True, "ConfirmedRemoval": True, "CancelledRemovalPreserved": True,
                "ReportsAndUnrelatedFilesPreserved": True, "ProtectionVerified": False,
                "DesktopFileSyntaxValidated": True, "InteractiveDesktopMenuUxVerified": False}
+    receipt["RunningRealApplicationRemovalRefusedWithoutTermination"] = True
     (evidence / "lifecycle.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(receipt))
 

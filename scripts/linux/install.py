@@ -206,40 +206,39 @@ def validate_removal(home):
 def uninstall(home, confirm):
     """Remove only validated application files after confirmation; never kill processes."""
     target, desktop, files = validate_removal(home)
-    ensure_application_closed(target)
     if not confirm():
         print("Removal cancelled. No files changed.")
         return False
     # Repeat the preflight after user input; no recursive delete or data purge.
     target, desktop, files = validate_removal(home)
-    ensure_application_closed(target)
-    for name in DESKTOP_NAMES:
-        (desktop / name).unlink(missing_ok=True)
-    for name in files:
-        (target / name).unlink()
-    (target / RECEIPT).unlink()
-    remove_empty_directories(target)
+    with removal_lease(target):
+        for name in DESKTOP_NAMES:
+            (desktop / name).unlink(missing_ok=True)
+        for name in files:
+            (target / name).unlink()
+        (target / RECEIPT).unlink()
+        remove_empty_directories(target)
     print("Ultron Linux preview removed. Exported reports and personal files preserved.")
     return True
 
 
-def ensure_application_closed(target):
-    """On Linux compare executable paths only; never inspect arguments or terminate users."""
+def removal_lease(target):
+    """Lock only the packaged executable until removal completes; inspect no processes."""
     if sys.platform != "linux":
-        return
-    for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit():
-            continue
-        try:
-            if entry.stat().st_uid != os.geteuid():
-                continue
-            executable = os.readlink(entry / "exe")
-        except (FileNotFoundError, ProcessLookupError):
-            continue
-        except PermissionError as error:
-            raise ValueError("Cannot verify running user processes; close Ultron and retry.") from error
-        if executable == str(target / "Ultron.Linux.App"):
-            raise ValueError("Ultron is running. Close it before uninstalling; no process was stopped.")
+        from contextlib import nullcontext
+        return nullcontext()  # Portable fixture path only; the CLI refuses non-Linux.
+    stream = (target / "Ultron.Linux.App").open("rb")
+    try:
+        if sys.platform == "linux":
+            import fcntl
+            try:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise ValueError("Ultron is running. Close it before uninstalling; no process was stopped.") from error
+        return stream
+    except Exception:
+        stream.close()
+        raise
 
 
 def main():

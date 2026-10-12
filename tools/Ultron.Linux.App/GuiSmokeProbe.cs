@@ -28,6 +28,14 @@ internal static class GuiSmokeProbe
                 var state = (ScanPresentation)(window.DataContext ?? throw new InvalidOperationException("Missing UI state."));
                 if (state.IsScanning || state.CanStart) throw new InvalidOperationException("Unexpected startup scan or selected scope.");
                 SaveFrame(window, Path.Combine(output, "linux-x11-startup.png"));
+                // Explicit CI-only handshake: keep a real window open for the remover's lock probe.
+                if (File.Exists(Path.Combine(output, "uninstall-probe-request")))
+                {
+                    await File.WriteAllTextAsync(Path.Combine(output, "uninstall-probe-ready"), "Ready\n");
+                    using var probeTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                    while (!File.Exists(Path.Combine(output, "uninstall-probe-complete")))
+                        await Task.Delay(30, probeTimeout.Token);
+                }
                 fixtureDirectory = Directory.CreateTempSubdirectory("ultron-linux-gui-inert-").FullName;
                 string fixture = Path.Combine(fixtureDirectory, "ordinary.txt");
                 await File.WriteAllTextAsync(fixture, "Inert Linux GUI fixture. No executable content.\n");

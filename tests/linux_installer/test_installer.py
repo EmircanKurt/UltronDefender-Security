@@ -164,17 +164,20 @@ class InstallerTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "linux", "Requires actual Linux process executable metadata.")
     def test_running_app_refused_without_termination(self):
-        shutil.copyfile("/bin/sleep", self.package / "Ultron.Linux.App")
-        self.manifest()
         target, _ = self.install()
-        process = subprocess.Popen([str(target / "Ultron.Linux.App"), "2"])
+        code = ("import fcntl,sys,time; f=open(sys.argv[1],'rb'); "
+                "fcntl.flock(f,fcntl.LOCK_SH); print('READY',flush=True); time.sleep(2)")
+        process = subprocess.Popen([sys.executable, "-B", "-c", code, str(target / "Ultron.Linux.App")],
+                                   stdout=subprocess.PIPE, text=True)
         try:
+            self.assertEqual("READY", process.stdout.readline().strip())
             with self.assertRaisesRegex(ValueError, "Ultron is running"):
                 installer.uninstall(self.home, lambda: True)
             self.assertIsNone(process.poll())
             self.assertTrue(target.exists())
         finally:
             process.wait(timeout=5)
+            process.stdout.close()
 
 
 if __name__ == "__main__":

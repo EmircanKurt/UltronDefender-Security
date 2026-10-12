@@ -32,6 +32,10 @@ deletion, not a recursive force-delete. Move personal files out of the applicati
 folder before trying again. Do not run either script using sudo/root. Home paths
 containing control characters, `%` or `=` are refused to avoid desktop Exec ambiguity.
 Hashes check package integrity, not a publisher signature; the preview is unsigned.
+The running app holds a shared advisory `flock` on its own executable; removal
+requires an exclusive nonblocking lock until deletion finishes. This coordinates
+startup/removal without reading other processes or forcibly closing an app.
+Local filesystems are the test target; network-home locking semantics are unverified.
 The unprivileged installer is not a security boundary against another process
 already controlling the same user account or changing its files concurrently.
 
