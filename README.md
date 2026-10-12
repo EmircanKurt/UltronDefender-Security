@@ -71,6 +71,17 @@ This setup has a separate per-user preview identity and does **not** install/sta
 
 Signing, installation/uninstallation, rollback and isolated Windows VM checks remain required before recommending a new setup. Keep Microsoft Defender enabled.
 
+### Linux GUI preview — Ubuntu 24.04 x64
+
+- [Download Linux package](https://github.com/EmircanKurt/UltronDefender-Security/releases/download/v0.1.0-linux-preview.20261012.2bae2003/UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz) · [SHA-256](https://github.com/EmircanKurt/UltronDefender-Security/releases/download/v0.1.0-linux-preview.20261012.2bae2003/UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz.sha256) · [Release and limitations](https://github.com/EmircanKurt/UltronDefender-Security/releases/tag/v0.1.0-linux-preview.20261012.2bae2003).
+- [Download standalone uninstaller](https://github.com/EmircanKurt/UltronDefender-Security/releases/download/v0.1.0-linux-preview.20261012.2bae2003/UltronDefender-Linux-uninstall.py) · [Uninstaller SHA-256](https://github.com/EmircanKurt/UltronDefender-Security/releases/download/v0.1.0-linux-preview.20261012.2bae2003/UltronDefender-Linux-uninstall.py.sha256). The same remover is included in the archive.
+
+Verify SHA-256, extract into a new folder and run `python3 -B install.py` **without sudo** (Python 3.11+). This installs only for your desktop user and adds application and uninstall menu entries. To remove it, close Ultron, select **Uninstall Ultron Defender (Linux Preview)** and type `REMOVE`; alternatively run the downloaded `python3 -B UltronDefender-Linux-uninstall.py`. Exported reports and personal files are retained. Changed/untracked installation files cause a refusal, not a forced data purge.
+
+This is an **unsigned, limited manual inspection preview**, not Linux real-time antivirus. Windows service/ETW/Defender/WFP, quarantine, process termination and ELF malware analysis are unsupported. [Source and installation limits](https://github.com/EmircanKurt/UltronDefender-Security/blob/v0.1.0-linux-preview.20261012.2bae2003/docs/architecture/LINUX_PREVIEW.md) · [source review PR13](https://github.com/EmircanKurt/UltronDefender-Security/pull/13). Source remains separately reviewed; existing Windows downloads are unchanged.
+
+[Actual Ubuntu qualification and publication](https://github.com/EmircanKurt/UltronDefender-Security/actions/runs/38287738200): 26 benign GUI/portable/native tests and 15 installer fixtures passed, with no failures/skips; Release had no compiler warnings/errors. Extracted and installed X11 GUI, open-app removal refusal, cancellation, confirmed uninstall and report preservation passed. Public download hashes were rechecked. These are integration/behavior checks, not malware efficacy, all-distribution or interactive picker/menu certification.
+
 ### Current interface previews
 
 The images below were rendered from the actual WPF controls in the [9 October preview source](https://github.com/EmircanKurt/UltronDefender-Security/tree/118e7cd38760ced1060c9b95505e4c0d04fb12bc). They are **off-screen UI previews with synthetic test data**, not screenshots of a deployed protection service. The sidebar is a test shell using the real item style. History, file paths, scan counts, elapsed time and CPU/RAM readings are fixture values, not protection or performance evidence.
