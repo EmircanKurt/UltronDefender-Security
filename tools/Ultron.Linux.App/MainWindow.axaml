@@ -1,0 +1,62 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Ultron.Linux.App.MainWindow" Width="1150" Height="780" MinWidth="850" MinHeight="650"
+        Title="Ultron Defender · Linux Önizleme" Background="#0C1321">
+  <Window.Styles>
+    <Style Selector="TextBlock"><Setter Property="Foreground" Value="#EAF0FA" /></Style>
+    <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="#A6B5CE" /></Style>
+    <Style Selector="Border.card"><Setter Property="Background" Value="#151F31" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Padding" Value="22" /></Style>
+    <Style Selector="Button"><Setter Property="MinHeight" Value="40" /><Setter Property="Padding" Value="16,9" /></Style>
+    <Style Selector="Button.primary"><Setter Property="Background" Value="#237D9B" /><Setter Property="Foreground" Value="White" /></Style>
+  </Window.Styles>
+  <Grid ColumnDefinitions="215,*">
+    <Border Background="#101827" Padding="20,26">
+      <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <StackPanel Spacing="6"><TextBlock Text="ULTRON" FontSize="26" FontWeight="Bold" /><TextBlock Text="DEFENDER" FontSize="13" Foreground="#68CDE4" /><TextBlock Text="LINUX ÖNİZLEME" Classes="muted" FontSize="11" Margin="0,8,0,0" /></StackPanel>
+        <StackPanel Grid.Row="1" Margin="0,34,0,0" Spacing="12">
+          <Border Background="#21324A" CornerRadius="8" Padding="14"><TextBlock Text="▣  Tarama" FontWeight="SemiBold" /></Border>
+          <TextBlock Text="◉  Gerçek zamanlı koruma" Classes="muted" TextWrapping="Wrap" />
+          <TextBlock Text="     Desteklenmiyor" Foreground="#E3B579" FontSize="11" />
+          <TextBlock Text="◈  Ağ koruması" Classes="muted" /><TextBlock Text="     Desteklenmiyor" Foreground="#E3B579" FontSize="11" />
+          <TextBlock Text="▧  Karantina" Classes="muted" /><TextBlock Text="     Desteklenmiyor" Foreground="#E3B579" FontSize="11" />
+        </StackPanel>
+        <StackPanel Grid.Row="3" Spacing="8"><TextBlock Text="0.1 · Manuel inceleme" Classes="muted" FontSize="12" /><TextBlock Text="Yönetici / root gerekmez" Classes="muted" FontSize="11" /></StackPanel>
+      </Grid>
+    </Border>
+    <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="30" Spacing="20">
+        <StackPanel Spacing="7"><TextBlock Text="Tarama" FontSize="30" FontWeight="SemiBold" /><TextBlock Text="Seçtiğiniz dosya veya klasörde sınırlı, salt okunur inceleme." Classes="muted" TextWrapping="Wrap" /></StackPanel>
+        <Border Background="#302719" BorderBrush="#685333" BorderThickness="1" CornerRadius="10" Padding="16">
+          <TextBlock Text="Linux önizlemesi tam antivirüs koruması sağlamaz. Windows RT/ETW, Defender, Authenticode, WFP, karantina ve süreç sonlandırma desteklenmiyor. Eşleşme yok sonucu dosyanın güvenli olduğunu kanıtlamaz." Foreground="#F0C68D" TextWrapping="Wrap" />
+        </Border>
+        <Border Classes="card">
+          <StackPanel Spacing="14">
+            <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Kapsam" FontSize="19" FontWeight="SemiBold" /><TextBlock Grid.Column="1" Text="Yalnız manuel seçim" Foreground="#68CDE4" VerticalAlignment="Center" /></Grid>
+            <TextBox x:Name="ScopeBox" Text="{Binding SelectedPath}" IsReadOnly="True" PlaceholderText="Taramak için dosya veya klasör seçin" />
+            <StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="ChooseFileButton" Content="Dosya seç" Click="ChooseFile" /><Button x:Name="ChooseFolderButton" Content="Klasör seç" Click="ChooseFolder" /><Button x:Name="StartButton" Content="Taramayı başlat" Classes="primary" Click="StartScan" IsEnabled="{Binding CanStart}" /></StackPanel>
+            <TextBlock Text="16 MiB/dosya · 5.000 yol · aynı aygıt · bağlantılar ve özel dosyalar okunmaz. ZIP: 128 üye / 32 MiB açılmış veri; iç içe arşiv kapsam dışıdır." Classes="muted" FontSize="12" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+        <Border Classes="card">
+          <StackPanel Spacing="13">
+            <Grid ColumnDefinitions="*,Auto,Auto"><TextBlock Text="{Binding Status}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" /><Button Grid.Column="1" x:Name="PauseButton" Content="{Binding PauseLabel}" Click="TogglePause" IsEnabled="{Binding IsScanning}" Margin="12,0" /><Button Grid.Column="2" x:Name="CancelButton" Content="İptal" Click="CancelScan" IsEnabled="{Binding IsScanning}" /></Grid>
+            <ProgressBar x:Name="ScanProgress" IsIndeterminate="{Binding IsScanning}" Height="5" />
+            <TextBlock Text="{Binding ProgressText}" Classes="muted" /><TextBlock Text="{Binding ActivePath}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+        <Border Classes="card">
+          <StackPanel Spacing="14">
+            <Grid ColumnDefinitions="*,Auto"><TextBlock Text="İnceleme sonuçları" FontSize="19" FontWeight="SemiBold" /><Button Grid.Column="1" x:Name="ExportButton" Content="JSON dışa aktar" Click="ExportJson" IsEnabled="{Binding CanExport}" /></Grid>
+            <TextBlock Text="{Binding ResultsSummary}" Classes="muted" TextWrapping="Wrap" />
+            <ListBox x:Name="ResultsList" ItemsSource="{Binding Rows}" Height="230" Background="Transparent">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Margin="0,6" Spacing="4"><TextBlock Text="{Binding DisplayStatus}" FontWeight="SemiBold" Foreground="#68CDE4" /><TextBlock Text="{Binding Path}" TextWrapping="Wrap" /><TextBlock Text="{Binding Detail}" Classes="muted" FontSize="12" TextWrapping="Wrap" /></StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</Window>
