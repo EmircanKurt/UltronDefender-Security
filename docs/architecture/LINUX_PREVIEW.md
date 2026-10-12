@@ -5,7 +5,37 @@ progress, pause/cancel controls, result rows and explicit JSON export. It does n
 change the Windows WPF application or its services. It starts with no selected
 scope and does not scan on startup. No root privileges are requested.
 
-## Build and run
+## Installation and removal (no sudo)
+
+The x64 archive is a self-contained **manual inspection preview**, not the Windows
+protection service. Verify the download SHA-256, extract into a new folder and run:
+
+```bash
+python3 -B install.py
+```
+
+Python 3.11+ is required for installation/removal (Ubuntu 24.04 provides Python
+3.12). Installation verifies every packaged file and creates only
+`~/.local/lib/ultron-defender-preview` and two application-menu entries under
+`~/.local/share/applications`: **Ultron Defender (Linux Preview)** and
+**Uninstall Ultron Defender (Linux Preview)**. It requests no root, service,
+autostart, firewall or Defender changes. The fixed default user locations are
+deliberate; custom XDG locations are not supported by this initial installer.
+Existing installations/shortcuts are not overwritten. Uninstall first to upgrade.
+
+To remove it, close Ultron, select its **Uninstall** menu entry and type `REMOVE`
+in the confirmation terminal. Alternatively run `python3 -B uninstall.py` from
+the extracted package. Only receipt-listed application files and its two unchanged
+shortcuts are removed. Exported reports, downloaded archives and personal files
+are retained. Changed/untracked files or symlink ancestors cause a refusal before
+deletion, not a recursive force-delete. Move personal files out of the application
+folder before trying again. Do not run either script using sudo/root. Home paths
+containing control characters, `%` or `=` are refused to avoid desktop Exec ambiguity.
+Hashes check package integrity, not a publisher signature; the preview is unsigned.
+The unprivileged installer is not a security boundary against another process
+already controlling the same user account or changing its files concurrently.
+
+## Build from source
 
 The UI pins MIT-licensed [Avalonia 12.1.4](https://www.nuget.org/packages/Avalonia/12.1.4).
 Its package targets .NET 8, but its analyzers need a newer compiler than the

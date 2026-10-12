@@ -12,6 +12,8 @@ on:
       - "tests/Ultron.Linux.Tests/**"
       - "scripts/package-linux-preview.sh"
       - "scripts/collect-linux-preview-licenses.sh"
+      - "scripts/linux/**"
+      - "tests/linux_installer/**"
       - "docs/licenses/linux/**"
       - "docs/architecture/LINUX_PREVIEW.md"
       - "src/AegisPC.Core/Models/FileContentClassification.cs"
@@ -39,13 +41,15 @@ jobs:
       - name: Install X11 smoke-test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libfontconfig1 libx11-6 libice6 libsm6
+          sudo apt-get install -y xvfb libfontconfig1 libx11-6 libice6 libsm6 desktop-file-utils
       - name: Restore and build the separate Linux projects
         working-directory: tools/Ultron.Linux.App
         run: |
           dotnet --version
           dotnet restore ../../tests/Ultron.Linux.Tests/Ultron.Linux.Tests.csproj --locked-mode
           dotnet build ../../tests/Ultron.Linux.Tests/Ultron.Linux.Tests.csproj -c Release --no-restore -warnaserror
+      - name: Test unprivileged installer and removal with benign temporary files
+        run: python3 -B -m unittest discover -s tests/linux_installer -v
       - name: Run benign portable, native Linux and rendered GUI fixtures
         working-directory: tests/Ultron.Linux.Tests
         env:
@@ -74,6 +78,22 @@ jobs:
           sha256sum -c UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz.sha256
           extracted="$(mktemp -d "${RUNNER_TEMP}/ultron-linux-extracted.XXXXXXXX")"
           tar -xzf UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz -C "$extracted"
+          (cd "$extracted" && sha256sum -c FILE-SHA256SUMS)
+          (cd "$extracted/licenses" && sha256sum -c SHA256SUMS)
+          test "$(cat "$extracted/SOURCE-COMMIT.txt")" = "$GITHUB_SHA"
+          test -s "$extracted/libcoreclr.so"
+          file "$extracted/Ultron.Linux.App"
+          python3 - "$extracted" <<'PY'
+          import json, sys
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          config = json.loads((root / "Ultron.Linux.App.runtimeconfig.json").read_text())
+          included = config["runtimeOptions"]["includedFrameworks"]
+          assert any(x["name"] == "Microsoft.NETCore.App" and x["version"] == "8.0.31" for x in included)
+          names = sorted(str(x.relative_to(root)) for x in root.rglob("*") if x.is_file())
+          assert not any(x.endswith((".dylib", ".exe")) for x in names), names
+          print("Verified package files:", len(names), "; full license texts:", len(list((root / "licenses").glob("*.txt"))))
+          PY
           timeout 60s xvfb-run -a "$extracted/Ultron.Linux.App" \
             --gui-smoke "$GITHUB_WORKSPACE/artifacts/linux-validation/x11"
           python3 - <<'PY'
@@ -88,6 +108,12 @@ jobs:
               assert Path("../linux-validation/x11", name).stat().st_size > 1000
           print(result)
           PY
+      - name: Verify packaged install, installed X11 run and confirmed uninstall
+        run: |
+          set -euo pipefail
+          python3 -B tests/linux_installer/packaged_lifecycle.py \
+            artifacts/linux-preview-package/UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz \
+            artifacts/linux-validation/installation
       - name: Upload native, rendered and real-window evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -125,7 +151,13 @@ jobs:
           set -euo pipefail
           cd package
           sha256sum -c UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz.sha256
-          tag="v0.1.0-linux-preview.20261011.${SOURCE_SHA:0:8}"
+          sha256sum UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz
+          extracted="$(mktemp -d "${RUNNER_TEMP}/ultron-remover-release.XXXXXXXX")"
+          tar -xzf UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz -C "$extracted"
+          (cd "$extracted" && sha256sum -c FILE-SHA256SUMS)
+          cp -- "$extracted/uninstall.py" UltronDefender-Linux-uninstall.py
+          sha256sum UltronDefender-Linux-uninstall.py > UltronDefender-Linux-uninstall.py.sha256
+          tag="v0.1.0-linux-preview.20261012.${SOURCE_SHA:0:8}"
           if gh release view "$tag" >/dev/null 2>&1; then
             printf '%s\n' "Existing release is immutable; refusing to overwrite: $tag" >&2
             exit 1
@@ -142,6 +174,8 @@ jobs:
           gh release create "$tag" \
             UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz \
             UltronDefender-Linux-0.1.0-preview-linux-x64.tar.gz.sha256 \
+            UltronDefender-Linux-uninstall.py \
+            UltronDefender-Linux-uninstall.py.sha256 \
             --target "$SOURCE_SHA" --prerelease --latest=false \
             --title "Linux manual GUI preview 0.1 — Ubuntu 24.04 x64" \
-            --notes "Experimental, unsigned, manual read-only GUI preview. Qualified with benign Linux file fixtures, rendered controls and an extracted real X11 application smoke test. No automatic startup scan. Windows service protection, ETW, Defender, WFP, quarantine and process termination are unsupported. No malware efficacy, native picker or all-distribution certification is claimed. No root/service/driver installation is required. Archive includes limitations and third-party notices; verify the supplied SHA-256 before extraction."
+            --notes "Experimental, unsigned, manual read-only GUI preview for Ubuntu 24.04 x64. Verify archive SHA-256, extract into a new folder and run python3 -B install.py without sudo. Python 3.11+ is required for installation. Application menu includes Uninstall Ultron Defender; close Ultron and confirm REMOVE. Alternatively run the included uninstall.py or the separately downloadable UltronDefender-Linux-uninstall.py. Only validated application files/shortcuts are removed; exported reports remain. Qualified using benign file tests, real X11 runs and packaged install/cancel/uninstall with preservation checks. No startup scan, root/service/driver installation or automatic protection. Windows ETW/Defender/WFP, quarantine and termination are unsupported. No malware efficacy, interactive picker/menu UX or all-distribution certification is claimed. Full notices and coverage limits are inside the archive."

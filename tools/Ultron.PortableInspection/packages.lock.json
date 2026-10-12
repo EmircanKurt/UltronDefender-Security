@@ -16,6 +16,8 @@
         "resolved": "8.0.2",
         "contentHash": "3iE7UF7MQkCv1cxzCahz+Y/guQbTqieyxyaWKhrRO91itI9cOKO76OHeQDahqG4MmW5umr3CcCvGmK92lWNlbg=="
       }
-    }
+    },
+    "net8.0/linux-arm64": {},
+    "net8.0/linux-x64": {}
   }
 }

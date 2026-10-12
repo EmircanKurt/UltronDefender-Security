@@ -25,6 +25,15 @@ cp -- "$repo_dir/docs/architecture/LINUX_PREVIEW.md" "$package_dir/LINUX_PREVIEW
 cp -- "$repo_dir/LICENSE" "$package_dir/LICENSE"
 cp -- "$repo_dir/tools/Ultron.Linux.App/THIRD_PARTY_NOTICES.md" "$package_dir/THIRD_PARTY_NOTICES.md"
 bash "$repo_dir/scripts/collect-linux-preview-licenses.sh" "$package_dir" "$rid"
+cp -- "$repo_dir/scripts/linux/install.py" "$package_dir/install.py"
+cp -- "$repo_dir/scripts/linux/uninstall.py" "$package_dir/uninstall.py"
+source_sha="${GITHUB_SHA:-local-not-git-verified}"
+if [[ "$source_sha" != local-not-git-verified && ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+    printf '%s\n' 'Invalid source commit identity.' >&2
+    exit 1
+fi
+printf '%s\n' "$source_sha" > "$package_dir/SOURCE-COMMIT.txt"
+(cd -- "$package_dir" && find . -type f ! -name FILE-SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > FILE-SHA256SUMS)
 archive="$output_dir/UltronDefender-Linux-0.1.0-preview-$rid.tar.gz"
 if [[ -e "$archive" ]]; then
     printf '%s\n' "Refusing to overwrite existing preview archive: $archive" >&2
